@@ -29,6 +29,36 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      - name: Diagnose GMX SDK ESM
+        run: |
+          echo "========================================"
+          echo "GMX SDK PACKAGE"
+          echo "========================================"
+          cat node_modules/@gmx-io/sdk/package.json
+
+          echo ""
+          echo "========================================"
+          echo "GMX SDK V2 INDEX"
+          echo "========================================"
+          sed -n '1,160p' node_modules/@gmx-io/sdk/build/esm/src/clients/v2/index.js
+
+          echo ""
+          echo "========================================"
+          echo "GMX SDK CONFIG FILES"
+          echo "========================================"
+          find node_modules/@gmx-io/sdk/build/esm/src/configs \
+            -maxdepth 1 \
+            -type f \
+            -print | sort
+
+          echo ""
+          echo "========================================"
+          echo "GMX SDK IMPORTS WITHOUT JS EXTENSION"
+          echo "========================================"
+          grep -R -nE 'from ["'\''][^"'\'']+["'\'']' \
+            node_modules/@gmx-io/sdk/build/esm/src/clients/v2 \
+            | head -200 || true
+
       - name: Run V15.6.4 scan
         env:
           ARBITRUM_RPC: ${{ secrets.ARBITRUM_RPC }}
@@ -36,13 +66,16 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           EXECUTION_ENABLED: ${{ vars.EXECUTION_ENABLED || 'false' }}
-        run: node --experimental-specifier-resolution=node github-runner.mjs
+        run: node github-runner.mjs
 
       - name: Persist bot state
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add bot_state.json gmx_cache.json
+
+          git add state/bot_state.json state/gmx_cache.json
+
           if git diff --cached --quiet; then
             echo "No state changes to commit."
           else
