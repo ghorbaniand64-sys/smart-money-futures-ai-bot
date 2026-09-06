@@ -29,35 +29,159 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Diagnose GMX SDK ESM
+      - name: Patch GMX SDK ESM imports
+        shell: bash
         run: |
+          set -e
+
+          SDK_DIR="node_modules/@gmx-io/sdk/build/esm/src"
+
           echo "========================================"
-          echo "GMX SDK PACKAGE"
+          echo "GMX SDK VERSION"
           echo "========================================"
-          cat node_modules/@gmx-io/sdk/package.json
+
+          node -e "const p=require('./node_modules/@gmx-io/sdk/package.json'); console.log(p.version)"
 
           echo ""
           echo "========================================"
-          echo "GMX SDK V2 INDEX"
+          echo "CHECKING SDK FILES"
           echo "========================================"
-          sed -n '1,160p' node_modules/@gmx-io/sdk/build/esm/src/clients/v2/index.js
+
+          test -f "$SDK_DIR/configs/api.js"
+          test -f "$SDK_DIR/clients/v2/index.js"
+
+          echo "configs/api.js:"
+          ls -l "$SDK_DIR/configs/api.js"
+
+          echo ""
+          echo "clients/v2/index.js:"
+          ls -l "$SDK_DIR/clients/v2/index.js"
 
           echo ""
           echo "========================================"
-          echo "GMX SDK CONFIG FILES"
+          echo "PATCHING LOCAL ESM IMPORTS"
           echo "========================================"
-          find node_modules/@gmx-io/sdk/build/esm/src/configs \
-            -maxdepth 1 \
-            -type f \
-            -print | sort
+
+          node <<'NODE'
+          const fs = require("fs");
+          const path = require("path");
+
+          const root = path.resolve("node_modules/@gmx-io/sdk/build/esm/src");
+
+          function walk(dir) {
+            const result = [];
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const full = path.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                result.push(...walk(full));
+              } else if (entry.isFile() && full.endsWith(".js")) {
+                result.push(full);
+              }
+            }
+            return result;
+          }
+
+          const files = walk(root);
+
+          let changed = 0;
+          let replacements = 0;
+
+          for (const file of files) {
+            let source = fs.readFileSync(file, "utf8");
+            const original = source;
+
+            source = source.replace(
+              /(\bfrom\s+["'])(\.{1,2}\/[^"']+?)(["'])/g,
+              (match, prefix, specifier, suffix) => {
+                if (
+                  specifier.endsWith(".js") ||
+                  specifier.endsWith(".json") ||
+                  specifier.endsWith(".mjs") ||
+                  specifier.endsWith(".cjs")
+                ) {
+                  return match;
+                }
+
+                const candidate = path.resolve(path.dirname(file), specifier);
+                const candidateJs = `${candidate}.js`;
+                const candidateIndex = path.join(candidate, "index.js");
+
+                if (fs.existsSync(candidateJs)) {
+                  replacements++;
+                  return `${prefix}${specifier}.js${suffix}`;
+                }
+
+                if (fs.existsSync(candidateIndex)) {
+                  replacements++;
+                  return `${prefix}${specifier}/index.js${suffix}`;
+                }
+
+                return match;
+              }
+            );
+
+            source = source.replace(
+              /(\bimport\s*\(\s*["'])(\.{1,2}\/[^"']+?)(["']\s*\))/g,
+              (match, prefix, specifier, suffix) => {
+                if (
+                  specifier.endsWith(".js") ||
+                  specifier.endsWith(".json") ||
+                  specifier.endsWith(".mjs") ||
+                  specifier.endsWith(".cjs")
+                ) {
+                  return match;
+                }
+
+                const candidate = path.resolve(path.dirname(file), specifier);
+                const candidateJs = `${candidate}.js`;
+                const candidateIndex = path.join(candidate, "index.js");
+
+                if (fs.existsSync(candidateJs)) {
+                  replacements++;
+                  return `${prefix}${specifier}.js${suffix}`;
+                }
+
+                if (fs.existsSync(candidateIndex)) {
+                  replacements++;
+                  return `${prefix}${specifier}/index.js${suffix}`;
+                }
+
+                return match;
+              }
+            );
+
+            if (source !== original) {
+              fs.writeFileSync(file, source);
+              changed++;
+              console.log(
+                "PATCHED:",
+                path.relative(process.cwd(), file)
+              );
+            }
+          }
+
+          console.log("");
+          console.log("SDK JS files changed:", changed);
+          console.log("Import replacements:", replacements);
+          NODE
 
           echo ""
           echo "========================================"
-          echo "GMX SDK V2 IMPORTS"
+          echo "VERIFYING PROBLEMATIC IMPORT"
           echo "========================================"
-          grep -R -nE 'from ["'\''][^"'\'']+["'\'']' \
-            node_modules/@gmx-io/sdk/build/esm/src/clients/v2 \
-            | head -200 || true
+
+          grep -n "configs/api" \
+            node_modules/@gmx-io/sdk/build/esm/src/clients/v2/index.js \
+            || true
+
+      - name: Verify GMX SDK import
+        run: |
+          node --input-type=module <<'NODE'
+          import { GmxApiSdk } from "@gmx-io/sdk/v2";
+
+          console.log("GMX SDK v2 import: OK");
+          console.log("GmxApiSdk:", typeof GmxApiSdk);
+          NODE
 
       - name: Run V15.6.4 scan
         env:
@@ -70,6 +194,7 @@ jobs:
 
       - name: Persist bot state
         if: always()
+        shell: bash
         run: |
           echo "========================================"
           echo "PERSIST BOT STATE"
