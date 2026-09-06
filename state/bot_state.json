@@ -10402,7 +10402,20 @@
       "universeRotationCursor": 10,
       "lastExitDiagnostics": [
         {
-          "id": "2f876f9a-6317-4a77-8cac-038cec9de451",
+          "id": "962f5b68-c468-4b3b-aea7-bb3f3bd5abe4",
+          "symbol": "ONDO",
+          "direction": "LONG",
+          "lane": "CORE",
+          "status": "PAPER_OPEN",
+          "remainingPct": 100,
+          "tp1Hit": false,
+          "tp2Hit": false,
+          "tp3Hit": false,
+          "protectedStage": 0,
+          "lastExitActionAt": 0
+        },
+        {
+          "id": "4cd4902f-d551-45e3-b4e8-5ddcee9a1941",
           "symbol": "BTC",
           "direction": "SHORT",
           "lane": "RADAR",
@@ -10412,7 +10425,7 @@
           "tp2Hit": false,
           "tp3Hit": false,
           "protectedStage": 0,
-          "lastExitActionAt": 1788735998125
+          "lastExitActionAt": 1788736682823
         }
       ],
       "marketSnapshots": {
@@ -12269,6 +12282,57 @@
           "scanStatus": "SIGNALS_FOUND"
         },
         "time": 1788736006434
+      },
+      {
+        "event": {
+          "type": "PAPER_UNIFIED_EXIT",
+          "action": {
+            "id": "962f5b68-c468-4b3b-aea7-bb3f3bd5abe4",
+            "symbol": "ONDO",
+            "direction": "LONG",
+            "lane": "CORE",
+            "action": "ERROR",
+            "reason": "EXIT_MONITOR_ERROR",
+            "closePercent": 0,
+            "pnlPercent": 0,
+            "exitScore": 0,
+            "error": "v1565RadarPriceIntegrity is not defined"
+          }
+        },
+        "time": 1788736684802
+      },
+      {
+        "event": {
+          "type": "PAPER_UNIFIED_EXIT",
+          "action": {
+            "id": "4cd4902f-d551-45e3-b4e8-5ddcee9a1941",
+            "symbol": "BTC",
+            "direction": "SHORT",
+            "lane": "RADAR",
+            "action": "RADAR_PRICE_DATA_QUARANTINE",
+            "reason": "PRICE_SCALE_MISMATCH",
+            "closePercent": 100,
+            "pnlPercent": null,
+            "pnlUsd": null,
+            "entryPrice": 0.00080164,
+            "exitPrice": 80195.85,
+            "leverage": 2,
+            "notionalUsd": 600,
+            "exitScore": 0,
+            "remainingPct": 0,
+            "priceRatio": 100039731.05134475
+          }
+        },
+        "time": 1788736685355
+      },
+      {
+        "event": {
+          "type": "SCHEDULED_CYCLE_ERROR",
+          "cron": "*/5 * * * *",
+          "scheduledTime": 1788736682809,
+          "error": "v1565RadarPriceIntegrity is not defined"
+        },
+        "time": 1788736688558
       }
     ],
     "expiresAt": null
@@ -12522,7 +12586,7 @@
         "symbol": "ONDO",
         "side": "LONG",
         "entryPrice": 0.386594,
-        "currentPrice": 0.386594,
+        "currentPrice": 0.385486,
         "stopLoss": 0.382606349932142,
         "initialStopPrice": 0.382606349932142,
         "tp1": 0.39058165,
@@ -12554,7 +12618,7 @@
         "symbol": "BTC",
         "side": "SHORT",
         "entryPrice": 0.00080164,
-        "currentPrice": 0.00080164,
+        "currentPrice": 80195.85,
         "stopLoss": 0.00080645,
         "initialStopPrice": 0.00080645,
         "tp1": 0.00079683,
@@ -12590,7 +12654,7 @@
           "ok": true
         },
         "openedAt": 1788736005975,
-        "status": "PAPER_OPEN",
+        "status": "PAPER_CLOSED",
         "tp1Hit": false,
         "tp2Hit": false,
         "tp3Hit": false,
@@ -12599,8 +12663,22 @@
         "protectedStage": 0,
         "protectedStopPrice": 0.00080645,
         "stopBreachCount": 0,
-        "exitHistory": [],
-        "lastExitActionAt": 0
+        "exitHistory": [
+          {
+            "at": 1788736682823,
+            "action": "RADAR_PRICE_DATA_QUARANTINE",
+            "reason": "PRICE_SCALE_MISMATCH",
+            "price": 80195.85,
+            "closePercent": 100,
+            "pnlUsd": null,
+            "entryPrice": 0.00080164,
+            "exitPrice": 80195.85,
+            "ratio": 100039731.05134475
+          }
+        ],
+        "lastExitActionAt": 1788736682823,
+        "remainingPct": 0,
+        "closedAt": 1788736682823
       }
     ],
     "expiresAt": null
