@@ -10413,19 +10413,6 @@
           "tp3Hit": false,
           "protectedStage": 0,
           "lastExitActionAt": 0
-        },
-        {
-          "id": "4cd4902f-d551-45e3-b4e8-5ddcee9a1941",
-          "symbol": "BTC",
-          "direction": "SHORT",
-          "lane": "RADAR",
-          "status": "PAPER_CLOSED",
-          "remainingPct": 0,
-          "tp1Hit": false,
-          "tp2Hit": false,
-          "tp3Hit": false,
-          "protectedStage": 0,
-          "lastExitActionAt": 1788736682823
         }
       ],
       "marketSnapshots": {
@@ -12333,6 +12320,33 @@
           "error": "v1565RadarPriceIntegrity is not defined"
         },
         "time": 1788736688558
+      },
+      {
+        "event": {
+          "type": "PAPER_UNIFIED_EXIT",
+          "action": {
+            "id": "962f5b68-c468-4b3b-aea7-bb3f3bd5abe4",
+            "symbol": "ONDO",
+            "direction": "LONG",
+            "lane": "CORE",
+            "action": "ERROR",
+            "reason": "EXIT_MONITOR_ERROR",
+            "closePercent": 0,
+            "pnlPercent": 0,
+            "exitScore": 0,
+            "error": "v1565RadarPriceIntegrity is not defined"
+          }
+        },
+        "time": 1788736833807
+      },
+      {
+        "event": {
+          "type": "SCHEDULED_CYCLE_ERROR",
+          "cron": "*/5 * * * *",
+          "scheduledTime": 1788736833385,
+          "error": "v1565RadarPriceIntegrity is not defined"
+        },
+        "time": 1788736835817
       }
     ],
     "expiresAt": null
@@ -12586,7 +12600,7 @@
         "symbol": "ONDO",
         "side": "LONG",
         "entryPrice": 0.386594,
-        "currentPrice": 0.385486,
+        "currentPrice": 0.385635,
         "stopLoss": 0.382606349932142,
         "initialStopPrice": 0.382606349932142,
         "tp1": 0.39058165,
