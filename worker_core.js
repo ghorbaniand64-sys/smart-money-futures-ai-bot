@@ -294,7 +294,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V15.6.5-GITHUB-ACTIONS-RADAR-PRICE-INTEGRITY",
+VERSION: "V15.6.6-GITHUB-ACTIONS-RADAR-HISTORY-TELEGRAM-UTF8",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -693,18 +693,18 @@ return Number.isFinite(value)&&value>0?value:0;
 function v8RadarSanitizeHistory(history,currentPrice){
 const rows=Array.isArray(history)?history:[];
 const now=Date.now();
-const cur=Number(currentPrice);
+const cur=v1565NormalizePrice(currentPrice);
 const out=[];
 for(const x of rows){
-  const at=Number(x?.at), price=Number(x?.price);
+  const at=Number(x?.at);
+  const price=v1565NormalizePrice(x?.price);
   if(!Number.isFinite(at)||!Number.isFinite(price)||price<=0||at<=0)continue;
   // Reject future samples and samples older than the rolling retention window.
   if(at>now+60000||now-at>48*60*60*1000)continue;
-  // Price-integrity gate: history must be on the same order of magnitude as
-  // the current Oracle price. A mismatch is treated as stale/corrupt data.
+  // V15.6.6: discard legacy/corrupt history before momentum math.
   if(cur>0){
-    const ratio=price/cur;
-    if(!Number.isFinite(ratio)||ratio<0.05||ratio>20)continue;
+    const ratio=v1565PriceRatio(price,cur);
+    if(!Number.isFinite(ratio)||ratio>25)continue;
   }
   out.push({at,price});
 }
@@ -881,7 +881,8 @@ return next;
 function v8PumpRadar(market, previous=null, history=[]){
 if(!market)return{score:0,longScore:0,shortScore:0,edge:0,direction:"NEUTRAL",reasons:["missing_market"],priceDataStatus:"INVALID"};
 const price=v8HighMetric(market,["price","markPrice","indexPrice","currentPrice","indexPriceUsd"]);
-const prevPrice=v8HighMetric(previous,["price","markPrice","indexPrice","currentPrice"]);
+const prevPriceRaw=v8HighMetric(previous,["price","markPrice","indexPrice","currentPrice"]);
+const prevPrice=v1565RadarPriceIntegrity(price,prevPriceRaw,{maxRatio:25}).ok?prevPriceRaw:0;
 const p24Bps=v132NumberValue(market?.priceChangePercent24hBps);
 const p24=p24Bps!==0?p24Bps/100:v8PercentMetric(market,["priceChange24h","priceChangePercent24h","change24h","priceChange24H","changePercent24h"]);
 const p1h=v8PercentMetric(market,["priceChange1h","priceChangePercent1h","change1h","priceChange1H","changePercent1h"]);
@@ -916,9 +917,13 @@ const prior5m=prior5&&latestPrice>0?v8PctMove(latestPrice,prior5.price):0;
 const acceleration5m=prior5?(velocity5m-prior5m):0;
 const radarWarmup=!(prior5||prior15);
 const priceDataStatus=price>0?(hist.length?"OK":"WARMUP"):"INVALID";
+const radarHistoryReady=Boolean(prior5||prior15);
+const historyIntegrityOk=price>0 && (!latestPrice || v1565RadarPriceIntegrity(price,latestPrice,{maxRatio:25}).ok);
 
-const positiveMove=Math.max(p24,p4h,p1h,priorMovePct,move10m,move15m,move30m);
-const negativeMove=Math.min(p24,p4h,p1h,priorMovePct,move10m,move15m,move30m);
+const historyMoveAllowed=historyIntegrityOk && radarHistoryReady;
+const historicalMoves=historyMoveAllowed?[priorMovePct,move10m,move15m,move30m]:[];
+const positiveMove=Math.max(p24,p4h,p1h,...historicalMoves);
+const negativeMove=Math.min(p24,p4h,p1h,...historicalMoves);
 let long=0,short=0;const reasonsLong=[],reasonsShort=[];
 const smartMoneyLongBoost=smfDirectionalBoost(smartMoneyFlow,"LONG"),smartMoneyShortBoost=smfDirectionalBoost(smartMoneyFlow,"SHORT");
 long+=smartMoneyLongBoost;short+=smartMoneyShortBoost;
@@ -938,18 +943,18 @@ if(negativeMove<-5){short+=12;reasonsShort.push("impulse_move");}
 if(negativeMove<-10){short+=16;reasonsShort.push("explosive_move");}
 if(negativeMove<-15){short+=12;reasonsShort.push("parabolic_move");}
 if(negativeMove<-25){short+=8;reasonsShort.push("extreme_move");}
-if(velocity5m>0.35){long+=6;reasonsLong.push("5m_velocity");}
-if(velocity5m>0.75){long+=8;reasonsLong.push("5m_acceleration");}
-if(velocity5m>1.25){long+=10;reasonsLong.push("5m_impulse");}
-if(velocity5m>2.0){long+=12;reasonsLong.push("5m_explosion");}
-if(velocity5m>4.0){long+=8;reasonsLong.push("5m_extreme");}
-if(velocity5m<-0.35){short+=6;reasonsShort.push("5m_velocity");}
-if(velocity5m<-0.75){short+=8;reasonsShort.push("5m_acceleration");}
-if(velocity5m<-1.25){short+=10;reasonsShort.push("5m_impulse");}
-if(velocity5m<-2.0){short+=12;reasonsShort.push("5m_explosion");}
-if(velocity5m<-4.0){short+=8;reasonsShort.push("5m_extreme");}
-if(acceleration5m>0.35){long+=7;reasonsLong.push("velocity_acceleration");}
-if(acceleration5m<-0.35){short+=7;reasonsShort.push("velocity_acceleration");}
+if(historyMoveAllowed && velocity5m>0.35){long+=6;reasonsLong.push("5m_velocity");}
+if(historyMoveAllowed && velocity5m>0.75){long+=8;reasonsLong.push("5m_acceleration");}
+if(historyMoveAllowed && velocity5m>1.25){long+=10;reasonsLong.push("5m_impulse");}
+if(historyMoveAllowed && velocity5m>2.0){long+=12;reasonsLong.push("5m_explosion");}
+if(historyMoveAllowed && velocity5m>4.0){long+=8;reasonsLong.push("5m_extreme");}
+if(historyMoveAllowed && velocity5m<-0.35){short+=6;reasonsShort.push("5m_velocity");}
+if(historyMoveAllowed && velocity5m<-0.75){short+=8;reasonsShort.push("5m_acceleration");}
+if(historyMoveAllowed && velocity5m<-1.25){short+=10;reasonsShort.push("5m_impulse");}
+if(historyMoveAllowed && velocity5m<-2.0){short+=12;reasonsShort.push("5m_explosion");}
+if(historyMoveAllowed && velocity5m<-4.0){short+=8;reasonsShort.push("5m_extreme");}
+if(historyMoveAllowed && acceleration5m>0.35){long+=7;reasonsLong.push("velocity_acceleration");}
+if(historyMoveAllowed && acceleration5m<-0.35){short+=7;reasonsShort.push("velocity_acceleration");}
 if(move10m>1){long+=6;reasonsLong.push("10m_continuation");}
 if(move15m>1.5){long+=7;reasonsLong.push("15m_continuation");}
 if(move30m>3){long+=6;reasonsLong.push("30m_trend");}
@@ -1004,7 +1009,7 @@ smartMoneyFlow: smartMoneyFlow ? {
   longCloseUsd:Number(smartMoneyFlow.longCloseUsd||0),
   shortCloseUsd:Number(smartMoneyFlow.shortCloseUsd||0)
 } : null,
-priceDataStatus,radarWarmup,historySamples:hist.length,valid5mSample:Boolean(prior5),valid15mSample:Boolean(prior15),valid30mSample:Boolean(prior30),
+priceDataStatus,radarWarmup,radarHistoryReady,historyIntegrityOk,historySamples:hist.length,valid5mSample:Boolean(prior5),valid15mSample:Boolean(prior15),valid30mSample:Boolean(prior30),
 reasons:direction==="LONG"?[...new Set(reasonsLong)].slice(0,8):direction==="SHORT"?[...new Set(reasonsShort)].slice(0,8):[...new Set([...reasonsLong,...reasonsShort])].slice(0,8)
 };
 }
@@ -3238,30 +3243,30 @@ state.telegramEvents[symbol]={direction:String(signal?.direction||"NO_TRADE").to
 function formatTelegramExit(action) {
 const isError = String(action?.action || "").toUpperCase() === "ERROR";
 const isRadar = String(action?.lane || "").toUpperCase() === "RADAR";
-const icon = isError ? "ðŸŸ " : (Number(action?.pnlUsd || 0) >= 0 ? "ðŸŸ¢" : "ðŸ”´");
+const icon = isError ? "🟢" : (Number(action?.pnlUsd || 0) >= 0 ? "🟢" : "🔴");
 const hasPnl=Number.isFinite(Number(action?.pnlUsd)) && Number.isFinite(Number(action?.pnlPercent));
 const pnlPct = Number(action?.pnlPercent || 0);
 const pnlUsd = Number(action?.pnlUsd || 0);
 const lines = [
-`${icon} ${isRadar ? "RADAR" : "GMX FUTURES"} EXIT â€” ${action?.action || "EXIT"}`,
-"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”",
-`ðŸ“Œ ${action?.symbol || "UNKNOWN"} â€¢ ${action?.direction || "UNKNOWN"}`,
-isRadar ? `ðŸ§­ Lane: RADAR / Paper simulation` : "",
-`ðŸ“¥ Entry: ${action?.entryPrice != null ? formatPrice(action.entryPrice) : "N/A"}`,
-`ðŸ“¤ Exit: ${action?.exitPrice != null ? formatPrice(action.exitPrice) : (action?.price != null ? formatPrice(action.price) : "N/A")}`,
-action?.leverage != null ? `âš™ï¸ Leverage: ${Number(action.leverage).toFixed(0)}x` : "",
-action?.notionalUsd != null ? `ðŸ“¦ Notional: $${Number(action.notionalUsd).toFixed(2)}` : "",
-`ðŸ“‰ PnL: ${hasPnl ? `${pnlUsd >= 0 ? "+" : ""}$${pnlUsd.toFixed(2)} (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%)` : "NOT CALCULATED â€” PRICE DATA INVALID"}`,
-`ðŸ“Š Exit score: ${Number(action?.exitScore || action?.radarScore || 0).toFixed(1)}/100`,
-`ðŸ§­ Reason: ${action?.reason || "PROTECTION"}`,
-`ðŸ’° Close: ${Number(action?.closePercent || 0)}%`,
-action?.remainingPct != null ? `ðŸ“Š Remaining: ${Number(action.remainingPct).toFixed(2)}%` : ""
+`${icon} ${isRadar ? "RADAR" : "GMX FUTURES"} EXIT — ${action?.action || "EXIT"}`,
+"━━━━━━━━━━━━━━━━━━",
+`📌 ${action?.symbol || "UNKNOWN"} • ${action?.direction || "UNKNOWN"}`,
+isRadar ? `🧭 Lane: RADAR / Paper simulation` : "",
+`📥 Entry: ${action?.entryPrice != null ? formatPrice(action.entryPrice) : "N/A"}`,
+`📤 Exit: ${action?.exitPrice != null ? formatPrice(action.exitPrice) : (action?.price != null ? formatPrice(action.price) : "N/A")}`,
+action?.leverage != null ? `⚙️ Leverage: ${Number(action.leverage).toFixed(0)}x` : "",
+action?.notionalUsd != null ? `📦 Notional: $${Number(action.notionalUsd).toFixed(2)}` : "",
+`📉 PnL: ${hasPnl ? `${pnlUsd >= 0 ? "+" : ""}$${pnlUsd.toFixed(2)} (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%)` : "NOT CALCULATED — PRICE DATA INVALID"}`,
+`📊 Exit score: ${Number(action?.exitScore || action?.radarScore || 0).toFixed(1)}/100`,
+`🧭 Reason: ${action?.reason || "PROTECTION"}`,
+`💰 Close: ${Number(action?.closePercent || 0)}%`,
+action?.remainingPct != null ? `📊 Remaining: ${Number(action.remainingPct).toFixed(2)}%` : ""
 ].filter(Boolean);
-if (isError && action?.error) lines.push(`âš ï¸ Error: ${String(action.error).slice(0, 500)}`);
-if (isRadar && action?.priceRatio && Number(action.priceRatio) > 25) lines.push(`âš ï¸ Price ratio: ${Number(action.priceRatio).toExponential(2)}x â€” paper result quarantined.`);
+if (isError && action?.error) lines.push(`⚠️ Error: ${String(action.error).slice(0, 500)}`);
+if (isRadar && action?.priceRatio && Number(action.priceRatio) > 25) lines.push(`⚠️ Price ratio: ${Number(action.priceRatio).toExponential(2)}x — paper result quarantined.`);
 lines.push(isRadar
-  ? "â„¹ï¸ PnL above is the simulated result that would have occurred at this exit price."
-  : "â„¹ï¸ Telegram is notification-only; the bot does not wait for Telegram confirmation.");
+  ? "ℹ️ PnL above is the simulated result that would have occurred at this exit price."
+  : "ℹ️ Telegram is notification-only; the bot does not wait for Telegram confirmation.");
 return lines.join("\n");
 }
  
@@ -3988,7 +3993,16 @@ return n.toLocaleString("en-US", { maximumFractionDigits: 8 });
 }
  
 function tgText(value, fallback = "N/A") {
-const s = value === null || value === undefined || value === "" ? fallback : String(value);
+let s = value === null || value === undefined || value === "" ? fallback : String(value);
+// V15.6.6: defensive repair for persisted/dynamic UTF-8 mojibake.
+for(let i=0;i<2;i++){
+  if(!/[ÃÂâðØÙ]/.test(s)) break;
+  try{
+    const repaired=decodeURIComponent(escape(s));
+    if(repaired===s)break;
+    s=repaired;
+  }catch(_){break;}
+}
 return s.replace(/[\r\n]+/g, " ").trim();
 }
 
@@ -4008,7 +4022,7 @@ return n.toFixed(8);
 
 function formatTelegramSignal(signal) {
 const direction = String(signal?.direction || "").toUpperCase();
-const icon = direction === "LONG" ? "ðŸŸ¢" : direction === "SHORT" ? "ðŸ”´" : "âšª";
+const icon = direction === "LONG" ? "🟢" : direction === "SHORT" ? "🔴" : "⚪";
 const p = signal?.tradePlan || {};
 const t = signal?.trend || {};
 const tier = tgText(signal?.signalTier || signal?.status, "SIGNAL");
@@ -4019,36 +4033,36 @@ const edge = tgNumber(signal?.edge, 1, "0.0");
 const risk = tgNumber(signal?.riskScore ?? signal?.risk, 1, "0.0");
 const opportunity = signal?.opportunity || {};
 const radarScore = tgNumber(opportunity?.score, 1, "0.0");
-const radarType = opportunity?.type === "EARLY_MOMENTUM" ? "ðŸ”¥ EARLY MOMENTUM" : "";
+const radarType = opportunity?.type === "EARLY_MOMENTUM" ? "🔥 EARLY MOMENTUM" : "";
 
 const lines = [
-`${icon} GMX FUTURES â€” ${tier}`,
-"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”",
-`ðŸ“Œ ${symbol}/USD  â€¢  ${direction || "UNKNOWN"}`,
-`ðŸ“Š Score: ${score}/100`,
-`ðŸŽ¯ Confidence: ${confidence}/100`,
-`âš¡ Edge: ${edge}`,
-`ðŸ›¡ï¸ Risk: ${risk}/100`,
-radarType ? `${radarType}  â€¢  Radar: ${radarScore}/100` : "",
+`${icon} GMX FUTURES — ${tier}`,
+"━━━━━━━━━━━━━━━━━━",
+`📌 ${symbol}/USD  •  ${direction || "UNKNOWN"}`,
+`📊 Score: ${score}/100`,
+`🎯 Confidence: ${confidence}/100`,
+`⚡ Edge: ${edge}`,
+`🛡️ Risk: ${risk}/100`,
+radarType ? `${radarType}  •  Radar: ${radarScore}/100` : "",
 "",
-"ðŸ’° TRADE PLAN",
+"💰 TRADE PLAN",
 `Entry : ${tgPrice(p?.entry ?? signal?.price)}`,
 `SL    : ${tgPrice(p?.stopLoss)}`,
 `TP1   : ${tgPrice(p?.tp1)}`,
 `TP2   : ${tgPrice(p?.tp2)}`,
 `TP3   : ${tgPrice(p?.tp3)}`,
 "",
-"ðŸ“ˆ TREND",
+"📈 TREND",
 `4H  : ${tgText(t?.macro4h)}`,
 `1H  : ${tgText(t?.trend1h)}`,
 `15M : ${tgText(t?.entry15m)}`,
 `5M  : ${tgText(t?.fast5m)}`,
 "",
-`âš™ï¸ Leverage: ${tgText(p?.leverage ?? CONFIG.DEFAULT_LEVERAGE, CONFIG.DEFAULT_LEVERAGE) }x`,
-`ðŸ›¡ï¸ Risk/Trade: ${tgText(p?.riskPerTradePercent ?? (CONFIG.RISK_PER_TRADE * 100).toFixed(2), (CONFIG.RISK_PER_TRADE * 100).toFixed(2))}%`,
-`ðŸ¤– ${signal?.executionEligible ? "EXECUTION-ELIGIBLE" : "SIGNAL-ONLY"}`,
+`⚙️ Leverage: ${tgText(p?.leverage ?? CONFIG.DEFAULT_LEVERAGE, CONFIG.DEFAULT_LEVERAGE) }x`,
+`🛡️ Risk/Trade: ${tgText(p?.riskPerTradePercent ?? (CONFIG.RISK_PER_TRADE * 100).toFixed(2), (CONFIG.RISK_PER_TRADE * 100).toFixed(2))}%`,
+`🤖 ${signal?.executionEligible ? "EXECUTION-ELIGIBLE" : "SIGNAL-ONLY"}`,
 "",
-"â„¹ï¸ Ø§ÛŒÙ† Ù¾ÛŒØ§Ù… ÙÙ‚Ø· Ø§Ø·Ù„Ø§Ø¹â€ŒØ±Ø³Ø§Ù†ÛŒ Ø§Ø³ØªØ› Ø¨Ø±Ø§ÛŒ ÙˆØ±ÙˆØ¯ Ù†ÛŒØ§Ø²ÛŒ Ø¨Ù‡ ØªØ£ÛŒÛŒØ¯ ØªÙ„Ú¯Ø±Ø§Ù… Ù†ÛŒØ³Øª.",
+"ℹ️ این پیام فقط اطلاع‌رسانی است؛ برای ورود نیازی به تأیید تلگرام نیست.",
 `#${symbol} #GMX #Arbitrum #Futures`
 ];
 
@@ -4057,13 +4071,13 @@ return lines.join("\n");
 
 function formatTelegramStatus(result) {
 return [
-"âš ï¸ GMX FUTURES SCAN",
-"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”",
+"⚠️ GMX FUTURES SCAN",
+"━━━━━━━━━━━━━━━━━━",
 `Status   : ${tgText(result?.status, "UNKNOWN")}`,
 `Scanned  : ${tgText(result?.scanned, "0")}`,
 `Signals  : ${tgText(result?.candidates, "0")}`,
 result?.reason ? `Reason   : ${tgText(result.reason)}` : "",
-"â„¹ï¸ Telegram is notification-only and does not control the bot."
+"ℹ️ Telegram is notification-only and does not control the bot."
 ].filter(Boolean).join("\n");
 }
 
@@ -4205,55 +4219,55 @@ trendFlip
 
 function formatTelegramRadarEntry(position) {
 const direction = String(position?.side || "").toUpperCase();
-const icon = direction === "LONG" ? "ðŸŸ¢" : "ðŸ”´";
+const icon = direction === "LONG" ? "🟢" : "🔴";
 const leverage = Number(position?.leverage || 1);
 const allocationPct = Number(position?.allocation || CONFIG.RADAR_CAPITAL_ALLOCATION) * 100;
 const notional = Number(position?.notionalUsd || 0);
 const margin = leverage > 0 ? notional / leverage : 0;
 const riskPct = Number(position?.riskPerTradePercent ?? (CONFIG.RADAR_RISK_PER_TRADE * 100));
 return [
-`${icon} RADAR ENTRY â€” ${direction}`,
-"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”",
-`ðŸ“Œ ${position?.symbol || "UNKNOWN"}/USD`,
-`ðŸ”¥ Score: ${Number(position?.radarScore || 0).toFixed(1)}/100`,
-`âš¡ Edge: ${Number(position?.radarEdge || 0).toFixed(1)}`,
+`${icon} RADAR ENTRY — ${direction}`,
+"━━━━━━━━━━━━━━━━━━",
+`📌 ${position?.symbol || "UNKNOWN"}/USD`,
+`🔥 Score: ${Number(position?.radarScore || 0).toFixed(1)}/100`,
+`⚡ Edge: ${Number(position?.radarEdge || 0).toFixed(1)}`,
 "",
-"ðŸ“¥ HYPOTHETICAL ENTRY",
-`ðŸ’° Entry: ${formatPrice(position?.entryPrice)}`,
-`âš™ï¸ Leverage: ${leverage}x`,
-`ðŸ’¼ Allocation: ${allocationPct.toFixed(2)}%`,
-`ðŸ’µ Margin Used: $${margin.toFixed(2)}`,
-`ðŸ“¦ Position Notional: $${notional.toFixed(2)}`,
-`ðŸ›¡ï¸ Risk/Trade: ${riskPct.toFixed(2)}%`,
+"📥 HYPOTHETICAL ENTRY",
+`💰 Entry: ${formatPrice(position?.entryPrice)}`,
+`⚙️ Leverage: ${leverage}x`,
+`💼 Allocation: ${allocationPct.toFixed(2)}%`,
+`💵 Margin Used: $${margin.toFixed(2)}`,
+`📦 Position Notional: $${notional.toFixed(2)}`,
+`🛡️ Risk/Trade: ${riskPct.toFixed(2)}%`,
 "",
-"ðŸŽ¯ TRADE PLAN",
-`ðŸ›‘ Initial SL: ${formatPrice(position?.initialStopPrice)}`,
-`ðŸŽ¯ TP1: ${formatPrice(position?.tp1)}`,
-`ðŸŽ¯ TP2: ${formatPrice(position?.tp2)}`,
-`ðŸŽ¯ TP3: ${formatPrice(position?.tp3)}`,
+"🎯 TRADE PLAN",
+`🛑 Initial SL: ${formatPrice(position?.initialStopPrice)}`,
+`🎯 TP1: ${formatPrice(position?.tp1)}`,
+`🎯 TP2: ${formatPrice(position?.tp2)}`,
+`🎯 TP3: ${formatPrice(position?.tp3)}`,
 "",
-"ðŸ“Š RESULT TRACKING",
-"ðŸŸ¡ PnL starts at $0.00 / 0.00%",
-"ðŸ§­ Lane: RADAR / Paper simulation",
-"â„¹ï¸ This is a simulated entry; no real order is submitted."
+"📊 RESULT TRACKING",
+"🟢 PnL starts at $0.00 / 0.00%",
+"🧭 Lane: RADAR / Paper simulation",
+"ℹ️ This is a simulated entry; no real order is submitted."
 ].join("\n");
 }
 
 function formatTelegramRadarLiveEntry(result) {
 const direction=String(result?.direction||"UNKNOWN").toUpperCase();
-const icon=direction==="LONG"?"ðŸŸ¢":"ðŸ”´";
+const icon=direction==="LONG"?"🟢":"🔴";
 return [
-`${icon} RADAR LIVE ENTRY â€” ${direction}`,
-"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”",
-`ðŸª™ ${result?.symbol||"UNKNOWN"}`,
-`ðŸ”¥ Radar Score: ${Number(result?.radarScore||0).toFixed(1)}/100`,
-`âš¡ Edge: ${Number(result?.radarEdge||0).toFixed(1)}`,
-`âš™ï¸ Leverage: ${Number(result?.leverage||1).toFixed(1)}x`,
-`ðŸ’¼ Collateral: ${Number(result?.collateralUsd||0).toFixed(2)} USD (${result?.collateralToken||"?"})`,
-`ðŸ“¦ Notional: ${Number(result?.notionalUsd||0).toFixed(2)} USD`,
-`ðŸ§¾ Request ID: ${result?.requestId||"n/a"}`,
-"âœ… ORDER SUBMITTED BEFORE TELEGRAM",
-"âš ï¸ Radar live lane â€” independent fast-entry path"
+`${icon} RADAR LIVE ENTRY — ${direction}`,
+"━━━━━━━━━━━━━━━━━━",
+`🪙 ${result?.symbol||"UNKNOWN"}`,
+`🔥 Radar Score: ${Number(result?.radarScore||0).toFixed(1)}/100`,
+`⚡ Edge: ${Number(result?.radarEdge||0).toFixed(1)}`,
+`⚙️ Leverage: ${Number(result?.leverage||1).toFixed(1)}x`,
+`💼 Collateral: ${Number(result?.collateralUsd||0).toFixed(2)} USD (${result?.collateralToken||"?"})`,
+`📦 Notional: ${Number(result?.notionalUsd||0).toFixed(2)} USD`,
+`🧾 Request ID: ${result?.requestId||"n/a"}`,
+"✅ ORDER SUBMITTED BEFORE TELEGRAM",
+"⚠️ Radar live lane — independent fast-entry path"
 ].join("\n");
 }
 
@@ -4263,33 +4277,33 @@ const radar=candidate?.pumpRadar||{};
 const score=Number(radar.score||0);
 const isPump=direction==="LONG";
 const tier=score>=Number(CONFIG.PUMP_RADAR_HOT_SCORE||72)?"HOT":"WATCH";
-const title=isPump?"ðŸš€ PUMP RADAR":"ðŸ”» DUMP RADAR";
+const title=isPump?"🚀 PUMP RADAR":"🔻 DUMP RADAR";
 const action=isPump?"BUY-SIDE MOMENTUM":"SELL-SIDE MOMENTUM";
-const reasons=(Array.isArray(radar.reasons)?radar.reasons:[]).slice(0,6).join(" â€¢ ")||"momentum detected";
+const reasons=(Array.isArray(radar.reasons)?radar.reasons:[]).slice(0,6).join(" • ")||"momentum detected";
 const flow=radar.smartMoneyFlow||{};
 return [
-`${title} â€” ${tier}`,
-"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”",
-`ðŸª™ ${candidate?.symbol||"UNKNOWN"}/USD`,
-`ðŸ“¡ Event: ${action}`,
-`ðŸ”¥ Radar Score: ${score.toFixed(1)}/100`,
-`âš¡ Directional Edge: ${Number(radar.edge||0).toFixed(1)}`,
-`ðŸ“ˆ 24h Move: ${Number(radar.priceChange24h||0).toFixed(2)}%`,
-`â±ï¸ 1h Move: ${Number(radar.priceChange1h||0).toFixed(2)}%`,
-`ðŸ• 4h Move: ${Number(radar.priceChange4h||0).toFixed(2)}%`,
-`âš¡ 5m Velocity: ${Number(radar.velocity5m||0).toFixed(2)}%`,
-`ðŸ“ˆ 15m Move: ${Number(radar.move15m||0).toFixed(2)}%`,
-`â±ï¸ Detection: ${radar.timingState || "UNKNOWN"}`,
-`ðŸ›°ï¸ Last-Scan Move: ${Number(radar.priorMovePct||0).toFixed(2)}%`,
-`ðŸ’§ Volume Ratio: ${Number(radar.volumeRatio||1).toFixed(2)}x`,
-`ðŸ“Š OI Change: ${Number(radar.oiChangePct||0).toFixed(2)}% â€¢ ${radar.oiAvailable===false?"UNAVAILABLE":"AVAILABLE"}`,
-`ðŸ’µ Smart Money Buy: $${Number(flow.buyUsd||0).toFixed(0)}`,
-`ðŸ’¸ Smart Money Sell: $${Number(flow.sellUsd||0).toFixed(0)}`,
-`âš–ï¸ Flow Imbalance: ${(Number(flow.imbalance||0)*100).toFixed(1)}%`,
-`ðŸš€ Flow Surge: ${flow.flowSurge?"YES":"NO"} â€¢ x${Number(flow.flowSpikeRatio||1).toFixed(2)}`,
-`ðŸ‹ Large Trades: ${Number(flow.largeTradeCount||0)}`,
-`ðŸ§  Trigger: ${reasons}`,
-"âš ï¸ RADAR ALERT â€” notification only; not a trade execution signal."
+`${title} — ${tier}`,
+"━━━━━━━━━━━━━━━━━━",
+`🪙 ${candidate?.symbol||"UNKNOWN"}/USD`,
+`📡 Event: ${action}`,
+`🔥 Radar Score: ${score.toFixed(1)}/100`,
+`⚡ Directional Edge: ${Number(radar.edge||0).toFixed(1)}`,
+`📈 24h Move: ${Number(radar.priceChange24h||0).toFixed(2)}%`,
+`⏱️ 1h Move: ${Number(radar.priceChange1h||0).toFixed(2)}%`,
+`🕐 4h Move: ${Number(radar.priceChange4h||0).toFixed(2)}%`,
+`⚡ 5m Velocity: ${Number(radar.velocity5m||0).toFixed(2)}%`,
+`📈 15m Move: ${Number(radar.move15m||0).toFixed(2)}%`,
+`⏱️ Detection: ${radar.timingState || "UNKNOWN"}`,
+`🛡️ Last-Scan Move: ${Number(radar.priorMovePct||0).toFixed(2)}%`,
+`💧 Volume Ratio: ${Number(radar.volumeRatio||1).toFixed(2)}x`,
+`📊 OI Change: ${Number(radar.oiChangePct||0).toFixed(2)}% • ${radar.oiAvailable===false?"UNAVAILABLE":"AVAILABLE"}`,
+`💵 Smart Money Buy: $${Number(flow.buyUsd||0).toFixed(0)}`,
+`💸 Smart Money Sell: $${Number(flow.sellUsd||0).toFixed(0)}`,
+`⚖️ Flow Imbalance: ${(Number(flow.imbalance||0)*100).toFixed(1)}%`,
+`🚀 Flow Surge: ${flow.flowSurge?"YES":"NO"} • x${Number(flow.flowSpikeRatio||1).toFixed(2)}`,
+`🐋 Large Trades: ${Number(flow.largeTradeCount||0)}`,
+`🧠 Trigger: ${reasons}`,
+"⚠️ RADAR ALERT — notification only; not a trade execution signal."
 ].join("\n");
 }
 async function openPaperPosition(env, signal, balance) {
@@ -8712,7 +8726,7 @@ const url = `https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/sendMessage`;
 try {
 const response = await fetch(url,{
 method:"POST",
-headers:{"content-type":"application/json"},
+headers:{"content-type":"application/json; charset=UTF-8"},
 body:JSON.stringify({chat_id:env.TELEGRAM_CHAT_ID,text:String(message||"")})
 });
 const body = await response.text();
