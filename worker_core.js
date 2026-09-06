@@ -1,7 +1,7 @@
 import { GmxApiSdk, PrivateKeySigner } from "@gmx-io/sdk/v2";
 import { getViemChain } from "@gmx-io/sdk/configs/chains";
 
-Â 
+ 
 // ======================================================
 // Smart Money Futures AI Bot
 // Version: V15.6.5 / Phase 6 Radar Price Integrity + GitHub Actions Multi-Source Smart Money + Independent Radar + Smart Money Data Health + OI/Funding Integrity + Volume-Aware OHLCV + Exploration Deep Scan + Radar Coverage
@@ -9,25 +9,25 @@ import { getViemChain } from "@gmx-io/sdk/configs/chains";
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
 // ======================================================
-Â 
-Â 
+ 
+ 
 // ================================
 // MODULE-SCOPE ERROR HELPERS
 // ================================
 function safeError(error) {
 return error?.message || String(error || "Unknown error");
 }
-Â 
+ 
 // ================================
 // CONFIGURATION
 // ================================
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 const DYNAMIC_RISK_ENGINE = {
 enabled: true,
-Â 
+ 
 // SL is derived from volatility/structure first, then bounded by safety limits.
 sl: {
 atrMultiplier: 1.8,
@@ -35,7 +35,7 @@ structureBufferAtr: 0.25,
 minPercent: 0.35,
 maxPercent: 3.50
 },
-Â 
+ 
 // TP uses risk/reward plus nearby structure/volatility; it is not a fixed price.
 tp: {
 minRR: 1.5,
@@ -43,7 +43,7 @@ baseRR: 2.0,
 strongSignalRR: 2.5,
 extremeSignalRR: 3.0
 },
-Â 
+ 
 // Trailing protection activates only after the position has earned enough R.
 trailing: {
 enabled: true,
@@ -53,7 +53,7 @@ tightenAfterR: 1.5,
 tightenAtrMultiplier: 0.9
 }
 };
-Â 
+ 
 // ======================================================
 // V13.9.8 SMART PROFIT-LOCK / ANTI-WICK ENGINE
 // TP1 -> lock profit -> TP2 -> lock more profit -> TP3 ->
@@ -131,7 +131,7 @@ function finitePositive(v, fallback = 0) {
 const n = Number(v);
 return Number.isFinite(n) && n > 0 ? n : fallback;
 }
-Â 
+ 
 function deriveDynamicTPSL(position, market) {
 const entry = finitePositive(position?.entryPrice);
 const atr = finitePositive(
@@ -139,12 +139,12 @@ market?.atr ??
 market?.indicators?.atr ??
 market?.volatility?.atr
 );
-Â 
+ 
 const high = finitePositive(market?.structure?.recentHigh);
 const low = finitePositive(market?.structure?.recentLow);
 const side = String(position?.side || position?.direction || "").toUpperCase();
 const isLong = side === "LONG";
-Â 
+ 
 // If market inputs are incomplete, do not invent a tradable price.
 if (!entry || !atr || (isLong && !low) || (!isLong && !high)) {
 return {
@@ -154,50 +154,50 @@ entryPrice: entry || null,
 atr: atr || null
 };
 }
-Â 
+ 
 const structureStopDistance = isLong
 ? Math.max(0, entry - low)
 : Math.max(0, high - entry);
-Â 
+ 
 const volatilityStopDistance = atr * DYNAMIC_RISK_ENGINE.sl.atrMultiplier;
 const buffer = atr * DYNAMIC_RISK_ENGINE.sl.structureBufferAtr;
-Â 
+ 
 const stopDistance = Math.max(
 volatilityStopDistance,
 structureStopDistance + buffer
 );
-Â 
+ 
 const rawSlPercent = (stopDistance / entry) * 100;
 const slPercent = Math.max(
 DYNAMIC_RISK_ENGINE.sl.minPercent,
 Math.min(DYNAMIC_RISK_ENGINE.sl.maxPercent, rawSlPercent)
 );
-Â 
+ 
 const boundedStopDistance = entry * slPercent / 100;
 const stopPrice = isLong
 ? entry - boundedStopDistance
 : entry + boundedStopDistance;
-Â 
+ 
 const signalScore = Number(
 position?.score ??
 market?.score ??
 0
 );
-Â 
+ 
 const rr =
 signalScore >= 90 ? DYNAMIC_RISK_ENGINE.tp.extremeSignalRR :
 signalScore >= 80 ? DYNAMIC_RISK_ENGINE.tp.strongSignalRR :
 DYNAMIC_RISK_ENGINE.tp.baseRR;
-Â 
+ 
 const targetDistance = boundedStopDistance * Math.max(
 DYNAMIC_RISK_ENGINE.tp.minRR,
 rr
 );
-Â 
+ 
 const takeProfitPrice = isLong
 ? entry + targetDistance
 : entry - targetDistance;
-Â 
+ 
 return {
 ready: true,
 side,
@@ -220,36 +220,36 @@ target: "dynamic risk/reward based on signal strength"
 }
 };
 }
-Â 
+ 
 function deriveTrailingStop(position, market, currentPrice) {
 if (!DYNAMIC_RISK_ENGINE.trailing.enabled) return { enabled: false };
-Â 
+ 
 const entry = finitePositive(position?.entryPrice);
 const atr = finitePositive(market?.atr ?? market?.indicators?.atr);
 const price = finitePositive(currentPrice);
 const side = String(position?.side || position?.direction || "").toUpperCase();
-Â 
+ 
 if (!entry || !atr || !price || !side) {
 return { enabled: true, ready: false };
 }
-Â 
+ 
 const risk = Math.abs(entry - finitePositive(position?.initialStopPrice));
 if (!risk) return { enabled: true, ready: false, reason: "initial_stop_required" };
-Â 
+ 
 const pnlDistance = side === "LONG" ? price - entry : entry - price;
 const rMultiple = pnlDistance / risk;
-Â 
+ 
 if (rMultiple < DYNAMIC_RISK_ENGINE.trailing.activateAfterR) {
 return { enabled: true, active: false, rMultiple: Number(rMultiple.toFixed(3)) };
 }
-Â 
+ 
 const atrMult = rMultiple >= DYNAMIC_RISK_ENGINE.trailing.tightenAfterR
 ? DYNAMIC_RISK_ENGINE.trailing.tightenAtrMultiplier
 : DYNAMIC_RISK_ENGINE.trailing.atrMultiplier;
-Â 
+ 
 const distance = atr * atrMult;
 const stop = side === "LONG" ? price - distance : price + distance;
-Â 
+ 
 return {
 enabled: true,
 active: true,
@@ -258,11 +258,11 @@ price: Number(stop.toFixed(8)),
 atrMultiplier: atrMult
 };
 }
-Â 
+ 
 const EXIT_ENGINE = {
 enabled: true,
 monitorEveryScan: true,
-Â 
+ 
 // Exit score is independent from entry score.
 // 0-39 HOLD, 40-59 PROTECT, 60-74 PARTIAL_25,
 // 75-89 PARTIAL_50, 90-100 FULL.
@@ -272,12 +272,12 @@ partial25: 60,
 partial50: 75,
 full: 90
 },
-Â 
+ 
 partialClosePercent: {
 first: 25,
 second: 50
 },
-Â 
+ 
 // Hard protection always overrides the score engine.
 emergency: {
 maxRiskScore: 70,
@@ -285,14 +285,14 @@ structureBreak: true,
 smartMoneyOutflow: true,
 trendFlip: true
 },
-Â 
+ 
 trailing: {
 enabled: true,
 activateAfterR: 1.0,
 tightenAfterR: 1.5
 }
 };
-Â 
+ 
 const CONFIG = {
 VERSION: "V15.6.5-GITHUB-ACTIONS-RADAR-PRICE-INTEGRITY",
 MODE: "SIGNAL",
@@ -431,7 +431,7 @@ RADAR_LEVERAGE_TIERS: [
 { minScore: 85, leverage: 5 },
 { minScore: 91, leverage: 7 }
 ],
-Â 
+ 
 NOTIFY_WATCH: true,
 CRON_RECOMMENDED: "* * * * *",
 CRON_INTERVAL_MINUTES: 1,
@@ -474,7 +474,7 @@ return value === "true" || value === "1" || value === "yes" || value === "on";
 function effectiveExecutionMode(env) {
 return executionEnabled(env) ? "LIVE" : "PAPER";
 }
-Â 
+ 
 // ======================================================
 // V8 DYNAMIC MARKET UNIVERSE / TWO-STAGE FAST SCANNER
 // Stage 1: cheap/local screening of known GMX markets.
@@ -514,9 +514,9 @@ return 0;
 // V13.3.1 FIX: these helpers must be in module scope because
 // the V8 Dynamic Universe calls them before FUTURES_V6 is entered.
 // Keeping them inside FUTURES_V6 causes:
-//Â Â  ReferenceError: extractOpenInterest is not defined
+//   ReferenceError: extractOpenInterest is not defined
 // ======================================================
-Â 
+ 
 function extractFunding(m){
 const fields=[
 m?.fundingRate,m?.fundingRateLong,m?.fundingRateShort,m?.fundingFactorPerSecond,m?.fundingFactor,
@@ -607,7 +607,7 @@ m?.liquidity?.usd,
 m?.totalLiquidity?.usd
 );
 if (direct > 0) return direct;
-Â 
+ 
 const usdParts = [
 m?.longPoolValueUsd, m?.shortPoolValueUsd,
 m?.longPoolAmountUsd, m?.shortPoolAmountUsd,
@@ -617,7 +617,7 @@ m?.marketValues?.longPoolAmountUsd, m?.marketValues?.shortPoolAmountUsd
 ].map(v => v132NumberValue(v)).filter(v => v > 0);
 return usdParts.reduce((a,b) => a+b, 0);
 }
-Â 
+ 
 const V8_UNIVERSE = {
 ENABLE_DYNAMIC_UNIVERSE: true,
 FAST_STAGE_LIMIT: 1000,
@@ -645,7 +645,7 @@ requireHigherTfAgreement: true,
 requireFiveMinuteTrigger: true
 }
 };
-Â 
+ 
 function v8NormSymbol(symbol) {
 // GMX market-info names are commonly formatted like:
 // "BTC/USD [WBTC-USDC]". Normalize to the base index symbol "BTC"
@@ -657,7 +657,7 @@ s = s.replace(/-PERP$/,"");
 s = s.replace(/[^A-Z0-9]/g,"");
 return s;
 }
-Â 
+ 
 function v8LiquidityScore(market) {
 // GMX /markets/info provides near-live liquidity/open-interest state; 24h volume is optional.
 const volume = v132NumberValue(market?.volume24h, market?.volume, market?.dailyVolume, market?.volumeUsd24h, market?.stats?.volume24h, market?.stats?.volumeUsd, market?.volume?.usd);
@@ -680,7 +680,7 @@ else if (volume > 1e7) score += 7;
 else if (volume > 1e6) score += 4;
 return Math.min(100, score);
 }
-Â 
+ 
 function v8PercentMetric(market, keys) {
 const raw=v132NumberValue(...keys.map(k=>market?.[k]));
 if(!Number.isFinite(raw)||raw===0)return 0;
@@ -1015,7 +1015,7 @@ market?.symbol ?? market?.name ?? market?.ticker
 const price = Number(market?.price ?? market?.markPrice ?? market?.indexPrice);
 const liq = v8LiquidityScore(market);
 const isMajor = V8_UNIVERSE.MAJOR_SYMBOLS.includes(symbol);
-Â 
+ 
 const reasons = [];
 if (!symbol) reasons.push("missing_symbol");
 if (V8_UNIVERSE.REQUIRE_VALID_MARKET && market?.isActive === false) reasons.push("inactive");
@@ -1024,7 +1024,7 @@ const liquidityKnown = liq > 0;
 // V15 FAIR: liquidity remains telemetry/execution-risk context, never an asset-selection bonus.
 // Do not reject smaller/non-major markets merely because their liquidity score is lower/unknown.
 if (!liquidityKnown) reasons.push("liquidity_unknown_diagnostic");
-Â 
+ 
 return {
 symbol,
 eligible: reasons.filter(r => r !== "liquidity_unknown").length === 0,
@@ -1049,7 +1049,7 @@ isMajor
 }
 };
 }
-Â 
+ 
 function v8RankFastMarkets(markets, previousSnapshots = {}, radarHistory = {}) {
 return (markets||[]).map(m=>{const symbol=v8NormSymbol(m?.symbol??m?.name??m?.ticker??m?.indexTokenSymbol);const previous=previousSnapshots?.[symbol]?.market||previousSnapshots?.[symbol]||null;const history=radarHistory?.[symbol] || [];
  const pumpRadar=CONFIG.PUMP_RADAR_ENABLED?v8PumpRadar(m,previous,history):null;return{market:m,...v8FastMarketFilter(m),pumpRadar};}).filter(x=>x.eligible).sort((a,b)=>{
@@ -1196,15 +1196,15 @@ smartMoneyFlowHistory: {},
 universeRotationCursor: 0,
 lastExitDiagnostics: []
 };
-Â 
+ 
 const CACHE = new Map();
 const INFLIGHT = new Map();
-Â 
+ 
 // ======================================================
 // GMX V2 READ-ONLY ADAPTER
 // Arbitrum One / Chain ID 42161
 // ======================================================
-Â 
+ 
 const GMX_V2_CONFIG = {
 CHAIN_ID: 42161,
 ORACLE: "https://arbitrum-api.gmxinfra.io",
@@ -1221,10 +1221,10 @@ const GMX = {
 API: GMX_V2_CONFIG.ORACLE,
 FALLBACK_API: GMX_V2_CONFIG.FALLBACKS[0]
 };
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 // ======================================================
 // V6 PRO SIGNAL ENGINE - MERGED MODULE
 // This module is embedded into the original V6.3.1 engine.
@@ -1235,7 +1235,7 @@ const FUTURES_V6 = (() => {
 // ======================================================
 // HTTP / RPC HELPERS
 // ======================================================
-Â 
+ 
 function json(data, status = 200) {
 return new Response(JSON.stringify(data, null, 2), {
 status,
@@ -1245,9 +1245,9 @@ headers: {
 }
 });
 }
-Â 
+ 
 // V8 dynamic-universe integration point: feed the resolved GMX market catalog through v8RankFastMarkets() and v8SelectDeepCandidates() before deep candle fetching.
-Â 
+ 
 async function fetchTimeout(url, options = {}, timeout = CONFIG.DATA_TIMEOUT_MS) {
 const controller = new AbortController();
 const timer = setTimeout(() => controller.abort(), timeout);
@@ -1260,15 +1260,15 @@ signal: controller.signal
 clearTimeout(timer);
 }
 }
-Â 
+ 
 async function fetchJson(url, options = {}) {
 const response = await fetchTimeout(url, options);
 const text = await response.text();
-Â 
+ 
 if (!response.ok) {
 throw new Error(`HTTP ${response.status}: ${text.slice(0, 250)}`);
 }
-Â 
+ 
 try {
 return JSON.parse(text);
 } catch {
@@ -1343,12 +1343,12 @@ if(nested.length) return nested;
 }
 return [];
 }
-Â 
+ 
 async function rpc(env, method, params = []) {
 if (!env.ARBITRUM_RPC) {
 throw new Error("ARBITRUM_RPC is not configured");
 }
-Â 
+ 
 const response = await fetchTimeout(env.ARBITRUM_RPC, {
 method: "POST",
 headers: { "content-type": "application/json" },
@@ -1359,57 +1359,57 @@ method,
 params
 })
 });
-Â 
+ 
 const data = await response.json();
-Â 
+ 
 if (data.error) {
 throw new Error(`RPC ${data.error.code}: ${data.error.message}`);
 }
-Â 
+ 
 return data.result;
 }
-Â 
+ 
 async function verifyArbitrumRPC(env) {
 const chainHex = await rpc(env, "eth_chainId");
 const chainId = parseInt(chainHex, 16);
 if (chainId !== GMX.CHAIN_ID) {
 throw new Error(`Wrong RPC network: ${chainId}; expected ${GMX.CHAIN_ID}`);
 }
-Â 
+ 
 const blockHex = await rpc(env, "eth_blockNumber");
 return {
 chainId,
 blockNumber: parseInt(blockHex, 16)
 };
 }
-Â 
+ 
 // ======================================================
 // CACHE
 // ======================================================
-Â 
+ 
 async function cached(key, loader, ttl = CONFIG.MARKET_CACHE_TTL_MS) {
 const now = Date.now();
 const hit = CACHE.get(key);
-Â 
+ 
 if (hit && hit.expiresAt > now) {
 return { value: hit.value, cache: "HIT" };
 }
-Â 
+ 
 // Deduplicate concurrent requests for the same resource.
 // This is critical for Cloudflare's per-invocation subrequest budget.
 if (INFLIGHT.has(key)) {
 const value = await INFLIGHT.get(key);
 return { value, cache: "INFLIGHT" };
 }
-Â 
+ 
 const promise = (async () => {
 const value = await loader();
 CACHE.set(key, { value, expiresAt: Date.now() + ttl });
 return value;
 })();
-Â 
+ 
 INFLIGHT.set(key, promise);
-Â 
+ 
 try {
 const value = await promise;
 return { value, cache: "MISS" };
@@ -1417,37 +1417,37 @@ return { value, cache: "MISS" };
 INFLIGHT.delete(key);
 }
 }
-Â 
+ 
 // ======================================================
 // SYMBOL / MARKET NORMALIZATION
 // ======================================================
-Â 
+ 
 function normalizeSymbol(symbol) {
 if (!symbol) return null;
-Â 
+ 
 let s = String(symbol).trim().toUpperCase();
 s = s.replace(/[-_/]?(PERP|USD|USDC|USDT)$/i, "");
 s = s.replace(/[^A-Z0-9]/g, "");
-Â 
+ 
 return s || null;
 }
-Â 
+ 
 function pairSymbol(symbol) {
 return `${normalizeSymbol(symbol)}/USD`;
 }
-Â 
+ 
 // ======================================================
 // GMX MARKET DATA
 // ======================================================
-Â 
+ 
 async function fetchGmxMarketsInfo() {
 const urls = [
 `${GMX.ORACLE}/markets/info`,
 ...GMX.FALLBACKS.map(base => `${base}/markets/info`)
 ];
-Â 
+ 
 let lastError;
-Â 
+ 
 for (const url of urls) {
 try {
 return await fetchJson(url, {
@@ -1457,10 +1457,10 @@ headers: { accept: "application/json" }
 lastError = error;
 }
 }
-Â 
+ 
 throw lastError || new Error("All GMX market endpoints failed");
 }
-Â 
+ 
 async function fetchGmxMarketsTickers() {
 // V13.9: the current GMX API exposes market tickers on the GMX API
 // hosts (gmxapi.io / gmxapi.ai). The legacy oracle route can return 404.
@@ -1561,15 +1561,15 @@ const out={available:true,source:source||"GMX_API_TRADES_SEARCH",trades:cappedTr
 SMART_MONEY_FLOW_CACHE={at:now,result:out};return out;
 }catch(error){const out={available:false,source:null,trades:0,symbols:0,bySymbol:{},parsedTrades:0,rejectedTrades:0,error:safeError(error)};SMART_MONEY_FLOW_CACHE={at:now,result:out};return out;}
 }
-Â 
+ 
 async function fetchGmxMarkets() {
 const urls = [
 `${GMX.ORACLE}/markets`,
 ...GMX.FALLBACKS.map(base => `${base}/markets`)
 ];
-Â 
+ 
 let lastError;
-Â 
+ 
 for (const url of urls) {
 try {
 return await fetchJson(url, {
@@ -1579,28 +1579,28 @@ headers: { accept: "application/json" }
 lastError = error;
 }
 }
-Â 
+ 
 throw lastError || new Error("All GMX market catalog endpoints failed");
 }
-Â 
+ 
 function marketArray(payload) {
 if (Array.isArray(payload)) return payload;
 if (Array.isArray(payload?.markets)) return payload.markets;
 if (Array.isArray(payload?.data)) return payload.data;
 return [];
 }
-Â 
+ 
 function findMarket(rawMarkets, symbol) {
 const wanted = normalizeSymbol(symbol);
-Â 
+ 
 return rawMarkets.find(m => {
 const direct = [
 m?.symbol, m?.indexTokenSymbol,
 m?.indexToken?.symbol, m?.indexToken?.tokenSymbol
 ].filter(Boolean).map(normalizeSymbol);
-Â 
+ 
 if (direct.includes(wanted)) return true;
-Â 
+ 
 const names = [m?.name, m?.symbol].filter(Boolean).map(String);
 return names.some(name => {
 const base = name.split(/[\/\[\]\s_-]+/)[0];
@@ -1608,36 +1608,36 @@ return normalizeSymbol(base) === wanted || normalizeSymbol(name).startsWith(want
 });
 }) || null;
 }
-Â 
+ 
 // ======================================================
 // OHLCV
 // ======================================================
-Â 
+ 
 async function fetchCandles(symbol, timeframe, limit) {
 const normalized = normalizeSymbol(symbol);
 const key = `candles:${normalized}:${timeframe}:${limit}`;
-Â 
+ 
 const result = await cached(
 key,
 async () => {
 const oracleUrl =
 `${GMX.ORACLE}/prices/candles?tokenSymbol=${encodeURIComponent(normalized)}` +
 `&period=${encodeURIComponent(timeframe)}&limit=${limit}`;
-Â 
+ 
 try {
 const data = await fetchJson(oracleUrl, {
 headers: { accept: "application/json" }
 });
-Â 
+ 
 return normalizeCandles(data);
 } catch {
 const apiUrls = GMX.FALLBACKS.map(base =>
 `${base}/prices/candles?tokenSymbol=${encodeURIComponent(normalized)}` +
 `&period=${encodeURIComponent(timeframe)}&limit=${limit}`
 );
-Â 
+ 
 let lastError;
-Â 
+ 
 for (const url of apiUrls) {
 try {
 return normalizeCandles(await fetchJson(url));
@@ -1645,16 +1645,16 @@ return normalizeCandles(await fetchJson(url));
 lastError = error;
 }
 }
-Â 
+ 
 throw lastError || new Error(`No candle source for ${normalized}`);
 }
 },
 CONFIG.CANDLE_CACHE_TTL_MS
 );
-Â 
+ 
 return result.value;
 }
-Â 
+ 
 // Scan-safe candle fetch: one external request per timeframe.
 // We intentionally do not fan out to multiple fallbacks inside a scan,
 // because a 10-market x 4-timeframe scan must stay below Cloudflare's
@@ -1663,18 +1663,18 @@ return result.value;
 async function fetchCandlesScan(symbol, timeframe, limit) {
 const normalized = normalizeSymbol(symbol);
 const key = `scan-candles:${normalized}:${timeframe}:${limit}`;
-Â 
+ 
 const result = await cached(
 key,
 async () => {
 const url =
 `${GMX.ORACLE}/prices/candles?tokenSymbol=${encodeURIComponent(normalized)}` +
 `&period=${encodeURIComponent(timeframe)}&limit=${limit}`;
-Â 
+ 
 const data = await fetchJson(url, {
 headers: { accept: "application/json" }
 });
-Â 
+ 
 const candles = normalizeCandles(data);
 if (!candles.length) {
 throw new Error(`Empty candle data: ${normalized} ${timeframe}`);
@@ -1683,18 +1683,18 @@ return candles;
 },
 CONFIG.CANDLE_CACHE_TTL_MS
 );
-Â 
+ 
 return result.value;
 }
-Â 
+ 
 function normalizeCandles(payload) {
 let raw = [];
-Â 
+ 
 if (Array.isArray(payload)) raw = payload;
 else if (Array.isArray(payload?.candles)) raw = payload.candles;
 else if (Array.isArray(payload?.data)) raw = payload.data;
 else if (Array.isArray(payload?.ohlcv)) raw = payload.ohlcv;
-Â 
+ 
 const candles = raw.map(c => {
 if (Array.isArray(c)) {
 return {
@@ -1706,7 +1706,7 @@ close: Number(c[4]),
 volume: Number(c[5] ?? 0)
 };
 }
-Â 
+ 
 return {
 timestamp: Number(c.timestamp),
 open: Number(c.open),
@@ -1719,111 +1719,111 @@ volume: Number(c.volume ?? c.vol ?? c.volumeUsd ?? c.volumeUSD ?? 0)
 c.timestamp > 0 &&
 [c.open, c.high, c.low, c.close].every(Number.isFinite)
 );
-Â 
+ 
 candles.sort((a, b) => a.timestamp - b.timestamp);
 return candles;
 }
-Â 
+ 
 // ======================================================
 // TECHNICAL INDICATORS
 // ======================================================
-Â 
+ 
 function sma(values, period) {
 if (values.length < period) return null;
 const slice = values.slice(-period);
 return slice.reduce((a, b) => a + b, 0) / period;
 }
-Â 
+ 
 function ema(values, period) {
 if (values.length < period) return null;
-Â 
+ 
 const k = 2 / (period + 1);
 let value = values.slice(0, period)
 .reduce((a, b) => a + b, 0) / period;
-Â 
+ 
 for (let i = period; i < values.length; i++) {
 value = values[i] * k + value * (1 - k);
 }
-Â 
+ 
 return value;
 }
-Â 
+ 
 function trueRanges(candles) {
 const out = [];
-Â 
+ 
 for (let i = 0; i < candles.length; i++) {
 if (i === 0) {
 out.push(candles[i].high - candles[i].low);
 continue;
 }
-Â 
+ 
 const c = candles[i];
 const prev = candles[i - 1].close;
-Â 
+ 
 out.push(Math.max(
 c.high - c.low,
 Math.abs(c.high - prev),
 Math.abs(c.low - prev)
 ));
 }
-Â 
+ 
 return out;
 }
-Â 
+ 
 function atr(candles, period = 14) {
 const tr = trueRanges(candles);
 return ema(tr, period);
 }
-Â 
+ 
 function rsi(candles, period = 14) {
 if (candles.length <= period) return null;
-Â 
+ 
 let gains = 0;
 let losses = 0;
-Â 
+ 
 for (let i = 1; i <= period; i++) {
 const diff = candles[i].close - candles[i - 1].close;
 if (diff >= 0) gains += diff;
 else losses += Math.abs(diff);
 }
-Â 
+ 
 let avgGain = gains / period;
 let avgLoss = losses / period;
-Â 
+ 
 for (let i = period + 1; i < candles.length; i++) {
 const diff = candles[i].close - candles[i - 1].close;
 const gain = Math.max(diff, 0);
 const loss = Math.max(-diff, 0);
-Â 
+ 
 avgGain = ((avgGain * (period - 1)) + gain) / period;
 avgLoss = ((avgLoss * (period - 1)) + loss) / period;
 }
-Â 
+ 
 if (avgLoss === 0) return 100;
-Â 
+ 
 const rs = avgGain / avgLoss;
 return 100 - (100 / (1 + rs));
 }
-Â 
+ 
 function percentChange(candles, bars) {
 if (candles.length <= bars) return 0;
 const a = candles[candles.length - 1].close;
 const b = candles[candles.length - 1 - bars].close;
 return b ? ((a - b) / b) * 100 : 0;
 }
-Â 
+ 
 function highest(candles, period) {
 return Math.max(...candles.slice(-period).map(c => c.high));
 }
-Â 
+ 
 function lowest(candles, period) {
 return Math.min(...candles.slice(-period).map(c => c.low));
 }
-Â 
+ 
 // ======================================================
 // TREND ENGINE
 // ======================================================
-Â 
+ 
 function timeframeTrend(candles) {
 if (!candles || candles.length < 55) {
 return {
@@ -1834,38 +1834,38 @@ emaSlow: null,
 rsi: null
 };
 }
-Â 
+ 
 const closes = candles.map(c => c.close);
 const fast = ema(closes, 21);
 const slow = ema(closes, 55);
 const last = closes[closes.length - 1];
 const rs = rsi(candles, 14);
-Â 
+ 
 let score = 0;
-Â 
+ 
 if (last > fast) score += 25;
 else score -= 25;
-Â 
+ 
 if (fast > slow) score += 35;
 else score -= 35;
-Â 
+ 
 if (rs !== null) {
 if (rs >= 52 && rs <= 72) score += 20;
 else if (rs <= 48 && rs >= 28) score -= 20;
 else if (rs > 72) score += 5;
 else if (rs < 28) score -= 5;
 }
-Â 
+ 
 const change = percentChange(candles, Math.min(12, candles.length - 1));
-Â 
+ 
 if (change > 0) score += 20;
 else if (change < 0) score -= 20;
-Â 
+ 
 const direction =
 score >= 30 ? "BULLISH" :
 score <= -30 ? "BEARISH" :
 "NEUTRAL";
-Â 
+ 
 return {
 direction,
 score: Math.max(-100, Math.min(100, score)),
@@ -1875,39 +1875,39 @@ rsi: rs,
 change
 };
 }
-Â 
+ 
 function buildTrendConfluence(data) {
 const macro = timeframeTrend(data["4h"]);
 const trend = timeframeTrend(data["1h"]);
 const entry = timeframeTrend(data["15m"]);
 const fast = timeframeTrend(data["5m"]);
-Â 
+ 
 const bullish = [
 macro.direction === "BULLISH",
 trend.direction === "BULLISH",
 entry.direction === "BULLISH",
 fast.direction === "BULLISH"
 ].filter(Boolean).length;
-Â 
+ 
 const bearish = [
 macro.direction === "BEARISH",
 trend.direction === "BEARISH",
 entry.direction === "BEARISH",
 fast.direction === "BEARISH"
 ].filter(Boolean).length;
-Â 
+ 
 const longScore =
 (macro.direction === "BULLISH" ? 30 : 0) +
 (trend.direction === "BULLISH" ? 30 : 0) +
 (entry.direction === "BULLISH" ? 25 : 0) +
 (fast.direction === "BULLISH" ? 15 : 0);
-Â 
+ 
 const shortScore =
 (macro.direction === "BEARISH" ? 30 : 0) +
 (trend.direction === "BEARISH" ? 30 : 0) +
 (entry.direction === "BEARISH" ? 25 : 0) +
 (fast.direction === "BEARISH" ? 15 : 0);
-Â 
+ 
 return {
 macro,
 trend,
@@ -1923,41 +1923,41 @@ bearish >= 3 ? "BEARISH" :
 "MIXED"
 };
 }
-Â 
+ 
 // ======================================================
 // MOMENTUM ENGINE
 // ======================================================
-Â 
+ 
 function momentumScore(candles) {
 if (!candles || candles.length < 30) {
 return { long: 0, short: 0, rsi: null, change5: 0, change15: 0 };
 }
-Â 
+ 
 const rs = rsi(candles, 14);
 const change5 = percentChange(candles, 5);
 const change15 = percentChange(candles, 15);
-Â 
+ 
 let long = 0;
 let short = 0;
-Â 
+ 
 if (change5 > 0.25) long += 20;
 if (change5 > 0.75) long += 10;
 if (change15 > 0.5) long += 20;
 if (change15 > 1.5) long += 10;
-Â 
+ 
 if (change5 < -0.25) short += 20;
 if (change5 < -0.75) short += 10;
 if (change15 < -0.5) short += 20;
 if (change15 < -1.5) short += 10;
-Â 
+ 
 if (rs !== null) {
 if (rs >= 52 && rs <= 68) long += 20;
 if (rs <= 48 && rs >= 32) short += 20;
-Â 
+ 
 if (rs > 78) long -= 15;
 if (rs < 22) short -= 15;
 }
-Â 
+ 
 return {
 long: Math.max(0, Math.min(100, long)),
 short: Math.max(0, Math.min(100, short)),
@@ -1966,7 +1966,7 @@ change5,
 change15
 };
 }
-Â 
+ 
 // ======================================================
 // VOLUME / PARTICIPATION ENGINE
 // ======================================================
@@ -1976,81 +1976,81 @@ change15
 // invents volume. It uses candle range expansion as a
 // participation proxy and explicitly labels it as such.
 // ======================================================
-Â 
+ 
 function participationScore(candles) {
 if (!candles || candles.length < 25) {
 return { long: 0, short: 0, expansion: 0 };
 }
-Â 
+ 
 const ranges = candles.map(c => c.high - c.low);
 const recent = sma(ranges, 5);
 const base = sma(ranges.slice(0, -5), Math.min(20, ranges.length - 5));
-Â 
+ 
 if (!recent || !base || base <= 0) {
 return { long: 0, short: 0, expansion: 0 };
 }
-Â 
+ 
 const expansion = recent / base;
 const last = candles[candles.length - 1];
-Â 
+ 
 let long = 0;
 let short = 0;
-Â 
+ 
 if (expansion > 1.15) {
 if (last.close > last.open) long += 20;
 if (last.close < last.open) short += 20;
 }
-Â 
+ 
 if (expansion > 1.5) {
 if (last.close > last.open) long += 10;
 if (last.close < last.open) short += 10;
 }
-Â 
+ 
 return {
 long: Math.min(100, long),
 short: Math.min(100, short),
 expansion
 };
 }
-Â 
+ 
 // ======================================================
 // MARKET STRUCTURE
 // ======================================================
-Â 
+ 
 function structureScore(candles) {
 if (!candles || candles.length < 30) {
 return { long: 0, short: 0, breakout: "NONE" };
 }
-Â 
+ 
 const last = candles[candles.length - 1];
 const prior = candles.slice(0, -1);
-Â 
+ 
 const resistance = highest(prior, 20);
 const support = lowest(prior, 20);
-Â 
+ 
 let long = 0;
 let short = 0;
 let breakout = "NONE";
-Â 
+ 
 if (last.close > resistance) {
 long += 25;
 breakout = "UPSIDE";
 }
-Â 
+ 
 if (last.close < support) {
 short += 25;
 breakout = "DOWNSIDE";
 }
-Â 
+ 
 const recentHigh = highest(candles, 10);
 const recentLow = lowest(candles, 10);
-Â 
+ 
 if (last.close >= recentHigh * 0.995) long += 10;
 if (last.close <= recentLow * 1.005) short += 10;
-Â 
+ 
 return { long, short, breakout, resistance, support };
 }
-Â 
+ 
 // ======================================================
 // OI / FUNDING ENGINE
 // ======================================================
@@ -2059,38 +2059,38 @@ return { long, short, breakout, resistance, support };
 // against a previous snapshot stored in KV. A missing previous
 // value is treated as "unknown", never as zero confirmation.
 // ======================================================
-Â 
+ 
 function derivativesScore(current, previous) {
 const oi = extractOpenInterest(current);
 const funding = extractFunding(current);
-Â 
+ 
 const previousOI = previous ? extractOpenInterest(previous) : 0;
-Â 
+ 
 let oiChange = null;
 if (previous && previousOI > 0 && oi > 0) {
 oiChange = ((oi - previousOI) / previousOI) * 100;
 }
-Â 
+ 
 let long = 0;
 let short = 0;
-Â 
+ 
 if (oiChange !== null) {
 const priceBias = current.__priceBias || 0;
-Â 
+ 
 if (oiChange > 3 && priceBias > 0) long += 20;
 if (oiChange > 3 && priceBias < 0) short += 20;
-Â 
+ 
 if (oiChange < -3 && priceBias > 0) short += 8;
 if (oiChange < -3 && priceBias < 0) long += 8;
 }
-Â 
+ 
 // Funding is a crowding filter, not a standalone entry signal.
 if (funding > 0.0008) short += 12;
 if (funding < -0.0008) long += 12;
-Â 
+ 
 if (funding > 0.003) short += 8;
 if (funding < -0.003) long += 8;
-Â 
+ 
 return {
 long: Math.min(40, long),
 short: Math.min(40, short),
@@ -2099,11 +2099,11 @@ oiChange,
 funding
 };
 }
-Â 
+ 
 // ======================================================
 // RISK DETECTORS
 // ======================================================
-Â 
+ 
 function fakeMoveRisk(candles) {
 if (!candles || candles.length < 20) return 0;
 
@@ -2116,42 +2116,42 @@ if (change > 7) risk += 20;
 
 return Math.min(40, risk);
 }
-Â 
+ 
 function exhaustionRisk(candles) {
 const rs = rsi(candles, 14);
 if (rs === null) return 0;
-Â 
+ 
 if (rs >= 82 || rs <= 18) return 25;
 if (rs >= 76 || rs <= 24) return 12;
-Â 
+ 
 return 0;
 }
-Â 
+ 
 function chopRisk(trend) {
 if (trend.alignment === "MIXED") return 15;
 return 0;
 }
-Â 
+ 
 function totalRisk(...risks) {
 return Math.min(100, risks.reduce((a, b) => a + b, 0));
 }
-Â 
+ 
 // ======================================================
 // MARKET SNAPSHOT
 // ======================================================
-Â 
+ 
 async function buildMarketSnapshot(symbol, env, options = {}) {
 const normalized = normalizeSymbol(symbol);
 const scanMode = options.scanMode === true;
-Â 
+ 
 // In a full scan the market catalog is fetched once and shared.
 // For a single-symbol request the normal cached path is retained.
 const marketPromise = options.marketResult
 ? Promise.resolve(options.marketResult)
 : cached("markets-info", fetchGmxMarketsInfo, CONFIG.MARKET_CACHE_TTL_MS);
-Â 
+ 
 const candleFetcher = scanMode ? fetchCandlesScan : fetchCandles;
-Â 
+ 
 const [marketResult, c5, c15, c1h, c4h] = await Promise.all([
 marketPromise,
 candleFetcher(normalized, "5m", CONFIG.CANDLE_LIMIT["5m"]),
@@ -2159,37 +2159,37 @@ candleFetcher(normalized, "15m", CONFIG.CANDLE_LIMIT["15m"]),
 candleFetcher(normalized, "1h", CONFIG.CANDLE_LIMIT["1h"]),
 candleFetcher(normalized, "4h", CONFIG.CANDLE_LIMIT["4h"])
 ]);
-Â 
+ 
 const rawMarkets = marketArray(marketResult.value);
 const raw = findMarket(rawMarkets, normalized);
-Â 
+ 
 if (!raw) {
 throw new Error(`GMX market not found: ${normalized}`);
 }
-Â 
+ 
 const counts = {
 "5m": c5.length,
 "15m": c15.length,
 "1h": c1h.length,
 "4h": c4h.length
 };
-Â 
+ 
 const insufficient = Object.entries(counts)
 .filter(([_, n]) => n < 55)
 .map(([tf]) => tf);
-Â 
+ 
 if (insufficient.length) {
 throw new Error(`Insufficient candle data: ${insufficient.join(",")}`);
 }
-Â 
+ 
 const lastPrice =
 c5?.[c5.length - 1]?.close ||
 c15?.[c15.length - 1]?.close ||
 0;
-Â 
+ 
 const priceBias = percentChange(c15, 3);
 raw.__priceBias = priceBias;
-Â 
+ 
 return {
 symbol: normalized,
 price: lastPrice,
@@ -2209,27 +2209,27 @@ trend: buildTrendConfluence({
 fetchedAt: Date.now()
 };
 }
-Â 
+ 
 // ======================================================
 // SIGNAL ENGINE
 // ======================================================
-Â 
-Â 
+ 
+ 
 // ======================================================
 // V7 ADVANCED FAST CONFLUENCE ENGINE
 // All calculations below are local and use already-fetched candles.
 // They add ZERO network subrequests and therefore do not add API latency.
 // The engine uses confirmation voting rather than requiring every indicator.
 // ======================================================
-Â 
+ 
 function v7Closes(candles) {
 return (candles || []).map(c => Number(c.close)).filter(Number.isFinite);
 }
-Â 
+ 
 function v7Volumes(candles) {
 return (candles || []).map(c => Number(c.volume)).filter(Number.isFinite);
 }
-Â 
+ 
 function v7Vwap(candles, period = 60) {
 const cs = (candles || []).slice(-period);
 let pv = 0, vol = 0;
@@ -2242,7 +2242,7 @@ vol += v;
 }
 return vol > 0 ? pv / vol : null;
 }
-Â 
+ 
 function v7Adx(candles, period = 14) {
 if (!candles || candles.length < period * 2 + 1) return null;
 const tr = [], plus = [], minus = [];
@@ -2258,7 +2258,7 @@ let atrv = sma(tr.slice(0, period), period);
 let pDM = sma(plus.slice(0, period), period);
 let mDM = sma(minus.slice(0, period), period);
 if (![atrv,pDM,mDM].every(Number.isFinite) || atrv === 0) return null;
-Â 
+ 
 const dx = [];
 for (let i = period; i < tr.length; i++) {
 atrv = ((atrv * (period - 1)) + tr[i]) / period;
@@ -2271,7 +2271,7 @@ dx.push(denom ? 100 * Math.abs(pDI - mDI) / denom : 0);
 }
 return dx.length >= period ? sma(dx.slice(-period), period) : null;
 }
-Â 
+ 
 function v7Macd(candles) {
 const closes = v7Closes(candles);
 if (closes.length < 35) return null;
@@ -2279,7 +2279,7 @@ const fast = ema(closes, 12);
 const slow = ema(closes, 26);
 if (![fast,slow].every(Number.isFinite)) return null;
 const macd = fast - slow;
-Â 
+ 
 // Lightweight histogram approximation from the current MACD and a
 // short MACD history. No extra requests are needed.
 const history = [];
@@ -2295,7 +2295,7 @@ signal,
 histogram: Number.isFinite(signal) ? macd - signal : null
 };
 }
-Â 
+ 
 function v7PivotDivergence(candles) {
 if (!candles || candles.length < 40) return { bullish: false, bearish: false };
 const recent = candles.slice(-40);
@@ -2310,7 +2310,7 @@ const highLeft = Math.max(...left.map(c => c.high));
 const highRight = Math.max(...right.map(c => c.high));
 const lowLeft = Math.min(...left.map(c => c.low));
 const lowRight = Math.min(...right.map(c => c.low));
-Â 
+ 
 return {
 bullish: Number.isFinite(rsiLeft) && Number.isFinite(rsiRight) &&
 lowRight < lowLeft && rsiRight > rsiLeft,
@@ -2319,7 +2319,7 @@ highRight > highLeft && rsiRight < rsiLeft,
 rsi: rsiNow
 };
 }
-Â 
+ 
 function v7Regime(candles) {
 const closes = v7Closes(candles);
 if (closes.length < 50) return { regime: "UNKNOWN", adx: null };
@@ -2329,19 +2329,19 @@ const price = closes[closes.length - 1];
 const ema20 = ema(closes, 20);
 const ema50 = ema(closes, 50);
 const atrPct = price > 0 && Number.isFinite(atrNow) ? atrNow / price * 100 : 0;
-Â 
+ 
 let regime = "RANGE";
 if (Number.isFinite(adx) && adx >= 25) regime = "TREND";
 else if (Number.isFinite(adx) && adx <= 18) regime = "RANGE";
-Â 
+ 
 if (atrPct >= 2.5) regime = "HIGH_VOL";
 if (Number.isFinite(ema20) && Number.isFinite(ema50) &&
 Math.abs(ema20 - ema50) / price < 0.0015 &&
 (!Number.isFinite(adx) || adx < 22)) regime = "CHOP";
-Â 
+ 
 return { regime, adx, atrPct, ema20, ema50 };
 }
-Â 
+ 
 function v7AdvancedConfirmation(snapshot, direction) {
 const candles = snapshot?.candles?.["15m"] || [];
 const closes = v7Closes(candles);
@@ -2354,40 +2354,40 @@ const adx = v7Adx(candles, 14);
 const macd = v7Macd(candles);
 const div = v7PivotDivergence(candles);
 const regime = v7Regime(candles);
-Â 
+ 
 const long = direction === "LONG";
 const short = direction === "SHORT";
 const confirmations = [];
 const contradictions = [];
-Â 
+ 
 if (Number.isFinite(price) && Number.isFinite(vwap)) {
 if ((long && price > vwap) || (short && price < vwap)) confirmations.push("VWAP");
 else contradictions.push("VWAP");
 }
-Â 
+ 
 if ([ema20,ema50].every(Number.isFinite)) {
 if ((long && ema20 > ema50) || (short && ema20 < ema50)) confirmations.push("EMA20_50");
 else contradictions.push("EMA20_50");
 }
-Â 
+ 
 if (Number.isFinite(ema200)) {
 if ((long && price > ema200) || (short && price < ema200)) confirmations.push("EMA200");
 else contradictions.push("EMA200");
 }
-Â 
+ 
 if (Number.isFinite(adx)) {
 if (adx >= 22) confirmations.push("ADX");
 else contradictions.push("ADX_WEAK");
 }
-Â 
+ 
 if (Number.isFinite(macd?.histogram)) {
 if ((long && macd.histogram > 0) || (short && macd.histogram < 0)) confirmations.push("MACD");
 else contradictions.push("MACD");
 }
-Â 
+ 
 if ((long && div.bullish) || (short && div.bearish)) confirmations.push("DIVERGENCE");
 if ((long && div.bearish) || (short && div.bullish)) contradictions.push("DIVERGENCE");
-Â 
+ 
 // Optional derivatives/order-flow evidence, if the Data Engine supplies it.
 const smOut = Boolean(snapshot?.smartMoney?.outflow ?? snapshot?.smartMoneyOutflow);
 const cvd = Number(snapshot?.cvd ?? snapshot?.orderFlow?.cvd);
@@ -2400,11 +2400,11 @@ if (Number.isFinite(oiChange)) {
 if (Math.abs(oiChange) >= 0.5) confirmations.push("OI_DELTA");
 }
 if (smOut) contradictions.push("SMART_MONEY_OUTFLOW");
-Â 
+ 
 // Fast-vote design: require only 2 confirmations, not every indicator.
 const votes = confirmations.length - contradictions.length * 0.75;
 const boost = Math.max(-8, Math.min(10, confirmations.length * 2 - contradictions.length * 1.5));
-Â 
+ 
 return {
 confirmations,
 contradictions,
@@ -2419,8 +2419,8 @@ divergence: div
 ready: confirmations.length >= 2 && votes >= 1.5 && regime.regime !== "CHOP"
 };
 }
-Â 
-Â 
+ 
+ 
 // ======================================================
 // V9.1 PRECISION ENTRY / EXIT ENGINE
 // Adds a price-action trigger and anti-chase gate on top of
@@ -2450,7 +2450,7 @@ if (c.high >= p.low && c.close < p.low) { score += 20; trigger = "RETEST_REJECT"
 if (bodyRatio < 0.18) { score -= 20; reasons.push("indecision_candle"); }
 return { score: Math.max(0, Math.min(100, score)), trigger, reasons, bodyRatio };
 }
-Â 
+ 
 function v91EntryPrecision(snapshot, direction) {
 const c5 = snapshot?.candles?.["5m"] || [], c15 = snapshot?.candles?.["15m"] || [];
 const c1h = snapshot?.candles?.["1h"] || [], c4h = snapshot?.candles?.["4h"] || [];
@@ -2485,7 +2485,7 @@ const higherTfAgreement=(t4h.direction===expected?1:0)+(t1h.direction===expected
 const ready=score>=V8_UNIVERSE.PRECISION.minEntryScore&&trigger.score>=V8_UNIVERSE.PRECISION.minTriggerScore&&(!V8_UNIVERSE.PRECISION.requireHigherTfAgreement||higherTfAgreement>=2)&&!contradictions.includes("OVEREXTENDED");
 return {ready,score:Math.max(0,Math.min(100,score)),triggerScore:trigger.score,trigger:trigger.trigger,confirmations,contradictions,higherTfAgreement,extensionAtr:extension,indicators:{atr5,ema20_5,ema50_5,vwap5,adx5,adx15,macd5,rsi5},reasons};
 }
-Â 
+ 
 function v91PrecisionExitPlan(snapshot, analysis, entry, stopLoss) {
 if(!entry||!stopLoss||!["LONG","SHORT"].includes(analysis.direction)) return null;
 const c15=snapshot?.candles?.["15m"]||[], a=atr(c15,14), risk=Math.abs(entry-stopLoss), long=analysis.direction==="LONG";
@@ -2497,19 +2497,19 @@ let target=Math.max(risk*rrBase,Number.isFinite(a)?a*1.5:risk*1.5);
 if(Number.isFinite(structureDist)&&structureDist>0) target=Math.max(target,Math.min(structureDist*1.15,risk*4));
 return {tp1:Number((long?entry+risk:entry-risk).toFixed(8)),tp2:Number((long?entry+target*.66:entry-target*.66).toFixed(8)),tp3:Number((long?entry+target:entry-target).toFixed(8)),rr:Number((target/risk).toFixed(2)),method:"ATR+structure+signal-strength",invalidation:long?"15m_close_below_stop":"15m_close_above_stop"};
 }
-Â 
+ 
 function scoreSignal(snapshot, previousMarket) {
 const c5 = snapshot.candles["5m"] || [];
 const c15 = snapshot.candles["15m"] || [];
 const c1h = snapshot.candles["1h"] || [];
 const c4h = snapshot.candles["4h"] || [];
-Â 
+ 
 const trend = snapshot.trend;
 const momentum = momentumScore(c15);
 const participation = participationScore(c15);
 const structure = structureScore(c15);
 const derivatives = derivativesScore(snapshot.market, previousMarket);
-Â 
+ 
 const riskParts = {
 fakeMove: fakeMoveRisk(c15),
 exhaustion: exhaustionRisk(c15),
@@ -2520,14 +2520,14 @@ riskParts.fakeMove,
 riskParts.exhaustion,
 riskParts.chop
 );
-Â 
+ 
 // Fast local confirmation: no additional network calls.
 const advancedLong = v7AdvancedConfirmation(snapshot, "LONG");
 const advancedShort = v7AdvancedConfirmation(snapshot, "SHORT");
 const precisionLong = v91EntryPrecision(snapshot, "LONG");
 const precisionShort = v91EntryPrecision(snapshot, "SHORT");
 const radar = V8_UNIVERSE.PUMP_RADAR.enabled ? v8PumpRadar(snapshot.market, previousMarket) : null;
-Â 
+ 
 // Entry-quality protection: a strong trend can still be a poor late entry.
 // If the market is >1.8 ATR extended and RSI is already hot, keep the
 // directional bias but downgrade it to WATCH rather than treating it as
@@ -2541,7 +2541,7 @@ rsi15: Number(rsi(c15, 14) || 0)
 entryQuality.overextended = entryQuality.extensionAtr > 1.8 &&
 (entryQuality.rsi5 >= 70 || entryQuality.rsi15 >= 70);
 entryQuality.state = entryQuality.overextended ? "WAIT_PULLBACK" : entryQuality.extensionAtr > 1.2 ? "PULLBACK_PREFERRED" : "ENTRY_ZONE";
-Â 
+ 
 // V15.3 FAIR + AVAILABILITY-AWARE MULTI-FACTOR SCORE MODEL
 // Fairness rule:
 // - Market cap, major-symbol identity and liquidity NEVER add opportunity points.
@@ -2665,7 +2665,7 @@ const shortScore = Math.max(0, Math.min(100,
 const edge = Math.abs(longScore - shortScore);
 
 const reasons = { long: [], short: [], common: [] };
-Â 
+ 
 // Stage 1: directional signal.
 // Two-of-four trend confluence is enough to produce a VALID/WATCH signal.
 // Stage 2: live execution remains stricter and requires 3-of-4.
@@ -2677,7 +2677,7 @@ advancedLong.ready &&
 risk < 45 &&
 (!V8_UNIVERSE.PRECISION.enabled || precisionLong.ready) &&
 !entryQuality.overextended;
-Â 
+ 
 const shortEligible =
 shortScore >= CONFIG.VALID_SIGNAL_SCORE &&
 shortScore >= longScore + CONFIG.MIN_EDGE &&
@@ -2686,24 +2686,24 @@ advancedShort.ready &&
 risk < 45 &&
 (!V8_UNIVERSE.PRECISION.enabled || precisionShort.ready) &&
 !entryQuality.overextended;
-Â 
+ 
 if (trend.bullish < 2) reasons.long.push(`trend_confluence=${trend.bullish}/4`);
 if (trend.bearish < 2) reasons.short.push(`trend_confluence=${trend.bearish}/4`);
-Â 
+ 
 if (longScore < CONFIG.VALID_SIGNAL_SCORE) {
 reasons.long.push(`score=${longScore.toFixed(2)}<${CONFIG.VALID_SIGNAL_SCORE}`);
 }
 if (shortScore < CONFIG.VALID_SIGNAL_SCORE) {
 reasons.short.push(`score=${shortScore.toFixed(2)}<${CONFIG.VALID_SIGNAL_SCORE}`);
 }
-Â 
+ 
 if (longScore < shortScore + CONFIG.MIN_EDGE) {
 reasons.long.push(`edge=${(longScore-shortScore).toFixed(2)}<${CONFIG.MIN_EDGE}`);
 }
 if (shortScore < longScore + CONFIG.MIN_EDGE) {
 reasons.short.push(`edge=${(shortScore-longScore).toFixed(2)}<${CONFIG.MIN_EDGE}`);
 }
-Â 
+ 
 if (risk >= 45) {
 reasons.common.push(`risk=${risk.toFixed(2)}>=45`);
 }
@@ -2719,7 +2719,7 @@ if (entryQuality.overextended) {
 const msg = `entry_quality:overextended extension_atr=${entryQuality.extensionAtr.toFixed(2)} rsi5=${entryQuality.rsi5.toFixed(1)} rsi15=${entryQuality.rsi15.toFixed(1)}`;
 reasons.common.push(msg);
 }
-Â 
+ 
 for (const [tf, n] of [
 ["5m", c5.length],
 ["15m", c15.length],
@@ -2728,10 +2728,10 @@ for (const [tf, n] of [
 ]) {
 if (n < 55) reasons.common.push(`${tf}_data_below_55`);
 }
-Â 
+ 
 let direction = "NO_TRADE";
 const score = Math.max(longScore, shortScore);
-Â 
+ 
 if (longEligible && (!shortEligible || longScore >= shortScore)) {
 direction = "LONG";
 } else if (shortEligible) {
@@ -2744,15 +2744,15 @@ direction = longScore > shortScore ? "LONG" : "SHORT";
 // This never relaxes the strict live execution gate.
 direction = radar.direction;
 }
-Â 
+ 
 const executionScore =
 direction === "LONG" ? longScore :
 direction === "SHORT" ? shortScore : 0;
-Â 
+ 
 const executionTrendConfluence =
 direction === "LONG" ? trend.bullish :
 direction === "SHORT" ? trend.bearish : 0;
-Â 
+ 
 const executionEligible =
 direction !== "NO_TRADE" &&
 executionScore >= CONFIG.EXECUTION_SCORE &&
@@ -2760,14 +2760,14 @@ edge >= CONFIG.EXECUTION_MIN_EDGE &&
 executionTrendConfluence >= 3 &&
 risk < CONFIG.EXECUTION_MAX_RISK &&
 !entryQuality.overextended;
-Â 
+ 
 if (direction === "LONG" && executionTrendConfluence < 3) {
 reasons.long.push(`execution_trend_confluence=${executionTrendConfluence}/4`);
 }
 if (direction === "SHORT" && executionTrendConfluence < 3) {
 reasons.short.push(`execution_trend_confluence=${executionTrendConfluence}/4`);
 }
-Â 
+ 
 if (direction === "LONG" && !executionEligible) {
 reasons.long.push(
 `execution_gate:score/edge/trend/risk=${executionScore.toFixed(2)}/${edge.toFixed(2)}/${executionTrendConfluence}/4/${risk.toFixed(2)}`
@@ -2778,7 +2778,7 @@ reasons.short.push(
 `execution_gate:score/edge/trend/risk=${executionScore.toFixed(2)}/${edge.toFixed(2)}/${executionTrendConfluence}/4/${risk.toFixed(2)}`
 );
 }
-Â 
+ 
 const earlyMomentum=!!(radar&&radar.score>=CONFIG.PUMP_RADAR_WATCH_SCORE&&radar.direction!=="NEUTRAL"&&executionScore<CONFIG.VALID_SIGNAL_SCORE);
 // V13.9.2: Tier reflects signal strength, not entry timing. An overextended
 // signal can remain STRONG while executionEligible stays false.
@@ -2867,11 +2867,11 @@ ema200Available: Number.isFinite(advancedLong.indicators.ema200)
 }
 };
 }
-Â 
+ 
 // ======================================================
 // ENTRY / SL / TP / RISK
 // ======================================================
-Â 
+ 
 function leverageFromScore(score) {
 let lev = CONFIG.DEFAULT_LEVERAGE;
 for (const tier of CONFIG.LEVERAGE_TIERS) {
@@ -2879,7 +2879,7 @@ if (Number(score) >= tier.minScore) lev = Math.max(lev, tier.leverage);
 }
 return Math.min(lev, CONFIG.MAX_LEVERAGE);
 }
-Â 
+ 
 function allocationFromScore(score) {
 let allocation = CONFIG.MIN_CAPITAL_ALLOCATION;
 for (const tier of CONFIG.ALLOCATION_TIERS) {
@@ -2893,7 +2893,7 @@ CONFIG.MAX_CAPITAL_ALLOCATION,
 CONFIG.MAX_TOTAL_CAPITAL_ALLOCATION
 );
 }
-Â 
+ 
 function calculateRiskBasedNotional(balance, entry, stopLoss) {
 if (!(balance > 0) || !(entry > 0) || !(stopLoss > 0)) return 0;
 const riskCapital = balance * CONFIG.RISK_PER_TRADE;
@@ -2901,29 +2901,29 @@ const stopPercent = Math.abs(entry - stopLoss) / entry;
 if (!(stopPercent > 0)) return 0;
 return riskCapital / stopPercent;
 }
-Â 
-Â 
+ 
+ 
 // ======================================================
-Â 
+ 
 function buildTradePlan(snapshot, analysis) {
 const candles = snapshot.candles["15m"];
 const entry = snapshot.price;
 const a = atr(candles, 14);
-Â 
+ 
 if (!entry || !a || a <= 0) {
 return {
 valid: false,
 reason: "Insufficient price/ATR data"
 };
 }
-Â 
+ 
 const stopDistance = a * CONFIG.ATR_STOP_MULTIPLIER;
-Â 
+ 
 let stopLoss;
 let tp1;
 let tp2;
 let tp3;
-Â 
+ 
 if (analysis.direction === "LONG") {
 stopLoss = entry - stopDistance;
 tp1 = entry + stopDistance * CONFIG.TP1_R;
@@ -2940,15 +2940,15 @@ valid: false,
 reason: "No trade direction"
 };
 }
-Â 
+ 
 const precisionExit = v91PrecisionExitPlan(snapshot, analysis, entry, stopLoss);
 if (precisionExit) { tp1 = precisionExit.tp1; tp2 = precisionExit.tp2; tp3 = precisionExit.tp3; }
 const riskPerUnit = Math.abs(entry - stopLoss);
 const stopPercent = (riskPerUnit / entry) * 100;
-Â 
+ 
 const leverage = leverageFromScore(analysis.score);
 const allocation = allocationFromScore(analysis.score);
-Â 
+ 
 return {
 valid: true,
 entry,
@@ -2966,26 +2966,26 @@ riskPerTradePercent: Number((CONFIG.RISK_PER_TRADE * 100).toFixed(2)),
 precisionExit: precisionExit || null
 };
 }
-Â 
+ 
 function calculatePositionSize(balance, entry, stopLoss) {
 return calculateRiskBasedNotional(balance, entry, stopLoss);
 }
-Â 
+ 
 // ======================================================
 // SIGNAL OBJECT
 // ======================================================
-Â 
+ 
 async function generateSignal(symbol, env, options = {}) {
 const normalized = normalizeSymbol(symbol);
 const snapshot = await buildMarketSnapshot(normalized, env, options);
-Â 
+ 
 // Full scans keep the previous market snapshot in the single state object
 // instead of doing one KV read/write per symbol.
 const previousMarket = options.previousMarket || null;
-Â 
+ 
 const analysis = scoreSignal(snapshot, previousMarket);
 const plan = buildTradePlan(snapshot, analysis);
-Â 
+ 
 // RPC health is not part of signal generation. It is checked once by
 // health/debug routes when needed, avoiding one or two extra subrequests
 // per symbol during a scan.
@@ -3002,10 +3002,10 @@ analysis.direction === "NO_TRADE"
 ? 0
 : Math.round(analysis.score),
 status: analysis.tier,
-Â 
+ 
 price: snapshot.price,
 tradePlan: plan,
-Â 
+ 
 trend: {
 alignment: snapshot.trend.alignment,
 macro4h: snapshot.trend.macro.direction,
@@ -3013,7 +3013,7 @@ trend1h: snapshot.trend.trend.direction,
 entry15m: snapshot.trend.entry.direction,
 fast5m: snapshot.trend.fast.direction
 },
-Â 
+ 
 components: analysis.components,
 diagnostics: analysis.rejectionReasons,
 signalTier: analysis.tier,
@@ -3023,7 +3023,7 @@ riskScore: analysis.risk,
 edge: analysis.edge,
 dataQuality: analysis.dataQuality,
 signalDiagnostics: analysis.diagnostics,
-Â 
+ 
 execution: {
 enabled: executionEnabled(env),
 mode: effectiveExecutionMode(env),
@@ -3034,12 +3034,12 @@ analysis.direction === "NO_TRADE"
 ? "EXECUTE"
 : "SIGNAL_ONLY"
 },
-Â 
+ 
 chain: {
 chainId: GMX.CHAIN_ID,
 healthCheck: "SKIPPED_IN_SCAN"
 },
-Â 
+ 
 generatedAt: Date.now(),
 _marketSnapshotForState: {
 // Only persist fields needed for next-scan derivatives comparison.
@@ -3055,7 +3055,7 @@ low24h: v8HighMetric(snapshot.market,["low24h","lowPrice24h","dailyLow"])
 savedAt: Date.now()
 }
 };
-Â 
+ 
 if (!options.scanMode) {
 const previous = await loadMarketSnapshot(env, normalized);
 // Single-symbol route gets the persisted previous snapshot for OI delta.
@@ -3081,18 +3081,18 @@ signal.riskScore = singleAnalysis.risk;
 signal.edge = singleAnalysis.edge;
 signal.dataQuality = singleAnalysis.dataQuality;
 }
-Â 
+ 
 await saveMarketSnapshot(env, normalized, snapshot.market);
 }
-Â 
+ 
 return signal;
 }
-Â 
+ 
 // ======================================================
 // FULL MARKET SCAN
 // ======================================================
-Â 
-Â 
+ 
+ 
 function signalPriorityScore(signal) {
 const score = Number(signal?.score || 0);
 const edge = Number(signal?.edge || 0);
@@ -3104,14 +3104,14 @@ const dataCompleteness =
 ["candles5m","candles15m","candles1h","candles4h"]
 .map(k => Number(data[k] || 0))
 .reduce((a,b) => a + Math.min(b / 120, 1), 0) / 4 * 5;
-Â 
+ 
 return score * 0.70 + Math.min(edge, 30) * 0.20 + Math.max(0, 40 - risk) * 0.25 + execution + radarBoost + dataCompleteness;
 }
-Â 
+ 
 function baseAsset(symbol) {
 return normalizeSymbol(symbol).replace(/-PERP$/i, "");
 }
-Â 
+ 
 function exposureConflict(signal, positions) {
 const base = baseAsset(signal.symbol);
 for (const p of positions || []) {
@@ -3124,37 +3124,37 @@ return { conflict: true, reason: "ALT_CORRELATION_CAP" };
 }
 return { conflict: false, reason: null };
 }
-Â 
+ 
 function selectPrioritySignals(signals, positions) {
 const ranked = [...signals]
 .filter(s => s?.executionEligible && s?.tradePlan?.valid)
 .sort((a,b) => signalPriorityScore(b) - signalPriorityScore(a));
-Â 
+ 
 const selected = [];
 let totalAllocation = 0;
 let totalRisk = 0;
-Â 
+ 
 for (const signal of ranked) {
 if (selected.length >= CONFIG.MAX_POSITIONS) break;
-Â 
+ 
 const conflict = exposureConflict(signal, [...positions, ...selected.map(s => ({
 symbol: s.symbol
 }))]);
 if (conflict.conflict) continue;
-Â 
+ 
 const allocation = Number(
 signal.tradePlan?.allocation ?? allocationFromScore(signal.score)
 );
 const risk = Number(CONFIG.RISK_PER_TRADE);
-Â 
+ 
 if (totalAllocation + allocation > CONFIG.MAX_TOTAL_CAPITAL_ALLOCATION + 1e-9) continue;
 if (totalRisk + risk > CONFIG.MAX_TOTAL_RISK + 1e-9) continue;
-Â 
+ 
 selected.push(signal);
 totalAllocation += allocation;
 totalRisk += risk;
 }
-Â 
+ 
 return {
 selected,
 totalAllocation,
@@ -3162,8 +3162,8 @@ totalRisk,
 ranked
 };
 }
-Â 
-Â 
+ 
+ 
 function signalNotificationKey(signal) {
 const symbol=baseAsset(signal?.symbol||"");
 const direction=String(signal?.direction||"NO_TRADE").toUpperCase();
@@ -3227,7 +3227,7 @@ if (!signal || signal.direction === "NO_TRADE") return false;
 if (["VALID", "STRONG"].includes(signal.signalTier)) return true;
 return CONFIG.NOTIFY_WATCH && signal.signalTier === "WATCH";
 }
-Â 
+ 
 function markTelegramNotified(state, signal) {
 if(!notificationEligible(signal))return;
 if(!state.telegramEvents||typeof state.telegramEvents!=="object")state.telegramEvents={};
@@ -3264,7 +3264,7 @@ lines.push(isRadar
   : "â„¹ï¸ Telegram is notification-only; the bot does not wait for Telegram confirmation.");
 return lines.join("\n");
 }
-Â 
+ 
 function buildUniverseDiagnostics(allMarkets, fastRows, radarMarkets = []) {
 const reasonCounts = {};
 let withPrice = 0, withLiquidity = 0, withOi = 0, withFunding = 0, active = 0;
@@ -3300,7 +3300,7 @@ fastRejected: Math.max(0, (allMarkets?.length || 0) - (fastRows?.length || 0)),
 rejectionReasons: reasonCounts
 };
 }
-Â 
+ 
 async function enrichMarketsWithValues(markets) {
 const rows = Array.isArray(markets) ? markets : [];
 if (!rows.length || !rows.some(m => extractLiquidity(m) <= 0 || extractOpenInterest(m) <= 0)) return { markets: rows, source: "markets-info" };
@@ -3312,7 +3312,7 @@ const merged = rows.map(m => { const token=String(m?.marketTokenAddress || m?.ma
 return {markets:merged,source:"markets-info+markets-values"};
 } catch(error) { return {markets:rows,source:"markets-info",error:safeError(error)}; }
 }
-Â 
+ 
 
 // ======================================================
 // V15.6.5 RADAR PRICE INTEGRITY / SCALE NORMALIZATION
@@ -3687,7 +3687,7 @@ paperResults.push({ symbol: signal.symbol, error: safeError(error) });
 }
 }
 }
-Â 
+ 
 // V13.9.9: Radar has its own entry lane and does not consume a Core slot.
 let radarPaperResult = null;
 if (!executionEnabled(env) && CONFIG.PAPER_ENABLED && CONFIG.RADAR_INDEPENDENT_ENABLED && CONFIG.RADAR_PAPER_ENABLED) {
@@ -3757,51 +3757,51 @@ notifyEventMax:CONFIG.NOTIFY_EVENT_MAX},radarLane:{enabled:CONFIG.RADAR_INDEPEND
 try{await saveState(env,state);}catch(error){errors.push({scope:"state-persist",error:safeError(error)});}
 return{ok:true,status:(valid.length||radarHotCount)?"SIGNALS_FOUND":watch.length||radarWatchCount?"WATCH_ONLY":"NO_SIGNAL",scanned:results.length,requested:allMarkets.length,deepCandidates:symbols.length,candidates:valid.length,watchCandidates:watch.length,signalsDetected,notificationEligible:notificationEligibleCount,eventCandidates,signalsDeduped:Math.max(0,notificationEligibleCount-eventCandidates),radarHotCandidates:radarHotCount,radarWatchCandidates:radarWatchCount,radarCoverageMarkets:radarRows.length,radarDirectionalMarkets:radarDirectional.length,radarLongMarkets:radarLongCount,radarShortMarkets:radarShortCount,topSignals:notifySignals,watchSignals:watch.slice(0,CONFIG.NOTIFY_TOP_N),opportunityRanking:notificationPool.slice(0,20).map((s,index)=>({rank:index+1,symbol:s.symbol,direction:s.direction,tier:s.signalTier,score:s.score,edge:s.edge,risk:s.riskScore,executionEligible:!!s.executionEligible,priority:Number(signalPriorityScore(s).toFixed(2))})),executionSignals:top,portfolio:{existingLivePositions:existingCount,remainingSlots,selectedAllocation:Number(selection.totalAllocation.toFixed(4)),selectedAllocationPercent:Number((selection.totalAllocation*100).toFixed(2)),selectedRisk:Number(selection.totalRisk.toFixed(4)),selectedRiskPercent:Number((selection.totalRisk*100).toFixed(2)),maxTotalAllocationPercent:Number((CONFIG.MAX_TOTAL_CAPITAL_ALLOCATION*100).toFixed(2)),maxTotalRiskPercent:Number((CONFIG.MAX_TOTAL_RISK*100).toFixed(2))},executionResults,paperResults,radarPaperResult,radarLiveResult,livePositionError,diagnostics,errors,timestamp:Date.now()};
 }
-Â 
+ 
 // ======================================================
 // RISK GUARD
 // ======================================================
-Â 
+ 
 async function riskGuard(env, state) {
 resetDailyLossIfNeeded(state);
-Â 
+ 
 if (Number(state.dailyLoss || 0) <= -CONFIG.MAX_DAILY_LOSS) {
 return {
 allowed: false,
 reason: "Daily loss limit reached"
 };
 }
-Â 
+ 
 const positions = await loadPositions(env);
-Â 
+ 
 if (positions.length >= CONFIG.MAX_POSITIONS) {
 return {
 allowed: false,
 reason: "Maximum positions reached"
 };
 }
-Â 
+ 
 return { allowed: true };
 }
-Â 
+ 
 function resetDailyLossIfNeeded(state) {
 const key = new Date().toISOString().slice(0, 10);
-Â 
+ 
 if (state.dayKey !== key) {
 state.dayKey = key;
 state.dailyLoss = 0;
 }
 }
-Â 
+ 
 // ======================================================
 // STATE / KV
 // ======================================================
-Â 
+ 
 async function loadState(env) {
 if (!env.BOT_STATE) {
 return { ...DEFAULT_STATE };
 }
-Â 
+ 
 const data = await env.BOT_STATE.get("engine_state", "json");
 return {
 ...DEFAULT_STATE,
@@ -3816,52 +3816,52 @@ universeRotationCursor: Number.isFinite(Number(data?.universeRotationCursor)) ? 
 lastExitDiagnostics: Array.isArray(data?.lastExitDiagnostics) ? data.lastExitDiagnostics : []
 };
 }
-Â 
+ 
 async function saveState(env, state) {
 if (!env.BOT_STATE) return false;
-Â 
+ 
 await env.BOT_STATE.put(
 "engine_state",
 JSON.stringify(state)
 );
-Â 
+ 
 return true;
 }
-Â 
+ 
 async function loadPositions(env) {
 if (!env.BOT_STATE) return [];
-Â 
+ 
 const positions = await env.BOT_STATE.get(
 "positions",
 "json"
 );
-Â 
+ 
 return Array.isArray(positions) ? positions : [];
 }
-Â 
+ 
 async function savePositions(env, positions) {
 if (!env.BOT_STATE) return false;
-Â 
+ 
 await env.BOT_STATE.put(
 "positions",
 JSON.stringify(positions)
 );
-Â 
+ 
 return true;
 }
-Â 
+ 
 async function loadMarketSnapshot(env, symbol) {
 if (!env.BOT_STATE) return null;
-Â 
+ 
 return await env.BOT_STATE.get(
 `market:${normalizeSymbol(symbol)}`,
 "json"
 );
 }
-Â 
+ 
 async function saveMarketSnapshot(env, symbol, market) {
 if (!env.BOT_STATE) return false;
-Â 
+ 
 await env.BOT_STATE.put(
 `market:${normalizeSymbol(symbol)}`,
 JSON.stringify({
@@ -3870,14 +3870,14 @@ savedAt: Date.now()
 }),
 { expirationTtl: 86400 }
 );
-Â 
+ 
 return true;
 }
-Â 
+ 
 // ======================================================
 // MARKET DISCOVERY
 // ======================================================
-Â 
+ 
 async function discoverMarkets(env) {
 const [catalog,info]=await Promise.all([fetchGmxMarkets(),fetchGmxMarketsInfo()]);
 const bySymbol=new Map();
@@ -3885,16 +3885,16 @@ for(const raw of [...marketArray(catalog),...marketArray(info)]){const symbol=no
 const all=[...bySymbol.values()].filter(m=>m.isListed!==false);const ranked=v8RankFastMarkets(all);
 return {ok:true,network:"Arbitrum One",chainId:GMX.CHAIN_ID,markets:all.map(m=>({symbol:m.symbol,listed:m.isListed!==false,marketToken:m.marketToken||m.marketTokenAddress||null,liquidity:extractLiquidity(m),openInterest:extractOpenInterest(m),fundingRate:extractFunding(m)})),ranked:ranked.map(x=>({symbol:x.symbol,liquidityScore:x.liquidityScore,major:x.major})),source:{catalog:`${GMX.ORACLE}/markets`,info:`${GMX.ORACLE}/markets/info`},timestamp:Date.now()};
 }
-Â 
+ 
 // ======================================================
 // HEALTH / DEBUG
 // ======================================================
-Â 
+ 
 async function healthRoute(env) {
 try {
 const rpcStatus = await verifyArbitrumRPC(env);
 const marketInfo = await fetchGmxMarketsInfo();
-Â 
+ 
 return json({
 ok: true,
 status: "HEALTHY",
@@ -3921,10 +3921,10 @@ timestamp: Date.now()
 }, 503);
 }
 }
-Â 
+ 
 async function debugState(env) {
 const state = await loadState(env);
-Â 
+ 
 return {
 ok: true,
 config: {
@@ -3942,28 +3942,28 @@ env.TELEGRAM_TOKEN && env.TELEGRAM_CHAT_ID
 state
 };
 }
-Â 
+ 
 // ======================================================
 // CONTROL
 // ======================================================
-Â 
+ 
 async function control(cmd, env) {
 const state = await loadState(env);
-Â 
+ 
 switch (String(cmd || "").toLowerCase()) {
 case "pause":
 state.running = false;
 await saveState(env, state);
 return { ok: true, result: "BOT PAUSED" };
-Â 
+ 
 case "resume":
 state.running = true;
 await saveState(env, state);
 return { ok: true, result: "BOT RESUMED" };
-Â 
+ 
 case "status":
 return { ok: true, state };
-Â 
+ 
 default:
 return {
 ok: false,
@@ -3972,21 +3972,21 @@ allowed: ["pause", "resume", "status"]
 };
 }
 }
-Â 
+ 
 // ======================================================
 // TELEGRAM
 // ======================================================
-Â 
+ 
 function formatPrice(value) {
 if (!Number.isFinite(Number(value))) return "N/A";
-Â 
+ 
 const n = Number(value);
-Â 
+ 
 if (n >= 1000) return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
 if (n >= 1) return n.toLocaleString("en-US", { maximumFractionDigits: 4 });
 return n.toLocaleString("en-US", { maximumFractionDigits: 8 });
 }
-Â 
+ 
 function tgText(value, fallback = "N/A") {
 const s = value === null || value === undefined || value === "" ? fallback : String(value);
 return s.replace(/[\r\n]+/g, " ").trim();
@@ -4070,7 +4070,7 @@ result?.reason ? `Reason   : ${tgText(result.reason)}` : "",
 // ======================================================
 // OPTIONAL PAPER POSITION HELPERS
 // ======================================================
-Â 
+ 
 // ======================================================
 // V13.9.9 INDEPENDENT PUMP / DUMP RADAR LANE
 // ======================================================
@@ -4296,7 +4296,7 @@ async function openPaperPosition(env, signal, balance) {
 if (!CONFIG.PAPER_ENABLED || !signal || !["LONG", "SHORT"].includes(signal.direction) || !signal.tradePlan?.valid) {
 return { ok: false, reason: "Invalid signal or paper mode disabled" };
 }
-Â 
+ 
 const positions = await loadPositions(env);
 const base = baseAsset(normalizeSymbol(signal.symbol));
 if (positions.some(p => p.status === "PAPER_OPEN" && baseAsset(normalizeSymbol(p.symbol)) === base)) {
@@ -4306,7 +4306,7 @@ const coreOpenCount = positions.filter(p => p.status === "PAPER_OPEN" && String(
 if (coreOpenCount >= CONFIG.MAX_POSITIONS) {
 return { ok: false, reason: "Maximum Core paper positions reached" };
 }
-Â 
+ 
 const accountBalance = Number(balance) > 0 ? Number(balance) : CONFIG.PAPER_STARTING_BALANCE_USD;
 const sizeUsd = calculatePositionSize(accountBalance, signal.tradePlan.entry, signal.tradePlan.stopLoss);
 const entry = Number(signal.tradePlan.entry);
@@ -4347,7 +4347,7 @@ positions.push(position);
 await savePositions(env, positions);
 return { ok: true, mode: "PAPER", position };
 }
-Â 
+ 
 async function openRadarPaperPosition(env, candidate, balance) {
 if (!CONFIG.RADAR_INDEPENDENT_ENABLED || !CONFIG.RADAR_PAPER_ENABLED) return { ok: false, reason: "Radar Paper disabled" };
 const plan = v154BuildRadarTradePlan(candidate);
@@ -4414,12 +4414,12 @@ function paperPriceReached(side, price, target) {
 if (!(price > 0) || !(target > 0)) return false;
 return side === "LONG" ? price >= target : price <= target;
 }
-Â 
+ 
 function paperStopReached(side, price, stop) {
 if (!(price > 0) || !(stop > 0)) return false;
 return side === "LONG" ? price <= stop : price >= stop;
 }
-Â 
+ 
 function paperPnlUsd(position, price, percent = position.remainingPct || 100) {
 const entry = v1565NormalizePrice(position?.entryPrice);
 const exit = v1565NormalizePrice(price);
@@ -4435,7 +4435,7 @@ const move = String(position?.side || "").toUpperCase() === "LONG" ? (exit - ent
 const pnl = notional * (pct / 100) * move;
 return Number.isFinite(pnl) ? pnl : 0;
 }
-Â 
+ 
 async function updatePaperPositions(env) {
 if (!CONFIG.PAPER_ENABLED) return [];
 const positions = await loadPositions(env);
@@ -4443,7 +4443,7 @@ const open = positions.filter(p => p.status === "PAPER_OPEN");
 if (!open.length) return [];
 const actions = [];
 const now = Date.now();
-Â 
+ 
 for (const position of open) {
 try {
 const symbol = normalizeSymbol(position.symbol);
@@ -4468,7 +4468,7 @@ if (String(position?.lane || "CORE").toUpperCase() === "RADAR") {
     continue;
   }
 }
-Â 
+ 
 const previous = await loadMarketSnapshot(env, symbol);
 const analysis = scoreSignal(snapshot, previous?.market || null);
 const market = { ...snapshot, price: currentPrice, currentPrice, score: analysis.score, trend: snapshot.trend, structure: snapshot.structure, participation: snapshot.participation, momentum: snapshot.momentum, smartMoney: snapshot.smartMoney, smartMoneyOutflow: snapshot.smartMoneyOutflow, risk: analysis.risk, atr: snapshot.atr ?? snapshot.indicators?.atr };
@@ -4567,7 +4567,7 @@ position.exitHistory.push({ at: now, action, reason, price: currentPrice, closeP
 if (position.remainingPct <= 0.001 || closePercent >= 100) { position.remainingPct = 0; position.status = "PAPER_CLOSED"; position.closedAt = now; }
 actions.push({ id: position.id, symbol, direction: position.side, lane: position.lane, action, reason, closePercent: actualPct, pnlPercent: Number((paperPnlUsd(position, currentPrice, actualPct) / Math.max(1, Number(position.notionalUsd || 1)) * 100).toFixed(2)), pnlUsd: Number(pnl.toFixed(4)), entryPrice: position.entryPrice, exitPrice: currentPrice, leverage: position.leverage, notionalUsd: position.notionalUsd, exitScore: plan.score, remainingPct: position.remainingPct });
 }
-Â 
+ 
 if (position.status === "PAPER_OPEN" && now - Number(position.openedAt || now) >= CONFIG.PAPER_MAX_HOLD_MS) {
 const pct = Number(position.remainingPct || 0);
 if (pct > 0) {
@@ -4618,7 +4618,7 @@ try { await sendTelegram(env, formatTelegramExit(action)); } catch (_) {}
 }
 return actions;
 }
-Â 
+ 
 // ======================================================
 // LIVE EXECUTION STATUS
 // ======================================================
@@ -4636,8 +4636,8 @@ return actions;
 // is ever returned by the HTTP status routes. Duplicate signal keys
 // are guarded with an in-memory + KV execution lock.
 //
-Â 
-Â 
+ 
+ 
 return {
 status: (env) => ({
 ok: true,
@@ -4700,44 +4700,44 @@ return {ok:true,version:CONFIG.VERSION,multiSource:{apiPeers:V156_DATA_CENTER.ap
 }
 };
 })();
-Â 
+ 
 // ================================
 // MAIN WORKER
 // ================================
-Â 
-Â 
-Â 
+ 
+ 
+ 
 function clamp100(v) {
 return Math.max(0, Math.min(100, Number(v) || 0));
 }
-Â 
+ 
 function calculateExitSignal(position, market) {
 const side = String(position?.side || position?.direction || "").toUpperCase();
 const isLong = side === "LONG";
 const isShort = side === "SHORT";
-Â 
+ 
 const trend = Number(market?.trend?.[isLong ? "shortScore" : "longScore"] || 0);
 const momentum = Number(market?.momentum?.[isLong ? "short" : "long"] || 0);
 const structure = Number(market?.structure?.[isLong ? "short" : "long"] || 0);
 const participation = Number(market?.participation?.[isLong ? "short" : "long"] || 0);
-Â 
+ 
 const smartMoneyOutflow = Boolean(
 market?.smartMoney?.outflow ??
 market?.smartMoneyOutflow ??
 false
 );
-Â 
+ 
 const structureBreak = Boolean(
 market?.structure?.breakAgainstPosition ??
 market?.structureBreak ??
 false
 );
-Â 
+ 
 const trendFlip = Boolean(
 market?.trend?.flipAgainstPosition ??
 false
 );
-Â 
+ 
 const components = {
 trendReversal: clamp100(trend),
 momentumReversal: clamp100(momentum / 0.60),
@@ -4746,7 +4746,7 @@ participationReversal: clamp100(participation / 0.30),
 smartMoneyOutflow: smartMoneyOutflow ? 100 : 0,
 trendFlip: trendFlip ? 100 : 0
 };
-Â 
+ 
 const score =
 components.trendReversal * 0.22 +
 components.momentumReversal * 0.18 +
@@ -4754,10 +4754,10 @@ components.structureBreak * 0.20 +
 components.participationReversal * 0.10 +
 components.smartMoneyOutflow * 0.20 +
 components.trendFlip * 0.10;
-Â 
+ 
 let action = "HOLD";
 let closePercent = 0;
-Â 
+ 
 if (
 (EXIT_ENGINE.emergency.structureBreak && structureBreak) ||
 (EXIT_ENGINE.emergency.smartMoneyOutflow && smartMoneyOutflow) ||
@@ -4779,7 +4779,7 @@ closePercent = 25;
 action = "PROTECT";
 closePercent = 0;
 }
-Â 
+ 
 return {
 enabled: EXIT_ENGINE.enabled,
 score: Number(score.toFixed(2)),
@@ -4794,7 +4794,7 @@ trendFlip
 trailing: EXIT_ENGINE.trailing
 };
 }
-Â 
+ 
 function shouldEmergencyClose(exitSignal, hardStopTriggered = false) {
 return Boolean(
 hardStopTriggered ||
@@ -4802,7 +4802,7 @@ exitSignal?.action === "EMERGENCY_FULL" ||
 exitSignal?.action === "FULL_CLOSE"
 );
 }
-Â 
+ 
 function buildPositionExitPlan(position, market, hardStopTriggered = false) {
 const exitSignal = calculateExitSignal(position, market);
 const dynamicTPSL = deriveDynamicTPSL(position, market);
@@ -4811,7 +4811,7 @@ position,
 market,
 market?.currentPrice ?? market?.price
 );
-Â 
+ 
 if (shouldEmergencyClose(exitSignal, hardStopTriggered)) {
 return {
 ...exitSignal,
@@ -4822,7 +4822,7 @@ closePercent: 100,
 execution: "FULL_CLOSE"
 };
 }
-Â 
+ 
 if (exitSignal.action === "PARTIAL_50" || exitSignal.action === "PARTIAL_25") {
 return {
 ...exitSignal,
@@ -4831,7 +4831,7 @@ trailingStop,
 execution: "PARTIAL_CLOSE"
 };
 }
-Â 
+ 
 if (exitSignal.action === "PROTECT") {
 return {
 ...exitSignal,
@@ -4840,7 +4840,7 @@ trailingStop,
 execution: "TIGHTEN_PROTECTION"
 };
 }
-Â 
+ 
 return {
 ...exitSignal,
 dynamicTPSL,
@@ -4848,23 +4848,23 @@ trailingStop,
 execution: "HOLD"
 };
 }
-Â 
+ 
 export default {
-Â 
-Â 
-Â 
+ 
+ 
+ 
 async scheduled(event, env, ctx) {
 const cron = event?.cron || "unknown";
 const scheduledTime = event?.scheduledTime ?? null;
-Â 
+ 
 const task = (async () => {
 try {
 console.log("[SCHEDULED][START]", { cron, scheduledTime, recommendedCron: CONFIG.CRON_RECOMMENDED, cronMatchesRecommended: cron === CONFIG.CRON_RECOMMENDED });
-Â 
+ 
 const exits = executionEnabled(env)
 ? await FUTURES_V6.monitorLivePositions(env)
 : await FUTURES_V6.updatePaperPositions(env);
-Â 
+ 
 let scheduledOpenPositions = 0;
 try {
 const scheduledPositions = await FUTURES_V6.positions(env);
@@ -4877,7 +4877,7 @@ const scan = await FUTURES_V6.scan(env, {
 additionalSubrequestReserve: scheduledPositionReserve,
 source: "cron"
 });
-Â 
+ 
 console.log("[SCHEDULED][DONE]", {
 cron,
 scheduledTime,
@@ -4897,7 +4897,7 @@ telegram: scan?.diagnostics?.telegram || null,
 subrequestBudget: scan?.diagnostics?.requestStrategy || null,
 scheduledPositionReserve
 });
-Â 
+ 
 try {
 await auditLog(env, {
 type: "SCHEDULED_CYCLE",
@@ -4919,7 +4919,7 @@ scheduledTime,
 error: safeError(error),
 stack: error?.stack || null
 });
-Â 
+ 
 // Never allow the error-reporting path itself to create a second
 // uncaught exception and turn the Cron invocation into an opaque failure.
 try {
@@ -4937,111 +4937,111 @@ error: safeError(auditError)
 }
 }
 })();
-Â 
+ 
 // V13.9.6: Cron explicitly awaits the full cycle. This keeps the scan,
 // Telegram sends, state persistence, and audit logging inside the scheduled
 // invocation lifecycle instead of detaching the task from the handler.
 return await task;
 },
-Â 
+ 
 async fetch(request, env, ctx){
-Â 
-Â 
+ 
+ 
 try{
-Â 
-Â 
+ 
+ 
 const url =
 new URL(request.url);
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 url.pathname === "/status"
 ){
-Â 
+ 
 return jsonResponse({
-Â 
+ 
 bot:
 "Smart Money Futures AI Bot",
-Â 
-Â 
+ 
+ 
 version:
 CONFIG.VERSION,
-Â 
-Â 
+ 
+ 
 mode:
 CONFIG.MODE,
-Â 
-Â 
+ 
+ 
 execution:
 executionEnabled(env),
-Â 
-Â 
+ 
+ 
 network:
 "ARBITRUM",
-Â 
-Â 
+ 
+ 
 status:
 "ONLINE",
-Â 
-Â 
+ 
+ 
 time:
 Date.now()
-Â 
-Â 
+ 
+ 
 });
-Â 
+ 
 }
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 if(
 url.pathname === "/debug"
 ){
-Â 
+ 
 return jsonResponse({
-Â 
+ 
 config:
 CONFIG,
-Â 
-Â 
+ 
+ 
 env:
-Â 
-Â 
+ 
+ 
 {
-Â 
+ 
 kv:
 !!env.BOT_STATE,
-Â 
-Â 
+ 
+ 
 telegram:
 !!env.TELEGRAM_TOKEN,
-Â 
-Â 
+ 
+ 
 rpc:
 !!env.ARBITRUM_RPC
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
+ 
+ 
 });
-Â 
+ 
 }
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 if(
 url.searchParams.get("test") === "telegram"
 ){
-Â 
+ 
 const sent = await sendTelegram(
 env,
 "Telegram test successful - Smart Money Futures AI Bot V6.3.1"
 );
-Â 
+ 
 return jsonResponse({
 test: "telegram",
 sent,
@@ -5050,51 +5050,51 @@ chatIdConfigured: !!env.TELEGRAM_CHAT_ID,
 time: Date.now()
 });
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(url.pathname === "/debug/gmx/summary"){
 return await gmxSummaryRoute(env);
 }
-Â 
+ 
 if(url.pathname === "/debug/gmx/markets"){
 return await gmxMarketsRoute(env, false);
 }
-Â 
+ 
 if(url.pathname === "/debug/gmx/markets/info"){
 return await gmxMarketsRoute(env, true);
 }
-Â 
+ 
 if(url.pathname === "/markets"){
 return await gmxMarketsRoute(env, false);
 }
-Â 
+ 
 if(
 url.pathname === "/positions"
 ){
-Â 
-Â 
+ 
+ 
 const positions =
 await loadPositions(env);
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return jsonResponse({
-Â 
+ 
 count:
 positions.length,
-Â 
-Â 
+ 
+ 
 positions
-Â 
-Â 
+ 
+ 
 });
-Â 
+ 
 }
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 // ======================================================
 // V6 PRO SIGNAL ROUTES (MERGED)
 // ======================================================
@@ -5119,85 +5119,85 @@ if(url.pathname === "/v6/scan" || url.pathname === "/scan-v6" || url.pathname ==
 if(url.pathname === "/v6/positions") { return jsonResponse({ok:true,positions:await FUTURES_V6.positions(env)}); }
 if(url.pathname === "/v6/control") { return jsonResponse(await FUTURES_V6.control(url.searchParams.get("cmd"),env)); }
 if(url.pathname === "/v6/test/telegram") { const sent=await FUTURES_V6.telegramTest(env); return jsonResponse({ok:sent,sent}); }
-Â 
+ 
 // /scan is handled above by FUTURES_V6. This marker makes accidental
 // fallback routing visible in Cloudflare logs during future debugging.
 console.log("[V9.1][ROUTER] fallback apiRouter", { path: url.pathname });
 const routedResponse = await apiRouter(request, env);
-Â 
+ 
 if(routedResponse){
 return routedResponse;
 }
-Â 
+ 
 return new Response(
-Â 
+ 
 "Smart Money Futures AI Bot V9.1 ONLINE",
-Â 
+ 
 {
-Â 
+ 
 status:200,
-Â 
+ 
 headers:{
 "content-type":
 "text/plain"
-Â 
+ 
 }
-Â 
+ 
 }
-Â 
+ 
 );
-Â 
-Â 
-Â 
+ 
+ 
+ 
 }
-Â 
+ 
 catch(error){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return jsonResponse({
-Â 
+ 
 error:
 error.message,
-Â 
-Â 
+ 
+ 
 version:
 CONFIG.VERSION,
-Â 
-Â 
+ 
+ 
 time:
 Date.now()
-Â 
-Â 
+ 
+ 
 },500);
-Â 
-Â 
-Â 
+ 
+ 
+ 
 }
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 };
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 // ======================================================
 // GMX MARKET INTELLIGENCE V1
 // KV CACHE + MARKET EXECUTION TELEMETRY
 // ======================================================
-Â 
+ 
 const GMX_CACHE_KEY = "GMX_MARKETS_INFO_CACHE";
 const GMX_CACHE_TTL = 15;
-Â 
+ 
 async function getGmxMarketsInfoCached(env){
 const now = Math.floor(Date.now()/1000);
-Â 
+ 
 if(env.GMX_CACHE){
 try{
 const cached = await env.GMX_CACHE.get(GMX_CACHE_KEY, "json");
@@ -5209,7 +5209,7 @@ data:cached.data
 }
 }catch(e){}
 }
-Â 
+ 
 const response = await fetch(
 GMX_V2_CONFIG.MARKETS_INFO_URL,
 {
@@ -5218,9 +5218,9 @@ headers:{
 }
 }
 );
-Â 
+ 
 const data = await response.json();
-Â 
+ 
 if(env.GMX_CACHE){
 try{
 await env.GMX_CACHE.put(
@@ -5232,40 +5232,40 @@ data
 );
 }catch(e){}
 }
-Â 
+ 
 return {
 cache:"MISS",
 data
 };
 }
-Â 
+ 
 function calculateMarketQuality(m){
 let score = 0;
-Â 
+ 
 const liquidity = Number(
 m.liquidity ||
 m.totalLiquidity ||
 0
 );
-Â 
+ 
 const oi = Number(
 m.openInterest ||
 m.openInterestUsd ||
 0
 );
-Â 
+ 
 if(liquidity > 1000000) score += 35;
 else if(liquidity > 100000) score += 20;
-Â 
+ 
 if(oi > 1000000) score += 30;
 else if(oi > 100000) score += 15;
-Â 
+ 
 if(m.fundingRate !== undefined) score += 20;
 if(m.isListed !== false) score += 15;
-Â 
+ 
 return Math.min(score,100);
 }
-Â 
+ 
 function normalizeGmxMarketInfo(m){
 return {
 symbol:m.name || m.symbol || "UNKNOWN",
@@ -5276,16 +5276,16 @@ fundingRate:m.fundingRate || null,
 qualityScore:calculateMarketQuality(m)
 };
 }
-Â 
+ 
 async function gmxSummaryRoute(env){
 try{
 const result = await getGmxMarketsInfoCached(env);
-Â 
+ 
 const markets =
 Array.isArray(result.data.markets)
 ? result.data.markets
 : [];
-Â 
+ 
 const ranked = markets
 .map(normalizeGmxMarketInfo)
 .sort((a,b)=>{
@@ -5295,7 +5295,7 @@ if(Number(b.qualityScore)!==Number(a.qualityScore)) return Number(b.qualityScore
 return String(a.symbol).localeCompare(String(b.symbol));
 })
 .slice(0,10);
-Â 
+ 
 return jsonResponse({
 ok:true,
 network:"Arbitrum One",
@@ -5308,7 +5308,7 @@ mode:CONFIG.MODE,
 execution:executionEnabled(env),
 timestamp:Date.now()
 });
-Â 
+ 
 }catch(error){
 return jsonResponse({
 ok:false,
@@ -5317,1537 +5317,1537 @@ error:error.message
 },500);
 }
 }
-Â 
+ 
 // ================================
 // RESPONSE HELPER
 // ================================
-Â 
-Â 
+ 
+ 
 function jsonResponse(data,status=200){
-Â 
-Â 
+ 
+ 
 return new Response(
-Â 
+ 
 JSON.stringify(
 data,
 null,
 2
 ),
-Â 
+ 
 {
-Â 
-Â 
+ 
+ 
 status,
-Â 
-Â 
+ 
+ 
 headers:{
-Â 
+ 
 "content-type":
 "application/json"
-Â 
+ 
 }
-Â 
-Â 
+ 
+ 
 }
-Â 
+ 
 );
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // KV STATE MANAGER
 // ================================
-Â 
-Â 
+ 
+ 
 async function legacyLoadPositions(env){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(!env.BOT_STATE){
-Â 
+ 
 return [];
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const data =
-Â 
+ 
 await env.BOT_STATE.get(
 "positions",
 "json"
 );
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return data || [];
-Â 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 async function legacySavePositions(
 env,
 positions
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(!env.BOT_STATE){
-Â 
+ 
 return false;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 await env.BOT_STATE.put(
-Â 
+ 
 "positions",
-Â 
+ 
 JSON.stringify(
 positions
 )
-Â 
+ 
 );
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return true;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // AUDIT LOGGER
 // ================================
-Â 
-Â 
+ 
+ 
 async function auditLog(
 env,
 event
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(!env.BOT_STATE){
-Â 
+ 
 return;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const logs =
-Â 
+ 
 await env.BOT_STATE.get(
 "audit",
 "json"
 )
 ||
 [];
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 logs.push({
-Â 
+ 
 event,
-Â 
-Â 
+ 
+ 
 time:
 Date.now()
-Â 
-Â 
+ 
+ 
 });
-Â 
-Â 
-Â 
+ 
+ 
+ 
 await env.BOT_STATE.put(
-Â 
+ 
 "audit",
-Â 
+ 
 JSON.stringify(
 logs.slice(-100)
 )
-Â 
+ 
 );
-Â 
-Â 
-Â 
+ 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // SYSTEM HEALTH
 // ================================
-Â 
-Â 
+ 
+ 
 function systemHealth(env){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return {
-Â 
-Â 
+ 
+ 
 version:
 CONFIG.VERSION,
-Â 
-Â 
+ 
+ 
 execution:
 executionEnabled(env),
-Â 
-Â 
+ 
+ 
 mode:
 CONFIG.MODE,
-Â 
-Â 
+ 
+ 
 healthy:true,
-Â 
-Â 
+ 
+ 
 timestamp:
 Date.now()
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
-Â 
+ 
+ 
+ 
 }
 // ======================================================
 // MARKET INTELLIGENCE ENGINE
 // V6.3.1 PART 2
 // ======================================================
-Â 
-Â 
-Â 
+ 
+ 
+ 
 // ================================
 // MARKET STATE CACHE
 // ================================
-Â 
-Â 
+ 
+ 
 const MARKET_CACHE = {};
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 function updateMarketData(
 symbol,
 data
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 MARKET_CACHE[symbol]={
-Â 
-Â 
+ 
+ 
 ...MARKET_CACHE[symbol],
-Â 
-Â 
+ 
+ 
 ...data,
-Â 
-Â 
+ 
+ 
 updatedAt:
 Date.now()
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return MARKET_CACHE[symbol];
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 function getMarketData(symbol){
-Â 
-Â 
+ 
+ 
 return MARKET_CACHE[symbol] || null;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // PRICE ANALYSIS
 // ================================
-Â 
-Â 
+ 
+ 
 function analyzePrice(data){
-Â 
-Â 
+ 
+ 
 let score=0;
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 data.change5m >= 3
 ){
-Â 
+ 
 score +=20;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 data.change15m >=5
 ){
-Â 
+ 
 score +=20;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 data.trend==="UP"
 ){
-Â 
+ 
 score +=10;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return score;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // VOLUME ANALYSIS
 // ================================
-Â 
-Â 
+ 
+ 
 function analyzeVolume(data){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 let score=0;
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 data.volumeChange >=100
 ){
-Â 
+ 
 score+=20;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 data.volumeChange >=300
 ){
-Â 
+ 
 score+=15;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return score;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // OPEN INTEREST ENGINE
 // ================================
-Â 
-Â 
+ 
+ 
 function analyzeOpenInterest(data){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 let score=0;
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 data.openInterestChange>=10
 ){
-Â 
+ 
 score+=10;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 data.openInterestChange>=30
 ){
-Â 
+ 
 score+=20;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return score;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // FUNDING RATE ANALYSIS
 // ================================
-Â 
-Â 
+ 
+ 
 function analyzeFunding(data){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 let score=0;
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const funding =
 data.fundingRate || 0;
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 // Avoid overcrowded longs
-Â 
+ 
 if(
 funding > 0.10
 ){
-Â 
+ 
 score-=15;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 // Healthy short pressure
-Â 
+ 
 if(
 funding < -0.05
 ){
-Â 
+ 
 score+=10;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return score;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // ORDERBOOK IMBALANCE
 // ================================
-Â 
-Â 
+ 
+ 
 function analyzeOrderbook(data){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const imbalance =
-Â 
+ 
 data.orderbookImbalance || 0;
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 imbalance > 0.40
 ){
-Â 
+ 
 return 20;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 imbalance > 0.20
 ){
-Â 
+ 
 return 10;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 imbalance < -0.40
 ){
-Â 
+ 
 return -20;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return 0;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // FAKE PUMP DETECTOR
 // ================================
-Â 
-Â 
+ 
+ 
 function detectFakePump(data){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 let risk=0;
-Â 
-Â 
-Â 
+ 
+ 
+ 
 // Price moving without OI support
-Â 
+ 
 if(
-Â 
+ 
 data.change5m > 10 &&
-Â 
+ 
 data.openInterestChange < 5
-Â 
+ 
 ){
-Â 
+ 
 risk+=40;
-Â 
+ 
 }
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 // Volume spike with weak liquidity
-Â 
+ 
 if(
-Â 
+ 
 data.volumeChange > 500 &&
-Â 
+ 
 data.liquidity < 500000
-Â 
+ 
 ){
-Â 
+ 
 risk+=30;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return Math.min(
 risk,
 100
 );
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // LIQUIDITY TRAP DETECTOR
 // ================================
-Â 
-Â 
+ 
+ 
 function detectLiquidityTrap(data){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 let risk=0;
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
-Â 
+ 
 data.volumeChange > 300 &&
-Â 
+ 
 data.liquidity < 1000000
-Â 
+ 
 ){
-Â 
+ 
 risk+=50;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
-Â 
+ 
 data.spread > 1
-Â 
+ 
 ){
-Â 
+ 
 risk+=20;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return Math.min(
 risk,
 100
 );
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // SMART MONEY SCORE ENGINE
 // ================================
-Â 
-Â 
+ 
+ 
 function calculateSmartMoneyScore(data){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 let score=50;
-Â 
-Â 
-Â 
+ 
+ 
+ 
 score += analyzePrice(data);
-Â 
-Â 
+ 
+ 
 score += analyzeVolume(data);
-Â 
-Â 
+ 
+ 
 score += analyzeOpenInterest(data);
-Â 
-Â 
+ 
+ 
 score += analyzeFunding(data);
-Â 
-Â 
+ 
+ 
 score += analyzeOrderbook(data);
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 // Risk reduction
-Â 
+ 
 score -= detectFakePump(data);
-Â 
-Â 
+ 
+ 
 score -= detectLiquidityTrap(data);
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 return Math.max(
-Â 
+ 
 0,
-Â 
+ 
 Math.min(
 score,
 100
 )
-Â 
+ 
 );
-Â 
-Â 
-Â 
+ 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // MARKET ANALYSIS PIPELINE
 // ================================
-Â 
-Â 
+ 
+ 
 function analyzeMarket(symbol){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const data =
 getMarketData(symbol);
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(!data){
-Â 
-Â 
+ 
+ 
 return {
-Â 
-Â 
+ 
+ 
 symbol,
-Â 
-Â 
+ 
+ 
 status:
 "NO_DATA"
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const score =
-Â 
+ 
 calculateSmartMoneyScore(data);
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 return {
-Â 
-Â 
+ 
+ 
 symbol,
-Â 
-Â 
+ 
+ 
 score,
-Â 
-Â 
+ 
+ 
 fakePumpRisk:
-Â 
+ 
 detectFakePump(data),
-Â 
-Â 
-Â 
+ 
+ 
+ 
 liquidityRisk:
-Â 
+ 
 detectLiquidityTrap(data),
-Â 
-Â 
-Â 
+ 
+ 
+ 
 timestamp:
 Date.now()
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
-Â 
+ 
+ 
+ 
 }
 // ======================================================
 // MULTI AGENT STRATEGY ENGINE
 // V6.3.1 PART 3
 // ======================================================
-Â 
-Â 
-Â 
+ 
+ 
+ 
 // ================================
 // MOMENTUM AGENT
 // ================================
-Â 
-Â 
+ 
+ 
 function momentumAgent(data){
-Â 
-Â 
+ 
+ 
 let score=0;
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 data.change5m >=3
 ){
-Â 
+ 
 score+=25;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 data.change15m >=5
 ){
-Â 
+ 
 score+=20;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 data.volumeChange>=200
 ){
-Â 
+ 
 score+=25;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return Math.min(
 score,
 100
 );
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // SMART MONEY AGENT
 // ================================
-Â 
-Â 
+ 
+ 
 function smartMoneyAgent(data){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 let score=0;
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 data.openInterestChange>=20
 ){
-Â 
+ 
 score+=30;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 data.largeOrders===true
 ){
-Â 
+ 
 score+=25;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 data.orderbookImbalance>0.3
 ){
-Â 
+ 
 score+=25;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return Math.min(
 score,
 100
 );
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // TREND AGENT
 // ================================
-Â 
-Â 
+ 
+ 
 function trendAgent(data){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 let score=0;
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 data.trend==="UP"
 ){
-Â 
+ 
 score+=30;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 data.higherTimeframeTrend==="UP"
 ){
-Â 
+ 
 score+=40;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 data.maFast >
 data.maSlow
 ){
-Â 
+ 
 score+=20;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return Math.min(
 score,
 100
 );
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // REVERSAL SAFETY AGENT
 // ??????? ?? ???? ????? ???
 // ================================
-Â 
-Â 
+ 
+ 
 function reversalAgent(data){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 let risk=0;
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 data.change1h>15
 ){
-Â 
+ 
 risk+=30;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 data.volumeChange < data.priceChange*10
 ){
-Â 
+ 
 risk+=20;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return risk;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // LEGACY STRATEGY VOTING (NOT USED BY FUTURES_V6 CANONICAL ENGINE)
 // ================================
-Â 
-Â 
+ 
+ 
 function legacyStrategyVote(data){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const votes={
-Â 
-Â 
+ 
+ 
 momentum:
-Â 
+ 
 momentumAgent(data),
-Â 
-Â 
-Â 
+ 
+ 
+ 
 smartMoney:
-Â 
+ 
 smartMoneyAgent(data),
-Â 
-Â 
-Â 
+ 
+ 
+ 
 trend:
-Â 
+ 
 trendAgent(data)
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 let finalScore =
-Â 
+ 
 (
 votes.momentum +
-Â 
+ 
 votes.smartMoney +
-Â 
+ 
 votes.trend
-Â 
+ 
 )
 /3;
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 // ???? ?????? ?? ???? ??? ?????
-Â 
+ 
 finalScore -=
-Â 
+ 
 reversalAgent(data);
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 return {
-Â 
-Â 
+ 
+ 
 votes,
-Â 
-Â 
+ 
+ 
 finalScore:
-Â 
+ 
 Math.max(
-Â 
+ 
 0,
-Â 
+ 
 Math.min(
 finalScore,
 100
 )
-Â 
+ 
 )
-Â 
-Â 
-Â 
+ 
+ 
+ 
 };
-Â 
-Â 
-Â 
+ 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // MARKET RANKING ENGINE
 // ================================
-Â 
-Â 
+ 
+ 
 function rankMarkets(markets){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return markets.sort(
-Â 
+ 
 (a,b)=>
-Â 
+ 
 b.finalScore - a.finalScore
-Â 
+ 
 );
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // BEST OPPORTUNITY SELECTOR
 // ================================
-Â 
-Â 
+ 
+ 
 function selectBestMarkets(
 markets
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const ranked =
-Â 
+ 
 rankMarkets(markets);
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 return ranked.slice(
 0,
 3
 );
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // FULL AI MARKET SCAN
 // ================================
-Â 
-Â 
+ 
+ 
 function runAIScan(symbols){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const results=[];
-Â 
-Â 
-Â 
+ 
+ 
+ 
 for(
 const symbol of symbols
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const data =
 getMarketData(symbol);
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(!data)
 continue;
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const analysis =
-Â 
+ 
 legacyStrategyVote(data);
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 results.push({
-Â 
+ 
 symbol,
-Â 
-Â 
+ 
+ 
 ...analysis
-Â 
-Â 
+ 
+ 
 });
-Â 
-Â 
-Â 
+ 
+ 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return selectBestMarkets(
 results
 );
-Â 
-Â 
+ 
+ 
 }
 // ======================================================
 // PORTFOLIO MANAGER & RISK ENGINE
 // V6.3.1 PART 4
 // ======================================================
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 // ================================
 // PORTFOLIO STATE
 // ================================
-Â 
-Â 
+ 
+ 
 const PORTFOLIO = {
-Â 
-Â 
+ 
+ 
 positions: [],
-Â 
-Â 
+ 
+ 
 dailyLoss:0,
-Â 
-Â 
+ 
+ 
 balance:0
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // POSITION LIMIT CHECK
 // ================================
-Â 
-Â 
+ 
+ 
 function canOpenPosition(){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return (
-Â 
+ 
 PORTFOLIO.positions.length
 <
 CONFIG.MAX_POSITIONS
-Â 
+ 
 );
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // CAPITAL ALLOCATION
 // ================================
-Â 
-Â 
+ 
+ 
 function calculateTradeSize(balance,score){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 let allocation =
-Â 
+ 
 CONFIG.CAPITAL_PER_TRADE;
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 // ?????????? ????? ???
-Â 
+ 
 if(
 score>=95
 ){
-Â 
+ 
 allocation=0.07;
-Â 
+ 
 }
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 // ????? ???????
-Â 
+ 
 if(
 score<90
 ){
-Â 
+ 
 allocation=0.03;
-Â 
+ 
 }
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 return {
-Â 
-Â 
+ 
+ 
 capital:
-Â 
+ 
 balance*allocation,
-Â 
-Â 
+ 
+ 
 percentage:
-Â 
+ 
 allocation
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // CORRELATION ENGINE
 // ================================
-Â 
-Â 
-Â 
+ 
+ 
+ 
 function calculateCorrelation(
 asset1,
 asset2
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 // ?? ???? ???? ?? ???? ????? ?????? ??????
-Â 
+ 
 // ????? ??? ????
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 asset1.base===asset2.base
 ){
-Â 
+ 
 return 1;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return 0.5;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 function checkCorrelation(
 newSignal
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 for(
 const position of PORTFOLIO.positions
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const correlation =
-Â 
+ 
 calculateCorrelation(
-Â 
+ 
 newSignal,
-Â 
+ 
 position
-Â 
+ 
 );
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 if(
 correlation>=0.8
 ){
-Â 
+ 
 return {
-Â 
-Â 
+ 
+ 
 allowed:false,
-Â 
-Â 
+ 
+ 
 reason:
 "High correlation"
-Â 
-Â 
+ 
+ 
 };
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return {
-Â 
-Â 
+ 
+ 
 allowed:true
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // RISK CHECK
 // ================================
-Â 
-Â 
+ 
+ 
 function legacyRiskGuard(signal){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 !canOpenPosition()
 ){
-Â 
+ 
 return {
-Â 
-Â 
+ 
+ 
 allowed:false,
-Â 
-Â 
+ 
+ 
 reason:
 "Maximum positions reached"
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 const correlation =
-Â 
+ 
 checkCorrelation(signal);
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 if(
 !correlation.allowed
 ){
-Â 
+ 
 return correlation;
-Â 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 if(
 PORTFOLIO.dailyLoss
 <=
--Â Â Â Â Â Â Â Â  Â Â Â Â Â Â Â Â  CONFIG.MAX_DAILY_LOSS
+-                  CONFIG.MAX_DAILY_LOSS
 ){
-Â 
+ 
 return {
-Â 
-Â 
+ 
+ 
 allowed:false,
-Â 
-Â 
+ 
+ 
 reason:
 "Daily loss limit"
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 return {
-Â 
-Â 
+ 
+ 
 allowed:true
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
-Â 
+ 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // SIGNAL PRIORITY RANKING
 // ================================
-Â 
-Â 
+ 
+ 
 function rankSignals(signals){
-Â 
+ 
 return signals.sort((a,b)=>{
-Â 
+ 
 const scoreA = Number(a?.finalScore ?? a?.score ?? 0);
 const scoreB = Number(b?.finalScore ?? b?.score ?? 0);
-Â 
+ 
 if (scoreB !== scoreA) return scoreB - scoreA;
-Â 
+ 
 const precisionA = Number(
 (a?.diagnostics?.advanced?.precisionEntry?.long?.score ??
 a?.diagnostics?.advanced?.precisionEntry?.short?.score ??
@@ -6858,282 +6858,282 @@ const precisionB = Number(
 b?.diagnostics?.advanced?.precisionEntry?.short?.score ??
 b?.precisionScore ?? 0)
 );
-Â 
+ 
 return precisionB - precisionA;
-Â 
+ 
 });
-Â 
+ 
 }
-Â 
-Â 
+ 
+ 
 // ================================
 // SELECT BEST OPPORTUNITY
 // ================================
-Â 
-Â 
+ 
+ 
 function chooseBestSignal(
 signals
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const ranked =
-Â 
+ 
 rankSignals(signals);
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return ranked[0] || null;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // CREATE POSITION
 // ================================
-Â 
-Â 
+ 
+ 
 function createPortfolioPosition(
 signal,
 balance
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const size =
-Â 
+ 
 calculateTradeSize(
-Â 
+ 
 balance,
-Â 
+ 
 signal.finalScore
-Â 
+ 
 );
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 const position={
-Â 
-Â 
-Â 
+ 
+ 
+ 
 id:
-Â 
+ 
 crypto.randomUUID(),
-Â 
-Â 
-Â 
+ 
+ 
+ 
 symbol:
-Â 
+ 
 signal.symbol,
-Â 
-Â 
-Â 
+ 
+ 
+ 
 side:
-Â 
+ 
 signal.direction || "LONG",
-Â 
-Â 
-Â 
+ 
+ 
+ 
 score:
-Â 
+ 
 signal.finalScore,
-Â 
-Â 
-Â 
+ 
+ 
+ 
 smartMoney:
-Â 
+ 
 signal.votes.smartMoney,
-Â 
-Â 
-Â 
+ 
+ 
+ 
 capital:
-Â 
+ 
 size.capital,
-Â 
-Â 
-Â 
+ 
+ 
+ 
 openedAt:
-Â 
+ 
 Date.now(),
-Â 
-Â 
-Â 
+ 
+ 
+ 
 status:
-Â 
+ 
 "OPEN"
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 PORTFOLIO.positions.push(
 position
 );
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return position;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // REMOVE POSITION
 // ================================
-Â 
-Â 
+ 
+ 
 function closePortfolioPosition(
 id,
 pnl
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 PORTFOLIO.positions =
-Â 
+ 
 PORTFOLIO.positions.filter(
-Â 
+ 
 p=>p.id!==id
-Â 
+ 
 );
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 if(
 pnl<0
 ){
-Â 
+ 
 PORTFOLIO.dailyLoss += pnl;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return true;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // PORTFOLIO STATUS
 // ================================
-Â 
-Â 
+ 
+ 
 function getPortfolioStatus(){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return {
-Â 
-Â 
+ 
+ 
 openPositions:
-Â 
+ 
 PORTFOLIO.positions.length,
-Â 
-Â 
+ 
+ 
 positions:
-Â 
+ 
 PORTFOLIO.positions,
-Â 
-Â 
+ 
+ 
 dailyLoss:
-Â 
+ 
 PORTFOLIO.dailyLoss
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
+ 
+ 
 }
 // ======================================================
 // POSITION MANAGER & SMART EXIT ENGINE
 // V6.3.1 PART 5
 // ======================================================
-Â 
-Â 
-Â 
+ 
+ 
+ 
 // ================================
 // POSITION CONFIG
 // ================================
-Â 
-Â 
+ 
+ 
 const POSITION_CONFIG = {
-Â 
-Â 
+ 
+ 
 TP_LEVELS:[
-Â 
+ 
 30,
-Â 
+ 
 60,
-Â 
+ 
 100
-Â 
+ 
 ],
-Â 
-Â 
+ 
+ 
 STOP_LOSS:
-Â 
+ 
 10,
-Â 
-Â 
+ 
+ 
 TRAILING_PERCENT:
-Â 
+ 
 8
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // CALCULATE PNL
 // ================================
-Â 
-Â 
+ 
+ 
 function calculatePnL(
 position,
 currentPrice
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 let pnl;
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 position.side==="LONG"
 ){
-Â 
-Â 
+ 
+ 
 pnl =
-Â 
+ 
 (
 (
 currentPrice -
@@ -7141,21 +7141,21 @@ position.entryPrice
 )
 /
 position.entryPrice
-Â 
+ 
 )
 *
 100;
-Â 
-Â 
-Â 
+ 
+ 
+ 
 }
-Â 
-Â 
+ 
+ 
 else{
-Â 
-Â 
+ 
+ 
 pnl =
-Â 
+ 
 (
 (
 position.entryPrice -
@@ -7163,635 +7163,635 @@ currentPrice
 )
 /
 position.entryPrice
-Â 
+ 
 )
 *
 100;
-Â 
-Â 
-Â 
+ 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
 return Number(
 pnl.toFixed(2)
 );
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // PARTIAL TAKE PROFIT ENGINE
 // ================================
-Â 
-Â 
+ 
+ 
 function checkPartialTP(
 position,
 pnl
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 for(
 const level of POSITION_CONFIG.TP_LEVELS
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
-Â 
+ 
 pnl>=level &&
-Â 
+ 
 !position.closedTP?.includes(level)
-Â 
+ 
 ){
-Â 
-Â 
+ 
+ 
 return {
-Â 
-Â 
+ 
+ 
 action:
 "PARTIAL_CLOSE",
-Â 
-Â 
+ 
+ 
 level
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
-Â 
+ 
+ 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return null;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // STOP LOSS ENGINE
 // ================================
-Â 
-Â 
+ 
+ 
 function checkStopLoss(
 position,
 pnl
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 pnl <=
 -
 POSITION_CONFIG.STOP_LOSS
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return {
-Â 
-Â 
+ 
+ 
 action:
 "CLOSE_ALL",
-Â 
-Â 
+ 
+ 
 reason:
 "STOP_LOSS"
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return null;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // TRAILING STOP ENGINE
 // ================================
-Â 
-Â 
+ 
+ 
 function updateTrailingStop(
 position,
 currentPrice
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 !CONFIG.TRAILING_STOP
 ){
-Â 
+ 
 return position;
-Â 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 if(
 position.side==="LONG"
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const newStop =
-Â 
+ 
 currentPrice *
 (
 POSITION_CONFIG.TRAILING_PERCENT/100
 );
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 if(
 !position.trailingStop ||
-Â 
+ 
 newStop >
 position.trailingStop
 ){
-Â 
-Â 
+ 
+ 
 position.trailingStop =
 newStop;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 else{
-Â 
-Â 
+ 
+ 
 const newStop =
-Â 
+ 
 currentPrice *
 (
 POSITION_CONFIG.TRAILING_PERCENT/100
 );
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 if(
 !position.trailingStop ||
-Â 
+ 
 newStop <
 position.trailingStop
 ){
-Â 
-Â 
+ 
+ 
 position.trailingStop =
 newStop;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 return position;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // TRAILING STOP CHECK
 // ================================
-Â 
-Â 
+ 
+ 
 function checkTrailingStop(
 position,
 price
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 !position.trailingStop
 ){
-Â 
+ 
 return null;
-Â 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 position.side==="LONG" &&
-Â 
+ 
 price <= position.trailingStop
-Â 
+ 
 ){
-Â 
-Â 
+ 
+ 
 return {
-Â 
-Â 
+ 
+ 
 action:
 "CLOSE_ALL",
-Â 
-Â 
+ 
+ 
 reason:
 "TRAILING_STOP"
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 if(
 position.side==="SHORT" &&
-Â 
+ 
 price >= position.trailingStop
-Â 
+ 
 ){
-Â 
-Â 
+ 
+ 
 return {
-Â 
-Â 
+ 
+ 
 action:
 "CLOSE_ALL",
-Â 
-Â 
+ 
+ 
 reason:
 "TRAILING_STOP"
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return null;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // SMART EXIT ENGINE
 // ================================
-Â 
-Â 
+ 
+ 
 function smartExitCheck(
 position,
 market
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 // ??? Smart Money
-Â 
-Â 
+ 
+ 
 if(
 market.smartMoneyScore < 50
 ){
-Â 
-Â 
+ 
+ 
 return {
-Â 
-Â 
+ 
+ 
 action:
 "CLOSE_ALL",
-Â 
-Â 
+ 
+ 
 reason:
 "SMART_MONEY_EXIT"
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 // ??? ??? ????
-Â 
-Â 
+ 
+ 
 if(
 market.volumeChange < -50
 ){
-Â 
-Â 
+ 
+ 
 return {
-Â 
-Â 
+ 
+ 
 action:
 "CLOSE_ALL",
-Â 
-Â 
+ 
+ 
 reason:
 "VOLUME_FADE"
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 return null;
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // POSITION MONITOR
 // ================================
-Â 
-Â 
+ 
+ 
 function monitorPosition(
 position,
 market
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const pnl =
-Â 
+ 
 calculatePnL(
-Â 
+ 
 position,
-Â 
+ 
 market.price
-Â 
+ 
 );
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 const tp =
-Â 
+ 
 checkPartialTP(
 position,
 pnl
 );
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(tp){
-Â 
+ 
 return tp;
-Â 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 const sl =
-Â 
+ 
 checkStopLoss(
 position,
 pnl
 );
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(sl){
-Â 
+ 
 return sl;
-Â 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 updateTrailingStop(
-Â 
+ 
 position,
-Â 
+ 
 market.price
-Â 
+ 
 );
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 const trailing =
-Â 
+ 
 checkTrailingStop(
-Â 
+ 
 position,
-Â 
+ 
 market.price
-Â 
+ 
 );
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(trailing){
-Â 
+ 
 return trailing;
-Â 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 const smartExit =
-Â 
+ 
 smartExitCheck(
-Â 
+ 
 position,
-Â 
+ 
 market
-Â 
+ 
 );
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(smartExit){
-Â 
+ 
 return smartExit;
-Â 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 return {
-Â 
-Â 
+ 
+ 
 action:
 "HOLD",
-Â 
-Â 
+ 
+ 
 pnl
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
+ 
+ 
 }
 // ======================================================
 // MAIN ENGINE + TELEGRAM CONTROL
 // V6.1.1 PART 6
 // ======================================================
-Â 
-Â 
-Â 
+ 
+ 
+ 
 // ================================
 // BOT STATE
 // ================================
-Â 
-Â 
+ 
+ 
 const BOT_STATE = {
-Â 
-Â 
+ 
+ 
 running:true,
-Â 
-Â 
+ 
+ 
 lastScan:null,
-Â 
-Â 
+ 
+ 
 signals:[],
-Â 
-Â 
+ 
+ 
 executions:0,
-Â 
-Â 
+ 
+ 
 errors:0
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // MARKET WATCHLIST
 // ================================
-Â 
-Â 
+ 
+ 
 const WATCHLIST = [
-Â 
-Â 
+ 
+ 
 "BTC-PERP",
-Â 
+ 
 "ETH-PERP",
-Â 
+ 
 "SOL-PERP",
-Â 
+ 
 "ARB-PERP",
-Â 
+ 
 "AVAX-PERP",
-Â 
+ 
 "INJ-PERP",
-Â 
+ 
 "LINK-PERP",
-Â 
+ 
 "OP-PERP",
-Â 
+ 
 "APT-PERP",
-Â 
+ 
 "NEAR-PERP"
-Â 
-Â 
+ 
+ 
 ];
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // LIVE GMX EXECUTION ENGINE V6.1
 // ================================
-Â 
+ 
 let LIVE_CONTEXT = null;
-Â 
+ 
 function validatePrivateKey(key) {
 if (!/^0x[0-9a-fA-F]{64}$/.test(String(key || ""))) throw new Error("GMX_PRIVATE_KEY is missing or invalid");
 }
-Â 
+ 
 async function getLiveContext(env) {
 if (!executionEnabled(env)) throw new Error("Execution disabled: set Cloudflare ENV EXECUTION_ENABLED=true");
 if (!GmxApiSdk || !PrivateKeySigner || !getViemChain) {
@@ -7800,7 +7800,7 @@ throw new Error("Bundled GMX SDK exports are unavailable");
 validatePrivateKey(env.GMX_PRIVATE_KEY);
 if (!env.ARBITRUM_RPC) throw new Error("ARBITRUM_RPC is required");
 if (LIVE_CONTEXT && LIVE_CONTEXT.rpc === env.ARBITRUM_RPC) return LIVE_CONTEXT;
-Â 
+ 
 const signer = new PrivateKeySigner(env.GMX_PRIVATE_KEY, {
 rpcUrl: env.ARBITRUM_RPC,
 chain: getViemChain(42161)
@@ -7809,13 +7809,13 @@ const sdk = new GmxApiSdk({ chainId: 42161 });
 LIVE_CONTEXT = { sdk, signer, account: signer.address, rpc: env.ARBITRUM_RPC };
 return LIVE_CONTEXT;
 }
-Â 
+ 
 function toBigIntDecimal(value, decimals) {
 const s = Number(value).toFixed(Math.min(decimals,8));
 const [whole,frac=""] = s.split(".");
 return BigInt(whole)*10n**BigInt(decimals)+BigInt((frac+"0".repeat(decimals)).slice(0,decimals)||"0");
 }
-Â 
+ 
 function liveNormalizeSymbol(symbol) {
 if (!symbol) return null;
 let s = String(symbol).trim().toUpperCase();
@@ -7838,7 +7838,7 @@ const indexName = liveNormalizeSymbol(raw.split("/")[0].split("[")[0]);
 return base === wanted || indexName === wanted;
 }) || null;
 }
-Â 
+ 
 function extractCollateralBalances(balances) {
 const arr=Array.isArray(balances)?balances:Array.isArray(balances?.balances)?balances.balances:Object.values(balances||{});
 const result={USDC:null,USDT:null};
@@ -7902,7 +7902,7 @@ if (market) return {symbol:preferred,usd:bal.usd,balance:bal.balance,decimals:ba
 }
 return null;
 }
-Â 
+ 
 function liveExecutionKey(signal) {
 const entry = Number(signal?.tradePlan?.entry ?? signal?.price ?? 0);
 const stop = Number(signal?.tradePlan?.stopLoss ?? 0);
@@ -8124,15 +8124,15 @@ includeRelatedOrders: true
 });
 const actions = [];
 if (!Array.isArray(positions)) return actions;
-Â 
+ 
 const markets = await sdk.fetchMarkets();
-Â 
+ 
 for (const position of positions) {
 try {
 const rawIndex = String(position.indexName || "");
 const symbol = liveNormalizeSymbol(rawIndex.split("/")[0]);
 if (!symbol || !position.sizeInUsd) continue;
-Â 
+ 
 const snapshot = await buildMarketSnapshot(symbol, env);
 const previous = await loadMarketSnapshot(env, symbol);
 const analysis = scoreSignal(snapshot, previous?.market || null);
@@ -8150,7 +8150,7 @@ smartMoneyOutflow: snapshot.smartMoneyOutflow,
 risk: analysis.risk,
 atr: snapshot.atr ?? snapshot.indicators?.atr
 };
-Â 
+ 
 const entryPrice = Number(position.entryPrice || position.entryPriceUsd || position.averagePrice || 0);
 const currentPrice = Number(snapshot.price || 0);
 const isLong = Boolean(position.isLong);
@@ -8159,7 +8159,7 @@ const hardStop = entryPrice > 0 && currentPrice > 0 && (
 (isLong && Number(position.stopLossPrice || position.stopLoss || 0) > 0 && currentPrice <= Number(position.stopLossPrice || position.stopLoss)) ||
 (!isLong && Number(position.stopLossPrice || position.stopLoss || 0) > 0 && currentPrice >= Number(position.stopLossPrice || position.stopLoss))
 );
-Â 
+ 
 const radarLedger = await loadRadarLiveLedger(env);
 const radarKey = radarLiveLedgerKey(symbol);
 const radarMeta = radarLedger[radarKey]?.status === "OPEN" ? radarLedger[radarKey] : null;
@@ -8193,23 +8193,23 @@ const result = await sdk.executeExpressOrder({kind:"decrease",symbol:marketSdk.s
   }
 }
 const plan = buildPositionExitPlan(syntheticPosition, market, hardStop);
-Â 
+ 
 // Preserve the original smart-money/reversal protection as a fallback signal,
 // but let the unified exit manager decide the action.
 const oppositeScore = isLong ? analysis.shortScore : analysis.longScore;
 if (plan.execution === "HOLD" && oppositeScore < 65 && analysis.risk < 45) continue;
-Â 
+ 
 const action = plan.action;
 if (!action || action === "HOLD") continue;
-Â 
+ 
 const marketSdk = findSdkMarket(markets, symbol);
 if (!marketSdk) continue;
-Â 
+ 
 const sizeUsd = Number(position.sizeInUsd);
 const closePercent = Math.max(0, Math.min(100, Number(plan.closePercent || 0)));
 const closeSizeUsd = closePercent >= 100 ? sizeUsd : sizeUsd * closePercent / 100;
 if (!(closeSizeUsd > 0)) continue;
-Â 
+ 
 const size = BigInt(Math.floor(closeSizeUsd));
 const result = await sdk.executeExpressOrder({
 kind: "decrease",
@@ -8222,11 +8222,11 @@ receiveToken: positionCollateral || "USDC",
 mode: "express",
 from: account
 }, signer);
-Â 
+ 
 const pnlPercent = entryPrice > 0 && currentPrice > 0
 ? (isLong ? (currentPrice - entryPrice) / entryPrice : (entryPrice - currentPrice) / entryPrice) * 100
 : 0;
-Â 
+ 
 const actionRecord = {
 symbol,
 direction: side,
@@ -8240,7 +8240,7 @@ requestId: result?.requestId || null
 };
 actions.push(actionRecord);
 await auditLog(env, { type: "LIVE_UNIFIED_EXIT", account, action: actionRecord });
-Â 
+ 
 try {
 await sendTelegram(env, formatTelegramExit(actionRecord));
 } catch (_) {}
@@ -8254,7 +8254,7 @@ error: safeError(error)
 }
 return actions;
 }
-Â 
+ 
 async function executeSignal(signal,env) {
 if (!executionEnabled(env)) {
 await auditLog(env,{type:"SIGNAL_ONLY",signal});
@@ -8273,196 +8273,196 @@ await auditLog(env,{type:"LIVE_EXECUTION_ERROR",signalId:signal?.id,error:safeEr
 return {executed:false,mode:"LIVE",error:safeError(error),signal};
 }
 }
-Â 
-Â 
+ 
+ 
 // ================================
 // COMPLETE MARKET SCAN
 // ================================
-Â 
-Â 
+ 
+ 
 async function runLegacyFullScan(
 env
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 !BOT_STATE.running
 ){
-Â 
-Â 
+ 
+ 
 return {
-Â 
-Â 
+ 
+ 
 status:
 "PAUSED"
-Â 
-Â 
+ 
+ 
 };
-Â 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 const candidates=[];
-Â 
-Â 
-Â 
+ 
+ 
+ 
 for(
 const symbol of WATCHLIST
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const analysis =
-Â 
+ 
 analyzeMarket(symbol);
-Â 
-Â 
-Â 
+ 
+ 
+ 
 if(
 analysis.status==="NO_DATA"
 )
-Â 
+ 
 continue;
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 const data =
-Â 
+ 
 getMarketData(symbol);
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const strategy =
-Â 
+ 
 legacyStrategyVote(data);
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 candidates.push({
-Â 
+ 
 symbol,
-Â 
-Â 
+ 
+ 
 ...strategy,
-Â 
-Â 
+ 
+ 
 smartScore:
-Â 
+ 
 analysis.score
-Â 
-Â 
+ 
+ 
 });
-Â 
-Â 
-Â 
+ 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 const ranked =
-Â 
+ 
 rankSignals(candidates);
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 BOT_STATE.lastScan =
 Date.now();
-Â 
-Â 
+ 
+ 
 BOT_STATE.signals =
 ranked.slice(0,3);
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 if(
 ranked.length
 ){
-Â 
-Â 
+ 
+ 
 const best =
-Â 
+ 
 chooseBestSignal(ranked);
-Â 
-Â 
-Â 
+ 
+ 
+ 
 await executeSignal(
-Â 
+ 
 best,
-Â 
+ 
 env
-Â 
+ 
 );
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return {
-Â 
-Â 
+ 
+ 
 status:
 "SCAN_COMPLETE",
-Â 
-Â 
+ 
+ 
 best,
-Â 
-Â 
+ 
+ 
 top3:
 BOT_STATE.signals
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 return {
-Â 
-Â 
+ 
+ 
 status:
 "NO_SIGNAL"
-Â 
-Â 
+ 
+ 
 };
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 // ======================================================
 // GMX V2 MARKET DISCOVERY / READ-ONLY ADAPTER
 // Uses the official GMX Oracle API for public market reads.
 // No wallet, signing, private key or order submission.
 // ======================================================
-Â 
+ 
 async function fetchWithTimeout(url, options = {}, timeoutMs = GMX_V2_CONFIG.REQUEST_TIMEOUT_MS){
 const controller = new AbortController();
 const timer = setTimeout(() => controller.abort(), timeoutMs);
-Â 
+ 
 try{
 return await fetch(url, {
 ...options,
@@ -8472,12 +8472,12 @@ signal: controller.signal
 clearTimeout(timer);
 }
 }
-Â 
+ 
 function normalizeGmxMarket(market){
 if(!market || typeof market !== "object"){
 return null;
 }
-Â 
+ 
 return {
 marketToken: market.marketToken || market.marketTokenAddress || null,
 symbol: market.symbol || market.name || null,
@@ -8488,7 +8488,7 @@ isListed: market.isListed ?? null,
 isSpotOnly: market.isSpotOnly ?? null
 };
 }
-Â 
+ 
 async function legacyFetchGmxMarkets(){
 const response = await fetchWithTimeout(
 GMX_V2_CONFIG.MARKETS_URL,
@@ -8499,29 +8499,29 @@ headers: {
 }
 }
 );
-Â 
+ 
 const text = await response.text();
-Â 
+ 
 if(!response.ok){
 throw new Error(
 `GMX markets HTTP ${response.status}: ${text.slice(0,300)}`
 );
 }
-Â 
+ 
 let data;
 try{
 data = JSON.parse(text);
 }catch(error){
 throw new Error("GMX markets returned invalid JSON");
 }
-Â 
+ 
 const rawMarkets =
 Array.isArray(data)
 ? data
 : Array.isArray(data.markets)
 ? data.markets
 : [];
-Â 
+ 
 return {
 count: rawMarkets.length,
 markets: rawMarkets
@@ -8529,7 +8529,7 @@ markets: rawMarkets
 .filter(Boolean)
 };
 }
-Â 
+ 
 async function legacyFetchGmxMarketsInfo(){
 const response = await fetchWithTimeout(
 GMX_V2_CONFIG.MARKETS_INFO_URL,
@@ -8540,25 +8540,25 @@ headers: {
 }
 }
 );
-Â 
+ 
 const text = await response.text();
-Â 
+ 
 if(!response.ok){
 throw new Error(
 `GMX markets/info HTTP ${response.status}: ${text.slice(0,300)}`
 );
 }
-Â 
+ 
 let data;
 try{
 data = JSON.parse(text);
 }catch(error){
 throw new Error("GMX markets/info returned invalid JSON");
 }
-Â 
+ 
 return data;
 }
-Â 
+ 
 async function gmxMarketsRoute(env, infoOnly){
 if(!env.ARBITRUM_RPC){
 return jsonResponse({
@@ -8570,7 +8570,7 @@ gmx: "blocked",
 reason: "ARBITRUM_RPC is not configured"
 }, 503);
 }
-Â 
+ 
 try{
 // Verify the RPC network before using GMX data.
 const rpcResponse = await fetchWithTimeout(
@@ -8588,13 +8588,13 @@ params: []
 })
 }
 );
-Â 
+ 
 const rpcData = await rpcResponse.json();
 const chainId =
 rpcData.result
 ? parseInt(rpcData.result, 16)
 : null;
-Â 
+ 
 if(chainId !== GMX_V2_CONFIG.CHAIN_ID){
 return jsonResponse({
 ok: false,
@@ -8605,10 +8605,10 @@ rpc: "wrong_network",
 gmx: "blocked"
 }, 502);
 }
-Â 
+ 
 if(infoOnly){
 const info = await fetchGmxMarketsInfo();
-Â 
+ 
 return jsonResponse({
 ok: true,
 network: "Arbitrum One",
@@ -8622,9 +8622,9 @@ data: info,
 timestamp: Date.now()
 });
 }
-Â 
+ 
 const result = await fetchGmxMarkets();
-Â 
+ 
 return jsonResponse({
 ok: true,
 network: "Arbitrum One",
@@ -8638,7 +8638,7 @@ count: result.count,
 markets: result.markets,
 timestamp: Date.now()
 });
-Â 
+ 
 }catch(error){
 return jsonResponse({
 ok: false,
@@ -8653,7 +8653,7 @@ timestamp: Date.now()
 }, 502);
 }
 }
-Â 
+ 
 // V14.0.5.1: Telegram has a strict per-invocation fetch budget.
 // Keep a small deterministic allowance so notification fetches can never
 // consume the remaining Cloudflare subrequest budget after market analysis.
@@ -8689,8 +8689,8 @@ function consumeTelegramBudget(env) {
 // ================================
 // TELEGRAM SENDER
 // ================================
-Â 
-Â 
+ 
+ 
 async function sendTelegram(
 env,
 message
@@ -8737,147 +8737,147 @@ return {ok:false,reason:safeError(error)};
 // ================================
 // TELEGRAM COMMAND HANDLER
 // ================================
-Â 
-Â 
+ 
+ 
 function handleCommand(
 command
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 switch(command){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 case "/pause":
-Â 
-Â 
+ 
+ 
 BOT_STATE.running=false;
-Â 
-Â 
+ 
+ 
 return "BOT PAUSED";
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 case "/resume":
-Â 
-Â 
+ 
+ 
 BOT_STATE.running=true;
-Â 
-Â 
+ 
+ 
 return "BOT RESUMED";
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 case "/status":
-Â 
-Â 
+ 
+ 
 return JSON.stringify(
 BOT_STATE
 );
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 default:
-Â 
-Â 
+ 
+ 
 return "UNKNOWN COMMAND";
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
+ 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 // ================================
 // EXTEND WORKER ROUTER
 // ================================
-Â 
-Â 
+ 
+ 
 async function apiRouter(
 request,
 env
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const url =
-Â 
+ 
 new URL(request.url);
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 if(url.pathname === "/scan") {
 return jsonResponse(await FUTURES_V6.scan(env));
 }
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 if(
 url.pathname === "/health"
 ){
-Â 
-Â 
+ 
+ 
 return jsonResponse(
 systemHealth(env)
 );
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
+ 
 if(
 url.pathname === "/control"
 ){
-Â 
-Â 
-Â 
+ 
+ 
+ 
 const cmd =
-Â 
+ 
 url.searchParams.get(
 "cmd"
 );
-Â 
-Â 
-Â 
+ 
+ 
+ 
 return jsonResponse({
-Â 
+ 
 result:
-Â 
+ 
 handleCommand(cmd)
-Â 
-Â 
+ 
+ 
 });
-Â 
-Â 
+ 
+ 
 }
-Â 
-Â 
-Â 
-Â 
-Â 
+ 
+ 
+ 
+ 
+ 
 return null;
-Â 
-Â 
+ 
+ 
 }
