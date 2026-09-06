@@ -36,7 +36,7 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           EXECUTION_ENABLED: ${{ vars.EXECUTION_ENABLED || 'false' }}
-        run: node github-runner.mjs
+        run: node --experimental-specifier-resolution=node github-runner.mjs
 
       - name: Persist bot state
         run: |
