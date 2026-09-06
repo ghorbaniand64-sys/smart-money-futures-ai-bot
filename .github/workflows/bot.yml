@@ -34,153 +34,284 @@ jobs:
         run: |
           set -e
 
-          SDK_DIR="node_modules/@gmx-io/sdk/build/esm/src"
-
           echo "========================================"
           echo "GMX SDK VERSION"
           echo "========================================"
 
-          node -e "const p=require('./node_modules/@gmx-io/sdk/package.json'); console.log(p.version)"
+          node -e "const p=require('./node_modules/@gmx-io/sdk/package.json'); console.log('SDK version:', p.version)"
 
           echo ""
           echo "========================================"
-          echo "CHECKING SDK FILES"
-          echo "========================================"
-
-          test -f "$SDK_DIR/configs/api.js"
-          test -f "$SDK_DIR/clients/v2/index.js"
-
-          echo "configs/api.js:"
-          ls -l "$SDK_DIR/configs/api.js"
-
-          echo ""
-          echo "clients/v2/index.js:"
-          ls -l "$SDK_DIR/clients/v2/index.js"
-
-          echo ""
-          echo "========================================"
-          echo "PATCHING LOCAL ESM IMPORTS"
+          echo "PATCHING ESM IMPORTS"
           echo "========================================"
 
           node <<'NODE'
           const fs = require("fs");
           const path = require("path");
 
-          const root = path.resolve("node_modules/@gmx-io/sdk/build/esm/src");
+          const projectRoot = process.cwd();
+          const sdkRoot = path.resolve(
+            projectRoot,
+            "node_modules/@gmx-io/sdk/build/esm/src"
+          );
 
           function walk(dir) {
             const result = [];
-            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+
+            if (!fs.existsSync(dir)) {
+              return result;
+            }
+
+            for (const entry of fs.readdirSync(dir, {
+              withFileTypes: true
+            })) {
               const full = path.join(dir, entry.name);
+
               if (entry.isDirectory()) {
                 result.push(...walk(full));
-              } else if (entry.isFile() && full.endsWith(".js")) {
+              } else if (
+                entry.isFile() &&
+                full.endsWith(".js")
+              ) {
                 result.push(full);
               }
             }
+
             return result;
           }
 
-          const files = walk(root);
+          function fileExists(candidate) {
+            try {
+              return fs.statSync(candidate).isFile();
+            } catch {
+              return false;
+            }
+          }
 
-          let changed = 0;
-          let replacements = 0;
+          function resolveImport(importerFile, specifier) {
+            /*
+             * Relative import:
+             * ./foo
+             * ../foo
+             */
+            if (
+              specifier.startsWith("./") ||
+              specifier.startsWith("../")
+            ) {
+              const base = path.resolve(
+                path.dirname(importerFile),
+                specifier
+              );
+
+              if (fileExists(`${base}.js`)) {
+                return `${specifier}.js`;
+              }
+
+              if (fileExists(path.join(base, "index.js"))) {
+                return `${specifier}/index.js`;
+              }
+
+              return null;
+            }
+
+            /*
+             * Package subpath import:
+             * lodash/isPlainObject
+             * some-package/foo/bar
+             *
+             * We deliberately do NOT modify package-root imports such as:
+             * lodash
+             * ethers
+             * @gmx-io/sdk
+             */
+            if (!specifier.includes("/")) {
+              return null;
+            }
+
+            let currentDir = path.dirname(importerFile);
+
+            while (true) {
+              const nodeModules = path.join(
+                currentDir,
+                "node_modules"
+              );
+
+              const candidate = path.join(
+                nodeModules,
+                specifier
+              );
+
+              if (fileExists(`${candidate}.js`)) {
+                return `${specifier}.js`;
+              }
+
+              if (fileExists(path.join(candidate, "index.js"))) {
+                return `${specifier}/index.js`;
+              }
+
+              const parent = path.dirname(currentDir);
+
+              if (parent === currentDir) {
+                break;
+              }
+
+              currentDir = parent;
+            }
+
+            return null;
+          }
+
+          function patchSource(source, file) {
+            let replacements = 0;
+
+            /*
+             * Static imports:
+             * import x from "..."
+             * export x from "..."
+             */
+            source = source.replace(
+              /(\b(?:from|import)\s*["'])([^"']+)(["'])/g,
+              (match, prefix, specifier, suffix) => {
+                if (
+                  specifier.startsWith("node:") ||
+                  specifier.startsWith("data:") ||
+                  specifier.endsWith(".js") ||
+                  specifier.endsWith(".json") ||
+                  specifier.endsWith(".mjs") ||
+                  specifier.endsWith(".cjs")
+                ) {
+                  return match;
+                }
+
+                const resolved = resolveImport(
+                  file,
+                  specifier
+                );
+
+                if (!resolved) {
+                  return match;
+                }
+
+                replacements++;
+
+                return `${prefix}${resolved}${suffix}`;
+              }
+            );
+
+            /*
+             * Dynamic imports:
+             * import("...")
+             */
+            source = source.replace(
+              /(\bimport\s*\(\s*["'])([^"']+)(["']\s*\))/g,
+              (match, prefix, specifier, suffix) => {
+                if (
+                  specifier.startsWith("node:") ||
+                  specifier.startsWith("data:") ||
+                  specifier.endsWith(".js") ||
+                  specifier.endsWith(".json") ||
+                  specifier.endsWith(".mjs") ||
+                  specifier.endsWith(".cjs")
+                ) {
+                  return match;
+                }
+
+                const resolved = resolveImport(
+                  file,
+                  specifier
+                );
+
+                if (!resolved) {
+                  return match;
+                }
+
+                replacements++;
+
+                return `${prefix}${resolved}${suffix}`;
+              }
+            );
+
+            return {
+              source,
+              replacements
+            };
+          }
+
+          const files = walk(sdkRoot);
+
+          let changedFiles = 0;
+          let totalReplacements = 0;
 
           for (const file of files) {
-            let source = fs.readFileSync(file, "utf8");
-            const original = source;
-
-            source = source.replace(
-              /(\bfrom\s+["'])(\.{1,2}\/[^"']+?)(["'])/g,
-              (match, prefix, specifier, suffix) => {
-                if (
-                  specifier.endsWith(".js") ||
-                  specifier.endsWith(".json") ||
-                  specifier.endsWith(".mjs") ||
-                  specifier.endsWith(".cjs")
-                ) {
-                  return match;
-                }
-
-                const candidate = path.resolve(path.dirname(file), specifier);
-                const candidateJs = `${candidate}.js`;
-                const candidateIndex = path.join(candidate, "index.js");
-
-                if (fs.existsSync(candidateJs)) {
-                  replacements++;
-                  return `${prefix}${specifier}.js${suffix}`;
-                }
-
-                if (fs.existsSync(candidateIndex)) {
-                  replacements++;
-                  return `${prefix}${specifier}/index.js${suffix}`;
-                }
-
-                return match;
-              }
+            const original = fs.readFileSync(
+              file,
+              "utf8"
             );
 
-            source = source.replace(
-              /(\bimport\s*\(\s*["'])(\.{1,2}\/[^"']+?)(["']\s*\))/g,
-              (match, prefix, specifier, suffix) => {
-                if (
-                  specifier.endsWith(".js") ||
-                  specifier.endsWith(".json") ||
-                  specifier.endsWith(".mjs") ||
-                  specifier.endsWith(".cjs")
-                ) {
-                  return match;
-                }
-
-                const candidate = path.resolve(path.dirname(file), specifier);
-                const candidateJs = `${candidate}.js`;
-                const candidateIndex = path.join(candidate, "index.js");
-
-                if (fs.existsSync(candidateJs)) {
-                  replacements++;
-                  return `${prefix}${specifier}.js${suffix}`;
-                }
-
-                if (fs.existsSync(candidateIndex)) {
-                  replacements++;
-                  return `${prefix}${specifier}/index.js${suffix}`;
-                }
-
-                return match;
-              }
+            const result = patchSource(
+              original,
+              file
             );
 
-            if (source !== original) {
-              fs.writeFileSync(file, source);
-              changed++;
+            if (result.source !== original) {
+              fs.writeFileSync(
+                file,
+                result.source,
+                "utf8"
+              );
+
+              changedFiles++;
+              totalReplacements += result.replacements;
+
               console.log(
                 "PATCHED:",
-                path.relative(process.cwd(), file)
+                path.relative(projectRoot, file),
+                "replacements:",
+                result.replacements
               );
             }
           }
 
           console.log("");
-          console.log("SDK JS files changed:", changed);
-          console.log("Import replacements:", replacements);
+          console.log(
+            "SDK files changed:",
+            changedFiles
+          );
+
+          console.log(
+            "Total import replacements:",
+            totalReplacements
+          );
           NODE
 
           echo ""
           echo "========================================"
-          echo "VERIFYING PROBLEMATIC IMPORT"
+          echo "VERIFYING KNOWN IMPORTS"
           echo "========================================"
 
-          grep -n "configs/api" \
-            node_modules/@gmx-io/sdk/build/esm/src/clients/v2/index.js \
-            || true
+          grep -R -n \
+            "configs/api" \
+            node_modules/@gmx-io/sdk/build/esm/src \
+            | head -20 || true
+
+          echo ""
+
+          grep -R -n \
+            "lodash/isPlainObject" \
+            node_modules/@gmx-io/sdk/build/esm/src \
+            | head -20 || true
 
       - name: Verify GMX SDK import
         run: |
+          echo "========================================"
+          echo "VERIFY GMX SDK V2"
+          echo "========================================"
+
           node --input-type=module <<'NODE'
           import { GmxApiSdk } from "@gmx-io/sdk/v2";
 
           console.log("GMX SDK v2 import: OK");
-          console.log("GmxApiSdk:", typeof GmxApiSdk);
+          console.log("GmxApiSdk type:", typeof GmxApiSdk);
           NODE
 
       - name: Run V15.6.4 scan
