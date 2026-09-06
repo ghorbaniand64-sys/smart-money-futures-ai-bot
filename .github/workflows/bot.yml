@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   scan:
-    Checkout: production
+    environment: production
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -120,7 +120,7 @@ jobs:
              * lodash/isPlainObject
              * some-package/foo/bar
              *
-             * We deliberately do NOT modify package-root imports such as:
+             * Do NOT modify package-root imports such as:
              * lodash
              * ethers
              * @gmx-io/sdk
@@ -314,6 +314,39 @@ jobs:
           console.log("GMX SDK v2 import: OK");
           console.log("GmxApiSdk type:", typeof GmxApiSdk);
           NODE
+
+      - name: Verify Telegram secrets are available
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        shell: bash
+        run: |
+          echo "========================================"
+          echo "VERIFY TELEGRAM CONFIGURATION"
+          echo "========================================"
+
+          if [ -n "$TELEGRAM_TOKEN" ]; then
+            echo "TELEGRAM_TOKEN: PRESENT"
+          else
+            echo "TELEGRAM_TOKEN: MISSING"
+          fi
+
+          if [ -n "$TELEGRAM_CHAT_ID" ]; then
+            echo "TELEGRAM_CHAT_ID: PRESENT"
+          else
+            echo "TELEGRAM_CHAT_ID: MISSING"
+          fi
+
+          if [ -z "$TELEGRAM_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo ""
+            echo "ERROR: Telegram secrets are not available to this job."
+            echo "Check Environment: production"
+            echo "Check secret names: TELEGRAM_TOKEN / TELEGRAM_CHAT_ID"
+            exit 1
+          fi
+
+          echo ""
+          echo "Telegram secrets are available."
 
       - name: Run V15.6.4 scan
         env:
