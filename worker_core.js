@@ -4,7 +4,7 @@ import { getViemChain } from "@gmx-io/sdk/configs/chains";
  
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V16.0.0 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair
+// Version: V16.0.1 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair
 // Platform: GitHub Actions + Node.js
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -359,7 +359,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V16.0.0-GITHUB-ACTIONS-AUTOMATIC-EXECUTION-FIX-RADAR-SCOPE-REPAIR",
+VERSION: "V16.0.1-GITHUB-ACTIONS-AUTOMATIC-EXECUTION-FIX-RADAR-SCOPE-REPAIR-EXECUTION-DIAGNOSTICS",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -3074,6 +3074,33 @@ direction === "SHORT" ? shortScore : 0;
 const trendBridge = v15613TrendConfluence(trend, direction);
 const executionTrendConfluence = trendBridge.selected;
  
+// V16.0.1: Canonical execution-gate diagnostics.
+// These checks mirror the exact execution gate so the trace reports the real
+// blocking condition, including invalid numeric values such as NaN.
+const executionGateDiagnostics = [];
+const executionScoreThreshold = Number(CONFIG.EXECUTION_SCORE);
+const executionEdgeThreshold = Number(CONFIG.EXECUTION_MIN_EDGE);
+const executionRiskThreshold = Number(CONFIG.EXECUTION_MAX_RISK);
+
+if (!["LONG", "SHORT"].includes(direction)) {
+  executionGateDiagnostics.push(`DIRECTION_INVALID_${direction || "EMPTY"}`);
+}
+if (!Number.isFinite(executionScore) || executionScore < executionScoreThreshold) {
+  executionGateDiagnostics.push(`EXECUTION_SCORE_${Number.isFinite(executionScore) ? executionScore.toFixed(2) : "INVALID"}_BELOW_${executionScoreThreshold}`);
+}
+if (!Number.isFinite(edge) || edge < executionEdgeThreshold) {
+  executionGateDiagnostics.push(`EXECUTION_EDGE_${Number.isFinite(edge) ? edge.toFixed(2) : "INVALID"}_BELOW_${executionEdgeThreshold}`);
+}
+if (!Number.isFinite(executionTrendConfluence) || executionTrendConfluence < 3) {
+  executionGateDiagnostics.push(`EXECUTION_TREND_CONFLUENCE_${Number.isFinite(executionTrendConfluence) ? executionTrendConfluence : "INVALID"}_OF_4`);
+}
+if (!Number.isFinite(risk) || !(risk < executionRiskThreshold)) {
+  executionGateDiagnostics.push(`EXECUTION_RISK_${Number.isFinite(risk) ? risk.toFixed(2) : "INVALID"}_NOT_BELOW_${executionRiskThreshold}`);
+}
+if (Boolean(entryQuality.overextended)) {
+  executionGateDiagnostics.push("OVEREXTENDED_ENTRY");
+}
+
 const executionEligible =
 direction !== "NO_TRADE" &&
 executionScore >= CONFIG.EXECUTION_SCORE &&
@@ -3144,6 +3171,7 @@ confirmationPolicy: "2+ confirmations; not all indicators required"
 selectedDirection: direction,
 entryQuality,
 executionTrendConfluence,
+executionGateDiagnostics,
 trendConfluence: trendBridge,
 scoreModel: {
 normalizedTo100: true,
@@ -3348,6 +3376,7 @@ edge: analysis.edge,
 dataQuality: analysis.dataQuality,
 signalDiagnostics: analysis.diagnostics,
 entryQuality: analysis.entryQuality || null,
+executionGateDiagnostics: Array.isArray(analysis.executionGateDiagnostics) ? analysis.executionGateDiagnostics : [],
  
 execution: {
 enabled: executionEnabled(env),
@@ -3451,6 +3480,8 @@ return { conflict: false, reason: null };
 }
  
 function v15610ExecutionGateReasons(signal) {
+  const canonical = Array.isArray(signal?.executionGateDiagnostics) ? signal.executionGateDiagnostics.filter(Boolean).map(String) : [];
+  if (canonical.length) return canonical;
   const reasons = [];
   const score = Number(signal?.score || 0);
   const edge = Number(signal?.edge || 0);
@@ -3915,6 +3946,7 @@ const executionTrace=valid.map(signal=>{
   overextended:Boolean(signal.entryQuality?.overextended),
   executionEligible:Boolean(signal.executionEligible),
   gateReasons,
+  executionGateDiagnostics:Array.isArray(signal.executionGateDiagnostics)?signal.executionGateDiagnostics:[],
   gateReasonsText:gateReasons.join(" | ")||"NONE",
   selected:false,
   attempted:false,
