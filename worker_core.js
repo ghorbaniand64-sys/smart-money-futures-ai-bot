@@ -4,7 +4,7 @@ import { getViemChain } from "@gmx-io/sdk/configs/chains";
  
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V15.6.9 / Phase 6 Live Entry/Exit Telegram Confirmation + Radar History + Telegram UTF-8 + Exit Monitor Scope Integrity + GitHub Actions Multi-Source Smart Money + Independent Radar
+// Version: V15.6.10 / Phase 6 Execution Trace + Radar Diagnostics + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar
 // Platform: Cloudflare Workers
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -359,7 +359,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V15.6.8-GITHUB-ACTIONS-RESOURCE-USAGE-GUARD",
+VERSION: "V15.6.10-GITHUB-ACTIONS-EXECUTION-TRACE-RADAR-DIAGNOSTICS",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -3403,6 +3403,45 @@ return { conflict: true, reason: "ALT_CORRELATION_CAP" };
 return { conflict: false, reason: null };
 }
  
+function v15610ExecutionGateReasons(signal) {
+  const reasons = [];
+  const score = Number(signal?.score || 0);
+  const edge = Number(signal?.edge || 0);
+  const risk = Number(signal?.riskScore ?? 100);
+  if (score < Number(CONFIG.EXECUTION_SCORE || 88)) reasons.push(`SCORE_BELOW_${CONFIG.EXECUTION_SCORE || 88}`);
+  if (edge < Number(CONFIG.EXECUTION_MIN_EDGE || 10)) reasons.push(`EDGE_BELOW_${CONFIG.EXECUTION_MIN_EDGE || 10}`);
+  if (risk > Number(CONFIG.EXECUTION_MAX_RISK || 40)) reasons.push(`RISK_ABOVE_${CONFIG.EXECUTION_MAX_RISK || 40}`);
+  if (!signal?.tradePlan?.valid) reasons.push("TRADE_PLAN_INVALID");
+  if (!['LONG','SHORT'].includes(String(signal?.direction || '').toUpperCase())) reasons.push("DIRECTION_INVALID");
+  if (!signal?.executionEligible && reasons.length === 0) reasons.push("EXECUTION_ELIGIBILITY_ENGINE_BLOCK");
+  return reasons;
+}
+
+function v15610RadarGateReasons(candidate) {
+  const radar = candidate?.pumpRadar || {};
+  const reasons = [];
+  const score = Number(radar?.score || 0);
+  const direction = String(radar?.direction || "NEUTRAL").toUpperCase();
+  const priceStatus = String(radar?.priceDataStatus || "INVALID").toUpperCase();
+  if (!['LONG','SHORT'].includes(direction)) reasons.push("DIRECTION_NEUTRAL_OR_INVALID");
+  if (priceStatus === "INVALID") reasons.push("PRICE_DATA_INVALID");
+  if (score < Number(CONFIG.PUMP_RADAR_WATCH_SCORE || 60)) reasons.push(`SCORE_BELOW_RADAR_WATCH_${CONFIG.PUMP_RADAR_WATCH_SCORE || 60}`);
+  if (score < Number(CONFIG.RADAR_ENTRY_SCORE || 72)) {
+    if (!CONFIG.RADAR_EARLY_ENTRY_ENABLED) reasons.push("EARLY_ENTRY_DISABLED");
+    else {
+      const velocity = Math.abs(Number(radar?.velocity5m || 0));
+      const acceleration = Math.abs(Number(radar?.acceleration5m || 0));
+      const edge = Number(radar?.edge || 0);
+      if (score < Number(CONFIG.RADAR_EARLY_ENTRY_SCORE || 60)) reasons.push(`EARLY_SCORE_BELOW_${CONFIG.RADAR_EARLY_ENTRY_SCORE || 60}`);
+      if (edge < Number(CONFIG.RADAR_EARLY_ENTRY_MIN_EDGE || 8)) reasons.push(`EARLY_EDGE_BELOW_${CONFIG.RADAR_EARLY_ENTRY_MIN_EDGE || 8}`);
+      if (!radar?.valid5mSample) reasons.push("EARLY_5M_SAMPLE_INVALID");
+      if (!(velocity >= Number(CONFIG.RADAR_EARLY_ENTRY_MIN_VELOCITY || 0.75) || acceleration >= 0.35)) reasons.push("EARLY_MOMENTUM_TOO_WEAK");
+      if (radar?.timingState !== "EARLY_FAST") reasons.push("TIMING_NOT_EARLY_FAST");
+    }
+  }
+  return reasons;
+}
+
 function selectPrioritySignals(signals, positions) {
 const ranked = [...signals]
 .filter(s => s?.executionEligible && s?.tradePlan?.valid)
@@ -3796,6 +3835,30 @@ const existingCount=livePositions.length,remainingSlots=Math.max(0,CONFIG.MAX_PO
 const entryRiskAllowed = Number(state.dailyLoss || 0) > -CONFIG.MAX_DAILY_LOSS;
 const selection=selectPrioritySignals(entryRiskAllowed && remainingSlots>0?valid:[],livePositions);
 const top=selection.selected.slice(0,remainingSlots);
+const executionTrace=valid.map(signal=>({
+  symbol:signal.symbol,
+  direction:signal.direction,
+  tier:signal.signalTier,
+  score:Number(signal.score||0),
+  confidence:Number(signal.confidence||0),
+  edge:Number(signal.edge||0),
+  risk:Number(signal.riskScore||0),
+  tradePlanValid:Boolean(signal.tradePlan?.valid),
+  executionEligible:Boolean(signal.executionEligible),
+  gateReasons:v15610ExecutionGateReasons(signal),
+  selected:false,
+  attempted:false,
+  executed:false,
+  positionVerified:false,
+  resultReason:null,
+  resultError:null
+}));
+for(const trace of executionTrace){
+  const selectedSignal=top.find(s=>baseAsset(s.symbol)===baseAsset(trace.symbol));
+  if(selectedSignal) trace.selected=true;
+}
+if(!entryRiskAllowed) for(const trace of executionTrace) if(!trace.selected) trace.gateReasons.push("DAILY_LOSS_GUARD");
+if(remainingSlots<=0) for(const trace of executionTrace) if(!trace.selected) trace.gateReasons.push("NO_REMAINING_CORE_POSITION_SLOT");
 // V15.3.5: radar history was already updated before scoring; do not add a second sample here.
 state.marketSnapshots={};
 for(const m of allMarkets){const sym=v8NormSymbol(m?.symbol??m?.name??m?.ticker??m?.indexTokenSymbol);if(!sym)continue;state.marketSnapshots[sym]={market:{
@@ -3812,7 +3875,40 @@ low24h:v8HighMetric(m,["low24h","lowPrice24h","dailyLow"])
 for(const signal of results){if(signal?.symbol&&signal._marketSnapshotForState){state.marketSnapshots[signal.symbol]=signal._marketSnapshotForState;delete signal._marketSnapshotForState;}}
 state.lastScan=Date.now();state.signals=notifySignals;state.opportunityRanking=notificationPool.slice(0,20).map((s,index)=>({rank:index+1,symbol:s.symbol,direction:s.direction,tier:s.signalTier,score:s.score,opportunityScore:Number(s.opportunity?.score||0),opportunityType:s.opportunity?.type||"STANDARD",edge:s.edge,risk:s.riskScore,executionEligible:!!s.executionEligible,priority:Number(signalPriorityScore(s).toFixed(2))}));state.lastDiagnostics=results.sort((a,b)=>signalPriorityScore(b)-signalPriorityScore(a)).slice(0,50).map(s=>({symbol:s.symbol,direction:s.direction,tier:s.signalTier,score:s.score,longScore:s.longScore,shortScore:s.shortScore,edge:s.edge,risk:s.riskScore,priority:Number(signalPriorityScore(s).toFixed(2)),executionEligible:!!s.executionEligible,reasons:s.diagnostics||null,signalDiagnostics:s.signalDiagnostics||null,components:s.components||null,trend:s.trend||null,dataQuality:s.dataQuality||null}));await saveState(env,state);
 const executionResults=[],executionSymbols=new Set(livePositions.map(p=>baseAsset(normalizeSymbol(String(p?.indexName||p?.symbol||"")))));
-if(top.length&&executionEnabled(env)){for(const signal of top){if(executionSymbols.has(baseAsset(signal.symbol)))continue;try{const result=await executeSignal(signal,env);executionResults.push({symbol:signal.symbol,direction:signal.direction,score:signal.score,allocation:signal.tradePlan?.allocation??null,leverage:signal.tradePlan?.leverage??null,...result});}catch(error){executionResults.push({symbol:signal.symbol,error:safeError(error)});}}}
+if(top.length&&executionEnabled(env)){
+  for(const signal of top){
+    const trace=executionTrace.find(x=>baseAsset(x.symbol)===baseAsset(signal.symbol));
+    if(trace) trace.attempted=true;
+    if(executionSymbols.has(baseAsset(signal.symbol))){
+      if(trace){trace.resultReason="ALREADY_OPEN_CORE_SYMBOL";trace.gateReasons.push("ALREADY_OPEN_CORE_SYMBOL");}
+      executionResults.push({symbol:signal.symbol,direction:signal.direction,score:signal.score,executed:false,mode:"LIVE",reason:"ALREADY_OPEN_CORE_SYMBOL"});
+      continue;
+    }
+    try{
+      const result=await executeSignal(signal,env);
+      const row={symbol:signal.symbol,direction:signal.direction,score:signal.score,allocation:signal.tradePlan?.allocation??null,leverage:signal.tradePlan?.leverage??null,...result};
+      executionResults.push(row);
+      if(trace){trace.executed=Boolean(result?.executed);trace.positionVerified=Boolean(result?.positionVerified);trace.resultReason=result?.reason||result?.status||null;trace.resultError=result?.error||null;}
+    }catch(error){
+      const err=safeError(error);
+      executionResults.push({symbol:signal.symbol,error:err});
+      if(trace){trace.resultReason="EXECUTION_THROW";trace.resultError=err;}
+    }
+  }
+}
+const executionSummary={
+  enabled:executionEnabled(env),
+  valid:valid.length,
+  eligible:executionTrace.filter(x=>x.executionEligible).length,
+  selected:executionTrace.filter(x=>x.selected).length,
+  attempted:executionTrace.filter(x=>x.attempted).length,
+  executed:executionTrace.filter(x=>x.executed).length,
+  verified:executionTrace.filter(x=>x.positionVerified).length,
+  blocked:executionTrace.filter(x=>!x.selected).length,
+  failed:executionTrace.filter(x=>x.attempted&&!!x.resultError).length,
+  traces:executionTrace.slice(0,20)
+};
+console.log("[EXECUTION][TRACE]", executionSummary);
 
 // V14.0: independent Radar live lane. It does not consume Core selection slots.
 let radarLiveResult = null;
@@ -3928,6 +4024,29 @@ if (!executionEnabled(env) && CONFIG.PAPER_ENABLED && CONFIG.RADAR_INDEPENDENT_E
 // Radar alerts use their own state so a Core signal can never suppress a Radar event.
 let radarWatchNotified = 0;
 let radarWatchSkipped = 0;
+const radarTrace=radarRanked.slice(0,20).map(r=>({
+  symbol:r.symbol,
+  direction:r.direction,
+  score:Number(r.score||0),
+  edge:Number(r.edge||0),
+  velocity5m:Number(r.velocity5m||0),
+  acceleration5m:Number(r.acceleration5m||0),
+  timingState:r.timingState||null,
+  valid5mSample:Boolean(r.valid5mSample),
+  priceDataStatus:r.priceDataStatus||null,
+  watchEligible:Boolean(r.direction!=="NEUTRAL" && Number(r.score||0)>=Number(CONFIG.PUMP_RADAR_WATCH_SCORE||60)),
+  entryEligible:Boolean(radarEntryEligible(r)),
+  gateReasons:v15610RadarGateReasons(r)
+}));
+const radarTraceSummary={
+  coverage:radarRows.length,
+  directional:radarDirectional.length,
+  watchCandidates:radarRanked.filter(x=>x.direction!=="NEUTRAL"&&Number(x.score||0)>=Number(CONFIG.PUMP_RADAR_WATCH_SCORE||60)).length,
+  hotCandidates:radarRanked.filter(x=>x.direction!=="NEUTRAL"&&Number(x.score||0)>=Number(CONFIG.PUMP_RADAR_HOT_SCORE||72)).length,
+  entryEligible:radarRanked.filter(x=>radarEntryEligible(x)).length,
+  top:radarTrace
+};
+console.log("[RADAR][TRACE]", radarTraceSummary);
 if (CONFIG.TELEGRAM_ENABLED && CONFIG.PUMP_RADAR_ENABLED) {
   const radarEventPool = [];
   const radarSeen = new Set();
@@ -3963,16 +4082,16 @@ const eventCandidates=eventPool.length;
 const radarHotCount=radarRanked.filter(x=>x.direction!=="NEUTRAL"&&x.score>=CONFIG.PUMP_RADAR_HOT_SCORE).length;
 const radarWatchCount=radarRanked.filter(x=>x.direction!=="NEUTRAL"&&x.score>=CONFIG.PUMP_RADAR_WATCH_SCORE).length;
 state.smartMoneyFlowHistory=smfPersistHistory(smartMoneyFlowHistory,smartMoneyFlowData,Date.now());
-const universeDiagnostics=buildUniverseDiagnostics(allMarkets,fastRows,radarMarkets); universeDiagnostics.deepCandidates=symbols.length; universeDiagnostics.explorationSlots=CONFIG.DEEP_EXPLORATION_SLOTS; universeDiagnostics.rotationCursor=universeRotationCursor; universeDiagnostics.radarCoverage=radarRows.length; universeDiagnostics.topEligible=radarRanked.slice(0,Number(CONFIG.UNIVERSE_DIAGNOSTICS_TOP_N||25)); const diagnostics={marketsDiscovered:allMarkets.length,eligibleMarkets:fastRows.length,deepAnalyzed:results.length,signalsDetected,notificationEligible:notificationEligibleCount,eventCandidates,signalsDeduped:Math.max(0,notificationEligibleCount-eventCandidates),directionalSetups:directional.length,longAnalyzed:results.filter(s=>s.direction==="LONG").length,shortAnalyzed:results.filter(s=>s.direction==="SHORT").length,noTradeAnalyzed:results.filter(s=>s.direction==="NO_TRADE").length,watchSignals:watch.length,validSignals:valid.length,executionEligible:results.filter(s=>s.executionEligible).length,earlyMomentum:results.filter(s=>s?.opportunity?.type==="EARLY_MOMENTUM").length,notified,telegram:{enabled:CONFIG.TELEGRAM_ENABLED,candidates:notifySignals.length,attempted:telegramAttempted,sent:notified,dedupeSkipped:telegramDedupeSkipped,disabledSkipped:telegramDisabledSkipped,failed:telegramFailed,results:telegramResults,eventBased:true,eventMax:CONFIG.NOTIFY_EVENT_MAX,radarEventBased:true,radarWatchThreshold:CONFIG.PUMP_RADAR_WATCH_SCORE,radarHotThreshold:CONFIG.PUMP_RADAR_HOT_SCORE,radarWatchNotified,radarWatchSkipped,subrequestBudget:TELEGRAM_MAX_SENDS_PER_INVOCATION},selectedForExecution:top.length,rejectedByReason:results.filter(s=>s.direction==="NO_TRADE").slice(0,30).map(s=>({symbol:s.symbol,score:s.score,reasons:s.diagnostics||s.signalDiagnostics||[]})),timings:{elapsedMs:Date.now()-scanStartedAt},fastFilter:{...fastFilterDiagnostics,liquiditySource:enriched.source,marketCatalogSource:catalogSource||null,tickers:{available:tickerRows.length>0,error:tickerError},priceFeed:{available:!!radarPriceFeed.available,source:radarPriceFeed.source,symbols:Object.keys(radarPriceFeed.prices||{}).length,error:radarPriceFeed.error},smartMoneyFlow:{enabled:Boolean(CONFIG.SMART_MONEY_FLOW_ENABLED),multiSource:Boolean(CONFIG.DATA_CENTER_ENABLED),apiPeers:V156_DATA_CENTER.apiPeers,available:Boolean(smartMoneyFlowData?.available),source:smartMoneyFlowData?.source||null,trades:Number(smartMoneyFlowData?.trades||0),parsedTrades:Number(smartMoneyFlowData?.parsedTrades||0),symbols:Number(smartMoneyFlowData?.symbols||0),error:smartMoneyFlowData?.error||null,lookbackMs:Number(CONFIG.SMART_MONEY_FLOW_LOOKBACK_MS||300000),cacheMs:Number(CONFIG.SMART_MONEY_FLOW_CACHE_MS||20000),spikeThreshold:Number(CONFIG.SMART_MONEY_FLOW_SPIKE_THRESHOLD||1.8),explosiveThreshold:Number(CONFIG.SMART_MONEY_FLOW_EXPLOSIVE_THRESHOLD||3)}},requestStrategy:{phase5MarketDiscovery:true,universeDiscovered:allMarkets.length,fastEligible:fastRows.length,deepCandidates:symbols.length,explorationSlots:Number(CONFIG.DEEP_EXPLORATION_SLOTS||0),marketsInfo:1,marketsCatalog:1,gmxApiMarketsInfo:true,marketsTickers:1,marketsValuesFallback:enriched.source==="markets-info+markets-values"?1:0,candleRequestsPerSymbol:4,fallbackCandleRequestsInScan:"ON_ERROR_ONLY",perSymbolRpcChecks:0,perSymbolKvReadsWrites:0,batchSize,configuredDeepScanLimit:CONFIG.DEEP_SCAN_LIMIT,effectiveDeepScanLimit,maxScanSubrequests:CONFIG.MAX_SCAN_SUBREQUESTS,reservedScanSubrequests:reservedSubrequests,baseReservedScanSubrequests:baseReservedSubrequests,additionalScheduledReserve,radarSubrequestReserve,estimatedCandleSubrequests:effectiveDeepScanLimit*candleRequestsPerSymbol,telegramDedupeTtlMs:CONFIG.TELEGRAM_DEDUPE_TTL_MS,cronRecommended:CONFIG.CRON_RECOMMENDED,cronIntervalMinutes:CONFIG.CRON_INTERVAL_MINUTES,directionalLongSlots:CONFIG.DIRECTIONAL_DEEP_LONG_SLOTS,directionalShortSlots:CONFIG.DIRECTIONAL_DEEP_SHORT_SLOTS,balancedMajorSlots:CONFIG.BALANCED_MAJOR_SLOTS,
+const universeDiagnostics=buildUniverseDiagnostics(allMarkets,fastRows,radarMarkets); universeDiagnostics.deepCandidates=symbols.length; universeDiagnostics.explorationSlots=CONFIG.DEEP_EXPLORATION_SLOTS; universeDiagnostics.rotationCursor=universeRotationCursor; universeDiagnostics.radarCoverage=radarRows.length; universeDiagnostics.topEligible=radarRanked.slice(0,Number(CONFIG.UNIVERSE_DIAGNOSTICS_TOP_N||25)); const diagnostics={marketsDiscovered:allMarkets.length,eligibleMarkets:fastRows.length,deepAnalyzed:results.length,signalsDetected,notificationEligible:notificationEligibleCount,eventCandidates,signalsDeduped:Math.max(0,notificationEligibleCount-eventCandidates),directionalSetups:directional.length,longAnalyzed:results.filter(s=>s.direction==="LONG").length,shortAnalyzed:results.filter(s=>s.direction==="SHORT").length,noTradeAnalyzed:results.filter(s=>s.direction==="NO_TRADE").length,watchSignals:watch.length,validSignals:valid.length,executionEligible:results.filter(s=>s.executionEligible).length,earlyMomentum:results.filter(s=>s?.opportunity?.type==="EARLY_MOMENTUM").length,notified,telegram:{enabled:CONFIG.TELEGRAM_ENABLED,candidates:notifySignals.length,attempted:telegramAttempted,sent:notified,dedupeSkipped:telegramDedupeSkipped,disabledSkipped:telegramDisabledSkipped,failed:telegramFailed,results:telegramResults,eventBased:true,eventMax:CONFIG.NOTIFY_EVENT_MAX,radarEventBased:true,radarWatchThreshold:CONFIG.PUMP_RADAR_WATCH_SCORE,radarHotThreshold:CONFIG.PUMP_RADAR_HOT_SCORE,radarWatchNotified,radarWatchSkipped,subrequestBudget:TELEGRAM_MAX_SENDS_PER_INVOCATION},selectedForExecution:top.length,executionSummary,rejectedByReason:results.filter(s=>s.direction==="NO_TRADE").slice(0,30).map(s=>({symbol:s.symbol,score:s.score,reasons:s.diagnostics||s.signalDiagnostics||[]})),timings:{elapsedMs:Date.now()-scanStartedAt},fastFilter:{...fastFilterDiagnostics,liquiditySource:enriched.source,marketCatalogSource:catalogSource||null,tickers:{available:tickerRows.length>0,error:tickerError},priceFeed:{available:!!radarPriceFeed.available,source:radarPriceFeed.source,symbols:Object.keys(radarPriceFeed.prices||{}).length,error:radarPriceFeed.error},smartMoneyFlow:{enabled:Boolean(CONFIG.SMART_MONEY_FLOW_ENABLED),multiSource:Boolean(CONFIG.DATA_CENTER_ENABLED),apiPeers:V156_DATA_CENTER.apiPeers,available:Boolean(smartMoneyFlowData?.available),source:smartMoneyFlowData?.source||null,trades:Number(smartMoneyFlowData?.trades||0),parsedTrades:Number(smartMoneyFlowData?.parsedTrades||0),symbols:Number(smartMoneyFlowData?.symbols||0),error:smartMoneyFlowData?.error||null,lookbackMs:Number(CONFIG.SMART_MONEY_FLOW_LOOKBACK_MS||300000),cacheMs:Number(CONFIG.SMART_MONEY_FLOW_CACHE_MS||20000),spikeThreshold:Number(CONFIG.SMART_MONEY_FLOW_SPIKE_THRESHOLD||1.8),explosiveThreshold:Number(CONFIG.SMART_MONEY_FLOW_EXPLOSIVE_THRESHOLD||3)}},requestStrategy:{phase5MarketDiscovery:true,universeDiscovered:allMarkets.length,fastEligible:fastRows.length,deepCandidates:symbols.length,explorationSlots:Number(CONFIG.DEEP_EXPLORATION_SLOTS||0),marketsInfo:1,marketsCatalog:1,gmxApiMarketsInfo:true,marketsTickers:1,marketsValuesFallback:enriched.source==="markets-info+markets-values"?1:0,candleRequestsPerSymbol:4,fallbackCandleRequestsInScan:"ON_ERROR_ONLY",perSymbolRpcChecks:0,perSymbolKvReadsWrites:0,batchSize,configuredDeepScanLimit:CONFIG.DEEP_SCAN_LIMIT,effectiveDeepScanLimit,maxScanSubrequests:CONFIG.MAX_SCAN_SUBREQUESTS,reservedScanSubrequests:reservedSubrequests,baseReservedScanSubrequests:baseReservedSubrequests,additionalScheduledReserve,radarSubrequestReserve,estimatedCandleSubrequests:effectiveDeepScanLimit*candleRequestsPerSymbol,telegramDedupeTtlMs:CONFIG.TELEGRAM_DEDUPE_TTL_MS,cronRecommended:CONFIG.CRON_RECOMMENDED,cronIntervalMinutes:CONFIG.CRON_INTERVAL_MINUTES,directionalLongSlots:CONFIG.DIRECTIONAL_DEEP_LONG_SLOTS,directionalShortSlots:CONFIG.DIRECTIONAL_DEEP_SHORT_SLOTS,balancedMajorSlots:CONFIG.BALANCED_MAJOR_SLOTS,
 universe:universeDiagnostics,fairAssetScoring:CONFIG.FAIR_ASSET_SCORING_ENABLED,dataCenter:{enabled:Boolean(CONFIG.DATA_CENTER_ENABLED),apiPeers:V156_DATA_CENTER.apiPeers,oraclePeers:V156_DATA_CENTER.oraclePeers,staleMs:Number(CONFIG.DATA_CENTER_STALE_MS||15000)},
 liquidityScoreInRadar:CONFIG.FAIR_LIQUIDITY_SCORE_IN_RADAR,
 majorSelectionBias:CONFIG.FAIR_MAJOR_SELECTION_BIAS,
-notifyEventMax:CONFIG.NOTIFY_EVENT_MAX},radarLane:{enabled:CONFIG.RADAR_INDEPENDENT_ENABLED,paperEnabled:CONFIG.RADAR_PAPER_ENABLED,liveEnabled:CONFIG.RADAR_LIVE_ENABLED,entryScore:CONFIG.RADAR_ENTRY_SCORE,earlyEntryEnabled:CONFIG.RADAR_EARLY_ENTRY_ENABLED,earlyEntryScore:CONFIG.RADAR_EARLY_ENTRY_SCORE,earlyMinVelocity:CONFIG.RADAR_EARLY_ENTRY_MIN_VELOCITY,earlyMinEdge:CONFIG.RADAR_EARLY_ENTRY_MIN_EDGE,exitScore:CONFIG.RADAR_EXIT_SCORE,maxPositions:CONFIG.RADAR_MAX_POSITIONS,coverageMarkets:radarRows.length,priceFeedCoverage:Object.keys(radarPriceFeed.prices||{}).length,directionalMarkets:radarDirectional.length,longMarkets:radarLongCount,shortMarkets:radarShortCount,watchCandidates:radarWatchCount,hotCandidateCount:radarHotCount,radarHistorySymbols:Object.keys(radarHistory).length,radarHistorySamples:Object.values(radarHistory).reduce((n,a)=>n+(Array.isArray(a)?a.length:0),0),radarPrioritySymbols:radarPrioritySymbols.slice(0,20),hotCandidates:radarRanked.filter(x=>x.score>=CONFIG.PUMP_RADAR_HOT_SCORE).slice(0,20),liveEntryGuard:"PRICE_OK + HOT_OR_EARLY",result:radarPaperResult,liveResult:radarLiveResult},entryRisk:{appliedToScan:false,dailyLoss:Number(state.dailyLoss||0),maxDailyLoss:CONFIG.MAX_DAILY_LOSS,entryRiskAllowed:Number(state.dailyLoss||0)>-CONFIG.MAX_DAILY_LOSS,positionLimit:CONFIG.MAX_POSITIONS}};
+notifyEventMax:CONFIG.NOTIFY_EVENT_MAX},radarLane:{enabled:CONFIG.RADAR_INDEPENDENT_ENABLED,paperEnabled:CONFIG.RADAR_PAPER_ENABLED,liveEnabled:CONFIG.RADAR_LIVE_ENABLED,entryScore:CONFIG.RADAR_ENTRY_SCORE,earlyEntryEnabled:CONFIG.RADAR_EARLY_ENTRY_ENABLED,earlyEntryScore:CONFIG.RADAR_EARLY_ENTRY_SCORE,earlyMinVelocity:CONFIG.RADAR_EARLY_ENTRY_MIN_VELOCITY,earlyMinEdge:CONFIG.RADAR_EARLY_ENTRY_MIN_EDGE,exitScore:CONFIG.RADAR_EXIT_SCORE,maxPositions:CONFIG.RADAR_MAX_POSITIONS,coverageMarkets:radarRows.length,priceFeedCoverage:Object.keys(radarPriceFeed.prices||{}).length,directionalMarkets:radarDirectional.length,longMarkets:radarLongCount,shortMarkets:radarShortCount,watchCandidates:radarWatchCount,hotCandidateCount:radarHotCount,radarHistorySymbols:Object.keys(radarHistory).length,radarHistorySamples:Object.values(radarHistory).reduce((n,a)=>n+(Array.isArray(a)?a.length:0),0),radarPrioritySymbols:radarPrioritySymbols.slice(0,20),hotCandidates:radarRanked.filter(x=>x.score>=CONFIG.PUMP_RADAR_HOT_SCORE).slice(0,20),liveEntryGuard:"PRICE_OK + HOT_OR_EARLY",result:radarPaperResult,liveResult:radarLiveResult,trace:radarTraceSummary},entryRisk:{appliedToScan:false,dailyLoss:Number(state.dailyLoss||0),maxDailyLoss:CONFIG.MAX_DAILY_LOSS,entryRiskAllowed:Number(state.dailyLoss||0)>-CONFIG.MAX_DAILY_LOSS,positionLimit:CONFIG.MAX_POSITIONS}};
 // V15.6.1 FIX: persist radar history + market snapshots between cron invocations.
 // Without this write, every scan reloaded one fresh sample per symbol, so
 // 5m/15m/30m velocity and acceleration stayed at zero forever.
 try{await saveState(env,state);}catch(error){errors.push({scope:"state-persist",error:safeError(error)});}
-return{ok:true,status:(valid.length||radarHotCount)?"SIGNALS_FOUND":watch.length||radarWatchCount?"WATCH_ONLY":"NO_SIGNAL",scanned:results.length,requested:allMarkets.length,deepCandidates:symbols.length,candidates:valid.length,watchCandidates:watch.length,signalsDetected,notificationEligible:notificationEligibleCount,eventCandidates,signalsDeduped:Math.max(0,notificationEligibleCount-eventCandidates),radarHotCandidates:radarHotCount,radarWatchCandidates:radarWatchCount,radarCoverageMarkets:radarRows.length,radarDirectionalMarkets:radarDirectional.length,radarLongMarkets:radarLongCount,radarShortMarkets:radarShortCount,topSignals:notifySignals,watchSignals:watch.slice(0,CONFIG.NOTIFY_TOP_N),opportunityRanking:notificationPool.slice(0,20).map((s,index)=>({rank:index+1,symbol:s.symbol,direction:s.direction,tier:s.signalTier,score:s.score,edge:s.edge,risk:s.riskScore,executionEligible:!!s.executionEligible,priority:Number(signalPriorityScore(s).toFixed(2))})),executionSignals:top,portfolio:{existingLivePositions:existingCount,remainingSlots,selectedAllocation:Number(selection.totalAllocation.toFixed(4)),selectedAllocationPercent:Number((selection.totalAllocation*100).toFixed(2)),selectedRisk:Number(selection.totalRisk.toFixed(4)),selectedRiskPercent:Number((selection.totalRisk*100).toFixed(2)),maxTotalAllocationPercent:Number((CONFIG.MAX_TOTAL_CAPITAL_ALLOCATION*100).toFixed(2)),maxTotalRiskPercent:Number((CONFIG.MAX_TOTAL_RISK*100).toFixed(2))},executionResults,paperResults,radarPaperResult,radarLiveResult,livePositionError,diagnostics,errors,timestamp:Date.now()};
+return{ok:true,status:(valid.length||radarHotCount)?"SIGNALS_FOUND":watch.length||radarWatchCount?"WATCH_ONLY":"NO_SIGNAL",scanned:results.length,requested:allMarkets.length,deepCandidates:symbols.length,candidates:valid.length,watchCandidates:watch.length,signalsDetected,notificationEligible:notificationEligibleCount,eventCandidates,signalsDeduped:Math.max(0,notificationEligibleCount-eventCandidates),radarHotCandidates:radarHotCount,radarWatchCandidates:radarWatchCount,radarCoverageMarkets:radarRows.length,radarDirectionalMarkets:radarDirectional.length,radarLongMarkets:radarLongCount,radarShortMarkets:radarShortCount,topSignals:notifySignals,watchSignals:watch.slice(0,CONFIG.NOTIFY_TOP_N),opportunityRanking:notificationPool.slice(0,20).map((s,index)=>({rank:index+1,symbol:s.symbol,direction:s.direction,tier:s.signalTier,score:s.score,edge:s.edge,risk:s.riskScore,executionEligible:!!s.executionEligible,priority:Number(signalPriorityScore(s).toFixed(2))})),executionSignals:top,executionTrace,executionSummary,portfolio:{existingLivePositions:existingCount,remainingSlots,selectedAllocation:Number(selection.totalAllocation.toFixed(4)),selectedAllocationPercent:Number((selection.totalAllocation*100).toFixed(2)),selectedRisk:Number(selection.totalRisk.toFixed(4)),selectedRiskPercent:Number((selection.totalRisk*100).toFixed(2)),maxTotalAllocationPercent:Number((CONFIG.MAX_TOTAL_CAPITAL_ALLOCATION*100).toFixed(2)),maxTotalRiskPercent:Number((CONFIG.MAX_TOTAL_RISK*100).toFixed(2))},executionResults,paperResults,radarPaperResult,radarLiveResult,livePositionError,diagnostics,errors,timestamp:Date.now()};
 }
  
 // ======================================================
@@ -5140,7 +5259,8 @@ eventCandidates: scan?.eventCandidates ?? scan?.diagnostics?.eventCandidates ?? 
 signalsDeduped: scan?.signalsDeduped ?? scan?.diagnostics?.signalsDeduped ?? 0,
 notified: scan?.diagnostics?.notified ?? 0,
 coreDirectional: { long: scan?.diagnostics?.longAnalyzed ?? 0, short: scan?.diagnostics?.shortAnalyzed ?? 0, noTrade: scan?.diagnostics?.noTradeAnalyzed ?? 0, valid: scan?.diagnostics?.validSignals ?? 0, watch: scan?.diagnostics?.watchSignals ?? 0 },
-radar: { coverage: scan?.radarCoverageMarkets ?? scan?.diagnostics?.radarLane?.coverageMarkets ?? 0, directional: scan?.radarDirectionalMarkets ?? scan?.diagnostics?.radarLane?.directionalMarkets ?? 0, long: scan?.radarLongMarkets ?? scan?.diagnostics?.radarLane?.longMarkets ?? 0, short: scan?.radarShortMarkets ?? scan?.diagnostics?.radarLane?.shortMarkets ?? 0, hot: scan?.radarHotCandidates ?? scan?.diagnostics?.radarLane?.hotCandidateCount ?? 0, watch: scan?.radarWatchCandidates ?? scan?.diagnostics?.radarLane?.watchCandidates ?? 0 },
+execution: scan?.executionSummary || scan?.diagnostics?.executionSummary || null,
+radar: { coverage: scan?.radarCoverageMarkets ?? scan?.diagnostics?.radarLane?.coverageMarkets ?? 0, directional: scan?.radarDirectionalMarkets ?? scan?.diagnostics?.radarLane?.directionalMarkets ?? 0, long: scan?.radarLongMarkets ?? scan?.diagnostics?.radarLane?.longMarkets ?? 0, short: scan?.radarShortMarkets ?? scan?.diagnostics?.radarLane?.shortMarkets ?? 0, hot: scan?.radarHotCandidates ?? scan?.diagnostics?.radarLane?.hotCandidateCount ?? 0, watch: scan?.radarWatchCandidates ?? scan?.diagnostics?.radarLane?.watchCandidates ?? 0, trace: scan?.diagnostics?.radarLane?.trace || null },
 telegram: scan?.diagnostics?.telegram || null,
 subrequestBudget: scan?.diagnostics?.requestStrategy || null,
 scheduledPositionReserve,
