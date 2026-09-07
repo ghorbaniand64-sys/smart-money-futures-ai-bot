@@ -4,7 +4,7 @@ import { getViemChain } from "@gmx-io/sdk/configs/chains";
  
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V15.6.5 / Phase 6 Radar Price Integrity + GitHub Actions Multi-Source Smart Money + Independent Radar + Smart Money Data Health + OI/Funding Integrity + Volume-Aware OHLCV + Exploration Deep Scan + Radar Coverage
+// Version: V15.6.7 / Phase 6 Radar History + Telegram UTF-8 + Exit Monitor Scope Integrity + GitHub Actions Multi-Source Smart Money + Independent Radar
 // Platform: Cloudflare Workers
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -17,6 +17,71 @@ import { getViemChain } from "@gmx-io/sdk/configs/chains";
 function safeError(error) {
 return error?.message || String(error || "Unknown error");
 }
+
+// V15.6.7 FIX: Radar price-integrity helpers are module-scope so the
+// paper-position exit monitor can access them. V15.6.6 accidentally left
+// these helpers inside FUTURES_V6, causing repeated EXIT_MONITOR_ERROR.
+function v1565NormalizePrice(value){
+  if(value===null || value===undefined || value==="") return 0;
+  let n;
+  if(typeof value === "number") n=value;
+  else if(typeof value === "bigint") n=Number(value);
+  else if(typeof value === "string") n=Number(value.replace(/,/g,"").trim());
+  else if(typeof value === "object") {
+    n=v132NumberValue(value?.usd,value?.value,value?.amount,value?.raw,value?.price,value?.markPrice,value?.indexPrice,value?.oraclePrice,value?.medianPrice);
+  } else n=Number(value);
+  if(!Number.isFinite(n) || n<=0) return 0;
+  // GMX 30-decimal fixed-point USD values are very large.
+  // Convert only clearly scaled values; ordinary USD prices remain untouched.
+  if(Math.abs(n)>=1e18) {
+    const scaled=n/1e30;
+    return Number.isFinite(scaled) && scaled>0 ? scaled : 0;
+  }
+  return n;
+}
+
+function v1565MedianPositive(values){
+  const nums=(values||[]).map(v1565NormalizePrice).filter(x=>Number.isFinite(x)&&x>0).sort((a,b)=>a-b);
+  if(!nums.length) return 0;
+  const mid=Math.floor(nums.length/2);
+  return nums.length%2 ? nums[mid] : (nums[mid-1]+nums[mid])/2;
+}
+
+function v1565PriceRatio(a,b){
+  const x=v1565NormalizePrice(a), y=v1565NormalizePrice(b);
+  if(!(x>0&&y>0)) return 0;
+  return Math.max(x,y)/Math.min(x,y);
+}
+
+function v1565RadarPriceIntegrity(entry, exit, options={}){
+  const e=v1565NormalizePrice(entry), x=v1565NormalizePrice(exit);
+  if(!(e>0) || !(x>0)) return {ok:false,reason:"INVALID_PRICE",entry:e,exit:x,ratio:0};
+  const maxRatio=Math.max(2,Number(options.maxRatio||25));
+  const ratio=v1565PriceRatio(e,x);
+  if(!Number.isFinite(ratio) || ratio>maxRatio){
+    return {ok:false,reason:"PRICE_SCALE_MISMATCH",entry:e,exit:x,ratio};
+  }
+  return {ok:true,reason:"PRICE_OK",entry:e,exit:x,ratio};
+}
+
+function v1565RadarNativePrice(row){
+  if(!row || typeof row!=="object") return 0;
+  return v1565MedianPositive([
+    row.__radarNativePrice,
+    row.oraclePrice, row.medianPrice, row.markPrice, row.indexPrice,
+    row.currentPrice, row.indexPriceUsd, row.maxPrice, row.minPrice
+  ]);
+}
+
+function radarTickerPrice(row){
+  if(!row || typeof row!=="object") return 0;
+  const candidates=[
+    row.medianPrice, row.price, row.markPrice, row.indexPrice,
+    row.oraclePrice, row.maxPrice, row.minPrice
+  ];
+  return v1565MedianPositive(candidates);
+}
+
  
 // ================================
 // CONFIGURATION
@@ -294,7 +359,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V15.6.6-GITHUB-ACTIONS-RADAR-HISTORY-TELEGRAM-UTF8",
+VERSION: "V15.6.7-GITHUB-ACTIONS-RADAR-HISTORY-TELEGRAM-UTF8-EXIT-SCOPE",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -3325,67 +3390,6 @@ return {markets:merged,source:"markets-info+markets-values"};
 // create or report a paper position from mixed price scales.
 // Core signal scoring and the multi-source Data Center are unchanged.
 // ======================================================
-function v1565NormalizePrice(value){
-  if(value===null || value===undefined || value==="") return 0;
-  let n;
-  if(typeof value === "number") n=value;
-  else if(typeof value === "bigint") n=Number(value);
-  else if(typeof value === "string") n=Number(value.replace(/,/g,"").trim());
-  else if(typeof value === "object") {
-    n=v132NumberValue(value?.usd,value?.value,value?.amount,value?.raw,value?.price,value?.markPrice,value?.indexPrice,value?.oraclePrice,value?.medianPrice);
-  } else n=Number(value);
-  if(!Number.isFinite(n) || n<=0) return 0;
-  // GMX 30-decimal fixed-point USD values are very large.
-  // Convert only clearly scaled values; ordinary USD prices remain untouched.
-  if(Math.abs(n)>=1e18) {
-    const scaled=n/1e30;
-    return Number.isFinite(scaled) && scaled>0 ? scaled : 0;
-  }
-  return n;
-}
-
-function v1565MedianPositive(values){
-  const nums=(values||[]).map(v1565NormalizePrice).filter(x=>Number.isFinite(x)&&x>0).sort((a,b)=>a-b);
-  if(!nums.length) return 0;
-  const mid=Math.floor(nums.length/2);
-  return nums.length%2 ? nums[mid] : (nums[mid-1]+nums[mid])/2;
-}
-
-function v1565PriceRatio(a,b){
-  const x=v1565NormalizePrice(a), y=v1565NormalizePrice(b);
-  if(!(x>0&&y>0)) return 0;
-  return Math.max(x,y)/Math.min(x,y);
-}
-
-function v1565RadarPriceIntegrity(entry, exit, options={}){
-  const e=v1565NormalizePrice(entry), x=v1565NormalizePrice(exit);
-  if(!(e>0) || !(x>0)) return {ok:false,reason:"INVALID_PRICE",entry:e,exit:x,ratio:0};
-  const maxRatio=Math.max(2,Number(options.maxRatio||25));
-  const ratio=v1565PriceRatio(e,x);
-  if(!Number.isFinite(ratio) || ratio>maxRatio){
-    return {ok:false,reason:"PRICE_SCALE_MISMATCH",entry:e,exit:x,ratio};
-  }
-  return {ok:true,reason:"PRICE_OK",entry:e,exit:x,ratio};
-}
-
-function v1565RadarNativePrice(row){
-  if(!row || typeof row!=="object") return 0;
-  return v1565MedianPositive([
-    row.__radarNativePrice,
-    row.oraclePrice, row.medianPrice, row.markPrice, row.indexPrice,
-    row.currentPrice, row.indexPriceUsd, row.maxPrice, row.minPrice
-  ]);
-}
-
-function radarTickerPrice(row){
-  if(!row || typeof row!=="object") return 0;
-  const candidates=[
-    row.medianPrice, row.price, row.markPrice, row.indexPrice,
-    row.oraclePrice, row.maxPrice, row.minPrice
-  ];
-  return v1565MedianPositive(candidates);
-}
-
 function normalizeRadarTokenSymbol(symbol){
   let s=String(symbol||"").trim().toUpperCase();
   s=s.split("[")[0].trim();
