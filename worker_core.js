@@ -2978,20 +2978,16 @@ const longEligible =
 longScore >= CONFIG.VALID_SIGNAL_SCORE &&
 longScore >= shortScore + CONFIG.MIN_EDGE &&
 trend.bullish >= 2 &&
-advancedLong.ready &&
 risk < 45 &&
-(!V8_UNIVERSE.PRECISION.enabled || precisionLong.ready) &&
 !entryQuality.overextended;
- 
+
 const shortEligible =
 shortScore >= CONFIG.VALID_SIGNAL_SCORE &&
 shortScore >= longScore + CONFIG.MIN_EDGE &&
 trend.bearish >= 2 &&
-advancedShort.ready &&
 risk < 45 &&
-(!V8_UNIVERSE.PRECISION.enabled || precisionShort.ready) &&
 !entryQuality.overextended;
- 
+
 if (trend.bullish < 2) reasons.long.push(`trend_confluence=${trend.bullish}/4`);
 if (trend.bearish < 2) reasons.short.push(`trend_confluence=${trend.bearish}/4`);
  
@@ -3330,6 +3326,7 @@ riskScore: analysis.risk,
 edge: analysis.edge,
 dataQuality: analysis.dataQuality,
 signalDiagnostics: analysis.diagnostics,
+entryQuality: analysis.entryQuality || null,
  
 execution: {
 enabled: executionEnabled(env),
@@ -3991,7 +3988,9 @@ if (executionEnabled(env) && CONFIG.RADAR_INDEPENDENT_ENABLED && CONFIG.RADAR_LI
         catch (telegramError) { errors.push({symbol:radarCandidates[0]?.symbol||null,scope:"radar_live_telegram",error:safeError(telegramError)}); }
       }
     } catch (error) {
-      radarLiveResult = { executed:false, mode:"LIVE", lane:"RADAR", error:safeError(error) };
+      const err=safeError(error);
+      radarLiveResult = { executed:false, mode:"LIVE", lane:"RADAR", error:err, symbol:radarCandidates[0]?.symbol || null };
+      console.error("[RADAR][LIVE_ERROR]", { symbol:radarCandidates[0]?.symbol || null, error:err });
       await auditLog(env, { type:"LIVE_RADAR_EXECUTION_ERROR", error:safeError(error), symbol:radarCandidates[0]?.symbol || null });
     }
   }
@@ -5322,8 +5321,10 @@ signalsDeduped: scan?.signalsDeduped ?? scan?.diagnostics?.signalsDeduped ?? 0,
 notified: scan?.diagnostics?.notified ?? 0,
 coreDirectional: { long: scan?.diagnostics?.longAnalyzed ?? 0, short: scan?.diagnostics?.shortAnalyzed ?? 0, noTrade: scan?.diagnostics?.noTradeAnalyzed ?? 0, valid: scan?.diagnostics?.validSignals ?? 0, watch: scan?.diagnostics?.watchSignals ?? 0 },
 execution: scan?.executionSummary || scan?.diagnostics?.executionSummary || null,
+executionResults: Array.isArray(scan?.executionResults) ? scan.executionResults.slice(0,3).map(x => ({symbol:x?.symbol || null,executed:Boolean(x?.executed),reason:x?.reason || null,error:x?.error || null})) : [],
 radar: { coverage: scan?.radarCoverageMarkets ?? scan?.diagnostics?.radarLane?.coverageMarkets ?? 0, directional: scan?.radarDirectionalMarkets ?? scan?.diagnostics?.radarLane?.directionalMarkets ?? 0, long: scan?.radarLongMarkets ?? scan?.diagnostics?.radarLane?.longMarkets ?? 0, short: scan?.radarShortMarkets ?? scan?.diagnostics?.radarLane?.shortMarkets ?? 0, hot: scan?.radarHotCandidates ?? scan?.diagnostics?.radarLane?.hotCandidateCount ?? 0, watch: scan?.radarWatchCandidates ?? scan?.diagnostics?.radarLane?.watchCandidates ?? 0, trace: scan?.diagnostics?.radarLane?.trace || null },
 telegram: scan?.diagnostics?.telegram || null,
+radarLive: scan?.radarLiveResult ? {executed:Boolean(scan.radarLiveResult.executed),symbol:scan.radarLiveResult.symbol || null,reason:scan.radarLiveResult.reason || null,error:scan.radarLiveResult.error || null} : null,
 subrequestBudget: scan?.diagnostics?.requestStrategy || null,
 scheduledPositionReserve,
 resourceGuardPaused,
@@ -8546,7 +8547,17 @@ async function verifyLiveEntryPosition(sdk, account, sdkSymbol, direction, attem
 
 async function executeLiveSignal(signal, env) {
 if (!executionEnabled(env)) return {executed:false,mode:"SIGNAL",reason:"Execution disabled"};
-if (!signal?.executionEligible) return {executed:false,mode:"LIVE",reason:"Signal is not execution-eligible"};
+const direction = String(signal?.direction || "").toUpperCase();
+const trendBridge = v15613TrendConfluence(signal?.trend || {}, direction);
+const explicitExecutionGate =
+  ["LONG","SHORT"].includes(direction) &&
+  Number(signal?.score || 0) >= Number(CONFIG.EXECUTION_SCORE || 88) &&
+  Number(signal?.edge || 0) >= Number(CONFIG.EXECUTION_MIN_EDGE || 10) &&
+  Number(trendBridge.selected || 0) >= 3 &&
+  Number(signal?.riskScore ?? 100) < Number(CONFIG.EXECUTION_MAX_RISK || 40) &&
+  Boolean(signal?.tradePlan?.valid) &&
+  !Boolean(signal?.entryQuality?.overextended);
+if (!explicitExecutionGate) return {executed:false,mode:"LIVE",reason:"Explicit execution gate failed"};
 if (!signal?.tradePlan?.valid || !["LONG","SHORT"].includes(signal.direction)) return {executed:false,mode:"LIVE",reason:"Invalid live signal"};
 
 const {sdk,signer,account}=await getLiveContext(env);
