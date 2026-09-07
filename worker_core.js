@@ -4,7 +4,7 @@ import { getViemChain } from "@gmx-io/sdk/configs/chains";
  
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V15.6.10 / Phase 6 Execution Trace + Radar Diagnostics + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar
+// Version: V15.6.11 / Phase 6 Execution Trace + Radar Diagnostics + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar
 // Platform: Cloudflare Workers
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -359,7 +359,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V15.6.10-GITHUB-ACTIONS-EXECUTION-TRACE-RADAR-DIAGNOSTICS",
+VERSION: "V15.6.11-GITHUB-ACTIONS-EXECUTION-TRACE-RADAR-PIPELINE-FIX",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -3411,6 +3411,11 @@ function v15610ExecutionGateReasons(signal) {
   if (score < Number(CONFIG.EXECUTION_SCORE || 88)) reasons.push(`SCORE_BELOW_${CONFIG.EXECUTION_SCORE || 88}`);
   if (edge < Number(CONFIG.EXECUTION_MIN_EDGE || 10)) reasons.push(`EDGE_BELOW_${CONFIG.EXECUTION_MIN_EDGE || 10}`);
   if (risk > Number(CONFIG.EXECUTION_MAX_RISK || 40)) reasons.push(`RISK_ABOVE_${CONFIG.EXECUTION_MAX_RISK || 40}`);
+  const direction = String(signal?.direction || "").toUpperCase();
+  const trend = signal?.trend || {};
+  const trendConfluence = direction === "LONG" ? Number(trend?.bullish || 0) : direction === "SHORT" ? Number(trend?.bearish || 0) : 0;
+  if (["LONG","SHORT"].includes(direction) && trendConfluence < 3) reasons.push(`TREND_CONFLUENCE_${trendConfluence}_OF_4`);
+  if (signal?.entryQuality?.overextended) reasons.push("OVEREXTENDED_ENTRY");
   if (!signal?.tradePlan?.valid) reasons.push("TRADE_PLAN_INVALID");
   if (!['LONG','SHORT'].includes(String(signal?.direction || '').toUpperCase())) reasons.push("DIRECTION_INVALID");
   if (!signal?.executionEligible && reasons.length === 0) reasons.push("EXECUTION_ELIGIBILITY_ENGINE_BLOCK");
@@ -3808,7 +3813,19 @@ const radarRows=radarMarketsWithFlow.map(m=>{
  // for Radar price/momentum detection.
  return {market:m,symbol,pumpRadar,radarEligible:Boolean(symbol&&active&&radarPrice>0),...v8FastMarketFilter(m)};
 }).filter(x=>x.radarEligible);
-const radarRanked=radarRows.map(x=>({symbol:x.symbol,score:Number(x.pumpRadar?.score||0),direction:x.pumpRadar?.direction||"NEUTRAL",edge:Number(x.pumpRadar?.edge||0),reasons:x.pumpRadar?.reasons||[]})).sort((a,b)=>b.score-a.score);
+// V15.6.11 FIX: preserve the complete pumpRadar payload when ranking Radar candidates.
+// V15.6.10 reduced each row to summary fields, then later passed those reduced
+// objects into radarEntryEligible(), which expects candidate.pumpRadar. That made
+// every Radar entry ineligible and also made the Radar trace show null/zero timing data.
+const radarRanked=radarRows.map(x=>({
+  ...x,
+  symbol:x.symbol,
+  score:Number(x.pumpRadar?.score||0),
+  direction:x.pumpRadar?.direction||"NEUTRAL",
+  edge:Number(x.pumpRadar?.edge||0),
+  reasons:x.pumpRadar?.reasons||[],
+  pumpRadar:x.pumpRadar||null
+})).sort((a,b)=>b.score-a.score);
 const radarDirectional=radarRows.filter(x=>x?.pumpRadar?.direction!=="NEUTRAL");
 const radarPrioritySymbols=radarRanked.filter(x=>x.direction!=="NEUTRAL"&&Number(x.score||0)>=Number(CONFIG.PUMP_RADAR_WATCH_SCORE||50)).slice(0,Math.max(6,Number(CONFIG.NOTIFY_EVENT_MAX||6))).map(x=>x.symbol);
 const mergedDeepSymbols=[...new Set([...radarPrioritySymbols,...symbols])].slice(0,effectiveDeepScanLimit);
@@ -3906,6 +3923,7 @@ const executionSummary={
   verified:executionTrace.filter(x=>x.positionVerified).length,
   blocked:executionTrace.filter(x=>!x.selected).length,
   failed:executionTrace.filter(x=>x.attempted&&!!x.resultError).length,
+  blockedReasons:executionTrace.filter(x=>!x.selected).map(x=>({symbol:x.symbol,score:x.score,executionEligible:x.executionEligible,reasons:x.gateReasons})),
   traces:executionTrace.slice(0,20)
 };
 console.log("[EXECUTION][TRACE]", executionSummary);
