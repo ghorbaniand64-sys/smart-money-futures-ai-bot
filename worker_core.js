@@ -359,7 +359,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V15.6.11-GITHUB-ACTIONS-EXECUTION-TRACE-RADAR-PIPELINE-FIX",
+VERSION: "V15.6.12-GITHUB-ACTIONS-RADAR-HISTORY-EXECUTION-DIAGNOSTICS",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -797,17 +797,26 @@ for(const x of out){
 return dedup.slice(-96);
 }
 function v8WindowSample(hist,minutes,now=Date.now()){
+// V15.6.12: GitHub Actions is a scheduled runner, so the real interval can
+// drift around the configured 5-minute cron. Select the nearest valid
+// persisted sample around the requested window instead of requiring a sample
+// to land inside a narrow +/-1 minute slot. This preserves data integrity while
+// preventing scheduler jitter from turning healthy history into WARMUP forever.
+const rows=Array.isArray(hist)?hist:[];
+if(!rows.length)return null;
 const target=now-minutes*60*1000;
-let best=null;
-for(let i=hist.length-1;i>=0;i--){
-  const x=hist[i];
-  if(Number(x.at)<=target){best=x;break;}
+const targetMs=minutes*60*1000;
+const minAge=Math.max(60*1000,targetMs-2*60*1000);
+const maxAge=targetMs+7*60*1000;
+let best=null,bestDistance=Infinity;
+for(const x of rows){
+  const at=Number(x?.at);
+  if(!Number.isFinite(at)||at<=0)continue;
+  const age=now-at;
+  if(age<minAge||age>maxAge)continue;
+  const distance=Math.abs(at-target);
+  if(distance<bestDistance){best=x;bestDistance=distance;}
 }
-if(!best)return null;
-const age=now-Number(best.at);
-const minAge=Math.max(0,minutes*60*1000-60000);
-const maxAge=minutes*60*1000+3*60*1000;
-if(age<minAge||age>maxAge)return null;
 return best;
 }
 function v8PctMove(current,prior){
@@ -1088,7 +1097,12 @@ smartMoneyFlow: smartMoneyFlow ? {
   longCloseUsd:Number(smartMoneyFlow.longCloseUsd||0),
   shortCloseUsd:Number(smartMoneyFlow.shortCloseUsd||0)
 } : null,
-priceDataStatus,radarWarmup,radarHistoryReady,historyIntegrityOk,historySamples:hist.length,valid5mSample:Boolean(prior5),valid15mSample:Boolean(prior15),valid30mSample:Boolean(prior30),
+priceDataStatus,radarWarmup,radarHistoryReady,historyIntegrityOk,historySamples:hist.length,
+latestHistoryAgeSec:latest?Math.max(0,Math.round((now-Number(latest.at||0))/1000)):null,
+prior5AgeSec:prior5?Math.max(0,Math.round((now-Number(prior5.at||0))/1000)):null,
+prior15AgeSec:prior15?Math.max(0,Math.round((now-Number(prior15.at||0))/1000)):null,
+prior30AgeSec:prior30?Math.max(0,Math.round((now-Number(prior30.at||0))/1000)):null,
+valid5mSample:Boolean(prior5),valid15mSample:Boolean(prior15),valid30mSample:Boolean(prior30),
 reasons:direction==="LONG"?[...new Set(reasonsLong)].slice(0,8):direction==="SHORT"?[...new Set(reasonsShort)].slice(0,8):[...new Set([...reasonsLong,...reasonsShort])].slice(0,8)
 };
 }
@@ -3852,7 +3866,9 @@ const existingCount=livePositions.length,remainingSlots=Math.max(0,CONFIG.MAX_PO
 const entryRiskAllowed = Number(state.dailyLoss || 0) > -CONFIG.MAX_DAILY_LOSS;
 const selection=selectPrioritySignals(entryRiskAllowed && remainingSlots>0?valid:[],livePositions);
 const top=selection.selected.slice(0,remainingSlots);
-const executionTrace=valid.map(signal=>({
+const executionTrace=valid.map(signal=>{
+  const gateReasons=v15610ExecutionGateReasons(signal);
+  return {
   symbol:signal.symbol,
   direction:signal.direction,
   tier:signal.signalTier,
@@ -3861,15 +3877,19 @@ const executionTrace=valid.map(signal=>({
   edge:Number(signal.edge||0),
   risk:Number(signal.riskScore||0),
   tradePlanValid:Boolean(signal.tradePlan?.valid),
+  trendConfluence:Number(signal.direction==="LONG"?signal.trend?.bullish||0:signal.direction==="SHORT"?signal.trend?.bearish||0:0),
+  overextended:Boolean(signal.entryQuality?.overextended),
   executionEligible:Boolean(signal.executionEligible),
-  gateReasons:v15610ExecutionGateReasons(signal),
+  gateReasons,
+  gateReasonsText:gateReasons.join(" | ")||"NONE",
   selected:false,
   attempted:false,
   executed:false,
   positionVerified:false,
   resultReason:null,
   resultError:null
-}));
+  };
+});
 for(const trace of executionTrace){
   const selectedSignal=top.find(s=>baseAsset(s.symbol)===baseAsset(trace.symbol));
   if(selectedSignal) trace.selected=true;
@@ -3923,10 +3943,10 @@ const executionSummary={
   verified:executionTrace.filter(x=>x.positionVerified).length,
   blocked:executionTrace.filter(x=>!x.selected).length,
   failed:executionTrace.filter(x=>x.attempted&&!!x.resultError).length,
-  blockedReasons:executionTrace.filter(x=>!x.selected).map(x=>({symbol:x.symbol,score:x.score,executionEligible:x.executionEligible,reasons:x.gateReasons})),
+  blockedReasons:executionTrace.filter(x=>!x.selected).map(x=>({symbol:x.symbol,score:x.score,executionEligible:x.executionEligible,reasons:x.gateReasons,reasonsText:x.gateReasonsText})),
   traces:executionTrace.slice(0,20)
 };
-console.log("[EXECUTION][TRACE]", executionSummary);
+console.log("[EXECUTION][TRACE]", JSON.stringify(executionSummary, null, 2));
 
 // V14.0: independent Radar live lane. It does not consume Core selection slots.
 let radarLiveResult = null;
@@ -4052,9 +4072,17 @@ const radarTrace=radarRanked.slice(0,20).map(r=>({
   timingState:r.timingState||null,
   valid5mSample:Boolean(r.valid5mSample),
   priceDataStatus:r.priceDataStatus||null,
+  historySamples:Number(r.historySamples||0),
+  latestHistoryAgeSec:r.latestHistoryAgeSec??null,
+  prior5AgeSec:r.prior5AgeSec??null,
+  prior15AgeSec:r.prior15AgeSec??null,
+  prior30AgeSec:r.prior30AgeSec??null,
+  radarHistoryReady:Boolean(r.radarHistoryReady),
+  historyIntegrityOk:Boolean(r.historyIntegrityOk),
   watchEligible:Boolean(r.direction!=="NEUTRAL" && Number(r.score||0)>=Number(CONFIG.PUMP_RADAR_WATCH_SCORE||60)),
   entryEligible:Boolean(radarEntryEligible(r)),
-  gateReasons:v15610RadarGateReasons(r)
+  gateReasons:v15610RadarGateReasons(r),
+  gateReasonsText:v15610RadarGateReasons(r).join(" | ")||"NONE"
 }));
 const radarTraceSummary={
   coverage:radarRows.length,
@@ -4064,7 +4092,7 @@ const radarTraceSummary={
   entryEligible:radarRanked.filter(x=>radarEntryEligible(x)).length,
   top:radarTrace
 };
-console.log("[RADAR][TRACE]", radarTraceSummary);
+console.log("[RADAR][TRACE]", JSON.stringify(radarTraceSummary, null, 2));
 if (CONFIG.TELEGRAM_ENABLED && CONFIG.PUMP_RADAR_ENABLED) {
   const radarEventPool = [];
   const radarSeen = new Set();
