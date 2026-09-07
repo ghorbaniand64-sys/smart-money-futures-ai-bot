@@ -357,7 +357,7 @@ jobs:
           EXECUTION_ENABLED: ${{ vars.EXECUTION_ENABLED || 'false' }}
         run: node github-runner.mjs
 
-            - name: Persist bot state
+      - name: Persist bot state
         if: always()
         shell: bash
         run: |
