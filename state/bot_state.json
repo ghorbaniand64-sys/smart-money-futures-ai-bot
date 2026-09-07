@@ -15620,6 +15620,15 @@
           "error": "loadState is not defined"
         },
         "time": 1788761638093
+      },
+      {
+        "event": {
+          "type": "SCHEDULED_CYCLE_ERROR",
+          "cron": "*/5 * * * *",
+          "scheduledTime": 1788763103946,
+          "error": "loadState is not defined"
+        },
+        "time": 1788763104486
       }
     ],
     "expiresAt": null
