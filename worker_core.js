@@ -4,7 +4,7 @@ import { getViemChain } from "@gmx-io/sdk/configs/chains";
  
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V15.6.15 / Phase 6 Automatic Execution Fix + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar
+// Version: V15.6.17 / Radar Test-Lane Execution Repair + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar
 // Platform: GitHub Actions + Node.js
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -470,6 +470,8 @@ RADAR_LIVE_LEDGER_TTL_SEC: 86400,
 RADAR_TEST_ENTRY_ENABLED: true,
 RADAR_TEST_ENTRY_SCORE: 50,
 RADAR_TEST_ENTRY_MIN_EDGE: 3,
+// Optional smoke-test target. Empty = any Radar candidate.
+RADAR_TEST_SYMBOL: "PUMP",
 // V14.0.5.5: live collateral may be USDC or USDT when the selected GMX perp market supports it.
 LIVE_COLLATERAL_PREFERENCE: ["USDC","USDT"],
 RADAR_SUBREQUEST_RESERVE: 0,
@@ -3886,15 +3888,38 @@ const radarRows=radarMarketsWithFlow.map(m=>{
 // V15.6.10 reduced each row to summary fields, then later passed those reduced
 // objects into radarEntryEligible(), which expects candidate.pumpRadar. That made
 // every Radar entry ineligible and also made the Radar trace show null/zero timing data.
-const radarRanked=radarRows.map(x=>({
+const radarRanked=radarRows.map(x=>{
+  const testSymbol=normalizeSymbol(CONFIG.RADAR_TEST_SYMBOL||"");
+  const isTestSymbol=Boolean(CONFIG.RADAR_TEST_ENTRY_ENABLED && testSymbol && normalizeSymbol(x.symbol)===testSymbol);
+  const rawRadar=x.pumpRadar||{};
+  let testDirection=rawRadar.direction||"NEUTRAL";
+  if(isTestSymbol && testDirection==="NEUTRAL") {
+    const p24=Number(rawRadar.priceChange24h||0);
+    const p1=Number(rawRadar.priceChange1h||0);
+    const pm=Number(rawRadar.priorMovePct||0);
+    const move=Number.isFinite(p24)&&p24!==0?p24:(Number.isFinite(p1)&&p1!==0?p1:pm);
+    if(move>0.10)testDirection="LONG";
+    else if(move<-0.10)testDirection="SHORT";
+  }
+  const testScore=isTestSymbol && testDirection!=="NEUTRAL"
+    ? Math.max(Number(rawRadar.score||0),Number(CONFIG.RADAR_TEST_ENTRY_SCORE||50))
+    : Number(rawRadar.score||0);
+  const testEdge=isTestSymbol && testDirection!=="NEUTRAL"
+    ? Math.max(Number(rawRadar.edge||0),Number(CONFIG.RADAR_TEST_ENTRY_MIN_EDGE||3))
+    : Number(rawRadar.edge||0);
+  const adjustedRadar=isTestSymbol && testDirection!=="NEUTRAL"
+    ? {...rawRadar,direction:testDirection,score:testScore,edge:testEdge,testEntryFallback:true}
+    : rawRadar;
+  return {
   ...x,
   symbol:x.symbol,
-  score:Number(x.pumpRadar?.score||0),
-  direction:x.pumpRadar?.direction||"NEUTRAL",
-  edge:Number(x.pumpRadar?.edge||0),
-  reasons:x.pumpRadar?.reasons||[],
-  pumpRadar:x.pumpRadar||null
-})).sort((a,b)=>b.score-a.score);
+  score:testScore,
+  direction:testDirection,
+  edge:testEdge,
+  reasons:adjustedRadar?.reasons||[],
+  pumpRadar:adjustedRadar||null
+  };
+}).sort((a,b)=>b.score-a.score);
 const radarDirectional=radarRows.filter(x=>x?.pumpRadar?.direction!=="NEUTRAL");
 const radarPrioritySymbols=radarRanked.filter(x=>x.direction!=="NEUTRAL"&&Number(x.score||0)>=Number(CONFIG.PUMP_RADAR_WATCH_SCORE||50)).slice(0,Math.max(6,Number(CONFIG.NOTIFY_EVENT_MAX||6))).map(x=>x.symbol);
 const mergedDeepSymbols=[...new Set([...radarPrioritySymbols,...symbols])].slice(0,effectiveDeepScanLimit);
@@ -4018,10 +4043,18 @@ console.log("[EXECUTION][TRACE]", JSON.stringify(executionSummary, null, 2));
 // V14.0: independent Radar live lane. It does not consume Core selection slots.
 let radarLiveResult = null;
 if (executionEnabled(env) && CONFIG.RADAR_INDEPENDENT_ENABLED && CONFIG.RADAR_LIVE_ENABLED) {
-  const radarCandidates = radarRows
-    .filter(x => x?.pumpRadar?.direction !== "NEUTRAL")
+  const radarCandidates = radarRanked
+    .filter(x => x?.direction !== "NEUTRAL")
     .filter(x => radarEntryEligible(x))
-    .sort((a,b) => Number(b?.pumpRadar?.score || 0) - Number(a?.pumpRadar?.score || 0))
+    .sort((a,b) => {
+      const testSymbol=normalizeSymbol(CONFIG.RADAR_TEST_SYMBOL||"");
+      if(CONFIG.RADAR_TEST_ENTRY_ENABLED && testSymbol){
+        const ap=normalizeSymbol(a?.symbol||"")===testSymbol?1:0;
+        const bp=normalizeSymbol(b?.symbol||"")===testSymbol?1:0;
+        if(ap!==bp)return bp-ap;
+      }
+      return Number(b?.pumpRadar?.score || 0) - Number(a?.pumpRadar?.score || 0);
+    })
     .map(candidate => {
       // The Radar candidate is normally included in the deep scan. Reuse the
       // already-fetched candle price as a third, independent price reference.
@@ -4034,6 +4067,14 @@ if (executionEnabled(env) && CONFIG.RADAR_INDEPENDENT_ENABLED && CONFIG.RADAR_LI
         : candidate;
     });
   if (radarCandidates.length) {
+    console.log("[RADAR][LIVE_CANDIDATE]", JSON.stringify({
+      symbol:radarCandidates[0]?.symbol||null,
+      direction:radarCandidates[0]?.pumpRadar?.direction||null,
+      score:Number(radarCandidates[0]?.pumpRadar?.score||0),
+      edge:Number(radarCandidates[0]?.pumpRadar?.edge||0),
+      priceStatus:radarCandidates[0]?.pumpRadar?.priceDataStatus||null,
+      testEntry:Boolean(CONFIG.RADAR_TEST_ENTRY_ENABLED)
+    }));
     try {
       radarLiveResult = await executeLiveRadarCandidate(radarCandidates[0], env);
       if (radarLiveResult?.executed && CONFIG.TELEGRAM_ENABLED) {
@@ -8468,7 +8509,10 @@ function v156BuildRadarLiveTradePlan(candidate) {
     Boolean(radar?.valid5mSample) &&
     (velocity>=Number(CONFIG.RADAR_EARLY_ENTRY_MIN_VELOCITY||0.75)||acceleration>=0.35) &&
     radar?.timingState==="EARLY_FAST";
-  if(score<Number(CONFIG.RADAR_ENTRY_SCORE||72) && !early){
+  // V15.6.17: the previous test-mode patch relaxed radarEntryEligible(),
+  // but this downstream trade-plan builder still enforced the old 72/early
+  // gate. That made the candidate pass the first gate and die here.
+  if(!CONFIG.RADAR_TEST_ENTRY_ENABLED && score<Number(CONFIG.RADAR_ENTRY_SCORE||72) && !early){
     return {valid:false,reason:"radar_entry_gate_not_met"};
   }
   const high=Number(market?.high24h??market?.highPrice24h??market?.dailyHigh);
@@ -8494,7 +8538,8 @@ function v156BuildRadarLiveTradePlan(candidate) {
     stopPercent:Number(stopPct.toFixed(4)),leverage,
     allocation:CONFIG.RADAR_CAPITAL_ALLOCATION,
     riskPerTradePercent:Number((CONFIG.RADAR_RISK_PER_TRADE*100).toFixed(2)),
-    score,direction,method:"RADAR-PRICE-RANGE-R-MULTIPLES"
+    score,direction,method:CONFIG.RADAR_TEST_ENTRY_ENABLED?"RADAR-TEST-PRICE-RANGE-R-MULTIPLES":"RADAR-PRICE-RANGE-R-MULTIPLES",
+    testEntry:Boolean(CONFIG.RADAR_TEST_ENTRY_ENABLED)
   };
 }
 
@@ -8503,7 +8548,18 @@ if (!executionEnabled(env) || !CONFIG.RADAR_LIVE_ENABLED) {
 return { executed: false, mode: "LIVE", lane: "RADAR", reason: "Radar live execution disabled" };
 }
 const plan = v156BuildRadarLiveTradePlan(candidate);
-if (!plan.valid) return { executed:false, mode:"LIVE", lane:"RADAR", reason:plan.reason };
+if (!plan.valid) {
+  console.warn("[RADAR][LIVE_PLAN_BLOCKED]", JSON.stringify({
+    symbol:candidate?.symbol||null,
+    score:Number(candidate?.pumpRadar?.score||0),
+    edge:Number(candidate?.pumpRadar?.edge||0),
+    direction:candidate?.pumpRadar?.direction||null,
+    priceStatus:candidate?.pumpRadar?.priceDataStatus||null,
+    testEntry:Boolean(CONFIG.RADAR_TEST_ENTRY_ENABLED),
+    reason:plan.reason
+  }));
+  return { executed:false, mode:"LIVE", lane:"RADAR", reason:plan.reason };
+}
 const { sdk, signer, account } = await getLiveContext(env);
 const markets = await sdk.fetchMarkets();
 const requestedSymbol = candidate?.symbol || candidate?.market?.symbol;
@@ -8540,9 +8596,15 @@ const capacityUsd = Number(capacity?.availableLiquidity || 0n) / 1e30;
 const walletUsd = collateral.usd;
 
 const leverage = Number(plan.leverage || 1);
-const collateralTargetUsd = walletUsd * CONFIG.RADAR_LIVE_CAPITAL_ALLOCATION;
+const normalCollateralTargetUsd = walletUsd * CONFIG.RADAR_LIVE_CAPITAL_ALLOCATION;
+const testMinimumCollateralUsd = Number(CONFIG.RADAR_TEST_ENTRY_ENABLED)
+  ? Number(CONFIG.MIN_POSITION_NOTIONAL_USD || 10) / Math.max(leverage, 1)
+  : 0;
+const collateralTargetUsd = Number(CONFIG.RADAR_TEST_ENTRY_ENABLED)
+  ? Math.max(normalCollateralTargetUsd, testMinimumCollateralUsd)
+  : normalCollateralTargetUsd;
 const collateralCapUsd = CONFIG.RADAR_LIVE_MAX_POSITION_NOTIONAL_USD / Math.max(leverage, 1);
-const collateralUsd = Math.min(collateralTargetUsd, collateralCapUsd, walletUsd * CONFIG.MAX_CAPITAL_ALLOCATION);
+const collateralUsd = Math.min(collateralTargetUsd, collateralCapUsd, walletUsd * CONFIG.MAX_CAPITAL_ALLOCATION, walletUsd);
 const stopFraction = Math.abs(plan.entry - plan.stopLoss) / Math.max(plan.entry, 1e-12);
 const riskCapital = walletUsd * CONFIG.RADAR_LIVE_RISK_PER_TRADE;
 const riskBasedNotional = stopFraction > 0 ? riskCapital / stopFraction : 0;
