@@ -359,7 +359,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V15.6.12-GITHUB-ACTIONS-RADAR-HISTORY-EXECUTION-DIAGNOSTICS",
+VERSION: "V15.6.13-GITHUB-ACTIONS-TREND-PIPELINE-FIX",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -2790,6 +2790,19 @@ if(Number.isFinite(structureDist)&&structureDist>0) target=Math.max(target,Math.
 return {tp1:Number((long?entry+risk:entry-risk).toFixed(8)),tp2:Number((long?entry+target*.66:entry-target*.66).toFixed(8)),tp3:Number((long?entry+target:entry-target).toFixed(8)),rr:Number((target/risk).toFixed(2)),method:"ATR+structure+signal-strength",invalidation:long?"15m_close_below_stop":"15m_close_above_stop"};
 }
  
+// V15.6.13: Canonical trend-confluence bridge. The signal object historically
+// exposed only the four timeframe directions, while the execution trace/gate
+// later expected snapshot-only bullish/bearish counters. Keep one canonical
+// calculation so Trend -> Signal -> Execution cannot silently become 0/4.
+function v15613TrendConfluence(trend, direction) {
+  const t = trend || {};
+  const dirs = [t.macro4h ?? t.macro?.direction, t.trend1h ?? t.trend?.direction, t.entry15m ?? t.entry?.direction, t.fast5m ?? t.fast?.direction]
+    .map(x => String(x || '').toUpperCase());
+  const bullish = dirs.filter(x => x === 'BULLISH').length;
+  const bearish = dirs.filter(x => x === 'BEARISH').length;
+  return { bullish, bearish, selected: direction === 'LONG' ? bullish : direction === 'SHORT' ? bearish : 0 };
+}
+
 function scoreSignal(snapshot, previousMarket) {
 const c5 = snapshot.candles["5m"] || [];
 const c15 = snapshot.candles["15m"] || [];
@@ -3041,9 +3054,8 @@ const executionScore =
 direction === "LONG" ? longScore :
 direction === "SHORT" ? shortScore : 0;
  
-const executionTrendConfluence =
-direction === "LONG" ? trend.bullish :
-direction === "SHORT" ? trend.bearish : 0;
+const trendBridge = v15613TrendConfluence(trend, direction);
+const executionTrendConfluence = trendBridge.selected;
  
 const executionEligible =
 direction !== "NO_TRADE" &&
@@ -3115,6 +3127,7 @@ confirmationPolicy: "2+ confirmations; not all indicators required"
 selectedDirection: direction,
 entryQuality,
 executionTrendConfluence,
+trendConfluence: trendBridge,
 scoreModel: {
 normalizedTo100: true,
 weightedMaximum: 100,
@@ -3303,7 +3316,9 @@ alignment: snapshot.trend.alignment,
 macro4h: snapshot.trend.macro.direction,
 trend1h: snapshot.trend.trend.direction,
 entry15m: snapshot.trend.entry.direction,
-fast5m: snapshot.trend.fast.direction
+fast5m: snapshot.trend.fast.direction,
+bullish: Number(snapshot.trend.bullish || 0),
+bearish: Number(snapshot.trend.bearish || 0)
 },
  
 components: analysis.components,
@@ -3427,7 +3442,8 @@ function v15610ExecutionGateReasons(signal) {
   if (risk > Number(CONFIG.EXECUTION_MAX_RISK || 40)) reasons.push(`RISK_ABOVE_${CONFIG.EXECUTION_MAX_RISK || 40}`);
   const direction = String(signal?.direction || "").toUpperCase();
   const trend = signal?.trend || {};
-  const trendConfluence = direction === "LONG" ? Number(trend?.bullish || 0) : direction === "SHORT" ? Number(trend?.bearish || 0) : 0;
+  const trendBridge = v15613TrendConfluence(trend, direction);
+  const trendConfluence = trendBridge.selected;
   if (["LONG","SHORT"].includes(direction) && trendConfluence < 3) reasons.push(`TREND_CONFLUENCE_${trendConfluence}_OF_4`);
   if (signal?.entryQuality?.overextended) reasons.push("OVEREXTENDED_ENTRY");
   if (!signal?.tradePlan?.valid) reasons.push("TRADE_PLAN_INVALID");
@@ -3877,7 +3893,7 @@ const executionTrace=valid.map(signal=>{
   edge:Number(signal.edge||0),
   risk:Number(signal.riskScore||0),
   tradePlanValid:Boolean(signal.tradePlan?.valid),
-  trendConfluence:Number(signal.direction==="LONG"?signal.trend?.bullish||0:signal.direction==="SHORT"?signal.trend?.bearish||0:0),
+  trendConfluence:Number(v15613TrendConfluence(signal.trend, signal.direction).selected),
   overextended:Boolean(signal.entryQuality?.overextended),
   executionEligible:Boolean(signal.executionEligible),
   gateReasons,
