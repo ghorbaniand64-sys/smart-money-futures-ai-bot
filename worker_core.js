@@ -4,7 +4,7 @@ import { getViemChain } from "@gmx-io/sdk/configs/chains";
  
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V15.6.18 / Radar Test-Lane Execution Repair + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar
+// Version: V16.0.0 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair
 // Platform: GitHub Actions + Node.js
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -359,7 +359,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V15.6.18-GITHUB-ACTIONS-RADAR-COLLATERAL-REPAIR",
+VERSION: "V16.0.0-GITHUB-ACTIONS-AUTOMATIC-EXECUTION-FIX-RADAR-SCOPE-REPAIR",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -461,17 +461,6 @@ RADAR_LIVE_CAPITAL_ALLOCATION: 0.03,
 RADAR_LIVE_MAX_POSITION_NOTIONAL_USD: 2500,
 RADAR_LIVE_REVERSAL_CONFIRMATIONS: 1,
 RADAR_LIVE_LEDGER_TTL_SEC: 86400,
-
-// V15.6.16 TEST ENTRY MODE:
-// Purpose: temporarily verify that the independent Radar -> live execution
-// pipeline can actually open a GMX position. This intentionally relaxes ONLY
-// the Radar entry gate; the normal Core signal engine remains unchanged.
-// Set false after the smoke test to restore the stricter Radar gate.
-RADAR_TEST_ENTRY_ENABLED: true,
-RADAR_TEST_ENTRY_SCORE: 50,
-RADAR_TEST_ENTRY_MIN_EDGE: 3,
-// Optional smoke-test target. Empty = any Radar candidate.
-RADAR_TEST_SYMBOL: "PUMP",
 // V14.0.5.5: live collateral may be USDC or USDT when the selected GMX perp market supports it.
 LIVE_COLLATERAL_PREFERENCE: ["USDC","USDT"],
 RADAR_SUBREQUEST_RESERVE: 0,
@@ -796,8 +785,7 @@ for(const x of rows){
     const ratio=v1565PriceRatio(price,cur);
     if(!Number.isFinite(ratio)||ratio>25)continue;
   }
-  const volume24h=v8HighMetric(x,["volume24h","volume","dailyVolume","volumeUsd24h","volume24H"]);
-  out.push({at,price,volume24h});
+  out.push({at,price});
 }
 out.sort((a,b)=>a.at-b.at);
 const dedup=[];
@@ -806,43 +794,8 @@ for(const x of out){
   if(last&&Math.abs(x.at-last.at)<15000){ dedup[dedup.length-1]=x; }
   else dedup.push(x);
 }
-return dedup.slice(-3000);
+return dedup.slice(-96);
 }
-
-// V15.6.15 RADAR METRIC REPAIR: derive missing 1h/4h/24h price moves and
-// true 5m volume velocity from the persisted live-price history. Market/ticker
-// payloads do not consistently expose these fields for every GMX market.
-function v1565RadarDerivedMetrics(market, previous, history, now=Date.now()) {
-  const hist=Array.isArray(history)?history:[];
-  const price=v1565NormalizePrice(market?.price ?? market?.markPrice ?? market?.indexPrice ?? market?.currentPrice);
-  const prior5=v8WindowSample(hist,5,now), prior10=v8WindowSample(hist,10,now), prior15=v8WindowSample(hist,15,now), prior30=v8WindowSample(hist,30,now);
-  const prior60=v8WindowSample(hist,60,now), prior240=v8WindowSample(hist,240,now), prior1440=v8WindowSample(hist,1440,now);
-  const raw24=v8PercentMetric(market,[
-    "priceChange24h","priceChangePercent24h","change24h","priceChange24H",
-    "changePercent24h","change24H","changePercent24H","percentChange24h",
-    "priceChange24hPercent","priceChangePercent"
-  ]);
-  const raw1=v8PercentMetric(market,["priceChange1h","priceChangePercent1h","change1h","priceChange1H","changePercent1h"]);
-  const raw4=v8PercentMetric(market,["priceChange4h","priceChangePercent4h","change4h","change4H","priceChange4H","changePercent4h"]);
-  const p24Bps=v132NumberValue(market?.priceChangePercent24hBps);
-  const field24=p24Bps!==0?p24Bps/100:raw24;
-  const p1h=raw1!==0?raw1:(prior60?v8PctMove(price,prior60.price):0);
-  const p4h=raw4!==0?raw4:(prior240?v8PctMove(price,prior240.price):0);
-  const p24=field24!==0?field24:(prior1440?v8PctMove(price,prior1440.price):0);
-  const volume=v8HighMetric(market,["volume24h","volume","dailyVolume","volumeUsd24h","volume24H"]);
-  const vol5=prior5?v8HighMetric(prior5,["volume24h"]):0;
-  const currentDelta=volume>0&&vol5>0?Math.max(0,volume-vol5):0;
-  const deltas=[];
-  for(let k=2;k<=13;k++){
-    const newer=v8WindowSample(hist,k*5,now), older=v8WindowSample(hist,(k+1)*5,now);
-    const nv=v8HighMetric(newer,["volume24h"]), ov=v8HighMetric(older,["volume24h"]);
-    if(nv>0&&ov>0&&nv>=ov)deltas.push(nv-ov);
-  }
-  const baseline=smfMedian(deltas.filter(x=>x>0));
-  const volumeRatio=currentDelta>0&&baseline>0?currentDelta/baseline:0;
-  return {p24,p1h,p4h,price24Available:field24!==0||!!prior1440,price1hAvailable:raw1!==0||!!prior60,price4hAvailable:raw4!==0||!!prior240,volumeAvailable:volume>0,volumeRatio,volumeRatioAvailable:volumeRatio>0};
-}
-
 function v8WindowSample(hist,minutes,now=Date.now()){
 // V15.6.12: GitHub Actions is a scheduled runner, so the real interval can
 // drift around the configured 5-minute cron. Select the nearest valid
@@ -1018,23 +971,26 @@ if(!market)return{score:0,longScore:0,shortScore:0,edge:0,direction:"NEUTRAL",re
 const price=v8HighMetric(market,["price","markPrice","indexPrice","currentPrice","indexPriceUsd"]);
 const prevPriceRaw=v8HighMetric(previous,["price","markPrice","indexPrice","currentPrice"]);
 const prevPrice=v1565RadarPriceIntegrity(price,prevPriceRaw,{maxRatio:25}).ok?prevPriceRaw:0;
-const now=Date.now();
-const rawHist=Array.isArray(history)?history.filter(x=>Number(x?.price)>0&&Number(x?.at)>0).slice(-3000):[];
-const hist=v8RadarSanitizeHistory(rawHist,price);
-const derived=v1565RadarDerivedMetrics(market,previous,hist,now);
-const p24=derived.p24,p1h=derived.p1h,p4h=derived.p4h;
-const volumeRatio=derived.volumeRatio;
+const p24Bps=v132NumberValue(market?.priceChangePercent24hBps);
+const p24=p24Bps!==0?p24Bps/100:v8PercentMetric(market,["priceChange24h","priceChangePercent24h","change24h","priceChange24H","changePercent24h"]);
+const p1h=v8PercentMetric(market,["priceChange1h","priceChangePercent1h","change1h","priceChange1H","changePercent1h"]);
+const p4h=v8PercentMetric(market,["priceChange4h","priceChangePercent4h","change4h","change4H","priceChange4H","changePercent4h"]);
+const volume=v8HighMetric(market,["volume24h","volume","dailyVolume","volumeUsd24h","volume24H"]);
+const prevVolume=v8HighMetric(previous,["volume24h","volume","dailyVolume","volumeUsd24h"]);
+const volumeRatio=prevVolume>0&&volume>0?volume/prevVolume:1;
 const smartMoneyFlow=market?.__smartMoneyFlow||null;
 const oi=extractOpenInterest(market),prevOi=extractOpenInterest(previous);
-const oiAvailable=oi>0;
-const previousOiAvailable=prevOi>0;
-const oiChangePct=previousOiAvailable?((oi-prevOi)/prevOi)*100:0;
+const oiChangePct=prevOi>0&&oi>0?((oi-prevOi)/prevOi)*100:0;
 const high24h=v8HighMetric(market,["high24h","highPrice24h","dailyHigh","high24H"]);
 const low24h=v8HighMetric(market,["low24h","lowPrice24h","dailyLow","low24H"]);
 const nearHigh=price>0&&high24h>0&&price/high24h>=0.992;
 const nearLow=price>0&&low24h>0&&price/low24h<=1.008;
 const rangePct=price>0&&high24h>0&&low24h>0?((high24h-low24h)/price)*100:0;
 const priorMovePct=v8PctMove(price,prevPrice);
+
+const rawHist=Array.isArray(history)?history.filter(x=>Number(x?.price)>0&&Number(x?.at)>0).slice(-96):[];
+const hist=v8RadarSanitizeHistory(rawHist,price);
+const now=Date.now();
 const latest=hist.length?hist[hist.length-1]:null;
 const prior5=v8WindowSample(hist,5,now);
 const prior10=v8WindowSample(hist,10,now);
@@ -1050,8 +1006,9 @@ const acceleration5m=prior5?(velocity5m-prior5m):0;
 const radarWarmup=!(prior5||prior15);
 const priceDataStatus=price>0?(hist.length?"OK":"WARMUP"):"INVALID";
 const radarHistoryReady=Boolean(prior5||prior15);
-const historyIntegrityOk=price>0&&(!latestPrice||v1565RadarPriceIntegrity(price,latestPrice,{maxRatio:25}).ok);
-const historyMoveAllowed=historyIntegrityOk&&radarHistoryReady;
+const historyIntegrityOk=price>0 && (!latestPrice || v1565RadarPriceIntegrity(price,latestPrice,{maxRatio:25}).ok);
+
+const historyMoveAllowed=historyIntegrityOk && radarHistoryReady;
 const historicalMoves=historyMoveAllowed?[priorMovePct,move10m,move15m,move30m]:[];
 const positiveMove=Math.max(p24,p4h,p1h,...historicalMoves);
 const negativeMove=Math.min(p24,p4h,p1h,...historicalMoves);
@@ -1074,18 +1031,18 @@ if(negativeMove<-5){short+=12;reasonsShort.push("impulse_move");}
 if(negativeMove<-10){short+=16;reasonsShort.push("explosive_move");}
 if(negativeMove<-15){short+=12;reasonsShort.push("parabolic_move");}
 if(negativeMove<-25){short+=8;reasonsShort.push("extreme_move");}
-if(historyMoveAllowed&&velocity5m>0.35){long+=6;reasonsLong.push("5m_velocity");}
-if(historyMoveAllowed&&acceleration5m>0.35){long+=8;reasonsLong.push("5m_acceleration");}
-if(historyMoveAllowed&&velocity5m>1.25){long+=10;reasonsLong.push("5m_impulse");}
-if(historyMoveAllowed&&velocity5m>2.0){long+=12;reasonsLong.push("5m_explosion");}
-if(historyMoveAllowed&&velocity5m>4.0){long+=8;reasonsLong.push("5m_extreme");}
-if(historyMoveAllowed&&velocity5m<-0.35){short+=6;reasonsShort.push("5m_velocity");}
-if(historyMoveAllowed&&acceleration5m<-0.35){short+=8;reasonsShort.push("5m_acceleration");}
-if(historyMoveAllowed&&velocity5m<-1.25){short+=10;reasonsShort.push("5m_impulse");}
-if(historyMoveAllowed&&velocity5m<-2.0){short+=12;reasonsShort.push("5m_explosion");}
-if(historyMoveAllowed&&velocity5m<-4.0){short+=8;reasonsShort.push("5m_extreme");}
-if(historyMoveAllowed&&acceleration5m>0.35){long+=7;reasonsLong.push("velocity_acceleration");}
-if(historyMoveAllowed&&acceleration5m<-0.35){short+=7;reasonsShort.push("velocity_acceleration");}
+if(historyMoveAllowed && velocity5m>0.35){long+=6;reasonsLong.push("5m_velocity");}
+if(historyMoveAllowed && velocity5m>0.75){long+=8;reasonsLong.push("5m_acceleration");}
+if(historyMoveAllowed && velocity5m>1.25){long+=10;reasonsLong.push("5m_impulse");}
+if(historyMoveAllowed && velocity5m>2.0){long+=12;reasonsLong.push("5m_explosion");}
+if(historyMoveAllowed && velocity5m>4.0){long+=8;reasonsLong.push("5m_extreme");}
+if(historyMoveAllowed && velocity5m<-0.35){short+=6;reasonsShort.push("5m_velocity");}
+if(historyMoveAllowed && velocity5m<-0.75){short+=8;reasonsShort.push("5m_acceleration");}
+if(historyMoveAllowed && velocity5m<-1.25){short+=10;reasonsShort.push("5m_impulse");}
+if(historyMoveAllowed && velocity5m<-2.0){short+=12;reasonsShort.push("5m_explosion");}
+if(historyMoveAllowed && velocity5m<-4.0){short+=8;reasonsShort.push("5m_extreme");}
+if(historyMoveAllowed && acceleration5m>0.35){long+=7;reasonsLong.push("velocity_acceleration");}
+if(historyMoveAllowed && acceleration5m<-0.35){short+=7;reasonsShort.push("velocity_acceleration");}
 if(move10m>1){long+=6;reasonsLong.push("10m_continuation");}
 if(move15m>1.5){long+=7;reasonsLong.push("15m_continuation");}
 if(move30m>3){long+=6;reasonsLong.push("30m_trend");}
@@ -1123,13 +1080,23 @@ return{
 score:Number(Math.max(longScore,shortScore).toFixed(2)),longScore:Number(longScore.toFixed(2)),shortScore:Number(shortScore.toFixed(2)),edge:Number(edge.toFixed(2)),direction,
 priceChange24h:Number(p24.toFixed(3)),priceChange1h:Number(p1h.toFixed(3)),priceChange4h:Number(p4h.toFixed(3)),priorMovePct:Number(priorMovePct.toFixed(3)),
 move10m:Number(move10m.toFixed(3)),move15m:Number(move15m.toFixed(3)),move30m:Number(move30m.toFixed(3)),velocity5m:Number(velocity5m.toFixed(3)),acceleration5m:Number(acceleration5m.toFixed(3)),timingState,
-volumeRatio:Number((volumeRatio||0).toFixed(3)),volumeRatioAvailable:derived.volumeRatioAvailable,volumeAvailable:derived.volumeAvailable,
-oiChangePct:Number(oiChangePct.toFixed(3)),oiAvailable,oiChangeAvailable:previousOiAvailable,
-priceChange24hAvailable:derived.price24Available,priceChange1hAvailable:derived.price1hAvailable,priceChange4hAvailable:derived.price4hAvailable,
-nearHigh,nearLow,breakoutPressure:Number(breakoutPressure.toFixed(2)),liquidityScore:Number(liquidity.toFixed(2)),
-smartMoneyFlow:smartMoneyFlow?{
-buyUsd:Number(smartMoneyFlow.buyUsd||0),sellUsd:Number(smartMoneyFlow.sellUsd||0),totalUsd:Number(smartMoneyFlow.totalUsd||0),signedUsd:Number(smartMoneyFlow.signedUsd||0),imbalance:Number(smartMoneyFlow.imbalance||0),flowSpikeRatio:Number(smartMoneyFlow.flowSpikeRatio||1),flowSurge:Boolean(smartMoneyFlow.flowSurge),explosiveFlow:Boolean(smartMoneyFlow.explosiveFlow),tradeCount:Number(smartMoneyFlow.tradeCount||0),largeTradeCount:Number(smartMoneyFlow.largeTradeCount||0),longOpenUsd:Number(smartMoneyFlow.longOpenUsd||0),shortOpenUsd:Number(smartMoneyFlow.shortOpenUsd||0),longCloseUsd:Number(smartMoneyFlow.longCloseUsd||0),shortCloseUsd:Number(smartMoneyFlow.shortCloseUsd||0)
-}:null,
+volumeRatio:Number(volumeRatio.toFixed(3)),oiChangePct:Number(oiChangePct.toFixed(3)),nearHigh,nearLow,breakoutPressure:Number(breakoutPressure.toFixed(2)),liquidityScore:Number(liquidity.toFixed(2)),
+smartMoneyFlow: smartMoneyFlow ? {
+  buyUsd:Number(smartMoneyFlow.buyUsd||0),
+  sellUsd:Number(smartMoneyFlow.sellUsd||0),
+  totalUsd:Number(smartMoneyFlow.totalUsd||0),
+  signedUsd:Number(smartMoneyFlow.signedUsd||0),
+  imbalance:Number(smartMoneyFlow.imbalance||0),
+  flowSpikeRatio:Number(smartMoneyFlow.flowSpikeRatio||1),
+  flowSurge:Boolean(smartMoneyFlow.flowSurge),
+  explosiveFlow:Boolean(smartMoneyFlow.explosiveFlow),
+  tradeCount:Number(smartMoneyFlow.tradeCount||0),
+  largeTradeCount:Number(smartMoneyFlow.largeTradeCount||0),
+  longOpenUsd:Number(smartMoneyFlow.longOpenUsd||0),
+  shortOpenUsd:Number(smartMoneyFlow.shortOpenUsd||0),
+  longCloseUsd:Number(smartMoneyFlow.longCloseUsd||0),
+  shortCloseUsd:Number(smartMoneyFlow.shortCloseUsd||0)
+} : null,
 priceDataStatus,radarWarmup,radarHistoryReady,historyIntegrityOk,historySamples:hist.length,
 latestHistoryAgeSec:latest?Math.max(0,Math.round((now-Number(latest.at||0))/1000)):null,
 prior5AgeSec:prior5?Math.max(0,Math.round((now-Number(prior5.at||0))/1000)):null,
@@ -1554,6 +1521,27 @@ async function saveState(env, state) {
   if (!env.BOT_STATE) return false;
   await env.BOT_STATE.put("engine_state", JSON.stringify(state));
   return true;
+}
+
+// V16.0.0: Module-scope trend-confluence bridge.
+// Execution helpers below FUTURES_V6 need this helper after the IIFE closes.
+// Keep the canonical implementation available at module scope as well as
+// inside FUTURES_V6 for the legacy signal pipeline.
+function v15613TrendConfluence(trend, direction) {
+  const t = trend || {};
+  const dirs = [
+    t.macro4h ?? t.macro?.direction,
+    t.trend1h ?? t.trend?.direction,
+    t.entry15m ?? t.entry?.direction,
+    t.fast5m ?? t.fast?.direction
+  ].map(x => String(x || '').toUpperCase());
+  const bullish = dirs.filter(x => x === 'BULLISH').length;
+  const bearish = dirs.filter(x => x === 'BEARISH').length;
+  return {
+    bullish,
+    bearish,
+    selected: direction === 'LONG' ? bullish : direction === 'SHORT' ? bearish : 0
+  };
 }
 
 const FUTURES_V6 = (() => {
@@ -3490,17 +3478,6 @@ function v15610RadarGateReasons(candidate) {
   const priceStatus = String(radar?.priceDataStatus || "INVALID").toUpperCase();
   if (!['LONG','SHORT'].includes(direction)) reasons.push("DIRECTION_NEUTRAL_OR_INVALID");
   if (priceStatus === "INVALID") reasons.push("PRICE_DATA_INVALID");
-
-  if (CONFIG.RADAR_TEST_ENTRY_ENABLED) {
-    if (score < Number(CONFIG.RADAR_TEST_ENTRY_SCORE || 50)) {
-      reasons.push(`TEST_SCORE_BELOW_${CONFIG.RADAR_TEST_ENTRY_SCORE || 50}`);
-    }
-    if (Number(radar?.edge || 0) < Number(CONFIG.RADAR_TEST_ENTRY_MIN_EDGE || 3)) {
-      reasons.push(`TEST_EDGE_BELOW_${CONFIG.RADAR_TEST_ENTRY_MIN_EDGE || 3}`);
-    }
-    return reasons;
-  }
-
   if (score < Number(CONFIG.PUMP_RADAR_WATCH_SCORE || 60)) reasons.push(`SCORE_BELOW_RADAR_WATCH_${CONFIG.PUMP_RADAR_WATCH_SCORE || 60}`);
   if (score < Number(CONFIG.RADAR_ENTRY_SCORE || 72)) {
     if (!CONFIG.RADAR_EARLY_ENTRY_ENABLED) reasons.push("EARLY_ENTRY_DISABLED");
@@ -3856,7 +3833,7 @@ for(const m of radarMarkets){
   }else{
     arr[arr.length-1]={at:Number(last.at||radarNow),price:px,volume24h:vol};
   }
-  radarHistory[sym]=arr.slice(-3000);
+  radarHistory[sym]=arr.slice(-48);
 }
 state.radarHistory=radarHistory;
 const radarMarketsWithFlow=radarMarkets.map(m=>{const sym=v8NormSymbol(m?.symbol??m?.name??m?.ticker??m?.indexTokenSymbol);const flow=smartMoneyFlowData?.bySymbol?.[sym]||null;return flow?{...m,__smartMoneyFlow:flow}:m;});
@@ -3888,38 +3865,15 @@ const radarRows=radarMarketsWithFlow.map(m=>{
 // V15.6.10 reduced each row to summary fields, then later passed those reduced
 // objects into radarEntryEligible(), which expects candidate.pumpRadar. That made
 // every Radar entry ineligible and also made the Radar trace show null/zero timing data.
-const radarRanked=radarRows.map(x=>{
-  const testSymbol=normalizeSymbol(CONFIG.RADAR_TEST_SYMBOL||"");
-  const isTestSymbol=Boolean(CONFIG.RADAR_TEST_ENTRY_ENABLED && testSymbol && normalizeSymbol(x.symbol)===testSymbol);
-  const rawRadar=x.pumpRadar||{};
-  let testDirection=rawRadar.direction||"NEUTRAL";
-  if(isTestSymbol && testDirection==="NEUTRAL") {
-    const p24=Number(rawRadar.priceChange24h||0);
-    const p1=Number(rawRadar.priceChange1h||0);
-    const pm=Number(rawRadar.priorMovePct||0);
-    const move=Number.isFinite(p24)&&p24!==0?p24:(Number.isFinite(p1)&&p1!==0?p1:pm);
-    if(move>0.10)testDirection="LONG";
-    else if(move<-0.10)testDirection="SHORT";
-  }
-  const testScore=isTestSymbol && testDirection!=="NEUTRAL"
-    ? Math.max(Number(rawRadar.score||0),Number(CONFIG.RADAR_TEST_ENTRY_SCORE||50))
-    : Number(rawRadar.score||0);
-  const testEdge=isTestSymbol && testDirection!=="NEUTRAL"
-    ? Math.max(Number(rawRadar.edge||0),Number(CONFIG.RADAR_TEST_ENTRY_MIN_EDGE||3))
-    : Number(rawRadar.edge||0);
-  const adjustedRadar=isTestSymbol && testDirection!=="NEUTRAL"
-    ? {...rawRadar,direction:testDirection,score:testScore,edge:testEdge,testEntryFallback:true}
-    : rawRadar;
-  return {
+const radarRanked=radarRows.map(x=>({
   ...x,
   symbol:x.symbol,
-  score:testScore,
-  direction:testDirection,
-  edge:testEdge,
-  reasons:adjustedRadar?.reasons||[],
-  pumpRadar:adjustedRadar||null
-  };
-}).sort((a,b)=>b.score-a.score);
+  score:Number(x.pumpRadar?.score||0),
+  direction:x.pumpRadar?.direction||"NEUTRAL",
+  edge:Number(x.pumpRadar?.edge||0),
+  reasons:x.pumpRadar?.reasons||[],
+  pumpRadar:x.pumpRadar||null
+})).sort((a,b)=>b.score-a.score);
 const radarDirectional=radarRows.filter(x=>x?.pumpRadar?.direction!=="NEUTRAL");
 const radarPrioritySymbols=radarRanked.filter(x=>x.direction!=="NEUTRAL"&&Number(x.score||0)>=Number(CONFIG.PUMP_RADAR_WATCH_SCORE||50)).slice(0,Math.max(6,Number(CONFIG.NOTIFY_EVENT_MAX||6))).map(x=>x.symbol);
 const mergedDeepSymbols=[...new Set([...radarPrioritySymbols,...symbols])].slice(0,effectiveDeepScanLimit);
@@ -3978,29 +3932,17 @@ if(!entryRiskAllowed) for(const trace of executionTrace) if(!trace.selected) tra
 if(remainingSlots<=0) for(const trace of executionTrace) if(!trace.selected) trace.gateReasons.push("NO_REMAINING_CORE_POSITION_SLOT");
 // V15.3.5: radar history was already updated before scoring; do not add a second sample here.
 state.marketSnapshots={};
-for(const m of allMarkets){
-  const sym=v8NormSymbol(m?.symbol??m?.name??m?.ticker??m?.indexTokenSymbol);
-  if(!sym)continue;
-  state.marketSnapshots[sym]={market:{
-    price:v8HighMetric(m,["price","markPrice","indexPrice","currentPrice","indexPriceUsd"]),
-    volume24h:v8HighMetric(m,["volume24h","volume","dailyVolume","volumeUsd24h","volume24H"]),
-    openInterest:extractOpenInterest(m),
-    fundingRate:extractFunding(m),
-    longInterestUsd:v132NumberValue(m?.longInterestUsd),
-    shortInterestUsd:v132NumberValue(m?.shortInterestUsd),
-    oiUpdatedAt:m?.updatedAt ?? m?.openInterestUpdatedAt ?? null,
-    high24h:v8HighMetric(m,["high24h","highPrice24h","dailyHigh","high24H"]),
-    low24h:v8HighMetric(m,["low24h","lowPrice24h","dailyLow","low24H"]),
-    priceChange24h:v132NumberValue(
-      m?.priceChange24h,m?.priceChangePercent24h,m?.change24h,m?.priceChange24H,
-      m?.changePercent24h,m?.change24H,m?.changePercent24H,m?.percentChange24h,
-      m?.priceChange24hPercent,m?.priceChangePercent
-    ),
-    priceChange1h:v132NumberValue(m?.priceChange1h,m?.priceChangePercent1h,m?.change1h,m?.priceChange1H,m?.changePercent1h),
-    priceChange4h:v132NumberValue(m?.priceChange4h,m?.priceChangePercent4h,m?.change4h,m?.change4H,m?.priceChange4H,m?.changePercent4h),
-    priceChangePercent24hBps:v132NumberValue(m?.priceChangePercent24hBps)
-  },savedAt:Date.now()};
-}
+for(const m of allMarkets){const sym=v8NormSymbol(m?.symbol??m?.name??m?.ticker??m?.indexTokenSymbol);if(!sym)continue;state.marketSnapshots[sym]={market:{
+price:v8HighMetric(m,["price","markPrice","indexPrice","currentPrice","indexPriceUsd"]),
+volume24h:v8HighMetric(m,["volume24h","volume","dailyVolume","volumeUsd24h"]),
+openInterest:extractOpenInterest(m),
+fundingRate:extractFunding(m),
+longInterestUsd:v132NumberValue(m?.longInterestUsd),
+shortInterestUsd:v132NumberValue(m?.shortInterestUsd),
+oiUpdatedAt:m?.updatedAt ?? m?.openInterestUpdatedAt ?? null,
+high24h:v8HighMetric(m,["high24h","highPrice24h","dailyHigh"]),
+low24h:v8HighMetric(m,["low24h","lowPrice24h","dailyLow"])
+},savedAt:Date.now()};}
 for(const signal of results){if(signal?.symbol&&signal._marketSnapshotForState){state.marketSnapshots[signal.symbol]=signal._marketSnapshotForState;delete signal._marketSnapshotForState;}}
 state.lastScan=Date.now();state.signals=notifySignals;state.opportunityRanking=notificationPool.slice(0,20).map((s,index)=>({rank:index+1,symbol:s.symbol,direction:s.direction,tier:s.signalTier,score:s.score,opportunityScore:Number(s.opportunity?.score||0),opportunityType:s.opportunity?.type||"STANDARD",edge:s.edge,risk:s.riskScore,executionEligible:!!s.executionEligible,priority:Number(signalPriorityScore(s).toFixed(2))}));state.lastDiagnostics=results.sort((a,b)=>signalPriorityScore(b)-signalPriorityScore(a)).slice(0,50).map(s=>({symbol:s.symbol,direction:s.direction,tier:s.signalTier,score:s.score,longScore:s.longScore,shortScore:s.shortScore,edge:s.edge,risk:s.riskScore,priority:Number(signalPriorityScore(s).toFixed(2)),executionEligible:!!s.executionEligible,reasons:s.diagnostics||null,signalDiagnostics:s.signalDiagnostics||null,components:s.components||null,trend:s.trend||null,dataQuality:s.dataQuality||null}));await saveState(env,state);
 const executionResults=[],executionSymbols=new Set(livePositions.map(p=>baseAsset(normalizeSymbol(String(p?.indexName||p?.symbol||"")))));
@@ -4043,18 +3985,10 @@ console.log("[EXECUTION][TRACE]", JSON.stringify(executionSummary, null, 2));
 // V14.0: independent Radar live lane. It does not consume Core selection slots.
 let radarLiveResult = null;
 if (executionEnabled(env) && CONFIG.RADAR_INDEPENDENT_ENABLED && CONFIG.RADAR_LIVE_ENABLED) {
-  const radarCandidates = radarRanked
-    .filter(x => x?.direction !== "NEUTRAL")
+  const radarCandidates = radarRows
+    .filter(x => x?.pumpRadar?.direction !== "NEUTRAL")
     .filter(x => radarEntryEligible(x))
-    .sort((a,b) => {
-      const testSymbol=normalizeSymbol(CONFIG.RADAR_TEST_SYMBOL||"");
-      if(CONFIG.RADAR_TEST_ENTRY_ENABLED && testSymbol){
-        const ap=normalizeSymbol(a?.symbol||"")===testSymbol?1:0;
-        const bp=normalizeSymbol(b?.symbol||"")===testSymbol?1:0;
-        if(ap!==bp)return bp-ap;
-      }
-      return Number(b?.pumpRadar?.score || 0) - Number(a?.pumpRadar?.score || 0);
-    })
+    .sort((a,b) => Number(b?.pumpRadar?.score || 0) - Number(a?.pumpRadar?.score || 0))
     .map(candidate => {
       // The Radar candidate is normally included in the deep scan. Reuse the
       // already-fetched candle price as a third, independent price reference.
@@ -4067,14 +4001,6 @@ if (executionEnabled(env) && CONFIG.RADAR_INDEPENDENT_ENABLED && CONFIG.RADAR_LI
         : candidate;
     });
   if (radarCandidates.length) {
-    console.log("[RADAR][LIVE_CANDIDATE]", JSON.stringify({
-      symbol:radarCandidates[0]?.symbol||null,
-      direction:radarCandidates[0]?.pumpRadar?.direction||null,
-      score:Number(radarCandidates[0]?.pumpRadar?.score||0),
-      edge:Number(radarCandidates[0]?.pumpRadar?.edge||0),
-      priceStatus:radarCandidates[0]?.pumpRadar?.priceDataStatus||null,
-      testEntry:Boolean(CONFIG.RADAR_TEST_ENTRY_ENABLED)
-    }));
     try {
       radarLiveResult = await executeLiveRadarCandidate(radarCandidates[0], env);
       if (radarLiveResult?.executed && CONFIG.TELEGRAM_ENABLED) {
@@ -4242,11 +4168,7 @@ const universeDiagnostics=buildUniverseDiagnostics(allMarkets,fastRows,radarMark
 universe:universeDiagnostics,fairAssetScoring:CONFIG.FAIR_ASSET_SCORING_ENABLED,dataCenter:{enabled:Boolean(CONFIG.DATA_CENTER_ENABLED),apiPeers:V156_DATA_CENTER.apiPeers,oraclePeers:V156_DATA_CENTER.oraclePeers,staleMs:Number(CONFIG.DATA_CENTER_STALE_MS||15000)},
 liquidityScoreInRadar:CONFIG.FAIR_LIQUIDITY_SCORE_IN_RADAR,
 majorSelectionBias:CONFIG.FAIR_MAJOR_SELECTION_BIAS,
-notifyEventMax:CONFIG.NOTIFY_EVENT_MAX},radarLane:{enabled:CONFIG.RADAR_INDEPENDENT_ENABLED,paperEnabled:CONFIG.RADAR_PAPER_ENABLED,liveEnabled:CONFIG.RADAR_LIVE_ENABLED,entryScore:CONFIG.RADAR_ENTRY_SCORE,earlyEntryEnabled:CONFIG.RADAR_EARLY_ENTRY_ENABLED,earlyEntryScore:CONFIG.RADAR_EARLY_ENTRY_SCORE,earlyMinVelocity:CONFIG.RADAR_EARLY_ENTRY_MIN_VELOCITY,earlyMinEdge:CONFIG.RADAR_EARLY_ENTRY_MIN_EDGE,exitScore:CONFIG.RADAR_EXIT_SCORE,maxPositions:CONFIG.RADAR_MAX_POSITIONS,coverageMarkets:radarRows.length,priceFeedCoverage:Object.keys(radarPriceFeed.prices||{}).length,directionalMarkets:radarDirectional.length,longMarkets:radarLongCount,shortMarkets:radarShortCount,watchCandidates:radarWatchCount,hotCandidateCount:radarHotCount,radarHistorySymbols:Object.keys(radarHistory).length,radarHistorySamples:Object.values(radarHistory).reduce((n,a)=>n+(Array.isArray(a)?a.length:0),0),radarPrioritySymbols:radarPrioritySymbols.slice(0,20),hotCandidates:radarRanked.filter(x=>x.score>=CONFIG.PUMP_RADAR_HOT_SCORE).slice(0,20),liveEntryGuard:CONFIG.RADAR_TEST_ENTRY_ENABLED
-    ? `PRICE_OK + TEST_SCORE_${CONFIG.RADAR_TEST_ENTRY_SCORE || 50} + TEST_EDGE_${CONFIG.RADAR_TEST_ENTRY_MIN_EDGE || 3}`
-    : "PRICE_OK + HOT_OR_EARLY",
-  testEntryEnabled:Boolean(CONFIG.RADAR_TEST_ENTRY_ENABLED),
-  result:radarPaperResult,liveResult:radarLiveResult,trace:radarTraceSummary},entryRisk:{appliedToScan:false,dailyLoss:Number(state.dailyLoss||0),maxDailyLoss:CONFIG.MAX_DAILY_LOSS,entryRiskAllowed:Number(state.dailyLoss||0)>-CONFIG.MAX_DAILY_LOSS,positionLimit:CONFIG.MAX_POSITIONS}};
+notifyEventMax:CONFIG.NOTIFY_EVENT_MAX},radarLane:{enabled:CONFIG.RADAR_INDEPENDENT_ENABLED,paperEnabled:CONFIG.RADAR_PAPER_ENABLED,liveEnabled:CONFIG.RADAR_LIVE_ENABLED,entryScore:CONFIG.RADAR_ENTRY_SCORE,earlyEntryEnabled:CONFIG.RADAR_EARLY_ENTRY_ENABLED,earlyEntryScore:CONFIG.RADAR_EARLY_ENTRY_SCORE,earlyMinVelocity:CONFIG.RADAR_EARLY_ENTRY_MIN_VELOCITY,earlyMinEdge:CONFIG.RADAR_EARLY_ENTRY_MIN_EDGE,exitScore:CONFIG.RADAR_EXIT_SCORE,maxPositions:CONFIG.RADAR_MAX_POSITIONS,coverageMarkets:radarRows.length,priceFeedCoverage:Object.keys(radarPriceFeed.prices||{}).length,directionalMarkets:radarDirectional.length,longMarkets:radarLongCount,shortMarkets:radarShortCount,watchCandidates:radarWatchCount,hotCandidateCount:radarHotCount,radarHistorySymbols:Object.keys(radarHistory).length,radarHistorySamples:Object.values(radarHistory).reduce((n,a)=>n+(Array.isArray(a)?a.length:0),0),radarPrioritySymbols:radarPrioritySymbols.slice(0,20),hotCandidates:radarRanked.filter(x=>x.score>=CONFIG.PUMP_RADAR_HOT_SCORE).slice(0,20),liveEntryGuard:"PRICE_OK + HOT_OR_EARLY",result:radarPaperResult,liveResult:radarLiveResult,trace:radarTraceSummary},entryRisk:{appliedToScan:false,dailyLoss:Number(state.dailyLoss||0),maxDailyLoss:CONFIG.MAX_DAILY_LOSS,entryRiskAllowed:Number(state.dailyLoss||0)>-CONFIG.MAX_DAILY_LOSS,positionLimit:CONFIG.MAX_POSITIONS}};
 // V15.6.1 FIX: persist radar history + market snapshots between cron invocations.
 // Without this write, every scan reloaded one fresh sample per symbol, so
 // 5m/15m/30m velocity and acceleration stayed at zero forever.
@@ -4612,18 +4534,10 @@ const radar = candidate?.pumpRadar || {};
 const score = Number(radar?.score || 0);
 const direction = String(radar?.direction || "NEUTRAL").toUpperCase();
 const priceStatus = String(radar?.priceDataStatus || "INVALID").toUpperCase();
-
-// V15.6.16 TEST ENTRY MODE:
-// Keep the absolute minimum integrity checks (direction + valid price), but
-// temporarily bypass the historical 5m/timing gate so a strong current move
-// can prove the Radar -> execution path end-to-end.
+// V15.3.9: one lightweight integrity guard only. Do not turn Radar into
+// another Core-style confirmation engine: a valid HOT Radar can still enter
+// without waiting for every longer window, but it must have a valid price feed.
 if (!['LONG','SHORT'].includes(direction) || priceStatus === "INVALID") return false;
-
-if (CONFIG.RADAR_TEST_ENTRY_ENABLED) {
-  return score >= Number(CONFIG.RADAR_TEST_ENTRY_SCORE || 50) &&
-    Number(radar?.edge || 0) >= Number(CONFIG.RADAR_TEST_ENTRY_MIN_EDGE || 3);
-}
-
 if (score >= Number(CONFIG.RADAR_ENTRY_SCORE || 72)) return true;
 if (!CONFIG.RADAR_EARLY_ENTRY_ENABLED) return false;
 const velocity = Math.abs(Number(radar?.velocity5m || 0));
@@ -4793,20 +4707,20 @@ return [
 `📡 Event: ${action}`,
 `🔥 Radar Score: ${score.toFixed(1)}/100`,
 `⚡ Directional Edge: ${Number(radar.edge||0).toFixed(1)}`,
-`📈 24h Move: ${radar.priceChange24hAvailable?`${Number(radar.priceChange24h||0).toFixed(2)}%`:"N/A"}`,
-`⏱️ 1h Move: ${radar.priceChange1hAvailable?`${Number(radar.priceChange1h||0).toFixed(2)}%`:"N/A"}`,
-`🕐 4h Move: ${radar.priceChange4hAvailable?`${Number(radar.priceChange4h||0).toFixed(2)}%`:"N/A"}`,
-`⚡ 5m Velocity: ${radar.valid5mSample?`${Number(radar.velocity5m||0).toFixed(2)}%`:"N/A"}`,
-`📈 15m Move: ${radar.valid15mSample?`${Number(radar.move15m||0).toFixed(2)}%`:"N/A"}`,
+`📈 24h Move: ${Number(radar.priceChange24h||0).toFixed(2)}%`,
+`⏱️ 1h Move: ${Number(radar.priceChange1h||0).toFixed(2)}%`,
+`🕐 4h Move: ${Number(radar.priceChange4h||0).toFixed(2)}%`,
+`⚡ 5m Velocity: ${Number(radar.velocity5m||0).toFixed(2)}%`,
+`📈 15m Move: ${Number(radar.move15m||0).toFixed(2)}%`,
 `⏱️ Detection: ${radar.timingState || "UNKNOWN"}`,
-`🛡️ Last-Scan Move: ${radar.priorMovePct!==0?`${Number(radar.priorMovePct||0).toFixed(2)}%`:"0.00%"}`,
-`💧 Volume Ratio: ${radar.volumeRatioAvailable?`${Number(radar.volumeRatio||0).toFixed(2)}x`:"N/A"}`,
-`📊 OI Change: ${radar.oiChangeAvailable?`${Number(radar.oiChangePct||0).toFixed(2)}%`:"N/A"} • ${radar.oiAvailable?"AVAILABLE":"UNAVAILABLE"}`,
-`💵 Smart Money Buy: ${flow&&Number(flow.tradeCount||0)>0?`$${Number(flow.buyUsd||0).toFixed(0)}`:"N/A"}`,
-`💸 Smart Money Sell: ${flow&&Number(flow.tradeCount||0)>0?`$${Number(flow.sellUsd||0).toFixed(0)}`:"N/A"}`,
-`⚖️ Flow Imbalance: ${flow&&Number(flow.tradeCount||0)>0?`${(Number(flow.imbalance||0)*100).toFixed(1)}%`:"N/A"}`,
-`🚀 Flow Surge: ${flow&&Number(flow.tradeCount||0)>0?`${flow.flowSurge?"YES":"NO"} • x${Number(flow.flowSpikeRatio||1).toFixed(2)}`:"N/A"}`,
-`🐋 Large Trades: ${flow&&Number(flow.tradeCount||0)>0?Number(flow.largeTradeCount||0):"N/A"}`,
+`🛡️ Last-Scan Move: ${Number(radar.priorMovePct||0).toFixed(2)}%`,
+`💧 Volume Ratio: ${Number(radar.volumeRatio||1).toFixed(2)}x`,
+`📊 OI Change: ${Number(radar.oiChangePct||0).toFixed(2)}% • ${radar.oiAvailable===false?"UNAVAILABLE":"AVAILABLE"}`,
+`💵 Smart Money Buy: $${Number(flow.buyUsd||0).toFixed(0)}`,
+`💸 Smart Money Sell: $${Number(flow.sellUsd||0).toFixed(0)}`,
+`⚖️ Flow Imbalance: ${(Number(flow.imbalance||0)*100).toFixed(1)}%`,
+`🚀 Flow Surge: ${flow.flowSurge?"YES":"NO"} • x${Number(flow.flowSpikeRatio||1).toFixed(2)}`,
+`🐋 Large Trades: ${Number(flow.largeTradeCount||0)}`,
 `🧠 Trigger: ${reasons}`,
 "⚠️ RADAR ALERT — notification only; not a trade execution signal."
 ].join("\n");
@@ -8382,22 +8296,19 @@ return base === wanted || indexName === wanted;
 }
  
 function extractCollateralBalances(balances) {
+const arr=Array.isArray(balances)?balances:Array.isArray(balances?.balances)?balances.balances:Object.values(balances||{});
 const result={USDC:null,USDT:null};
-const arr=Array.isArray(balances)
-  ? balances.map(b=>({key:"",value:b}))
-  : Array.isArray(balances?.balances)
-    ? balances.balances.map(b=>({key:"",value:b}))
-    : Object.entries(balances?.balances && typeof balances.balances==="object" ? balances.balances : (balances||{})).map(([key,value])=>({key,value}));
-for (const item of arr) {
-const b=item?.value||{};
-const rawSymbol=String(b?.tokenSymbol||b?.symbol||b?.token?.symbol||b?.assetSymbol||b?.currency||item?.key||"").toUpperCase();
-const symbol=(rawSymbol==="USDC.E"||rawSymbol==="USDC-E"||rawSymbol==="USDCE") ? "USDC" : rawSymbol;
+for (const b of arr) {
+const rawSymbol=String(b?.tokenSymbol||b?.symbol||b?.token?.symbol||"").toUpperCase();
+const symbol=rawSymbol==="USDC.E" ? "USDC" : rawSymbol;
 if (symbol!=="USDC" && symbol!=="USDT") continue;
-let usd=Number(b?.balanceUsd??b?.balanceUSD??b?.usdValue??b?.valueUsd??b?.usd??0);
-const raw=Number(b?.balance??b?.amount??b?.rawBalance??0);
-const decimals=Number(b?.decimals??b?.token?.decimals??6);
+let usd=Number(b?.balanceUsd??b?.balanceUSD??b?.usdValue??0);
+const raw=Number(b?.balance??b?.amount??0);
+const decimals=Number(b?.decimals??6);
 if (!(usd>0) && raw>0) usd=raw/10**decimals;
-if (usd>0) result[symbol]={symbol,usd,balance:raw,decimals,raw:b};
+if (usd>0) {
+  result[symbol]={symbol,usd,balance:raw,decimals};
+}
 }
 return result;
 }
@@ -8437,29 +8348,17 @@ return matches.find(m=>marketCollateralSymbols(m).has(collateral))
   || (matches.length===1 && marketCollateralSymbols(matches[0]).size===0 ? matches[0] : null);
 }
 
-function selectLiveCollateral(markets, symbol, balances, preferredMarket=null) {
+function selectLiveCollateral(markets, symbol, balances) {
 const available=extractCollateralBalances(balances);
-const wanted=liveNormalizeSymbol(symbol);
-const exact=preferredMarket && !preferredMarket.isSpotOnly ? preferredMarket : null;
 for (const preferred of ["USDC","USDT"]) {
 const bal=available[preferred];
 if (!(bal?.usd>0)) continue;
-if (exact) {
-const supported=marketCollateralSymbols(exact).has(preferred);
-const isRadarTest=Boolean(CONFIG.RADAR_TEST_ENTRY_ENABLED && liveNormalizeSymbol(symbol)===liveNormalizeSymbol(CONFIG.RADAR_TEST_SYMBOL||""));
-if (supported || (isRadarTest && preferred==="USDC")) {
-return {symbol:preferred,usd:bal.usd,balance:bal.balance,decimals:bal.decimals,market:exact,testCollateralFallback:!supported};
-}
-}
 const market=findSdkMarketWithCollateral(markets,symbol,preferred);
 if (market) return {symbol:preferred,usd:bal.usd,balance:bal.balance,decimals:bal.decimals,market};
 }
 return null;
 }
-
-// RADAR_SYMBOL_SCOPE_GUARD: ensure live lane always has a symbol normalizer
-const RADAR_SYMBOL_SCOPE_GUARD = true;
-
+ 
 function liveExecutionKey(signal) {
 const entry = Number(signal?.tradePlan?.entry ?? signal?.price ?? 0);
 const stop = Number(signal?.tradePlan?.stopLoss ?? 0);
@@ -8524,11 +8423,7 @@ function v156BuildRadarLiveTradePlan(candidate) {
     Boolean(radar?.valid5mSample) &&
     (velocity>=Number(CONFIG.RADAR_EARLY_ENTRY_MIN_VELOCITY||0.75)||acceleration>=0.35) &&
     radar?.timingState==="EARLY_FAST";
-  // V15.6.18: the previous test-mode patch reached live execution but collateral selection blocked the order.
-  // This version resolves the exact SDK market first, broadens wallet balance parsing, and allows the dedicated PUMP smoke-test lane to use funded USDC when collateral metadata is opaque.
-  // but this downstream trade-plan builder still enforced the old 72/early
-  // gate. That made the candidate pass the first gate and die here.
-  if(!CONFIG.RADAR_TEST_ENTRY_ENABLED && score<Number(CONFIG.RADAR_ENTRY_SCORE||72) && !early){
+  if(score<Number(CONFIG.RADAR_ENTRY_SCORE||72) && !early){
     return {valid:false,reason:"radar_entry_gate_not_met"};
   }
   const high=Number(market?.high24h??market?.highPrice24h??market?.dailyHigh);
@@ -8554,8 +8449,7 @@ function v156BuildRadarLiveTradePlan(candidate) {
     stopPercent:Number(stopPct.toFixed(4)),leverage,
     allocation:CONFIG.RADAR_CAPITAL_ALLOCATION,
     riskPerTradePercent:Number((CONFIG.RADAR_RISK_PER_TRADE*100).toFixed(2)),
-    score,direction,method:CONFIG.RADAR_TEST_ENTRY_ENABLED?"RADAR-TEST-PRICE-RANGE-R-MULTIPLES":"RADAR-PRICE-RANGE-R-MULTIPLES",
-    testEntry:Boolean(CONFIG.RADAR_TEST_ENTRY_ENABLED)
+    score,direction,method:"RADAR-PRICE-RANGE-R-MULTIPLES"
   };
 }
 
@@ -8564,18 +8458,7 @@ if (!executionEnabled(env) || !CONFIG.RADAR_LIVE_ENABLED) {
 return { executed: false, mode: "LIVE", lane: "RADAR", reason: "Radar live execution disabled" };
 }
 const plan = v156BuildRadarLiveTradePlan(candidate);
-if (!plan.valid) {
-  console.warn("[RADAR][LIVE_PLAN_BLOCKED]", JSON.stringify({
-    symbol:candidate?.symbol||null,
-    score:Number(candidate?.pumpRadar?.score||0),
-    edge:Number(candidate?.pumpRadar?.edge||0),
-    direction:candidate?.pumpRadar?.direction||null,
-    priceStatus:candidate?.pumpRadar?.priceDataStatus||null,
-    testEntry:Boolean(CONFIG.RADAR_TEST_ENTRY_ENABLED),
-    reason:plan.reason
-  }));
-  return { executed:false, mode:"LIVE", lane:"RADAR", reason:plan.reason };
-}
+if (!plan.valid) return { executed:false, mode:"LIVE", lane:"RADAR", reason:plan.reason };
 const { sdk, signer, account } = await getLiveContext(env);
 const markets = await sdk.fetchMarkets();
 const requestedSymbol = candidate?.symbol || candidate?.market?.symbol;
@@ -8602,26 +8485,19 @@ const same = corePositions.some(pos => liveBaseAsset(liveNormalizeSymbol(String(
 if (same) return { executed:false, mode:"LIVE", lane:"RADAR", reason:"Symbol already occupied by live portfolio" };
 }
 const balances = await sdk.fetchWalletBalances({ address: account });
-const collateral = selectLiveCollateral(markets, requestedSymbol, balances, initialMarket);
+const collateral = selectLiveCollateral(markets, requestedSymbol, balances);
 if (!collateral) {
   throw new Error("No usable USDC/USDT balance with a matching GMX collateral market was detected for Radar");
 }
 const market = collateral.market;
-console.log("[RADAR][COLLATERAL_SELECTED]", JSON.stringify({symbol:requestedSymbol,market:String(market?.symbol||market?.name||""),collateralToken:collateral.symbol,walletUsd:collateral.usd,testCollateralFallback:Boolean(collateral.testCollateralFallback)}));
 const capacity = await sdk.getTradingCapacity({ symbol: market.symbol, direction: plan.direction === "LONG" ? "long" : "short" });
 const capacityUsd = Number(capacity?.availableLiquidity || 0n) / 1e30;
 const walletUsd = collateral.usd;
 
 const leverage = Number(plan.leverage || 1);
-const normalCollateralTargetUsd = walletUsd * CONFIG.RADAR_LIVE_CAPITAL_ALLOCATION;
-const testMinimumCollateralUsd = Number(CONFIG.RADAR_TEST_ENTRY_ENABLED)
-  ? Number(CONFIG.MIN_POSITION_NOTIONAL_USD || 10) / Math.max(leverage, 1)
-  : 0;
-const collateralTargetUsd = Number(CONFIG.RADAR_TEST_ENTRY_ENABLED)
-  ? Math.max(normalCollateralTargetUsd, testMinimumCollateralUsd)
-  : normalCollateralTargetUsd;
+const collateralTargetUsd = walletUsd * CONFIG.RADAR_LIVE_CAPITAL_ALLOCATION;
 const collateralCapUsd = CONFIG.RADAR_LIVE_MAX_POSITION_NOTIONAL_USD / Math.max(leverage, 1);
-const collateralUsd = Math.min(collateralTargetUsd, collateralCapUsd, walletUsd * CONFIG.MAX_CAPITAL_ALLOCATION, walletUsd);
+const collateralUsd = Math.min(collateralTargetUsd, collateralCapUsd, walletUsd * CONFIG.MAX_CAPITAL_ALLOCATION);
 const stopFraction = Math.abs(plan.entry - plan.stopLoss) / Math.max(plan.entry, 1e-12);
 const riskCapital = walletUsd * CONFIG.RADAR_LIVE_RISK_PER_TRADE;
 const riskBasedNotional = stopFraction > 0 ? riskCapital / stopFraction : 0;
