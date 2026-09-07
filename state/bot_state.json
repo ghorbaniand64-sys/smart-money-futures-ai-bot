@@ -12482,6 +12482,33 @@
           "error": "v1565RadarPriceIntegrity is not defined"
         },
         "time": 1788741223530
+      },
+      {
+        "event": {
+          "type": "PAPER_UNIFIED_EXIT",
+          "action": {
+            "id": "962f5b68-c468-4b3b-aea7-bb3f3bd5abe4",
+            "symbol": "ONDO",
+            "direction": "LONG",
+            "lane": "CORE",
+            "action": "ERROR",
+            "reason": "EXIT_MONITOR_ERROR",
+            "closePercent": 0,
+            "pnlPercent": 0,
+            "exitScore": 0,
+            "error": "v1565RadarPriceIntegrity is not defined"
+          }
+        },
+        "time": 1788742351316
+      },
+      {
+        "event": {
+          "type": "SCHEDULED_CYCLE_ERROR",
+          "cron": "*/5 * * * *",
+          "scheduledTime": 1788742350597,
+          "error": "v1565RadarPriceIntegrity is not defined"
+        },
+        "time": 1788742353608
       }
     ],
     "expiresAt": null
@@ -12735,7 +12762,7 @@
         "symbol": "ONDO",
         "side": "LONG",
         "entryPrice": 0.386594,
-        "currentPrice": 0.392488,
+        "currentPrice": 0.390672,
         "stopLoss": 0.382606349932142,
         "initialStopPrice": 0.382606349932142,
         "tp1": 0.39058165,
