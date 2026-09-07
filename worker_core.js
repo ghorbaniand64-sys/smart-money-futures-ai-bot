@@ -4,7 +4,7 @@ import { getViemChain } from "@gmx-io/sdk/configs/chains";
  
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V16.0.1 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair
+// Version: V16.0.2 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Live Position Size Scope Repair
 // Platform: GitHub Actions + Node.js
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -359,7 +359,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V16.0.1-GITHUB-ACTIONS-AUTOMATIC-EXECUTION-FIX-RADAR-SCOPE-REPAIR-EXECUTION-DIAGNOSTICS",
+VERSION: "V16.0.2-GITHUB-ACTIONS-AUTOMATIC-EXECUTION-FIX-RADAR-SCOPE-REPAIR-EXECUTION-DIAGNOSTICS",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -8596,6 +8596,20 @@ async function verifyLiveEntryPosition(sdk, account, sdkSymbol, direction, attem
     if(i+1<attempts) await new Promise(resolve=>setTimeout(resolve,500));
   }
   return {verified:false,position:null};
+}
+
+// V16.0.2: Module-scope live position-size bridge.
+// calculatePositionSize historically lived inside FUTURES_V6, while the live
+// execution pipeline runs at module scope after that IIFE closes. Keep the
+// exact risk-based sizing formula available to live execution without changing
+// the strict execution gate or the paper-trading implementation.
+function calculatePositionSize(balance, entry, stopLoss) {
+  if (!(Number(balance) > 0) || !(Number(entry) > 0) || !(Number(stopLoss) > 0)) return 0;
+  const riskCapital = Number(balance) * CONFIG.RISK_PER_TRADE;
+  const stopPercent = Math.abs(Number(entry) - Number(stopLoss)) / Number(entry);
+  if (!(stopPercent > 0) || !Number.isFinite(stopPercent)) return 0;
+  const notional = riskCapital / stopPercent;
+  return Number.isFinite(notional) && notional > 0 ? notional : 0;
 }
 
 async function executeLiveSignal(signal, env) {
