@@ -4,7 +4,7 @@ import { getViemChain } from "@gmx-io/sdk/configs/chains";
  
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V15.6.14 / Phase 6 Automatic Execution Fix + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar
+// Version: V15.6.15 / Phase 6 Automatic Execution Fix + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar
 // Platform: GitHub Actions + Node.js
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -359,7 +359,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V15.6.14-GITHUB-ACTIONS-AUTOMATIC-EXECUTION-FIX",
+VERSION: "V15.6.15-GITHUB-ACTIONS-RADAR-METRIC-REPAIR",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -785,7 +785,8 @@ for(const x of rows){
     const ratio=v1565PriceRatio(price,cur);
     if(!Number.isFinite(ratio)||ratio>25)continue;
   }
-  out.push({at,price});
+  const volume24h=v8HighMetric(x,["volume24h","volume","dailyVolume","volumeUsd24h","volume24H"]);
+  out.push({at,price,volume24h});
 }
 out.sort((a,b)=>a.at-b.at);
 const dedup=[];
@@ -794,8 +795,39 @@ for(const x of out){
   if(last&&Math.abs(x.at-last.at)<15000){ dedup[dedup.length-1]=x; }
   else dedup.push(x);
 }
-return dedup.slice(-96);
+return dedup.slice(-3000);
 }
+
+// V15.6.15 RADAR METRIC REPAIR: derive missing 1h/4h/24h price moves and
+// true 5m volume velocity from the persisted live-price history. Market/ticker
+// payloads do not consistently expose these fields for every GMX market.
+function v1565RadarDerivedMetrics(market, previous, history, now=Date.now()) {
+  const hist=Array.isArray(history)?history:[];
+  const price=v1565NormalizePrice(market?.price ?? market?.markPrice ?? market?.indexPrice ?? market?.currentPrice);
+  const prior5=v8WindowSample(hist,5,now), prior10=v8WindowSample(hist,10,now), prior15=v8WindowSample(hist,15,now), prior30=v8WindowSample(hist,30,now);
+  const prior60=v8WindowSample(hist,60,now), prior240=v8WindowSample(hist,240,now), prior1440=v8WindowSample(hist,1440,now);
+  const raw24=v8PercentMetric(market,["priceChange24h","priceChangePercent24h","change24h","priceChange24H","changePercent24h"]);
+  const raw1=v8PercentMetric(market,["priceChange1h","priceChangePercent1h","change1h","priceChange1H","changePercent1h"]);
+  const raw4=v8PercentMetric(market,["priceChange4h","priceChangePercent4h","change4h","change4H","priceChange4H","changePercent4h"]);
+  const p24Bps=v132NumberValue(market?.priceChangePercent24hBps);
+  const field24=p24Bps!==0?p24Bps/100:raw24;
+  const p1h=raw1!==0?raw1:(prior60?v8PctMove(price,prior60.price):0);
+  const p4h=raw4!==0?raw4:(prior240?v8PctMove(price,prior240.price):0);
+  const p24=field24!==0?field24:(prior1440?v8PctMove(price,prior1440.price):0);
+  const volume=v8HighMetric(market,["volume24h","volume","dailyVolume","volumeUsd24h","volume24H"]);
+  const vol5=prior5?v8HighMetric(prior5,["volume24h"]):0;
+  const currentDelta=volume>0&&vol5>0?Math.max(0,volume-vol5):0;
+  const deltas=[];
+  for(let k=2;k<=13;k++){
+    const newer=v8WindowSample(hist,k*5,now), older=v8WindowSample(hist,(k+1)*5,now);
+    const nv=v8HighMetric(newer,["volume24h"]), ov=v8HighMetric(older,["volume24h"]);
+    if(nv>0&&ov>0&&nv>=ov)deltas.push(nv-ov);
+  }
+  const baseline=smfMedian(deltas.filter(x=>x>0));
+  const volumeRatio=currentDelta>0&&baseline>0?currentDelta/baseline:0;
+  return {p24,p1h,p4h,price24Available:field24!==0||!!prior1440,price1hAvailable:raw1!==0||!!prior60,price4hAvailable:raw4!==0||!!prior240,volumeAvailable:volume>0,volumeRatio,volumeRatioAvailable:volumeRatio>0};
+}
+
 function v8WindowSample(hist,minutes,now=Date.now()){
 // V15.6.12: GitHub Actions is a scheduled runner, so the real interval can
 // drift around the configured 5-minute cron. Select the nearest valid
@@ -971,26 +1003,23 @@ if(!market)return{score:0,longScore:0,shortScore:0,edge:0,direction:"NEUTRAL",re
 const price=v8HighMetric(market,["price","markPrice","indexPrice","currentPrice","indexPriceUsd"]);
 const prevPriceRaw=v8HighMetric(previous,["price","markPrice","indexPrice","currentPrice"]);
 const prevPrice=v1565RadarPriceIntegrity(price,prevPriceRaw,{maxRatio:25}).ok?prevPriceRaw:0;
-const p24Bps=v132NumberValue(market?.priceChangePercent24hBps);
-const p24=p24Bps!==0?p24Bps/100:v8PercentMetric(market,["priceChange24h","priceChangePercent24h","change24h","priceChange24H","changePercent24h"]);
-const p1h=v8PercentMetric(market,["priceChange1h","priceChangePercent1h","change1h","priceChange1H","changePercent1h"]);
-const p4h=v8PercentMetric(market,["priceChange4h","priceChangePercent4h","change4h","change4H","priceChange4H","changePercent4h"]);
-const volume=v8HighMetric(market,["volume24h","volume","dailyVolume","volumeUsd24h","volume24H"]);
-const prevVolume=v8HighMetric(previous,["volume24h","volume","dailyVolume","volumeUsd24h"]);
-const volumeRatio=prevVolume>0&&volume>0?volume/prevVolume:1;
+const now=Date.now();
+const rawHist=Array.isArray(history)?history.filter(x=>Number(x?.price)>0&&Number(x?.at)>0).slice(-3000):[];
+const hist=v8RadarSanitizeHistory(rawHist,price);
+const derived=v1565RadarDerivedMetrics(market,previous,hist,now);
+const p24=derived.p24,p1h=derived.p1h,p4h=derived.p4h;
+const volumeRatio=derived.volumeRatio;
 const smartMoneyFlow=market?.__smartMoneyFlow||null;
 const oi=extractOpenInterest(market),prevOi=extractOpenInterest(previous);
-const oiChangePct=prevOi>0&&oi>0?((oi-prevOi)/prevOi)*100:0;
+const oiAvailable=oi>0;
+const previousOiAvailable=prevOi>0;
+const oiChangePct=previousOiAvailable?((oi-prevOi)/prevOi)*100:0;
 const high24h=v8HighMetric(market,["high24h","highPrice24h","dailyHigh","high24H"]);
 const low24h=v8HighMetric(market,["low24h","lowPrice24h","dailyLow","low24H"]);
 const nearHigh=price>0&&high24h>0&&price/high24h>=0.992;
 const nearLow=price>0&&low24h>0&&price/low24h<=1.008;
 const rangePct=price>0&&high24h>0&&low24h>0?((high24h-low24h)/price)*100:0;
 const priorMovePct=v8PctMove(price,prevPrice);
-
-const rawHist=Array.isArray(history)?history.filter(x=>Number(x?.price)>0&&Number(x?.at)>0).slice(-96):[];
-const hist=v8RadarSanitizeHistory(rawHist,price);
-const now=Date.now();
 const latest=hist.length?hist[hist.length-1]:null;
 const prior5=v8WindowSample(hist,5,now);
 const prior10=v8WindowSample(hist,10,now);
@@ -1006,9 +1035,8 @@ const acceleration5m=prior5?(velocity5m-prior5m):0;
 const radarWarmup=!(prior5||prior15);
 const priceDataStatus=price>0?(hist.length?"OK":"WARMUP"):"INVALID";
 const radarHistoryReady=Boolean(prior5||prior15);
-const historyIntegrityOk=price>0 && (!latestPrice || v1565RadarPriceIntegrity(price,latestPrice,{maxRatio:25}).ok);
-
-const historyMoveAllowed=historyIntegrityOk && radarHistoryReady;
+const historyIntegrityOk=price>0&&(!latestPrice||v1565RadarPriceIntegrity(price,latestPrice,{maxRatio:25}).ok);
+const historyMoveAllowed=historyIntegrityOk&&radarHistoryReady;
 const historicalMoves=historyMoveAllowed?[priorMovePct,move10m,move15m,move30m]:[];
 const positiveMove=Math.max(p24,p4h,p1h,...historicalMoves);
 const negativeMove=Math.min(p24,p4h,p1h,...historicalMoves);
@@ -1031,18 +1059,18 @@ if(negativeMove<-5){short+=12;reasonsShort.push("impulse_move");}
 if(negativeMove<-10){short+=16;reasonsShort.push("explosive_move");}
 if(negativeMove<-15){short+=12;reasonsShort.push("parabolic_move");}
 if(negativeMove<-25){short+=8;reasonsShort.push("extreme_move");}
-if(historyMoveAllowed && velocity5m>0.35){long+=6;reasonsLong.push("5m_velocity");}
-if(historyMoveAllowed && velocity5m>0.75){long+=8;reasonsLong.push("5m_acceleration");}
-if(historyMoveAllowed && velocity5m>1.25){long+=10;reasonsLong.push("5m_impulse");}
-if(historyMoveAllowed && velocity5m>2.0){long+=12;reasonsLong.push("5m_explosion");}
-if(historyMoveAllowed && velocity5m>4.0){long+=8;reasonsLong.push("5m_extreme");}
-if(historyMoveAllowed && velocity5m<-0.35){short+=6;reasonsShort.push("5m_velocity");}
-if(historyMoveAllowed && velocity5m<-0.75){short+=8;reasonsShort.push("5m_acceleration");}
-if(historyMoveAllowed && velocity5m<-1.25){short+=10;reasonsShort.push("5m_impulse");}
-if(historyMoveAllowed && velocity5m<-2.0){short+=12;reasonsShort.push("5m_explosion");}
-if(historyMoveAllowed && velocity5m<-4.0){short+=8;reasonsShort.push("5m_extreme");}
-if(historyMoveAllowed && acceleration5m>0.35){long+=7;reasonsLong.push("velocity_acceleration");}
-if(historyMoveAllowed && acceleration5m<-0.35){short+=7;reasonsShort.push("velocity_acceleration");}
+if(historyMoveAllowed&&velocity5m>0.35){long+=6;reasonsLong.push("5m_velocity");}
+if(historyMoveAllowed&&acceleration5m>0.35){long+=8;reasonsLong.push("5m_acceleration");}
+if(historyMoveAllowed&&velocity5m>1.25){long+=10;reasonsLong.push("5m_impulse");}
+if(historyMoveAllowed&&velocity5m>2.0){long+=12;reasonsLong.push("5m_explosion");}
+if(historyMoveAllowed&&velocity5m>4.0){long+=8;reasonsLong.push("5m_extreme");}
+if(historyMoveAllowed&&velocity5m<-0.35){short+=6;reasonsShort.push("5m_velocity");}
+if(historyMoveAllowed&&acceleration5m<-0.35){short+=8;reasonsShort.push("5m_acceleration");}
+if(historyMoveAllowed&&velocity5m<-1.25){short+=10;reasonsShort.push("5m_impulse");}
+if(historyMoveAllowed&&velocity5m<-2.0){short+=12;reasonsShort.push("5m_explosion");}
+if(historyMoveAllowed&&velocity5m<-4.0){short+=8;reasonsShort.push("5m_extreme");}
+if(historyMoveAllowed&&acceleration5m>0.35){long+=7;reasonsLong.push("velocity_acceleration");}
+if(historyMoveAllowed&&acceleration5m<-0.35){short+=7;reasonsShort.push("velocity_acceleration");}
 if(move10m>1){long+=6;reasonsLong.push("10m_continuation");}
 if(move15m>1.5){long+=7;reasonsLong.push("15m_continuation");}
 if(move30m>3){long+=6;reasonsLong.push("30m_trend");}
@@ -1080,23 +1108,13 @@ return{
 score:Number(Math.max(longScore,shortScore).toFixed(2)),longScore:Number(longScore.toFixed(2)),shortScore:Number(shortScore.toFixed(2)),edge:Number(edge.toFixed(2)),direction,
 priceChange24h:Number(p24.toFixed(3)),priceChange1h:Number(p1h.toFixed(3)),priceChange4h:Number(p4h.toFixed(3)),priorMovePct:Number(priorMovePct.toFixed(3)),
 move10m:Number(move10m.toFixed(3)),move15m:Number(move15m.toFixed(3)),move30m:Number(move30m.toFixed(3)),velocity5m:Number(velocity5m.toFixed(3)),acceleration5m:Number(acceleration5m.toFixed(3)),timingState,
-volumeRatio:Number(volumeRatio.toFixed(3)),oiChangePct:Number(oiChangePct.toFixed(3)),nearHigh,nearLow,breakoutPressure:Number(breakoutPressure.toFixed(2)),liquidityScore:Number(liquidity.toFixed(2)),
-smartMoneyFlow: smartMoneyFlow ? {
-  buyUsd:Number(smartMoneyFlow.buyUsd||0),
-  sellUsd:Number(smartMoneyFlow.sellUsd||0),
-  totalUsd:Number(smartMoneyFlow.totalUsd||0),
-  signedUsd:Number(smartMoneyFlow.signedUsd||0),
-  imbalance:Number(smartMoneyFlow.imbalance||0),
-  flowSpikeRatio:Number(smartMoneyFlow.flowSpikeRatio||1),
-  flowSurge:Boolean(smartMoneyFlow.flowSurge),
-  explosiveFlow:Boolean(smartMoneyFlow.explosiveFlow),
-  tradeCount:Number(smartMoneyFlow.tradeCount||0),
-  largeTradeCount:Number(smartMoneyFlow.largeTradeCount||0),
-  longOpenUsd:Number(smartMoneyFlow.longOpenUsd||0),
-  shortOpenUsd:Number(smartMoneyFlow.shortOpenUsd||0),
-  longCloseUsd:Number(smartMoneyFlow.longCloseUsd||0),
-  shortCloseUsd:Number(smartMoneyFlow.shortCloseUsd||0)
-} : null,
+volumeRatio:Number((volumeRatio||0).toFixed(3)),volumeRatioAvailable:derived.volumeRatioAvailable,volumeAvailable:derived.volumeAvailable,
+oiChangePct:Number(oiChangePct.toFixed(3)),oiAvailable,oiChangeAvailable:previousOiAvailable,
+priceChange24hAvailable:derived.price24Available,priceChange1hAvailable:derived.price1hAvailable,priceChange4hAvailable:derived.price4hAvailable,
+nearHigh,nearLow,breakoutPressure:Number(breakoutPressure.toFixed(2)),liquidityScore:Number(liquidity.toFixed(2)),
+smartMoneyFlow:smartMoneyFlow?{
+buyUsd:Number(smartMoneyFlow.buyUsd||0),sellUsd:Number(smartMoneyFlow.sellUsd||0),totalUsd:Number(smartMoneyFlow.totalUsd||0),signedUsd:Number(smartMoneyFlow.signedUsd||0),imbalance:Number(smartMoneyFlow.imbalance||0),flowSpikeRatio:Number(smartMoneyFlow.flowSpikeRatio||1),flowSurge:Boolean(smartMoneyFlow.flowSurge),explosiveFlow:Boolean(smartMoneyFlow.explosiveFlow),tradeCount:Number(smartMoneyFlow.tradeCount||0),largeTradeCount:Number(smartMoneyFlow.largeTradeCount||0),longOpenUsd:Number(smartMoneyFlow.longOpenUsd||0),shortOpenUsd:Number(smartMoneyFlow.shortOpenUsd||0),longCloseUsd:Number(smartMoneyFlow.longCloseUsd||0),shortCloseUsd:Number(smartMoneyFlow.shortCloseUsd||0)
+}:null,
 priceDataStatus,radarWarmup,radarHistoryReady,historyIntegrityOk,historySamples:hist.length,
 latestHistoryAgeSec:latest?Math.max(0,Math.round((now-Number(latest.at||0))/1000)):null,
 prior5AgeSec:prior5?Math.max(0,Math.round((now-Number(prior5.at||0))/1000)):null,
@@ -3812,7 +3830,7 @@ for(const m of radarMarkets){
   }else{
     arr[arr.length-1]={at:Number(last.at||radarNow),price:px,volume24h:vol};
   }
-  radarHistory[sym]=arr.slice(-48);
+  radarHistory[sym]=arr.slice(-3000);
 }
 state.radarHistory=radarHistory;
 const radarMarketsWithFlow=radarMarkets.map(m=>{const sym=v8NormSymbol(m?.symbol??m?.name??m?.ticker??m?.indexTokenSymbol);const flow=smartMoneyFlowData?.bySymbol?.[sym]||null;return flow?{...m,__smartMoneyFlow:flow}:m;});
@@ -3911,17 +3929,25 @@ if(!entryRiskAllowed) for(const trace of executionTrace) if(!trace.selected) tra
 if(remainingSlots<=0) for(const trace of executionTrace) if(!trace.selected) trace.gateReasons.push("NO_REMAINING_CORE_POSITION_SLOT");
 // V15.3.5: radar history was already updated before scoring; do not add a second sample here.
 state.marketSnapshots={};
-for(const m of allMarkets){const sym=v8NormSymbol(m?.symbol??m?.name??m?.ticker??m?.indexTokenSymbol);if(!sym)continue;state.marketSnapshots[sym]={market:{
-price:v8HighMetric(m,["price","markPrice","indexPrice","currentPrice","indexPriceUsd"]),
-volume24h:v8HighMetric(m,["volume24h","volume","dailyVolume","volumeUsd24h"]),
-openInterest:extractOpenInterest(m),
-fundingRate:extractFunding(m),
-longInterestUsd:v132NumberValue(m?.longInterestUsd),
-shortInterestUsd:v132NumberValue(m?.shortInterestUsd),
-oiUpdatedAt:m?.updatedAt ?? m?.openInterestUpdatedAt ?? null,
-high24h:v8HighMetric(m,["high24h","highPrice24h","dailyHigh"]),
-low24h:v8HighMetric(m,["low24h","lowPrice24h","dailyLow"])
-},savedAt:Date.now()};}
+for(const m of allMarkets){
+  const sym=v8NormSymbol(m?.symbol??m?.name??m?.ticker??m?.indexTokenSymbol);
+  if(!sym)continue;
+  state.marketSnapshots[sym]={market:{
+    price:v8HighMetric(m,["price","markPrice","indexPrice","currentPrice","indexPriceUsd"]),
+    volume24h:v8HighMetric(m,["volume24h","volume","dailyVolume","volumeUsd24h","volume24H"]),
+    openInterest:extractOpenInterest(m),
+    fundingRate:extractFunding(m),
+    longInterestUsd:v132NumberValue(m?.longInterestUsd),
+    shortInterestUsd:v132NumberValue(m?.shortInterestUsd),
+    oiUpdatedAt:m?.updatedAt ?? m?.openInterestUpdatedAt ?? null,
+    high24h:v8HighMetric(m,["high24h","highPrice24h","dailyHigh","high24H"]),
+    low24h:v8HighMetric(m,["low24h","lowPrice24h","dailyLow","low24H"]),
+    priceChange24h:v132NumberValue(m?.priceChange24h,m?.priceChangePercent24h,m?.change24h,m?.priceChange24H,m?.changePercent24h),
+    priceChange1h:v132NumberValue(m?.priceChange1h,m?.priceChangePercent1h,m?.change1h,m?.priceChange1H,m?.changePercent1h),
+    priceChange4h:v132NumberValue(m?.priceChange4h,m?.priceChangePercent4h,m?.change4h,m?.change4H,m?.priceChange4H,m?.changePercent4h),
+    priceChangePercent24hBps:v132NumberValue(m?.priceChangePercent24hBps)
+  },savedAt:Date.now()};
+}
 for(const signal of results){if(signal?.symbol&&signal._marketSnapshotForState){state.marketSnapshots[signal.symbol]=signal._marketSnapshotForState;delete signal._marketSnapshotForState;}}
 state.lastScan=Date.now();state.signals=notifySignals;state.opportunityRanking=notificationPool.slice(0,20).map((s,index)=>({rank:index+1,symbol:s.symbol,direction:s.direction,tier:s.signalTier,score:s.score,opportunityScore:Number(s.opportunity?.score||0),opportunityType:s.opportunity?.type||"STANDARD",edge:s.edge,risk:s.riskScore,executionEligible:!!s.executionEligible,priority:Number(signalPriorityScore(s).toFixed(2))}));state.lastDiagnostics=results.sort((a,b)=>signalPriorityScore(b)-signalPriorityScore(a)).slice(0,50).map(s=>({symbol:s.symbol,direction:s.direction,tier:s.signalTier,score:s.score,longScore:s.longScore,shortScore:s.shortScore,edge:s.edge,risk:s.riskScore,priority:Number(signalPriorityScore(s).toFixed(2)),executionEligible:!!s.executionEligible,reasons:s.diagnostics||null,signalDiagnostics:s.signalDiagnostics||null,components:s.components||null,trend:s.trend||null,dataQuality:s.dataQuality||null}));await saveState(env,state);
 const executionResults=[],executionSymbols=new Set(livePositions.map(p=>baseAsset(normalizeSymbol(String(p?.indexName||p?.symbol||"")))));
@@ -4686,20 +4712,20 @@ return [
 `📡 Event: ${action}`,
 `🔥 Radar Score: ${score.toFixed(1)}/100`,
 `⚡ Directional Edge: ${Number(radar.edge||0).toFixed(1)}`,
-`📈 24h Move: ${Number(radar.priceChange24h||0).toFixed(2)}%`,
-`⏱️ 1h Move: ${Number(radar.priceChange1h||0).toFixed(2)}%`,
-`🕐 4h Move: ${Number(radar.priceChange4h||0).toFixed(2)}%`,
-`⚡ 5m Velocity: ${Number(radar.velocity5m||0).toFixed(2)}%`,
-`📈 15m Move: ${Number(radar.move15m||0).toFixed(2)}%`,
+`📈 24h Move: ${radar.priceChange24hAvailable?`${Number(radar.priceChange24h||0).toFixed(2)}%`:"N/A"}`,
+`⏱️ 1h Move: ${radar.priceChange1hAvailable?`${Number(radar.priceChange1h||0).toFixed(2)}%`:"N/A"}`,
+`🕐 4h Move: ${radar.priceChange4hAvailable?`${Number(radar.priceChange4h||0).toFixed(2)}%`:"N/A"}`,
+`⚡ 5m Velocity: ${radar.valid5mSample?`${Number(radar.velocity5m||0).toFixed(2)}%`:"N/A"}`,
+`📈 15m Move: ${radar.valid15mSample?`${Number(radar.move15m||0).toFixed(2)}%`:"N/A"}`,
 `⏱️ Detection: ${radar.timingState || "UNKNOWN"}`,
-`🛡️ Last-Scan Move: ${Number(radar.priorMovePct||0).toFixed(2)}%`,
-`💧 Volume Ratio: ${Number(radar.volumeRatio||1).toFixed(2)}x`,
-`📊 OI Change: ${Number(radar.oiChangePct||0).toFixed(2)}% • ${radar.oiAvailable===false?"UNAVAILABLE":"AVAILABLE"}`,
-`💵 Smart Money Buy: $${Number(flow.buyUsd||0).toFixed(0)}`,
-`💸 Smart Money Sell: $${Number(flow.sellUsd||0).toFixed(0)}`,
-`⚖️ Flow Imbalance: ${(Number(flow.imbalance||0)*100).toFixed(1)}%`,
-`🚀 Flow Surge: ${flow.flowSurge?"YES":"NO"} • x${Number(flow.flowSpikeRatio||1).toFixed(2)}`,
-`🐋 Large Trades: ${Number(flow.largeTradeCount||0)}`,
+`🛡️ Last-Scan Move: ${radar.priorMovePct!==0?`${Number(radar.priorMovePct||0).toFixed(2)}%`:"0.00%"}`,
+`💧 Volume Ratio: ${radar.volumeRatioAvailable?`${Number(radar.volumeRatio||0).toFixed(2)}x`:"N/A"}`,
+`📊 OI Change: ${radar.oiChangeAvailable?`${Number(radar.oiChangePct||0).toFixed(2)}%`:"N/A"} • ${radar.oiAvailable?"AVAILABLE":"UNAVAILABLE"}`,
+`💵 Smart Money Buy: ${flow&&Number(flow.tradeCount||0)>0?`$${Number(flow.buyUsd||0).toFixed(0)}`:"N/A"}`,
+`💸 Smart Money Sell: ${flow&&Number(flow.tradeCount||0)>0?`$${Number(flow.sellUsd||0).toFixed(0)}`:"N/A"}`,
+`⚖️ Flow Imbalance: ${flow&&Number(flow.tradeCount||0)>0?`${(Number(flow.imbalance||0)*100).toFixed(1)}%`:"N/A"}`,
+`🚀 Flow Surge: ${flow&&Number(flow.tradeCount||0)>0?`${flow.flowSurge?"YES":"NO"} • x${Number(flow.flowSpikeRatio||1).toFixed(2)}`:"N/A"}`,
+`🐋 Large Trades: ${flow&&Number(flow.tradeCount||0)>0?Number(flow.largeTradeCount||0):"N/A"}`,
 `🧠 Trigger: ${reasons}`,
 "⚠️ RADAR ALERT — notification only; not a trade execution signal."
 ].join("\n");
