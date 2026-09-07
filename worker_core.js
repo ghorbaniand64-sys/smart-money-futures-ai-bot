@@ -359,7 +359,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V15.6.15-GITHUB-ACTIONS-RADAR-METRIC-REPAIR",
+VERSION: "V15.6.16-GITHUB-ACTIONS-RADAR-TEST-ENTRY",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -461,6 +461,15 @@ RADAR_LIVE_CAPITAL_ALLOCATION: 0.03,
 RADAR_LIVE_MAX_POSITION_NOTIONAL_USD: 2500,
 RADAR_LIVE_REVERSAL_CONFIRMATIONS: 1,
 RADAR_LIVE_LEDGER_TTL_SEC: 86400,
+
+// V15.6.16 TEST ENTRY MODE:
+// Purpose: temporarily verify that the independent Radar -> live execution
+// pipeline can actually open a GMX position. This intentionally relaxes ONLY
+// the Radar entry gate; the normal Core signal engine remains unchanged.
+// Set false after the smoke test to restore the stricter Radar gate.
+RADAR_TEST_ENTRY_ENABLED: true,
+RADAR_TEST_ENTRY_SCORE: 50,
+RADAR_TEST_ENTRY_MIN_EDGE: 3,
 // V14.0.5.5: live collateral may be USDC or USDT when the selected GMX perp market supports it.
 LIVE_COLLATERAL_PREFERENCE: ["USDC","USDT"],
 RADAR_SUBREQUEST_RESERVE: 0,
@@ -806,7 +815,11 @@ function v1565RadarDerivedMetrics(market, previous, history, now=Date.now()) {
   const price=v1565NormalizePrice(market?.price ?? market?.markPrice ?? market?.indexPrice ?? market?.currentPrice);
   const prior5=v8WindowSample(hist,5,now), prior10=v8WindowSample(hist,10,now), prior15=v8WindowSample(hist,15,now), prior30=v8WindowSample(hist,30,now);
   const prior60=v8WindowSample(hist,60,now), prior240=v8WindowSample(hist,240,now), prior1440=v8WindowSample(hist,1440,now);
-  const raw24=v8PercentMetric(market,["priceChange24h","priceChangePercent24h","change24h","priceChange24H","changePercent24h"]);
+  const raw24=v8PercentMetric(market,[
+    "priceChange24h","priceChangePercent24h","change24h","priceChange24H",
+    "changePercent24h","change24H","changePercent24H","percentChange24h",
+    "priceChange24hPercent","priceChangePercent"
+  ]);
   const raw1=v8PercentMetric(market,["priceChange1h","priceChangePercent1h","change1h","priceChange1H","changePercent1h"]);
   const raw4=v8PercentMetric(market,["priceChange4h","priceChangePercent4h","change4h","change4H","priceChange4H","changePercent4h"]);
   const p24Bps=v132NumberValue(market?.priceChangePercent24hBps);
@@ -3475,6 +3488,17 @@ function v15610RadarGateReasons(candidate) {
   const priceStatus = String(radar?.priceDataStatus || "INVALID").toUpperCase();
   if (!['LONG','SHORT'].includes(direction)) reasons.push("DIRECTION_NEUTRAL_OR_INVALID");
   if (priceStatus === "INVALID") reasons.push("PRICE_DATA_INVALID");
+
+  if (CONFIG.RADAR_TEST_ENTRY_ENABLED) {
+    if (score < Number(CONFIG.RADAR_TEST_ENTRY_SCORE || 50)) {
+      reasons.push(`TEST_SCORE_BELOW_${CONFIG.RADAR_TEST_ENTRY_SCORE || 50}`);
+    }
+    if (Number(radar?.edge || 0) < Number(CONFIG.RADAR_TEST_ENTRY_MIN_EDGE || 3)) {
+      reasons.push(`TEST_EDGE_BELOW_${CONFIG.RADAR_TEST_ENTRY_MIN_EDGE || 3}`);
+    }
+    return reasons;
+  }
+
   if (score < Number(CONFIG.PUMP_RADAR_WATCH_SCORE || 60)) reasons.push(`SCORE_BELOW_RADAR_WATCH_${CONFIG.PUMP_RADAR_WATCH_SCORE || 60}`);
   if (score < Number(CONFIG.RADAR_ENTRY_SCORE || 72)) {
     if (!CONFIG.RADAR_EARLY_ENTRY_ENABLED) reasons.push("EARLY_ENTRY_DISABLED");
@@ -3942,7 +3966,11 @@ for(const m of allMarkets){
     oiUpdatedAt:m?.updatedAt ?? m?.openInterestUpdatedAt ?? null,
     high24h:v8HighMetric(m,["high24h","highPrice24h","dailyHigh","high24H"]),
     low24h:v8HighMetric(m,["low24h","lowPrice24h","dailyLow","low24H"]),
-    priceChange24h:v132NumberValue(m?.priceChange24h,m?.priceChangePercent24h,m?.change24h,m?.priceChange24H,m?.changePercent24h),
+    priceChange24h:v132NumberValue(
+      m?.priceChange24h,m?.priceChangePercent24h,m?.change24h,m?.priceChange24H,
+      m?.changePercent24h,m?.change24H,m?.changePercent24H,m?.percentChange24h,
+      m?.priceChange24hPercent,m?.priceChangePercent
+    ),
     priceChange1h:v132NumberValue(m?.priceChange1h,m?.priceChangePercent1h,m?.change1h,m?.priceChange1H,m?.changePercent1h),
     priceChange4h:v132NumberValue(m?.priceChange4h,m?.priceChangePercent4h,m?.change4h,m?.change4H,m?.priceChange4H,m?.changePercent4h),
     priceChangePercent24hBps:v132NumberValue(m?.priceChangePercent24hBps)
@@ -4173,7 +4201,11 @@ const universeDiagnostics=buildUniverseDiagnostics(allMarkets,fastRows,radarMark
 universe:universeDiagnostics,fairAssetScoring:CONFIG.FAIR_ASSET_SCORING_ENABLED,dataCenter:{enabled:Boolean(CONFIG.DATA_CENTER_ENABLED),apiPeers:V156_DATA_CENTER.apiPeers,oraclePeers:V156_DATA_CENTER.oraclePeers,staleMs:Number(CONFIG.DATA_CENTER_STALE_MS||15000)},
 liquidityScoreInRadar:CONFIG.FAIR_LIQUIDITY_SCORE_IN_RADAR,
 majorSelectionBias:CONFIG.FAIR_MAJOR_SELECTION_BIAS,
-notifyEventMax:CONFIG.NOTIFY_EVENT_MAX},radarLane:{enabled:CONFIG.RADAR_INDEPENDENT_ENABLED,paperEnabled:CONFIG.RADAR_PAPER_ENABLED,liveEnabled:CONFIG.RADAR_LIVE_ENABLED,entryScore:CONFIG.RADAR_ENTRY_SCORE,earlyEntryEnabled:CONFIG.RADAR_EARLY_ENTRY_ENABLED,earlyEntryScore:CONFIG.RADAR_EARLY_ENTRY_SCORE,earlyMinVelocity:CONFIG.RADAR_EARLY_ENTRY_MIN_VELOCITY,earlyMinEdge:CONFIG.RADAR_EARLY_ENTRY_MIN_EDGE,exitScore:CONFIG.RADAR_EXIT_SCORE,maxPositions:CONFIG.RADAR_MAX_POSITIONS,coverageMarkets:radarRows.length,priceFeedCoverage:Object.keys(radarPriceFeed.prices||{}).length,directionalMarkets:radarDirectional.length,longMarkets:radarLongCount,shortMarkets:radarShortCount,watchCandidates:radarWatchCount,hotCandidateCount:radarHotCount,radarHistorySymbols:Object.keys(radarHistory).length,radarHistorySamples:Object.values(radarHistory).reduce((n,a)=>n+(Array.isArray(a)?a.length:0),0),radarPrioritySymbols:radarPrioritySymbols.slice(0,20),hotCandidates:radarRanked.filter(x=>x.score>=CONFIG.PUMP_RADAR_HOT_SCORE).slice(0,20),liveEntryGuard:"PRICE_OK + HOT_OR_EARLY",result:radarPaperResult,liveResult:radarLiveResult,trace:radarTraceSummary},entryRisk:{appliedToScan:false,dailyLoss:Number(state.dailyLoss||0),maxDailyLoss:CONFIG.MAX_DAILY_LOSS,entryRiskAllowed:Number(state.dailyLoss||0)>-CONFIG.MAX_DAILY_LOSS,positionLimit:CONFIG.MAX_POSITIONS}};
+notifyEventMax:CONFIG.NOTIFY_EVENT_MAX},radarLane:{enabled:CONFIG.RADAR_INDEPENDENT_ENABLED,paperEnabled:CONFIG.RADAR_PAPER_ENABLED,liveEnabled:CONFIG.RADAR_LIVE_ENABLED,entryScore:CONFIG.RADAR_ENTRY_SCORE,earlyEntryEnabled:CONFIG.RADAR_EARLY_ENTRY_ENABLED,earlyEntryScore:CONFIG.RADAR_EARLY_ENTRY_SCORE,earlyMinVelocity:CONFIG.RADAR_EARLY_ENTRY_MIN_VELOCITY,earlyMinEdge:CONFIG.RADAR_EARLY_ENTRY_MIN_EDGE,exitScore:CONFIG.RADAR_EXIT_SCORE,maxPositions:CONFIG.RADAR_MAX_POSITIONS,coverageMarkets:radarRows.length,priceFeedCoverage:Object.keys(radarPriceFeed.prices||{}).length,directionalMarkets:radarDirectional.length,longMarkets:radarLongCount,shortMarkets:radarShortCount,watchCandidates:radarWatchCount,hotCandidateCount:radarHotCount,radarHistorySymbols:Object.keys(radarHistory).length,radarHistorySamples:Object.values(radarHistory).reduce((n,a)=>n+(Array.isArray(a)?a.length:0),0),radarPrioritySymbols:radarPrioritySymbols.slice(0,20),hotCandidates:radarRanked.filter(x=>x.score>=CONFIG.PUMP_RADAR_HOT_SCORE).slice(0,20),liveEntryGuard:CONFIG.RADAR_TEST_ENTRY_ENABLED
+    ? `PRICE_OK + TEST_SCORE_${CONFIG.RADAR_TEST_ENTRY_SCORE || 50} + TEST_EDGE_${CONFIG.RADAR_TEST_ENTRY_MIN_EDGE || 3}`
+    : "PRICE_OK + HOT_OR_EARLY",
+  testEntryEnabled:Boolean(CONFIG.RADAR_TEST_ENTRY_ENABLED),
+  result:radarPaperResult,liveResult:radarLiveResult,trace:radarTraceSummary},entryRisk:{appliedToScan:false,dailyLoss:Number(state.dailyLoss||0),maxDailyLoss:CONFIG.MAX_DAILY_LOSS,entryRiskAllowed:Number(state.dailyLoss||0)>-CONFIG.MAX_DAILY_LOSS,positionLimit:CONFIG.MAX_POSITIONS}};
 // V15.6.1 FIX: persist radar history + market snapshots between cron invocations.
 // Without this write, every scan reloaded one fresh sample per symbol, so
 // 5m/15m/30m velocity and acceleration stayed at zero forever.
@@ -4539,10 +4571,18 @@ const radar = candidate?.pumpRadar || {};
 const score = Number(radar?.score || 0);
 const direction = String(radar?.direction || "NEUTRAL").toUpperCase();
 const priceStatus = String(radar?.priceDataStatus || "INVALID").toUpperCase();
-// V15.3.9: one lightweight integrity guard only. Do not turn Radar into
-// another Core-style confirmation engine: a valid HOT Radar can still enter
-// without waiting for every longer window, but it must have a valid price feed.
+
+// V15.6.16 TEST ENTRY MODE:
+// Keep the absolute minimum integrity checks (direction + valid price), but
+// temporarily bypass the historical 5m/timing gate so a strong current move
+// can prove the Radar -> execution path end-to-end.
 if (!['LONG','SHORT'].includes(direction) || priceStatus === "INVALID") return false;
+
+if (CONFIG.RADAR_TEST_ENTRY_ENABLED) {
+  return score >= Number(CONFIG.RADAR_TEST_ENTRY_SCORE || 50) &&
+    Number(radar?.edge || 0) >= Number(CONFIG.RADAR_TEST_ENTRY_MIN_EDGE || 3);
+}
+
 if (score >= Number(CONFIG.RADAR_ENTRY_SCORE || 72)) return true;
 if (!CONFIG.RADAR_EARLY_ENTRY_ENABLED) return false;
 const velocity = Math.abs(Number(radar?.velocity5m || 0));
