@@ -1480,6 +1480,35 @@ function resourceUsageSummary(state) {
 }
 
 
+// V15.6.9 FIX: module-scope state access for the scheduled handler.
+// The engine's internal loadState/saveState helpers remain inside FUTURES_V6,
+// while the top-level scheduled() handler also needs them for Resource Guard
+// checks and final persistence. Keep these wrappers independent and compatible
+// with the GitHub Actions JSON-backed BOT_STATE binding.
+async function loadState(env) {
+  if (!env.BOT_STATE) return { ...DEFAULT_STATE };
+  const data = await env.BOT_STATE.get("engine_state", "json");
+  return {
+    ...DEFAULT_STATE,
+    ...(data || {}),
+    signals: Array.isArray(data?.signals) ? data.signals : [],
+    lastDiagnostics: Array.isArray(data?.lastDiagnostics) ? data.lastDiagnostics : [],
+    telegramEvents: data?.telegramEvents && typeof data.telegramEvents === "object" ? data.telegramEvents : {},
+    radarTelegramEvents: data?.radarTelegramEvents && typeof data.radarTelegramEvents === "object" ? data.radarTelegramEvents : {},
+    radarHistory: data?.radarHistory && typeof data.radarHistory === "object" ? data.radarHistory : {},
+    smartMoneyFlowHistory: data?.smartMoneyFlowHistory && typeof data.smartMoneyFlowHistory === "object" ? data.smartMoneyFlowHistory : {},
+    universeRotationCursor: Number.isFinite(Number(data?.universeRotationCursor)) ? Number(data.universeRotationCursor) : 0,
+    lastExitDiagnostics: Array.isArray(data?.lastExitDiagnostics) ? data.lastExitDiagnostics : [],
+    resourceUsage: data?.resourceUsage && typeof data.resourceUsage === "object" ? data.resourceUsage : null
+  };
+}
+
+async function saveState(env, state) {
+  if (!env.BOT_STATE) return false;
+  await env.BOT_STATE.put("engine_state", JSON.stringify(state));
+  return true;
+}
+
 const FUTURES_V6 = (() => {
 // ======================================================
 // HTTP / RPC HELPERS
