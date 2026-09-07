@@ -4,8 +4,8 @@ import { getViemChain } from "@gmx-io/sdk/configs/chains";
  
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V15.6.14 / Phase 6 Automatic Execution Fix + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar
-// Platform: GitHub Actions + Node.js
+// Version: V15.6.15 / Phase 6 Live Market Metrics + Subsquid Smart Money + Radar Data Center Repair + Automatic Execution + Live Entry/Exit Telegram + Resource Guard
+// Platform: Cloudflare Workers
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
 // ======================================================
@@ -359,7 +359,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V15.6.14-GITHUB-ACTIONS-AUTOMATIC-EXECUTION-FIX",
+VERSION: "V15.6.15-GITHUB-ACTIONS-LIVE-MARKET-METRICS-SUBSQUID-SMART-MONEY",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -482,6 +482,7 @@ DATA_CENTER_MAX_TRADE_ROWS: 750,
 DATA_CENTER_PRIMARY_API: "https://arbitrum.gmxapi.io/v1",
 DATA_CENTER_PEER_API: "https://arbitrum.gmxapi.ai/v1",
 DATA_CENTER_ORACLE_PRIMARY: "https://arbitrum-api.gmxinfra.io",
+DATA_CENTER_GRAPHQL_ARBITRUM: "https://gmx.squids.live/gmx-synthetics-arbitrum:prod/api/graphql",
 DATA_CENTER_ORACLE_FALLBACKS: [
 "https://arbitrum-api-fallback.gmxinfra.io",
 "https://arbitrum-api-fallback.gmxinfra2.io"
@@ -948,6 +949,15 @@ const sdk=new GmxApiSdk({chainId:42161});
 const result=await sdk.searchTrades({forAllAccounts:true,fromTimestamp:Math.floor((now-Number(CONFIG.SMART_MONEY_FLOW_LOOKBACK_MS||300000))/1000),limit:Number(CONFIG.SMART_MONEY_FLOW_LIMIT||250),showDebugValues:true});
 allTrades=smfExtractTradeRows(result);source="SDK_V2_SEARCH_TRADES";
 }
+// If the API/SDK returned rows but the current parser could not map them to
+// symbols/notional, use the indexed Subsquid tradeActions surface. This is
+// deliberately a fallback, not a second permanent stream.
+let preliminary=smfAggregateTrades(allTrades);
+if(!Object.keys(preliminary.bySymbol).length){
+  const gql=await fetchSubsquidTradeActions(now-Number(CONFIG.SMART_MONEY_FLOW_LOOKBACK_MS||300000));
+  if(gql.ok&&gql.trades.length){allTrades=gql.trades;source=gql.source;}
+  else if(gql.error)errors.push(`SUBSQUID:${gql.error}`);
+}
 const cappedTrades=allTrades.slice(0,Number(CONFIG.DATA_CENTER_MAX_TRADE_ROWS||750));
 const aggregated=smfAggregateTrades(cappedTrades),bySymbol={};
 for(const [symbol,row] of Object.entries(aggregated.bySymbol))bySymbol[symbol]=smfBuildFlowMetrics(row,Array.isArray(flowHistory?.[symbol])?flowHistory[symbol].slice(-47):[]);
@@ -973,8 +983,10 @@ const prevPriceRaw=v8HighMetric(previous,["price","markPrice","indexPrice","curr
 const prevPrice=v1565RadarPriceIntegrity(price,prevPriceRaw,{maxRatio:25}).ok?prevPriceRaw:0;
 const p24Bps=v132NumberValue(market?.priceChangePercent24hBps);
 const p24=p24Bps!==0?p24Bps/100:v8PercentMetric(market,["priceChange24h","priceChangePercent24h","change24h","priceChange24H","changePercent24h"]);
-const p1h=v8PercentMetric(market,["priceChange1h","priceChangePercent1h","change1h","priceChange1H","changePercent1h"]);
-const p4h=v8PercentMetric(market,["priceChange4h","priceChangePercent4h","change4h","change4H","priceChange4H","changePercent4h"]);
+const p1hRaw=v8PercentMetric(market,["priceChange1h","priceChangePercent1h","change1h","priceChange1H","changePercent1h"]);
+const p4hRaw=v8PercentMetric(market,["priceChange4h","priceChangePercent4h","change4h","change4H","priceChange4H","changePercent4h"]);
+const p1h=p1hRaw!==0?p1hRaw:move1h;
+const p4h=p4hRaw!==0?p4hRaw:move4h;
 const volume=v8HighMetric(market,["volume24h","volume","dailyVolume","volumeUsd24h","volume24H"]);
 const prevVolume=v8HighMetric(previous,["volume24h","volume","dailyVolume","volumeUsd24h"]);
 const volumeRatio=prevVolume>0&&volume>0?volume/prevVolume:1;
@@ -996,11 +1008,15 @@ const prior5=v8WindowSample(hist,5,now);
 const prior10=v8WindowSample(hist,10,now);
 const prior15=v8WindowSample(hist,15,now);
 const prior30=v8WindowSample(hist,30,now);
+const prior60=v8WindowSample(hist,60,now);
+const prior240=v8WindowSample(hist,240,now);
 const latestPrice=latest?Number(latest.price):0;
 const velocity5m=prior5?v8PctMove(price,prior5.price):0;
 const move10m=prior10?v8PctMove(price,prior10.price):0;
 const move15m=prior15?v8PctMove(price,prior15.price):0;
 const move30m=prior30?v8PctMove(price,prior30.price):0;
+const move1h=prior60?v8PctMove(price,prior60.price):0;
+const move4h=prior240?v8PctMove(price,prior240.price):0;
 const prior5m=prior5&&latestPrice>0?v8PctMove(latestPrice,prior5.price):0;
 const acceleration5m=prior5?(velocity5m-prior5m):0;
 const radarWarmup=!(prior5||prior15);
@@ -1819,6 +1835,33 @@ if(!CONFIG.DATA_CENTER_ENABLED)return{ok:false,trades:[],source:null,cursor:null
 const api=await fetchPeerJson(V156_DATA_CENTER.apiPeers,"/trades/search",params,{timeoutMs:CONFIG.DATA_CENTER_TIMEOUT_MS});
 if(!api.ok)return{ok:false,trades:[],source:null,cursor:null,errors:api.errors||[]};
 return{ok:true,trades:v156ExtractTradeRows(api.data),source:api.source,cursor:api.data?.cursor??api.data?.nextCursor??api.data?.next_cursor??null,errors:api.errors||[]};
+}
+
+// V15.6.15: Subsquid is the indexed fallback for Smart Money. GMX documents
+// GraphQL as the preferred surface for full indexed trade analytics when the
+// API/SDK trade payload is incomplete or its schema changes.
+async function fetchSubsquidTradeActions(sinceMs){
+  const endpoint=CONFIG.DATA_CENTER_GRAPHQL_ARBITRUM;
+  if(!endpoint)return{ok:false,trades:[],error:"graphql_endpoint_missing"};
+  const query=`query RecentTradeActions($limit:Int!){
+    tradeActions(orderBy: timestamp_DESC, limit:$limit){
+      id account market isLong sizeDeltaUsd collateralDeltaAmount executionPrice eventName orderType timestamp transactionHash
+    }
+  }`;
+  try{
+    const r=await fetchTimeout(endpoint,{
+      method:"POST",
+      headers:{"content-type":"application/json",accept:"application/json"},
+      body:JSON.stringify({query,variables:{limit:250}})
+    },Math.min(7000,Number(CONFIG.DATA_CENTER_TIMEOUT_MS||5000)+2000));
+    if(!r.ok)return{ok:false,trades:[],error:`HTTP_${r.status}`};
+    const j=await r.json();
+    if(Array.isArray(j?.errors)&&j.errors.length)return{ok:false,trades:[],error:j.errors.map(x=>x?.message||String(x)).join(" | ")};
+    const rows=Array.isArray(j?.data?.tradeActions)?j.data.tradeActions:[];
+    const cutoff=Number(sinceMs||0);
+    const trades=rows.filter(t=>{const ts=Number(t?.timestamp||0);return !cutoff || (ts>0 ? (ts<1e12?ts*1000:ts)>=cutoff : true);});
+    return{ok:true,trades,source:"SUBSQUID_GRAPHQL_TRADE_ACTIONS",error:null};
+  }catch(e){return{ok:false,trades:[],error:safeError(e)};}
 }
 
 // V15.6.1 FIX: Smart Money fetcher lives inside FUTURES_V6 because its
@@ -3737,7 +3780,20 @@ try{const tickerResult=await cached("markets-tickers",fetchGmxMarketsTickers,CON
 let catalogRows=[];let catalogSource=null;
 try{const catalogResult=await cached("markets-catalog",fetchGmxMarkets,CONFIG.MARKET_CACHE_TTL_MS);catalogRows=marketArray(catalogResult.value);catalogSource=GMX.ORACLE+"/markets";}catch(error){errors.push({scope:"markets-catalog",error:safeError(error)});}
 const tickerBySymbol=new Map();
-for(const t of tickerRows){const sym=v8NormSymbol(t?.symbol??t?.name??t?.ticker);if(sym)tickerBySymbol.set(sym,t);}
+for(const t of tickerRows){
+  const sym=v8NormSymbol(t?.symbol??t?.name??t?.ticker??t?.indexTokenSymbol);
+  if(!sym)continue;
+  const enrichedTicker={...t};
+  // Normalize documented GMX ticker metrics into the names Radar consumes.
+  if(enrichedTicker.priceChangePercent24hBps==null){
+    const pct=enrichedTicker.priceChangePercent24h??enrichedTicker.changePercent24h??enrichedTicker.priceChange24h;
+    if(pct!=null)enrichedTicker.priceChangePercent24hBps=Number(pct)*100;
+  }
+  if(enrichedTicker.volume24h==null)enrichedTicker.volume24h=enrichedTicker.dailyVolume??enrichedTicker.volumeUsd24h??enrichedTicker.volume;
+  if(enrichedTicker.high24h==null)enrichedTicker.high24h=enrichedTicker.highPrice24h??enrichedTicker.dailyHigh;
+  if(enrichedTicker.low24h==null)enrichedTicker.low24h=enrichedTicker.lowPrice24h??enrichedTicker.dailyLow;
+  tickerBySymbol.set(sym,enrichedTicker);
+}
 const unique=new Map();
 for(const m of [...marketArray(marketResult.value),...catalogRows]){
 const sym=v8NormSymbol(m?.symbol??m?.name??m?.ticker??m?.indexTokenSymbol);if(!sym)continue;
@@ -8572,8 +8628,8 @@ const collateral=selectLiveCollateral(markets, signal.symbol, balances);
 if (!collateral) throw new Error("No usable USDC/USDT balance with a matching GMX collateral market was detected");
 const market=collateral.market;
 const sdkSymbol=market.symbol;
-const orderDirection=signal.direction==="LONG"?"long":"short";
-const capacity=await sdk.getTradingCapacity({symbol:sdkSymbol,direction:orderDirection});
+const direction=signal.direction==="LONG"?"long":"short";
+const capacity=await sdk.getTradingCapacity({symbol:sdkSymbol,direction});
 const capacityUsd=Number(capacity?.availableLiquidity||0n)/1e30;
 const walletUsd=collateral.usd;
 const leverage=Number(signal.tradePlan.leverage||CONFIG.DEFAULT_LEVERAGE);
@@ -8596,9 +8652,9 @@ const lock = await acquireLiveExecutionLock(env, signal);
 if (!lock.acquired) return {executed:false,mode:"LIVE",reason:lock.reason,executionKey:lock.key};
 
 try {
-const result=await sdk.executeExpressOrder({kind:"increase",symbol:sdkSymbol,direction:orderDirection,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:collateralAmount,token:collateral.symbol},mode:"express",from:account,tpsl:[{type:"take-profit",triggerPrice:tp,size},{type:"stop-loss",triggerPrice:sl,size}]},signer);
-const verification=await verifyLiveEntryPosition(sdk,account,sdkSymbol,orderDirection,2);
-const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:verification.verified,executionKey:lock.key};
+const result=await sdk.executeExpressOrder({kind:"increase",symbol:sdkSymbol,direction,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:collateralAmount,token:collateral.symbol},mode:"express",from:account,tpsl:[{type:"take-profit",triggerPrice:tp,size},{type:"stop-loss",triggerPrice:sl,size}]},signer);
+const verification=await verifyLiveEntryPosition(sdk,account,sdkSymbol,direction,2);
+const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:verification.verified,executionKey:lock.key};
 try { await sendTelegram(env, formatTelegramLiveEntry(entryNotice)); } catch(_) {}
 return entryNotice;
 } finally {
