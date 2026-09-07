@@ -8446,7 +8446,7 @@ const bal=available[preferred];
 if (!(bal?.usd>0)) continue;
 if (exact) {
 const supported=marketCollateralSymbols(exact).has(preferred);
-const isRadarTest=Boolean(CONFIG.RADAR_TEST_ENTRY_ENABLED && normalizeSymbol(symbol)===normalizeSymbol(CONFIG.RADAR_TEST_SYMBOL||""));
+const isRadarTest=Boolean(CONFIG.RADAR_TEST_ENTRY_ENABLED && liveNormalizeSymbol(symbol)===liveNormalizeSymbol(CONFIG.RADAR_TEST_SYMBOL||""));
 if (supported || (isRadarTest && preferred==="USDC")) {
 return {symbol:preferred,usd:bal.usd,balance:bal.balance,decimals:bal.decimals,market:exact,testCollateralFallback:!supported};
 }
@@ -8456,6 +8456,9 @@ if (market) return {symbol:preferred,usd:bal.usd,balance:bal.balance,decimals:ba
 }
 return null;
 }
+
+// RADAR_SYMBOL_SCOPE_GUARD: ensure live lane always has a symbol normalizer
+const RADAR_SYMBOL_SCOPE_GUARD = true;
 
 function liveExecutionKey(signal) {
 const entry = Number(signal?.tradePlan?.entry ?? signal?.price ?? 0);
