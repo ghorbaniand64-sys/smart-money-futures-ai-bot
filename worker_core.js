@@ -985,8 +985,6 @@ const p24Bps=v132NumberValue(market?.priceChangePercent24hBps);
 const p24=p24Bps!==0?p24Bps/100:v8PercentMetric(market,["priceChange24h","priceChangePercent24h","change24h","priceChange24H","changePercent24h"]);
 const p1hRaw=v8PercentMetric(market,["priceChange1h","priceChangePercent1h","change1h","priceChange1H","changePercent1h"]);
 const p4hRaw=v8PercentMetric(market,["priceChange4h","priceChangePercent4h","change4h","change4H","priceChange4H","changePercent4h"]);
-const p1h=p1hRaw!==0?p1hRaw:move1h;
-const p4h=p4hRaw!==0?p4hRaw:move4h;
 const volume=v8HighMetric(market,["volume24h","volume","dailyVolume","volumeUsd24h","volume24H"]);
 const prevVolume=v8HighMetric(previous,["volume24h","volume","dailyVolume","volumeUsd24h"]);
 const volumeRatio=prevVolume>0&&volume>0?volume/prevVolume:1;
@@ -1017,6 +1015,8 @@ const move15m=prior15?v8PctMove(price,prior15.price):0;
 const move30m=prior30?v8PctMove(price,prior30.price):0;
 const move1h=prior60?v8PctMove(price,prior60.price):0;
 const move4h=prior240?v8PctMove(price,prior240.price):0;
+const p1h=p1hRaw!==0?p1hRaw:move1h;
+const p4h=p4hRaw!==0?p4hRaw:move4h;
 const prior5m=prior5&&latestPrice>0?v8PctMove(latestPrice,prior5.price):0;
 const acceleration5m=prior5?(velocity5m-prior5m):0;
 const radarWarmup=!(prior5||prior15);
@@ -8628,8 +8628,8 @@ const collateral=selectLiveCollateral(markets, signal.symbol, balances);
 if (!collateral) throw new Error("No usable USDC/USDT balance with a matching GMX collateral market was detected");
 const market=collateral.market;
 const sdkSymbol=market.symbol;
-const orderDirection=signal.direction==="LONG"?"long":"short";
-const capacity=await sdk.getTradingCapacity({symbol:sdkSymbol,direction:orderDirection});
+const direction=signal.direction==="LONG"?"long":"short";
+const capacity=await sdk.getTradingCapacity({symbol:sdkSymbol,direction});
 const capacityUsd=Number(capacity?.availableLiquidity||0n)/1e30;
 const walletUsd=collateral.usd;
 const leverage=Number(signal.tradePlan.leverage||CONFIG.DEFAULT_LEVERAGE);
@@ -8652,9 +8652,9 @@ const lock = await acquireLiveExecutionLock(env, signal);
 if (!lock.acquired) return {executed:false,mode:"LIVE",reason:lock.reason,executionKey:lock.key};
 
 try {
-const result=await sdk.executeExpressOrder({kind:"increase",symbol:sdkSymbol,direction:orderDirection,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:collateralAmount,token:collateral.symbol},mode:"express",from:account,tpsl:[{type:"take-profit",triggerPrice:tp,size},{type:"stop-loss",triggerPrice:sl,size}]},signer);
-const verification=await verifyLiveEntryPosition(sdk,account,sdkSymbol,orderDirection,2);
-const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:verification.verified,executionKey:lock.key};
+const result=await sdk.executeExpressOrder({kind:"increase",symbol:sdkSymbol,direction,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:collateralAmount,token:collateral.symbol},mode:"express",from:account,tpsl:[{type:"take-profit",triggerPrice:tp,size},{type:"stop-loss",triggerPrice:sl,size}]},signer);
+const verification=await verifyLiveEntryPosition(sdk,account,sdkSymbol,direction,2);
+const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:verification.verified,executionKey:lock.key};
 try { await sendTelegram(env, formatTelegramLiveEntry(entryNotice)); } catch(_) {}
 return entryNotice;
 } finally {
