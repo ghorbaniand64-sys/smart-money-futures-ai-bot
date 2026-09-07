@@ -4,7 +4,7 @@ import { getViemChain } from "@gmx-io/sdk/configs/chains";
  
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V15.6.8 / Phase 6 Radar History + Telegram UTF-8 + Exit Monitor Scope Integrity + GitHub Actions Multi-Source Smart Money + Independent Radar
+// Version: V15.6.9 / Phase 6 Live Entry/Exit Telegram Confirmation + Radar History + Telegram UTF-8 + Exit Monitor Scope Integrity + GitHub Actions Multi-Source Smart Money + Independent Radar
 // Platform: Cloudflare Workers
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -8291,6 +8291,48 @@ return { executed:true, mode:"LIVE", lane:"RADAR", account, symbol, direction:pl
 } finally { releaseLiveExecutionLock(lock.key); }
 }
 
+
+function formatTelegramLiveEntry(result) {
+  const direction=String(result?.direction||"UNKNOWN").toUpperCase();
+  const icon=direction==="LONG"?"🟢":"🔴";
+  const verified=!!result?.positionVerified;
+  return [
+    `${icon} LIVE ENTRY — ${direction}`,
+    "━━━━━━━━━━━━━━━━━━",
+    `🪙 ${result?.symbol||"UNKNOWN"}`,
+    `🔥 Score: ${Number(result?.score||0).toFixed(1)}/100`,
+    `⚡ Confidence: ${Number(result?.confidence||0).toFixed(0)}%`,
+    `💰 Entry: ${result?.entryPrice!=null?formatPrice(result.entryPrice):"N/A"}`,
+    `🛑 Stop Loss: ${result?.stopLoss!=null?formatPrice(result.stopLoss):"N/A"}`,
+    `🎯 TP1: ${result?.tp1!=null?formatPrice(result.tp1):"N/A"}`,
+    `⚙️ Leverage: ${Number(result?.leverage||1).toFixed(1)}x`,
+    `📦 Notional: $${Number(result?.notionalUsd||0).toFixed(2)}`,
+    `💵 Collateral: $${Number(result?.collateralUsd||0).toFixed(2)} ${result?.collateralToken||""}`,
+    `🧾 Request ID: ${result?.requestId||"n/a"}`,
+    verified ? "✅ GMX POSITION VERIFIED" : "⚠️ GMX ORDER ACCEPTED — POSITION VERIFICATION PENDING",
+    "ℹ️ This message is sent only after the live order submission succeeds."
+  ].filter(Boolean).join("\n");
+}
+
+async function verifyLiveEntryPosition(sdk, account, sdkSymbol, direction, attempts=2) {
+  for(let i=0;i<attempts;i++) {
+    try {
+      const positions=await sdk.fetchPositionsInfo({address:account});
+      if(Array.isArray(positions)) {
+        const wanted=String(sdkSymbol||"").toUpperCase();
+        const wantLong=direction==="long";
+        const found=positions.find(p=>{
+          const ps=String(p?.indexName||p?.symbol||"").toUpperCase();
+          return ps.includes(wanted.split("/")[0]) && Boolean(p?.isLong)===wantLong && Number(p?.sizeInUsd||0)>0;
+        });
+        if(found) return {verified:true,position:found};
+      }
+    } catch(_) {}
+    if(i+1<attempts) await new Promise(resolve=>setTimeout(resolve,500));
+  }
+  return {verified:false,position:null};
+}
+
 async function executeLiveSignal(signal, env) {
 if (!executionEnabled(env)) return {executed:false,mode:"SIGNAL",reason:"Execution disabled"};
 if (!signal?.executionEligible) return {executed:false,mode:"LIVE",reason:"Signal is not execution-eligible"};
@@ -8333,7 +8375,10 @@ if (!lock.acquired) return {executed:false,mode:"LIVE",reason:lock.reason,execut
 
 try {
 const result=await sdk.executeExpressOrder({kind:"increase",symbol:sdkSymbol,direction,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:collateralAmount,token:collateral.symbol},mode:"express",from:account,tpsl:[{type:"take-profit",triggerPrice:tp,size},{type:"stop-loss",triggerPrice:sl,size}]},signer);
-return {executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction,leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,requestId:result?.requestId||null,status:result?.status||null,executionKey:lock.key};
+const verification=await verifyLiveEntryPosition(sdk,account,sdkSymbol,direction,2);
+const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:verification.verified,executionKey:lock.key};
+try { await sendTelegram(env, formatTelegramLiveEntry(entryNotice)); } catch(_) {}
+return entryNotice;
 } finally {
 releaseLiveExecutionLock(lock.key);
 }
@@ -8407,7 +8452,7 @@ const exitCollateral = positionCollateral === "USDT" ? "USDT" : "USDC";
 const result = await sdk.executeExpressOrder({kind:"decrease",symbol:marketSdk.symbol,direction:isLong?"long":"short",orderType:"market",size,collateralToken:exitCollateral,receiveToken:exitCollateral,mode:"express",from:account},signer);
       radarLedger[radarKey] = {...radarMeta,status:"CLOSED",closedAt:Date.now(),closeRequestId:result?.requestId || null,closeReason:reversal.reason};
       await saveRadarLiveLedger(env, radarLedger);
-      const actionRecord = {symbol,direction:side,lane:"RADAR",action:"RADAR_REVERSAL_FULL",reason:reversal.reason,closePercent:100,pnlPercent:entryPrice>0&&currentPrice>0?(isLong?(currentPrice-entryPrice)/entryPrice:(entryPrice-currentPrice)/entryPrice)*100:0,radarScore:reversal.radarScore,radarDirection:reversal.radarDirection,requestId:result?.requestId||null};
+      const actionRecord = {symbol,direction:side,lane:"RADAR",action:"RADAR_REVERSAL_FULL",reason:reversal.reason,closePercent:100,pnlPercent:entryPrice>0&&currentPrice>0?(isLong?(currentPrice-entryPrice)/entryPrice:(entryPrice-currentPrice)/entryPrice)*100:0,pnlUsd:null,entryPrice,exitPrice:currentPrice,leverage:Number(position?.leverage||radarMeta?.leverage||1),notionalUsd:Number(position?.sizeInUsd||radarMeta?.notionalUsd||0),radarScore:reversal.radarScore,radarDirection:reversal.radarDirection,requestId:result?.requestId||null};
       actions.push(actionRecord);
       await auditLog(env,{type:"LIVE_RADAR_REVERSAL_CLOSE",account,action:actionRecord});
       try { await sendTelegram(env, formatTelegramExit(actionRecord)); } catch (_) {}
@@ -8457,6 +8502,11 @@ action,
 reason: hardStop ? "HARD_STOP" : (plan.reasons?.structureBreak ? "STRUCTURE_BREAK" : plan.execution),
 closePercent,
 pnlPercent: Number(pnlPercent.toFixed(2)),
+pnlUsd: Number((Number(position.sizeInUsd||0) * pnlPercent / 100).toFixed(4)),
+entryPrice,
+exitPrice: currentPrice,
+leverage: Number(position?.leverage || 1),
+notionalUsd: Number(position?.sizeInUsd || 0),
 exitScore: plan.score,
 components: plan.components,
 requestId: result?.requestId || null
