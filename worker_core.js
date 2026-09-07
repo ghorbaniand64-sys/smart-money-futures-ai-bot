@@ -1316,6 +1316,170 @@ FALLBACK_API: GMX_V2_CONFIG.FALLBACKS[0]
 // Original engines are preserved; V6 adds a complete directional
 // signal pipeline and dedicated /v6/* routes.
 // ======================================================
+// ======================================================
+// RESOURCE USAGE GUARD — MODULE SCOPE
+// ======================================================
+let RESOURCE_USAGE_RUNTIME = null;
+
+function resourcePeriodKeys(now = Date.now()) {
+  const d = new Date(now);
+  return { day: d.toISOString().slice(0, 10), month: d.toISOString().slice(0, 7) };
+}
+
+function newResourceBucket(key) {
+  return {
+    key,
+    runs: 0,
+    httpRequests: 0,
+    gmxRequests: 0,
+    gmxFallbackRequests: 0,
+    candleRequests: 0,
+    telegramRequests: 0,
+    telegramSuccesses: 0,
+    runtimeMs: 0
+  };
+}
+
+function resourceUsageEnsure(state, now = Date.now()) {
+  const keys = resourcePeriodKeys(now);
+  const old = state?.resourceUsage && typeof state.resourceUsage === "object" ? state.resourceUsage : {};
+  const usage = {
+    daily: old.daily?.key === keys.day ? { ...newResourceBucket(keys.day), ...old.daily } : newResourceBucket(keys.day),
+    monthly: old.monthly?.key === keys.month ? { ...newResourceBucket(keys.month), ...old.monthly } : newResourceBucket(keys.month),
+    lastRun: old.lastRun || null,
+    lastWarning: old.lastWarning || {},
+    lastPause: old.lastPause || null
+  };
+  state.resourceUsage = usage;
+  return usage;
+}
+
+function resourceUsageInstallFetchTracker() {
+  if (!CONFIG.RESOURCE_USAGE_ENABLED || typeof globalThis.fetch !== "function") return () => {};
+  const original = globalThis.fetch;
+  RESOURCE_USAGE_RUNTIME = {
+    startedAt: Date.now(),
+    httpRequests: 0,
+    gmxRequests: 0,
+    gmxFallbackRequests: 0,
+    candleRequests: 0,
+    telegramRequests: 0,
+    telegramSuccesses: 0
+  };
+  globalThis.fetch = async (...args) => {
+    const input = args?.[0];
+    const url = typeof input === "string" ? input : (input?.url || "");
+    const u = String(url || "");
+    const lower = u.toLowerCase();
+    RESOURCE_USAGE_RUNTIME.httpRequests++;
+    if (lower.includes("api.telegram.org")) RESOURCE_USAGE_RUNTIME.telegramRequests++;
+    if (lower.includes("gmxapi.io") || lower.includes("gmxapi.ai") || lower.includes("gmxinfra.io")) {
+      RESOURCE_USAGE_RUNTIME.gmxRequests++;
+      if (lower.includes("fallback")) RESOURCE_USAGE_RUNTIME.gmxFallbackRequests++;
+      if (lower.includes("/candles")) RESOURCE_USAGE_RUNTIME.candleRequests++;
+    }
+    const response = await original(...args);
+    if (lower.includes("api.telegram.org") && response?.ok) RESOURCE_USAGE_RUNTIME.telegramSuccesses++;
+    return response;
+  };
+  return () => { globalThis.fetch = original; };
+}
+
+function resourceUsageRuntimeSnapshot(startedAt = null) {
+  const r = RESOURCE_USAGE_RUNTIME || {};
+  return {
+    runs: 1,
+    httpRequests: Number(r.httpRequests || 0),
+    gmxRequests: Number(r.gmxRequests || 0),
+    gmxFallbackRequests: Number(r.gmxFallbackRequests || 0),
+    candleRequests: Number(r.candleRequests || 0),
+    telegramRequests: Number(r.telegramRequests || 0),
+    telegramSuccesses: Number(r.telegramSuccesses || 0),
+    runtimeMs: Math.max(0, Date.now() - Number(r.startedAt || startedAt || Date.now()))
+  };
+}
+
+function resourceUsagePercent(value, limit) {
+  return limit > 0 ? (Number(value || 0) / limit) * 100 : 0;
+}
+
+function resourceUsageLevels(usage) {
+  const checks = [
+    ["dailyRuns", usage.daily.runs, CONFIG.RESOURCE_DAILY_RUN_LIMIT],
+    ["monthlyRuns", usage.monthly.runs, CONFIG.RESOURCE_MONTHLY_RUN_LIMIT],
+    ["dailyHttp", usage.daily.httpRequests, CONFIG.RESOURCE_DAILY_HTTP_LIMIT],
+    ["monthlyHttp", usage.monthly.httpRequests, CONFIG.RESOURCE_MONTHLY_HTTP_LIMIT],
+    ["dailyGmx", usage.daily.gmxRequests, CONFIG.RESOURCE_DAILY_GMX_HTTP_LIMIT],
+    ["monthlyGmx", usage.monthly.gmxRequests, CONFIG.RESOURCE_MONTHLY_GMX_HTTP_LIMIT]
+  ];
+  let maxPercent = 0, maxKey = null;
+  for (const [key, value, limit] of checks) {
+    const pct = resourceUsagePercent(value, limit);
+    if (pct > maxPercent) { maxPercent = pct; maxKey = key; }
+  }
+  return { percent: maxPercent, key: maxKey, warning: maxPercent >= CONFIG.RESOURCE_WARN_PERCENT, paused: maxPercent >= CONFIG.RESOURCE_PAUSE_PERCENT };
+}
+
+function resourceUsageWouldPause(state, now = Date.now()) {
+  if (!CONFIG.RESOURCE_USAGE_ENABLED) return { paused: false, percent: 0, key: null };
+  const usage = resourceUsageEnsure(state, now);
+  const level = resourceUsageLevels(usage);
+  return { paused: level.paused, percent: level.percent, key: level.key };
+}
+
+function resourceUsageCommit(state, runtime, now = Date.now()) {
+  if (!CONFIG.RESOURCE_USAGE_ENABLED) return null;
+  const usage = resourceUsageEnsure(state, now);
+  const add = runtime || {};
+  for (const bucketName of ["daily", "monthly"]) {
+    const b = usage[bucketName];
+    b.runs += Number(add.runs || 0);
+    b.httpRequests += Number(add.httpRequests || 0);
+    b.gmxRequests += Number(add.gmxRequests || 0);
+    b.gmxFallbackRequests += Number(add.gmxFallbackRequests || 0);
+    b.candleRequests += Number(add.candleRequests || 0);
+    b.telegramRequests += Number(add.telegramRequests || 0);
+    b.telegramSuccesses += Number(add.telegramSuccesses || 0);
+    b.runtimeMs += Number(add.runtimeMs || 0);
+  }
+  usage.lastRun = { at: now, ...add };
+  const level = resourceUsageLevels(usage);
+  if (level.warning) {
+    const period = level.percent >= resourceUsagePercent(usage.monthly.runs, CONFIG.RESOURCE_MONTHLY_RUN_LIMIT) ? usage.monthly.key : usage.daily.key;
+    const alertKey = `${level.key}|${level.percent >= CONFIG.RESOURCE_PAUSE_PERCENT ? "PAUSE" : "WARN"}|${period}`;
+    if (usage.lastWarning?.key !== alertKey) {
+      usage.lastWarning = { key: alertKey, at: now, level: level.paused ? "PAUSE" : "WARNING", metric: level.key, percent: Number(level.percent.toFixed(1)) };
+      console.warn("[RESOURCE][GUARD]", usage.lastWarning);
+    }
+  }
+  if (level.paused) usage.lastPause = { at: now, metric: level.key, percent: Number(level.percent.toFixed(1)) };
+  return { usage, level };
+}
+
+function resourceUsageSummary(state) {
+  const usage = resourceUsageEnsure(state);
+  const level = resourceUsageLevels(usage);
+  return {
+    enabled: Boolean(CONFIG.RESOURCE_USAGE_ENABLED),
+    level: level.paused ? "PAUSED" : level.warning ? "WARNING" : "OK",
+    maxPercent: Number(level.percent.toFixed(1)),
+    limitingMetric: level.key,
+    warnPercent: CONFIG.RESOURCE_WARN_PERCENT,
+    pausePercent: CONFIG.RESOURCE_PAUSE_PERCENT,
+    daily: usage.daily,
+    monthly: usage.monthly,
+    limits: {
+      dailyRuns: CONFIG.RESOURCE_DAILY_RUN_LIMIT,
+      monthlyRuns: CONFIG.RESOURCE_MONTHLY_RUN_LIMIT,
+      dailyHttp: CONFIG.RESOURCE_DAILY_HTTP_LIMIT,
+      monthlyHttp: CONFIG.RESOURCE_MONTHLY_HTTP_LIMIT,
+      dailyGmx: CONFIG.RESOURCE_DAILY_GMX_HTTP_LIMIT,
+      monthlyGmx: CONFIG.RESOURCE_MONTHLY_GMX_HTTP_LIMIT
+    }
+  };
+}
+
+
 const FUTURES_V6 = (() => {
 // ======================================================
 // HTTP / RPC HELPERS
@@ -3822,166 +3986,6 @@ state.dailyLoss = 0;
 // Counts actual outbound HTTP calls made during one scheduled
 // invocation, then persists rolling daily/monthly totals in BOT_STATE.
 // ======================================================
-let RESOURCE_USAGE_RUNTIME = null;
-
-function resourcePeriodKeys(now = Date.now()) {
-  const d = new Date(now);
-  return { day: d.toISOString().slice(0, 10), month: d.toISOString().slice(0, 7) };
-}
-
-function newResourceBucket(key) {
-  return {
-    key,
-    runs: 0,
-    httpRequests: 0,
-    gmxRequests: 0,
-    gmxFallbackRequests: 0,
-    candleRequests: 0,
-    telegramRequests: 0,
-    telegramSuccesses: 0,
-    runtimeMs: 0
-  };
-}
-
-function resourceUsageEnsure(state, now = Date.now()) {
-  const keys = resourcePeriodKeys(now);
-  const old = state?.resourceUsage && typeof state.resourceUsage === "object" ? state.resourceUsage : {};
-  const usage = {
-    daily: old.daily?.key === keys.day ? { ...newResourceBucket(keys.day), ...old.daily } : newResourceBucket(keys.day),
-    monthly: old.monthly?.key === keys.month ? { ...newResourceBucket(keys.month), ...old.monthly } : newResourceBucket(keys.month),
-    lastRun: old.lastRun || null,
-    lastWarning: old.lastWarning || {},
-    lastPause: old.lastPause || null
-  };
-  state.resourceUsage = usage;
-  return usage;
-}
-
-function resourceUsageInstallFetchTracker() {
-  if (!CONFIG.RESOURCE_USAGE_ENABLED || typeof globalThis.fetch !== "function") return () => {};
-  const original = globalThis.fetch;
-  RESOURCE_USAGE_RUNTIME = {
-    startedAt: Date.now(),
-    httpRequests: 0,
-    gmxRequests: 0,
-    gmxFallbackRequests: 0,
-    candleRequests: 0,
-    telegramRequests: 0,
-    telegramSuccesses: 0
-  };
-  globalThis.fetch = async (...args) => {
-    const input = args?.[0];
-    const url = typeof input === "string" ? input : (input?.url || "");
-    const u = String(url || "");
-    const lower = u.toLowerCase();
-    RESOURCE_USAGE_RUNTIME.httpRequests++;
-    if (lower.includes("api.telegram.org")) RESOURCE_USAGE_RUNTIME.telegramRequests++;
-    if (lower.includes("gmxapi.io") || lower.includes("gmxapi.ai") || lower.includes("gmxinfra.io")) {
-      RESOURCE_USAGE_RUNTIME.gmxRequests++;
-      if (lower.includes("fallback")) RESOURCE_USAGE_RUNTIME.gmxFallbackRequests++;
-      if (lower.includes("/candles")) RESOURCE_USAGE_RUNTIME.candleRequests++;
-    }
-    const response = await original(...args);
-    if (lower.includes("api.telegram.org") && response?.ok) RESOURCE_USAGE_RUNTIME.telegramSuccesses++;
-    return response;
-  };
-  return () => { globalThis.fetch = original; };
-}
-
-function resourceUsageRuntimeSnapshot(startedAt = null) {
-  const r = RESOURCE_USAGE_RUNTIME || {};
-  return {
-    runs: 1,
-    httpRequests: Number(r.httpRequests || 0),
-    gmxRequests: Number(r.gmxRequests || 0),
-    gmxFallbackRequests: Number(r.gmxFallbackRequests || 0),
-    candleRequests: Number(r.candleRequests || 0),
-    telegramRequests: Number(r.telegramRequests || 0),
-    telegramSuccesses: Number(r.telegramSuccesses || 0),
-    runtimeMs: Math.max(0, Date.now() - Number(r.startedAt || startedAt || Date.now()))
-  };
-}
-
-function resourceUsagePercent(value, limit) {
-  return limit > 0 ? (Number(value || 0) / limit) * 100 : 0;
-}
-
-function resourceUsageLevels(usage) {
-  const checks = [
-    ["dailyRuns", usage.daily.runs, CONFIG.RESOURCE_DAILY_RUN_LIMIT],
-    ["monthlyRuns", usage.monthly.runs, CONFIG.RESOURCE_MONTHLY_RUN_LIMIT],
-    ["dailyHttp", usage.daily.httpRequests, CONFIG.RESOURCE_DAILY_HTTP_LIMIT],
-    ["monthlyHttp", usage.monthly.httpRequests, CONFIG.RESOURCE_MONTHLY_HTTP_LIMIT],
-    ["dailyGmx", usage.daily.gmxRequests, CONFIG.RESOURCE_DAILY_GMX_HTTP_LIMIT],
-    ["monthlyGmx", usage.monthly.gmxRequests, CONFIG.RESOURCE_MONTHLY_GMX_HTTP_LIMIT]
-  ];
-  let maxPercent = 0, maxKey = null;
-  for (const [key, value, limit] of checks) {
-    const pct = resourceUsagePercent(value, limit);
-    if (pct > maxPercent) { maxPercent = pct; maxKey = key; }
-  }
-  return { percent: maxPercent, key: maxKey, warning: maxPercent >= CONFIG.RESOURCE_WARN_PERCENT, paused: maxPercent >= CONFIG.RESOURCE_PAUSE_PERCENT };
-}
-
-function resourceUsageWouldPause(state, now = Date.now()) {
-  if (!CONFIG.RESOURCE_USAGE_ENABLED) return { paused: false, percent: 0, key: null };
-  const usage = resourceUsageEnsure(state, now);
-  const level = resourceUsageLevels(usage);
-  return { paused: level.paused, percent: level.percent, key: level.key };
-}
-
-function resourceUsageCommit(state, runtime, now = Date.now()) {
-  if (!CONFIG.RESOURCE_USAGE_ENABLED) return null;
-  const usage = resourceUsageEnsure(state, now);
-  const add = runtime || {};
-  for (const bucketName of ["daily", "monthly"]) {
-    const b = usage[bucketName];
-    b.runs += Number(add.runs || 0);
-    b.httpRequests += Number(add.httpRequests || 0);
-    b.gmxRequests += Number(add.gmxRequests || 0);
-    b.gmxFallbackRequests += Number(add.gmxFallbackRequests || 0);
-    b.candleRequests += Number(add.candleRequests || 0);
-    b.telegramRequests += Number(add.telegramRequests || 0);
-    b.telegramSuccesses += Number(add.telegramSuccesses || 0);
-    b.runtimeMs += Number(add.runtimeMs || 0);
-  }
-  usage.lastRun = { at: now, ...add };
-  const level = resourceUsageLevels(usage);
-  if (level.warning) {
-    const period = level.percent >= resourceUsagePercent(usage.monthly.runs, CONFIG.RESOURCE_MONTHLY_RUN_LIMIT) ? usage.monthly.key : usage.daily.key;
-    const alertKey = `${level.key}|${level.percent >= CONFIG.RESOURCE_PAUSE_PERCENT ? "PAUSE" : "WARN"}|${period}`;
-    if (usage.lastWarning?.key !== alertKey) {
-      usage.lastWarning = { key: alertKey, at: now, level: level.paused ? "PAUSE" : "WARNING", metric: level.key, percent: Number(level.percent.toFixed(1)) };
-      console.warn("[RESOURCE][GUARD]", usage.lastWarning);
-    }
-  }
-  if (level.paused) usage.lastPause = { at: now, metric: level.key, percent: Number(level.percent.toFixed(1)) };
-  return { usage, level };
-}
-
-function resourceUsageSummary(state) {
-  const usage = resourceUsageEnsure(state);
-  const level = resourceUsageLevels(usage);
-  return {
-    enabled: Boolean(CONFIG.RESOURCE_USAGE_ENABLED),
-    level: level.paused ? "PAUSED" : level.warning ? "WARNING" : "OK",
-    maxPercent: Number(level.percent.toFixed(1)),
-    limitingMetric: level.key,
-    warnPercent: CONFIG.RESOURCE_WARN_PERCENT,
-    pausePercent: CONFIG.RESOURCE_PAUSE_PERCENT,
-    daily: usage.daily,
-    monthly: usage.monthly,
-    limits: {
-      dailyRuns: CONFIG.RESOURCE_DAILY_RUN_LIMIT,
-      monthlyRuns: CONFIG.RESOURCE_MONTHLY_RUN_LIMIT,
-      dailyHttp: CONFIG.RESOURCE_DAILY_HTTP_LIMIT,
-      monthlyHttp: CONFIG.RESOURCE_MONTHLY_HTTP_LIMIT,
-      dailyGmx: CONFIG.RESOURCE_DAILY_GMX_HTTP_LIMIT,
-      monthlyGmx: CONFIG.RESOURCE_MONTHLY_GMX_HTTP_LIMIT
-    }
-  };
-}
-
 // ======================================================
 // STATE / KV
 // ======================================================
