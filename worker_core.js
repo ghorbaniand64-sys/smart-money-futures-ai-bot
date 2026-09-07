@@ -4,7 +4,7 @@ import { getViemChain } from "@gmx-io/sdk/configs/chains";
  
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V15.6.17 / Radar Test-Lane Execution Repair + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar
+// Version: V15.6.18 / Radar Test-Lane Execution Repair + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar
 // Platform: GitHub Actions + Node.js
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -359,7 +359,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V15.6.16-GITHUB-ACTIONS-RADAR-TEST-ENTRY",
+VERSION: "V15.6.18-GITHUB-ACTIONS-RADAR-COLLATERAL-REPAIR",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -8382,19 +8382,22 @@ return base === wanted || indexName === wanted;
 }
  
 function extractCollateralBalances(balances) {
-const arr=Array.isArray(balances)?balances:Array.isArray(balances?.balances)?balances.balances:Object.values(balances||{});
 const result={USDC:null,USDT:null};
-for (const b of arr) {
-const rawSymbol=String(b?.tokenSymbol||b?.symbol||b?.token?.symbol||"").toUpperCase();
-const symbol=rawSymbol==="USDC.E" ? "USDC" : rawSymbol;
+const arr=Array.isArray(balances)
+  ? balances.map(b=>({key:"",value:b}))
+  : Array.isArray(balances?.balances)
+    ? balances.balances.map(b=>({key:"",value:b}))
+    : Object.entries(balances?.balances && typeof balances.balances==="object" ? balances.balances : (balances||{})).map(([key,value])=>({key,value}));
+for (const item of arr) {
+const b=item?.value||{};
+const rawSymbol=String(b?.tokenSymbol||b?.symbol||b?.token?.symbol||b?.assetSymbol||b?.currency||item?.key||"").toUpperCase();
+const symbol=(rawSymbol==="USDC.E"||rawSymbol==="USDC-E"||rawSymbol==="USDCE") ? "USDC" : rawSymbol;
 if (symbol!=="USDC" && symbol!=="USDT") continue;
-let usd=Number(b?.balanceUsd??b?.balanceUSD??b?.usdValue??0);
-const raw=Number(b?.balance??b?.amount??0);
-const decimals=Number(b?.decimals??6);
+let usd=Number(b?.balanceUsd??b?.balanceUSD??b?.usdValue??b?.valueUsd??b?.usd??0);
+const raw=Number(b?.balance??b?.amount??b?.rawBalance??0);
+const decimals=Number(b?.decimals??b?.token?.decimals??6);
 if (!(usd>0) && raw>0) usd=raw/10**decimals;
-if (usd>0) {
-  result[symbol]={symbol,usd,balance:raw,decimals};
-}
+if (usd>0) result[symbol]={symbol,usd,balance:raw,decimals,raw:b};
 }
 return result;
 }
@@ -8434,17 +8437,26 @@ return matches.find(m=>marketCollateralSymbols(m).has(collateral))
   || (matches.length===1 && marketCollateralSymbols(matches[0]).size===0 ? matches[0] : null);
 }
 
-function selectLiveCollateral(markets, symbol, balances) {
+function selectLiveCollateral(markets, symbol, balances, preferredMarket=null) {
 const available=extractCollateralBalances(balances);
+const wanted=liveNormalizeSymbol(symbol);
+const exact=preferredMarket && !preferredMarket.isSpotOnly ? preferredMarket : null;
 for (const preferred of ["USDC","USDT"]) {
 const bal=available[preferred];
 if (!(bal?.usd>0)) continue;
+if (exact) {
+const supported=marketCollateralSymbols(exact).has(preferred);
+const isRadarTest=Boolean(CONFIG.RADAR_TEST_ENTRY_ENABLED && normalizeSymbol(symbol)===normalizeSymbol(CONFIG.RADAR_TEST_SYMBOL||""));
+if (supported || (isRadarTest && preferred==="USDC")) {
+return {symbol:preferred,usd:bal.usd,balance:bal.balance,decimals:bal.decimals,market:exact,testCollateralFallback:!supported};
+}
+}
 const market=findSdkMarketWithCollateral(markets,symbol,preferred);
 if (market) return {symbol:preferred,usd:bal.usd,balance:bal.balance,decimals:bal.decimals,market};
 }
 return null;
 }
- 
+
 function liveExecutionKey(signal) {
 const entry = Number(signal?.tradePlan?.entry ?? signal?.price ?? 0);
 const stop = Number(signal?.tradePlan?.stopLoss ?? 0);
@@ -8509,7 +8521,8 @@ function v156BuildRadarLiveTradePlan(candidate) {
     Boolean(radar?.valid5mSample) &&
     (velocity>=Number(CONFIG.RADAR_EARLY_ENTRY_MIN_VELOCITY||0.75)||acceleration>=0.35) &&
     radar?.timingState==="EARLY_FAST";
-  // V15.6.17: the previous test-mode patch relaxed radarEntryEligible(),
+  // V15.6.18: the previous test-mode patch reached live execution but collateral selection blocked the order.
+  // This version resolves the exact SDK market first, broadens wallet balance parsing, and allows the dedicated PUMP smoke-test lane to use funded USDC when collateral metadata is opaque.
   // but this downstream trade-plan builder still enforced the old 72/early
   // gate. That made the candidate pass the first gate and die here.
   if(!CONFIG.RADAR_TEST_ENTRY_ENABLED && score<Number(CONFIG.RADAR_ENTRY_SCORE||72) && !early){
@@ -8586,11 +8599,12 @@ const same = corePositions.some(pos => liveBaseAsset(liveNormalizeSymbol(String(
 if (same) return { executed:false, mode:"LIVE", lane:"RADAR", reason:"Symbol already occupied by live portfolio" };
 }
 const balances = await sdk.fetchWalletBalances({ address: account });
-const collateral = selectLiveCollateral(markets, requestedSymbol, balances);
+const collateral = selectLiveCollateral(markets, requestedSymbol, balances, initialMarket);
 if (!collateral) {
   throw new Error("No usable USDC/USDT balance with a matching GMX collateral market was detected for Radar");
 }
 const market = collateral.market;
+console.log("[RADAR][COLLATERAL_SELECTED]", JSON.stringify({symbol:requestedSymbol,market:String(market?.symbol||market?.name||""),collateralToken:collateral.symbol,walletUsd:collateral.usd,testCollateralFallback:Boolean(collateral.testCollateralFallback)}));
 const capacity = await sdk.getTradingCapacity({ symbol: market.symbol, direction: plan.direction === "LONG" ? "long" : "short" });
 const capacityUsd = Number(capacity?.availableLiquidity || 0n) / 1e30;
 const walletUsd = collateral.usd;
