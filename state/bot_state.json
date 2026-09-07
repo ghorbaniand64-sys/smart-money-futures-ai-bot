@@ -32692,35 +32692,6 @@
     "value": [
       {
         "event": {
-          "type": "SCHEDULED_CYCLE",
-          "cron": "*/5 * * * *",
-          "scheduledTime": 1788735998113,
-          "exits": [
-            {
-              "id": "2f876f9a-6317-4a77-8cac-038cec9de451",
-              "symbol": "BTC",
-              "direction": "SHORT",
-              "lane": "RADAR",
-              "action": "RADAR_PRICE_DATA_QUARANTINE",
-              "reason": "PRICE_SCALE_MISMATCH",
-              "closePercent": 100,
-              "pnlPercent": null,
-              "pnlUsd": null,
-              "entryPrice": 0.00080241,
-              "exitPrice": 80180.22,
-              "leverage": 2,
-              "notionalUsd": 600,
-              "exitScore": 0,
-              "remainingPct": 0,
-              "priceRatio": 99924253.18727334
-            }
-          ],
-          "scanStatus": "SIGNALS_FOUND"
-        },
-        "time": 1788736006434
-      },
-      {
-        "event": {
           "type": "PAPER_UNIFIED_EXIT",
           "action": {
             "id": "962f5b68-c468-4b3b-aea7-bb3f3bd5abe4",
@@ -33876,6 +33847,15 @@
           "scanStatus": "SIGNALS_FOUND"
         },
         "time": 1788797804356
+      },
+      {
+        "event": {
+          "type": "SCHEDULED_CYCLE_ERROR",
+          "cron": "*/5 * * * *",
+          "scheduledTime": 1788800122949,
+          "error": "Cannot access 'move1h' before initialization"
+        },
+        "time": 1788800125701
       }
     ],
     "expiresAt": null
