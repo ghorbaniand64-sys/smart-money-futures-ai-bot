@@ -736,10 +736,27 @@ function hybridBuildZones(candlesByTf,currentPrice,currentAtr){
 function hybridNearestZone(zones,price,maxAtr,atrValue,side){
   return (zones||[]).filter(z=>z.distanceAtr<=maxAtr&&(side==='S'?price>=z.low:price<=z.high)).sort((a,b)=>a.distanceAtr-b.distanceAtr)[0]||null;
 }
+function hybridPercentChange(candles,bars){
+  const a=Array.isArray(candles)?candles:[];
+  const n=Math.max(1,Math.floor(Number(bars)||1));
+  if(a.length<=n)return 0;
+  const last=Number(a[a.length-1]?.close),prev=Number(a[a.length-1-n]?.close);
+  return prev?((last-prev)/prev)*100:0;
+}
+
+function hybridSma(values, period){
+  const arr=Array.isArray(values)?values:[];
+  const p=Math.max(1,Math.floor(Number(period)||1));
+  if(arr.length<p)return null;
+  const slice=arr.slice(-p);
+  const sum=slice.reduce((a,b)=>a+Number(b||0),0);
+  return Number.isFinite(sum)?sum/p:null;
+}
+
 function hybridVolumeContext(candles){
   const a=(candles||[]).slice(-40),vol=a.map(c=>Number(c.volume)).filter(v=>v>0),ranges=a.map(c=>Number(c.high)-Number(c.low)).filter(v=>v>0);
-  const recentVol=sma(vol,5),baseVol=sma(vol.slice(0,-5),Math.min(20,Math.max(1,vol.length-5)));
-  const recentRange=sma(ranges,5),baseRange=sma(ranges.slice(0,-5),Math.min(20,Math.max(1,ranges.length-5)));
+  const recentVol=hybridSma(vol,5),baseVol=hybridSma(vol.slice(0,-5),Math.min(20,Math.max(1,vol.length-5)));
+  const recentRange=hybridSma(ranges,5),baseRange=hybridSma(ranges.slice(0,-5),Math.min(20,Math.max(1,ranges.length-5)));
   const va=vol.length>=15&&baseVol>0,vr=va?recentVol/baseVol:1,rr=baseRange>0?recentRange/baseRange:1;
   return {volumeAvailable:va,volumeRatio:vr,rangeRatio:rr,volumeSurge:vr>=CONFIG.HYBRID_VOLUME.expansionStrong,volumeExplosive:vr>=CONFIG.HYBRID_VOLUME.expansionExplosive,volumeDrying:va&&vr<=0.65,rangeExpansion:rr>=CONFIG.HYBRID_VOLUME.rangeExpansionStrong,rangeExplosive:rr>=CONFIG.HYBRID_VOLUME.rangeExpansionExplosive,rangeDrying:rr<=0.75};
 }
@@ -777,7 +794,7 @@ function hybridClassifyStructure(symbol,candles,price,flow,previousState={}){
   const c5=candles['5m']||[],c15=candles['15m']||[],c1h=candles['1h']||[],c4h=candles['4h']||[],current=c5.at(-1);
   if(!current)return {state:'NO_DATA',direction:'NONE',entries:[],zones:{support:[],resistance:[]}};
   const atr5=Number(hybridAtr(c5,14))||price*0.005,zones=hybridBuildZones({'5m':c5,'15m':c15,'1h':c1h,'4h':c4h},price,atr5),vol=hybridVolumeContext(c5),entries=[],watched=[];
-  const preMove5=percentChange(c5.slice(0,-1),5),support=hybridNearestZone(zones.support,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'S'),resistance=hybridNearestZone(zones.resistance,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'R');
+  const preMove5=hybridPercentChange(c5.slice(0,-1),5),support=hybridNearestZone(zones.support,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'S'),resistance=hybridNearestZone(zones.resistance,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'R');
   if(support){const bounce=hybridReactionSupport(current,support,flow,vol,atr5);watched.push({type:'SUPPORT',zone:support,bounce});if(bounce.confirmed&&preMove5<=-CONFIG.HYBRID_ENTRY.priorMovePct)entries.push({direction:'LONG',trigger:'SUPPORT_BOUNCE',zone:support,evidence:['PRIOR_DOWN_MOVE',...bounce.evidence],atr:atr5,price,volume:vol,flow});
     const br=hybridBreakout(current,support,'SHORT',flow,vol,atr5);if(br.broken)entries.push({direction:'WAIT',trigger:'SUPPORT_BREAK_WAIT_RETEST',zone:support,evidence:['SUPPORT_BROKEN',...(br.volumeOk?['ACTIVITY_CONFIRMATION']:[]),...(br.flowOk?['FLOW_CONFIRMATION']:[])],breakoutAt:current.timestamp,atr:atr5,price,flow,volume:vol});}
   if(resistance){const rej=hybridReactionResistance(current,resistance,flow,vol,atr5);watched.push({type:'RESISTANCE',zone:resistance,rejection:rej});if(rej.confirmed&&preMove5>=CONFIG.HYBRID_ENTRY.priorMovePct)entries.push({direction:'SHORT',trigger:'RESISTANCE_REJECTION',zone:resistance,evidence:['PRIOR_UP_MOVE',...rej.evidence],atr:atr5,price,volume:vol,flow});
@@ -787,7 +804,7 @@ function hybridClassifyStructure(symbol,candles,price,flow,previousState={}){
   if(next.pendingRetest&&Date.now()-Number(next.pendingRetest.createdAt||0)>CONFIG.HYBRID_ENTRY.breakoutRetestTtlMs)delete next.pendingRetest;
   const p=next.pendingRetest;
   if(p){const fresh=Number(current.timestamp)>Number(p.breakoutAt||0),rt=fresh?hybridRetest(current,p.zone,p.direction,flow,vol,atr5):{confirmed:false,touched:false,holds:false,rejection:false,activity:false,aligned:hybridFlowAligned(flow,p.direction)};watched.push({type:'RETEST',zone:p.zone,direction:p.direction,retest:rt,freshCandle:fresh});if(fresh&&rt.confirmed){entries.push({direction:p.direction,trigger:p.direction==='LONG'?'RESISTANCE_BREAK_RETEST_LONG':'SUPPORT_BREAK_RETEST_SHORT',zone:p.zone,evidence:['BREAKOUT_RETEST','RETEST_HOLD',...(rt.activity?['ACTIVITY']:[]),...(rt.aligned>=0.08?['FLOW_CONFIRMATION']:[])],atr:atr5,price,volume:vol,flow});delete next.pendingRetest;}}
-  const move5=Math.abs(percentChange(c5,5)),extension=atr5>0?Math.abs(price-current.open)/atr5:0,near=Boolean(support||resistance||p);
+  const move5=Math.abs(hybridPercentChange(c5,5)),extension=atr5>0?Math.abs(price-current.open)/atr5:0,near=Boolean(support||resistance||p);
   if(!entries.length&&move5>=1.5&&extension>=CONFIG.HYBRID_ENTRY.maxChaseAtr&&!near)next.lastState='EXHAUSTED_NO_CHASE';else if(!entries.length)next.lastState=near?'WATCH_LEVEL':'NO_SETUP';
   return {state:entries.length?(entries.some(e=>e.direction!=='WAIT')?'ENTRY_READY':'WAITING_RETEST'):next.lastState,direction:entries.find(e=>e.direction!=='WAIT')?.direction||'NONE',entries,zones,watched,volume:vol,atr:atr5,nextState:next,move5,preMove5,extension,eventFlags:{supportZone:Boolean(support),resistanceZone:Boolean(resistance),supportReaction:watched.some(x=>x.type==='SUPPORT'&&x.bounce?.confirmed),resistanceReaction:watched.some(x=>x.type==='RESISTANCE'&&x.rejection?.confirmed),breakout:entries.some(x=>x.trigger.includes('WAIT_RETEST')),waitingRetest:Boolean(next.pendingRetest),retestConfirmed:entries.some(x=>x.trigger.includes('RETEST')),exhausted:next.lastState==='EXHAUSTED_NO_CHASE'}};
 }
