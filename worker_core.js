@@ -448,6 +448,11 @@ RADAR_EARLY_ENTRY_ENABLED: true,
 RADAR_EARLY_ENTRY_SCORE: 60,
 RADAR_EARLY_ENTRY_MIN_VELOCITY: 0.75,
 RADAR_EARLY_ENTRY_MIN_EDGE: 8,
+// V16.0.6: Radar timing/exhaustion guard is separate from movement strength.
+RADAR_TIMING_EXHAUSTED_MOVE15: 3.0,
+RADAR_TIMING_EXHAUSTED_MOVE30: 5.0,
+RADAR_TIMING_DECELERATION: 0.20,
+RADAR_TIMING_MIN_ENTRY_SCORE: 45,
 RADAR_EXIT_SCORE: 65,
 RADAR_REVERSAL_EDGE: 8,
 RADAR_RISK_PER_TRADE: 0.005,
@@ -1062,8 +1067,8 @@ if(oiChangePct>2){long+=5;reasonsLong.push("oi_expansion");}
 if(oiChangePct>5){long+=5;reasonsLong.push("oi_acceleration");}
 if(oiChangePct<-2){short+=5;reasonsShort.push("oi_expansion");}
 if(oiChangePct<-5){short+=5;reasonsShort.push("oi_acceleration");}
-if(nearHigh&&(positiveMove>=1||priorMovePct>=0.5)){long+=10;reasonsLong.push("near_24h_high");}
-if(nearLow&&(negativeMove<=-1||priorMovePct<=-0.5)){short+=10;reasonsShort.push("near_24h_low");}
+if(nearHigh&&(positiveMove>=1||priorMovePct>=0.5))reasonsLong.push("near_24h_high_extension");
+if(nearLow&&(negativeMove<=-1||priorMovePct<=-0.5))reasonsShort.push("near_24h_low_extension");
 const breakoutPressure=Math.min(20,Math.max(0,rangePct-4)*2);
 if(breakoutPressure>0&&positiveMove>0.5){long+=breakoutPressure;reasonsLong.push("range_expansion");}
 if(breakoutPressure>0&&negativeMove<-0.5){short+=breakoutPressure;reasonsShort.push("range_expansion");}
@@ -1072,14 +1077,34 @@ const liquidityBoost=CONFIG.FAIR_LIQUIDITY_SCORE_IN_RADAR?Math.min(8,liquidity/1
 long+=liquidityBoost;short+=liquidityBoost;
 const longScore=Math.min(100,long),shortScore=Math.min(100,short),edge=Math.abs(longScore-shortScore);
 const direction=edge>=CONFIG.PUMP_RADAR_MIN_DIRECTIONAL_EDGE?(longScore>shortScore?"LONG":"SHORT"):"NEUTRAL";
+// V16.0.6 Radar Timing Engine: distinguish movement strength from entry timing.
+const directionalVelocity=direction==="LONG"?Number(velocity5m||0):direction==="SHORT"?-Number(velocity5m||0):0;
+const directionalAcceleration=direction==="LONG"?Number(acceleration5m||0):direction==="SHORT"?-Number(acceleration5m||0):0;
+const directionalMove15=direction==="LONG"?Number(move15m||0):direction==="SHORT"?-Number(move15m||0):0;
+const directionalMove30=direction==="LONG"?Number(move30m||0):direction==="SHORT"?-Number(move30m||0):0;
+const directionalNearExtreme=direction==="LONG"?Boolean(nearHigh):direction==="SHORT"?Boolean(nearLow):false;
+const momentumDecelerating=directionalVelocity>=0.5&&directionalAcceleration<=-Number(CONFIG.RADAR_TIMING_DECELERATION||0.20);
+const largeRecentMove=directionalMove15>=Number(CONFIG.RADAR_TIMING_EXHAUSTED_MOVE15||3)||directionalMove30>=Number(CONFIG.RADAR_TIMING_EXHAUSTED_MOVE30||5);
+const exhausted=direction!=="NEUTRAL"&&!radarWarmup&&directionalNearExtreme&&(largeRecentMove||momentumDecelerating||directionalVelocity<0.35);
 const timingState=direction==="NEUTRAL"?"NEUTRAL":
   (radarWarmup?"WARMUP":
-   ((Math.abs(velocity5m)>=0.75||Math.abs(acceleration5m)>=0.35)?"EARLY_FAST":
-    (Math.abs(move15m)>=2||Math.abs(move30m)>=4)?"ACTIVE":"LATE_OR_SLOW"));
+   (exhausted?"EXHAUSTED":
+    ((Math.abs(velocity5m)>=0.75||Math.abs(acceleration5m)>=0.35)?"EARLY_FAST":
+     (Math.abs(move15m)>=2||Math.abs(move30m)>=4)?"ACTIVE":"LATE_OR_SLOW")));
+let entryTimingScore=50;
+if(Math.abs(velocity5m)>=0.75)entryTimingScore+=20;
+if(Math.abs(acceleration5m)>=0.35)entryTimingScore+=15;
+if(directionalAcceleration>0.20)entryTimingScore+=10;
+if(directionalNearExtreme)entryTimingScore-=25;
+if(momentumDecelerating)entryTimingScore-=20;
+if(largeRecentMove)entryTimingScore-=15;
+if(timingState==="EXHAUSTED")entryTimingScore-=15;
+entryTimingScore=Math.min(100,Math.max(0,entryTimingScore));
 return{
 score:Number(Math.max(longScore,shortScore).toFixed(2)),longScore:Number(longScore.toFixed(2)),shortScore:Number(shortScore.toFixed(2)),edge:Number(edge.toFixed(2)),direction,
 priceChange24h:Number(p24.toFixed(3)),priceChange1h:Number(p1h.toFixed(3)),priceChange4h:Number(p4h.toFixed(3)),priorMovePct:Number(priorMovePct.toFixed(3)),
 move10m:Number(move10m.toFixed(3)),move15m:Number(move15m.toFixed(3)),move30m:Number(move30m.toFixed(3)),velocity5m:Number(velocity5m.toFixed(3)),acceleration5m:Number(acceleration5m.toFixed(3)),timingState,
+directionalVelocity:Number(directionalVelocity.toFixed(3)),directionalAcceleration:Number(directionalAcceleration.toFixed(3)),directionalMove15:Number(directionalMove15.toFixed(3)),directionalMove30:Number(directionalMove30.toFixed(3)),directionalNearExtreme,momentumDecelerating,largeRecentMove,exhausted,entryTimingScore:Number(entryTimingScore.toFixed(2)),
 volumeRatio:Number(volumeRatio.toFixed(3)),oiChangePct:Number(oiChangePct.toFixed(3)),nearHigh,nearLow,breakoutPressure:Number(breakoutPressure.toFixed(2)),liquidityScore:Number(liquidity.toFixed(2)),
 smartMoneyFlow: smartMoneyFlow ? {
   buyUsd:Number(smartMoneyFlow.buyUsd||0),
@@ -3525,9 +3550,15 @@ function v15610RadarGateReasons(candidate) {
   const score = Number(radar?.score || 0);
   const direction = String(radar?.direction || "NEUTRAL").toUpperCase();
   const priceStatus = String(radar?.priceDataStatus || "INVALID").toUpperCase();
+  const timingState = String(radar?.timingState || "UNKNOWN").toUpperCase();
+  const timingScore = Number(radar?.entryTimingScore ?? 0);
   if (!['LONG','SHORT'].includes(direction)) reasons.push("DIRECTION_NEUTRAL_OR_INVALID");
   if (priceStatus === "INVALID") reasons.push("PRICE_DATA_INVALID");
   if (score < Number(CONFIG.PUMP_RADAR_WATCH_SCORE || 60)) reasons.push(`SCORE_BELOW_RADAR_WATCH_${CONFIG.PUMP_RADAR_WATCH_SCORE || 60}`);
+  if (timingState === "EXHAUSTED") reasons.push("ENTRY_TIMING_EXHAUSTED");
+  if (Boolean(radar?.directionalNearExtreme)) reasons.push(direction === "LONG" ? "LONG_NEAR_24H_HIGH" : "SHORT_NEAR_24H_LOW");
+  if (Boolean(radar?.momentumDecelerating)) reasons.push("MOMENTUM_DECELERATING");
+  if (Boolean(radar?.largeRecentMove)) reasons.push("LARGE_RECENT_MOVE");
   if (score < Number(CONFIG.RADAR_ENTRY_SCORE || 72)) {
     if (!CONFIG.RADAR_EARLY_ENTRY_ENABLED) reasons.push("EARLY_ENTRY_DISABLED");
     else {
@@ -3541,9 +3572,9 @@ function v15610RadarGateReasons(candidate) {
       if (radar?.timingState !== "EARLY_FAST") reasons.push("TIMING_NOT_EARLY_FAST");
     }
   }
+  if (timingScore < Number(CONFIG.RADAR_TIMING_MIN_ENTRY_SCORE || 45)) reasons.push(`ENTRY_TIMING_SCORE_BELOW_${CONFIG.RADAR_TIMING_MIN_ENTRY_SCORE || 45}`);
   return reasons;
 }
-
 function selectPrioritySignals(signals, positions) {
 const ranked = [...signals]
 .filter(s => s?.executionEligible && s?.tradePlan?.valid)
@@ -4135,7 +4166,11 @@ if (!executionEnabled(env) && CONFIG.PAPER_ENABLED && CONFIG.RADAR_INDEPENDENT_E
   const radarCandidates = radarRows
     .filter(x => x?.pumpRadar?.direction !== "NEUTRAL")
     .filter(x => radarEntryEligible(x))
-    .sort((a,b) => Number(b?.pumpRadar?.score || 0) - Number(a?.pumpRadar?.score || 0));
+    .sort((a,b) => {
+      const at=Number(a?.pumpRadar?.entryTimingScore||0), bt=Number(b?.pumpRadar?.entryTimingScore||0);
+      if(bt!==at)return bt-at;
+      return Number(b?.pumpRadar?.score||0)-Number(a?.pumpRadar?.score||0);
+    });
   if (radarCandidates.length) {
     try {
       radarPaperResult = await openRadarPaperPosition(env, radarCandidates[0], CONFIG.PAPER_STARTING_BALANCE_USD);
@@ -4156,10 +4191,25 @@ const radarTrace=radarRanked.slice(0,20).map(r=>({
   symbol:r.symbol,
   direction:r.direction,
   score:Number(r.score||0),
+  longScore:Number(r.longScore||0),
+  shortScore:Number(r.shortScore||0),
   edge:Number(r.edge||0),
+  selectedDirection:r.direction||"NEUTRAL",
   velocity5m:Number(r.velocity5m||0),
   acceleration5m:Number(r.acceleration5m||0),
+  move10m:Number(r.move10m||0),
+  move15m:Number(r.move15m||0),
+  move30m:Number(r.move30m||0),
   timingState:r.timingState||null,
+  entryTimingScore:Number(r.entryTimingScore||0),
+  directionalVelocity:Number(r.directionalVelocity||0),
+  directionalAcceleration:Number(r.directionalAcceleration||0),
+  directionalMove15:Number(r.directionalMove15||0),
+  directionalMove30:Number(r.directionalMove30||0),
+  directionalNearExtreme:Boolean(r.directionalNearExtreme),
+  momentumDecelerating:Boolean(r.momentumDecelerating),
+  largeRecentMove:Boolean(r.largeRecentMove),
+  exhausted:Boolean(r.exhausted),
   valid5mSample:Boolean(r.valid5mSample),
   priceDataStatus:r.priceDataStatus||null,
   historySamples:Number(r.historySamples||0),
@@ -4171,6 +4221,9 @@ const radarTrace=radarRanked.slice(0,20).map(r=>({
   historyIntegrityOk:Boolean(r.historyIntegrityOk),
   watchEligible:Boolean(r.direction!=="NEUTRAL" && Number(r.score||0)>=Number(CONFIG.PUMP_RADAR_WATCH_SCORE||60)),
   entryEligible:Boolean(radarEntryEligible(r)),
+  radarEntryScoreThreshold:Number(CONFIG.RADAR_ENTRY_SCORE || 72),
+  radarEarlyEntryScoreThreshold:Number(CONFIG.RADAR_EARLY_ENTRY_SCORE || 60),
+  radarTimingMinEntryScore:Number(CONFIG.RADAR_TIMING_MIN_ENTRY_SCORE || 45),
   gateReasons:v15610RadarGateReasons(r),
   gateReasonsText:v15610RadarGateReasons(r).join(" | ")||"NONE"
 }));
@@ -4183,6 +4236,7 @@ const radarTraceSummary={
   top:radarTrace
 };
 console.log("[RADAR][TRACE]", JSON.stringify(radarTraceSummary, null, 2));
+console.log("[RADAR][TIMING_DIAGNOSTICS]", JSON.stringify(radarTrace.slice(0,10).map(x => ({symbol:x.symbol,direction:x.selectedDirection,longScore:x.longScore,shortScore:x.shortScore,score:x.score,edge:x.edge,timingState:x.timingState,entryTimingScore:x.entryTimingScore,directionalVelocity:x.directionalVelocity,directionalAcceleration:x.directionalAcceleration,directionalMove15:x.directionalMove15,directionalMove30:x.directionalMove30,nearExtreme:x.directionalNearExtreme,momentumDecelerating:x.momentumDecelerating,largeRecentMove:x.largeRecentMove,exhausted:x.exhausted,entryEligible:x.entryEligible,reasons:x.gateReasons})), null, 2));
 if (CONFIG.TELEGRAM_ENABLED && CONFIG.PUMP_RADAR_ENABLED) {
   const radarEventPool = [];
   const radarSeen = new Set();
@@ -4222,7 +4276,7 @@ const universeDiagnostics=buildUniverseDiagnostics(allMarkets,fastRows,radarMark
 universe:universeDiagnostics,fairAssetScoring:CONFIG.FAIR_ASSET_SCORING_ENABLED,dataCenter:{enabled:Boolean(CONFIG.DATA_CENTER_ENABLED),apiPeers:V156_DATA_CENTER.apiPeers,oraclePeers:V156_DATA_CENTER.oraclePeers,staleMs:Number(CONFIG.DATA_CENTER_STALE_MS||15000)},
 liquidityScoreInRadar:CONFIG.FAIR_LIQUIDITY_SCORE_IN_RADAR,
 majorSelectionBias:CONFIG.FAIR_MAJOR_SELECTION_BIAS,
-notifyEventMax:CONFIG.NOTIFY_EVENT_MAX},radarLane:{enabled:CONFIG.RADAR_INDEPENDENT_ENABLED,paperEnabled:CONFIG.RADAR_PAPER_ENABLED,liveEnabled:CONFIG.RADAR_LIVE_ENABLED,entryScore:CONFIG.RADAR_ENTRY_SCORE,earlyEntryEnabled:CONFIG.RADAR_EARLY_ENTRY_ENABLED,earlyEntryScore:CONFIG.RADAR_EARLY_ENTRY_SCORE,earlyMinVelocity:CONFIG.RADAR_EARLY_ENTRY_MIN_VELOCITY,earlyMinEdge:CONFIG.RADAR_EARLY_ENTRY_MIN_EDGE,exitScore:CONFIG.RADAR_EXIT_SCORE,maxPositions:CONFIG.RADAR_MAX_POSITIONS,coverageMarkets:radarRows.length,priceFeedCoverage:Object.keys(radarPriceFeed.prices||{}).length,directionalMarkets:radarDirectional.length,longMarkets:radarLongCount,shortMarkets:radarShortCount,watchCandidates:radarWatchCount,hotCandidateCount:radarHotCount,radarHistorySymbols:Object.keys(radarHistory).length,radarHistorySamples:Object.values(radarHistory).reduce((n,a)=>n+(Array.isArray(a)?a.length:0),0),radarPrioritySymbols:radarPrioritySymbols.slice(0,20),hotCandidates:radarRanked.filter(x=>x.score>=CONFIG.PUMP_RADAR_HOT_SCORE).slice(0,20),liveEntryGuard:"PRICE_OK + HOT_OR_EARLY",result:radarPaperResult,liveResult:radarLiveResult,trace:radarTraceSummary},entryRisk:{appliedToScan:false,dailyLoss:Number(state.dailyLoss||0),maxDailyLoss:CONFIG.MAX_DAILY_LOSS,entryRiskAllowed:Number(state.dailyLoss||0)>-CONFIG.MAX_DAILY_LOSS,positionLimit:CONFIG.MAX_POSITIONS}};
+notifyEventMax:CONFIG.NOTIFY_EVENT_MAX},radarLane:{enabled:CONFIG.RADAR_INDEPENDENT_ENABLED,paperEnabled:CONFIG.RADAR_PAPER_ENABLED,liveEnabled:CONFIG.RADAR_LIVE_ENABLED,entryScore:CONFIG.RADAR_ENTRY_SCORE,earlyEntryEnabled:CONFIG.RADAR_EARLY_ENTRY_ENABLED,earlyEntryScore:CONFIG.RADAR_EARLY_ENTRY_SCORE,earlyMinVelocity:CONFIG.RADAR_EARLY_ENTRY_MIN_VELOCITY,earlyMinEdge:CONFIG.RADAR_EARLY_ENTRY_MIN_EDGE,exitScore:CONFIG.RADAR_EXIT_SCORE,maxPositions:CONFIG.RADAR_MAX_POSITIONS,coverageMarkets:radarRows.length,priceFeedCoverage:Object.keys(radarPriceFeed.prices||{}).length,directionalMarkets:radarDirectional.length,longMarkets:radarLongCount,shortMarkets:radarShortCount,watchCandidates:radarWatchCount,hotCandidateCount:radarHotCount,radarHistorySymbols:Object.keys(radarHistory).length,radarHistorySamples:Object.values(radarHistory).reduce((n,a)=>n+(Array.isArray(a)?a.length:0),0),radarPrioritySymbols:radarPrioritySymbols.slice(0,20),hotCandidates:radarRanked.filter(x=>x.score>=CONFIG.PUMP_RADAR_HOT_SCORE).slice(0,20),liveEntryGuard:"PRICE_OK + HOT_OR_EARLY + TIMING_NOT_EXHAUSTED",timingGuard:"EXHAUSTED_BLOCK + TIMING_SCORE",result:radarPaperResult,liveResult:radarLiveResult,trace:radarTraceSummary},entryRisk:{appliedToScan:false,dailyLoss:Number(state.dailyLoss||0),maxDailyLoss:CONFIG.MAX_DAILY_LOSS,entryRiskAllowed:Number(state.dailyLoss||0)>-CONFIG.MAX_DAILY_LOSS,positionLimit:CONFIG.MAX_POSITIONS}};
 // V15.6.1 FIX: persist radar history + market snapshots between cron invocations.
 // Without this write, every scan reloaded one fresh sample per symbol, so
 // 5m/15m/30m velocity and acceleration stayed at zero forever.
@@ -4588,10 +4642,12 @@ const radar = candidate?.pumpRadar || {};
 const score = Number(radar?.score || 0);
 const direction = String(radar?.direction || "NEUTRAL").toUpperCase();
 const priceStatus = String(radar?.priceDataStatus || "INVALID").toUpperCase();
-// V15.3.9: one lightweight integrity guard only. Do not turn Radar into
-// another Core-style confirmation engine: a valid HOT Radar can still enter
-// without waiting for every longer window, but it must have a valid price feed.
+const timingState = String(radar?.timingState || "UNKNOWN").toUpperCase();
+const timingScore = Number(radar?.entryTimingScore ?? 0);
 if (!['LONG','SHORT'].includes(direction) || priceStatus === "INVALID") return false;
+// V16.0.6: HOT strength cannot override an objectively exhausted entry.
+if (timingState === "EXHAUSTED") return false;
+if (timingScore < Number(CONFIG.RADAR_TIMING_MIN_ENTRY_SCORE || 45)) return false;
 if (score >= Number(CONFIG.RADAR_ENTRY_SCORE || 72)) return true;
 if (!CONFIG.RADAR_EARLY_ENTRY_ENABLED) return false;
 const velocity = Math.abs(Number(radar?.velocity5m || 0));
@@ -4603,7 +4659,6 @@ return score >= Number(CONFIG.RADAR_EARLY_ENTRY_SCORE || 60) &&
   (velocity >= Number(CONFIG.RADAR_EARLY_ENTRY_MIN_VELOCITY || 0.75) || acceleration >= 0.35) &&
   radar?.timingState === "EARLY_FAST";
 }
-
 function v154BuildRadarTradePlan(candidate) {
 // V15.4.1: unique Radar live-plan symbol prevents runtime name collisions.
 // V15.6.5: validate live-vs-native price scale before creating a paper/live plan.
