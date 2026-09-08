@@ -1,6 +1,6 @@
 // Smart Money Futures AI Bot — GitHub Actions adapter
-// V15.6.4-GITHUB-ACTIONS-PHASE6
-// Runs one complete scheduled cycle using the existing V15.6.4 engine.
+// V16.2.0-GITHUB-ACTIONS-EXECUTION-ALIGNMENT
+// Runs one complete scheduled cycle using the deployed V16.2.0 engine.
 // Persistent Cloudflare KV bindings are emulated with JSON files in ./state.
 
 import fs from "node:fs/promises";
@@ -84,7 +84,7 @@ async function buildEnv() {
     GMX_PRIVATE_KEY: envValue("GMX_PRIVATE_KEY"),
     TELEGRAM_TOKEN: envValue("TELEGRAM_TOKEN"),
     TELEGRAM_CHAT_ID: envValue("TELEGRAM_CHAT_ID"),
-    EXECUTION_ENABLED: envValue("EXECUTION_ENABLED", "false"),
+    EXECUTION_ENABLED: envValue("EXECUTION_ENABLED", "true"),
     BOT_STATE: makeFileKvBinding("bot_state"),
     GMX_CACHE: makeFileKvBinding("gmx_cache")
   };
@@ -93,8 +93,14 @@ async function buildEnv() {
 async function main() {
   const env = await buildEnv();
   const scheduledTime = Date.now();
-  const event = { cron: "*/5 * * * *", scheduledTime };
-  console.log("[GITHUB][START]", { scheduledTime, executionEnabled: env.EXECUTION_ENABLED });
+  const event = { cron: "* * * * *", scheduledTime };
+  console.log("[GITHUB][START]", {
+    scheduledTime,
+    worker: "worker_core.js",
+    expectedVersion: "V16.2.0-TOP-TRADER-INTELLIGENCE-NON-BLOCKING",
+    executionEnabled: env.EXECUTION_ENABLED,
+    executionEnabledSource: process.env.EXECUTION_ENABLED == null ? "runner-default-true" : "github-env"
+  });
 
   await worker.scheduled(event, env, {
     waitUntil(promise) { return promise; }
