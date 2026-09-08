@@ -1,8 +1,8 @@
 {
-  "name": "smart-money-futures-ai-bot-v15-6-4-github",
+  "name": "smart-money-futures-ai-bot-v17-0-1-github",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=22" },
   "dependencies": {
     "@gmx-io/sdk": "1.8.2"
   }

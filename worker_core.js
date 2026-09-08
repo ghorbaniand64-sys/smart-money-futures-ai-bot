@@ -21,7 +21,7 @@ const { getViemChain } = require("@gmx-io/sdk/configs/chains");
 // ================================================================
 
 const CONFIG = {
-  VERSION: "V17.0.0-SMART-MONEY-STRUCTURE-ENGINE",
+  VERSION: "V17.0.1-SMART-MONEY-STRUCTURE-ENGINE",
   CHAIN_ID: 42161,
   EXECUTION_ENABLED: true,
   TELEGRAM_ENABLED: true,
@@ -32,7 +32,7 @@ const CONFIG = {
 
   // Scanner: one full structural scan uses four candle requests per market.
   MAX_MARKETS: 30,
-  DEEP_SCAN_LIMIT: 9,
+  DEEP_SCAN_LIMIT: 10,
   MAX_SCAN_SUBREQUESTS: 50,
   RESERVED_SCAN_SUBREQUESTS: 10,
   SCAN_BATCH_SIZE: 2,
@@ -178,6 +178,7 @@ let SMART_MONEY_CACHE = { at: 0, result: null };
 let TOP_TRADER_CACHE = { at: 0, result: null };
 
 const DEFAULT_STATE = {
+  stateVersion: 2,
   running: true,
   dayKey: new Date().toISOString().slice(0, 10),
   dailyLoss: 0,
@@ -640,7 +641,17 @@ function classifyStructure(symbol,candles,price,flow,previousState={}){
   if(!entries.length&&move5>=1.5&&extension>=CONFIG.ENTRY.maxChaseAtr&&!nearLevel)next.lastState="EXHAUSTED_NO_CHASE";
   else if(!entries.length)next.lastState=nearLevel?"WATCH_LEVEL":"NO_SETUP";
 
-  return {state:entries.length?entries.some(e=>e.direction!=="WAIT")?"ENTRY_READY":"WAITING_RETEST":next.lastState,direction:entries.find(e=>e.direction!=="WAIT")?.direction||entries.find(e=>e.direction==="WAIT")?.direction||"NONE",entries,zones,watched,volume:vol,atr:atr5,nextState:next,move5,preMove5,preMove15,extension};
+  const eventFlags={
+    supportZone:Boolean(support||supportForBreak),
+    resistanceZone:Boolean(resistance||resistanceForBreak),
+    supportReaction:watched.some(x=>x.type==="SUPPORT"&&x.bounce?.confirmed),
+    resistanceReaction:watched.some(x=>x.type==="RESISTANCE"&&x.rejection?.confirmed),
+    breakout:entries.some(x=>x.trigger.includes("WAIT_RETEST")),
+    waitingRetest:Boolean(next.pendingRetest),
+    retestConfirmed:entries.some(x=>x.trigger.includes("RETEST")),
+    exhausted:next.lastState==="EXHAUSTED_NO_CHASE"
+  };
+  return {state:entries.length?entries.some(e=>e.direction!=="WAIT")?"ENTRY_READY":"WAITING_RETEST":next.lastState,direction:entries.find(e=>e.direction!=="WAIT")?.direction||entries.find(e=>e.direction==="WAIT")?.direction||"NONE",entries,zones,watched,volume:vol,atr:atr5,nextState:next,move5,preMove5,preMove15,extension,eventFlags};
 }
 
 // ================================================================
@@ -677,7 +688,13 @@ function buildSetup(symbol,analysis,flow,topTrader){
 async function loadState(env){
   if(!env?.BOT_STATE)return {...DEFAULT_STATE};
   const data=await env.BOT_STATE.get("engine_state","json");
-  return {...DEFAULT_STATE,...(data||{}),scanCursor:finite(data?.scanCursor,0),structureStates:data?.structureStates&&typeof data.structureStates==="object"?data.structureStates:{},flowHistory:data?.flowHistory&&typeof data.flowHistory==="object"?data.flowHistory:{},telegramEvents:data?.telegramEvents&&typeof data.telegramEvents==="object"?data.telegramEvents:{},radarTelegramEvents:data?.radarTelegramEvents&&typeof data.radarTelegramEvents==="object"?data.radarTelegramEvents:{},liveExecutionLocks:data?.liveExecutionLocks&&typeof data.liveExecutionLocks==="object"?data.liveExecutionLocks:{}};
+  const base={...DEFAULT_STATE,...(data||{})};
+  if(finite(data?.stateVersion,0)!==DEFAULT_STATE.stateVersion){
+    base.stateVersion=DEFAULT_STATE.stateVersion;
+    base.structureStates={};
+    base.scanCursor=0;
+  }
+  return {...base,scanCursor:finite(base.scanCursor,0),structureStates:base.structureStates&&typeof base.structureStates==="object"?base.structureStates:{},flowHistory:base.flowHistory&&typeof base.flowHistory==="object"?base.flowHistory:{},telegramEvents:base.telegramEvents&&typeof base.telegramEvents==="object"?base.telegramEvents:{},radarTelegramEvents:base.radarTelegramEvents&&typeof base.radarTelegramEvents==="object"?base.radarTelegramEvents:{},liveExecutionLocks:base.liveExecutionLocks&&typeof base.liveExecutionLocks==="object"?base.liveExecutionLocks:{}};
 }
 async function saveState(env,state){if(env?.BOT_STATE)await env.BOT_STATE.put("engine_state",JSON.stringify(state));}
 function resetDailyLoss(state){const d=new Date().toISOString().slice(0,10);if(state.dayKey!==d){state.dayKey=d;state.dailyLoss=0;}}
@@ -769,6 +786,7 @@ async function executeSetup(setup,env){
 async function scan(env,options={}){
   const state=await loadState(env);resetDailyLoss(state);if(!state.running)return {ok:true,status:"PAUSED"};
   const started=Date.now(),errors=[];
+  const eventStats={supportZones:0,resistanceZones:0,flowEvents:0,volumeEvents:0,supportReactions:0,resistanceReactions:0,breakouts:0,waitingRetests:0,retestConfirmed:0,exhausted:0,entryReady:0};
   let info,catalog;try{info=marketArray(await fetchMarketsInfo());}catch(e){return {ok:false,status:"DATA_ERROR",error:safeError(e)};}
   try{catalog=marketArray(await fetchMarketsCatalog());}catch(e){catalog=[];errors.push({scope:"markets",error:safeError(e)});
   }
@@ -792,10 +810,21 @@ async function scan(env,options={}){
       const flow=row.f||{imbalance:0,totalUsd:0};const previousState=state.structureStates?.[row.s]||{};
       const analysis=classifyStructure(row.s,{"5m":c5,"15m":c15,"1h":c1h,"4h":c4h},price,flow,previousState);analysis.candles={"5m":c5,"15m":c15,"1h":c1h,"4h":c4h};analysis.flow=flow;analysis.price=price;
       state.structureStates[row.s]=analysis.nextState||previousState;
-      const setup=buildSetup(row.s,analysis,flow,traders);if(setup)candidates.push(setup);
+      const ef=analysis.eventFlags||{};
+      eventStats.supportZones+=ef.supportZone?1:0;
+      eventStats.resistanceZones+=ef.resistanceZone?1:0;
+      eventStats.flowEvents+=(flow.flowSurge||flow.explosiveFlow)?1:0;
+      eventStats.volumeEvents+=(analysis.volume?.volumeSurge||analysis.volume?.rangeExpansion||analysis.volume?.volumeExplosive||analysis.volume?.rangeExplosive)?1:0;
+      eventStats.supportReactions+=ef.supportReaction?1:0;
+      eventStats.resistanceReactions+=ef.resistanceReaction?1:0;
+      eventStats.breakouts+=ef.breakout?1:0;
+      eventStats.waitingRetests+=ef.waitingRetest?1:0;
+      eventStats.retestConfirmed+=ef.retestConfirmed?1:0;
+      eventStats.exhausted+=ef.exhausted?1:0;
+      const setup=buildSetup(row.s,analysis,flow,traders);if(setup){candidates.push(setup);eventStats.entryReady++;}
       const wait=formatWaitingTelegram(row.s,analysis);if(wait&&!eventFresh(state,`WAIT|${row.s}|${analysis.state}`)){await sendTelegram(env,wait,"normal");markEvent(state,`WAIT|${row.s}|${analysis.state}`);}
       if(CONFIG.RADAR.enabled){const radar=formatRadarTelegram(row.s,analysis);if(radar&&!eventFresh(state,`RADAR|${row.s}|${analysis.state}|${analysis.direction}`)){await sendTelegram(env,radar,"radar");state.radarTelegramEvents[`RADAR|${row.s}|${analysis.state}|${analysis.direction}`]=Date.now();}}
-      if(analysis.state!=="ENTRY_READY"&&analysis.state!=="WAITING_RETEST")console.log("[STRUCTURE]",{symbol:row.s,state:analysis.state,direction:analysis.direction,move5:analysis.move5,flow:flow.imbalance,volume:analysis.volume?.volumeRatio,range:analysis.volume?.rangeRatio});
+      console.log("[STRUCTURE]",{symbol:row.s,state:analysis.state,direction:analysis.direction,move5:analysis.move5,flow:flow.imbalance,flowSurge:Boolean(flow.flowSurge||flow.explosiveFlow),volume:analysis.volume?.volumeRatio,range:analysis.volume?.rangeRatio,support:analysis.zones?.support?.[0]?.center||null,resistance:analysis.zones?.resistance?.[0]?.center||null,pendingRetest:Boolean(analysis.nextState?.pendingRetest),events:analysis.eventFlags||{}});
     }catch(e){errors.push({symbol:row.s,error:safeError(e)});}
   }
   // Only one Core live entry per cycle; a structural trigger must exist.
@@ -808,7 +837,7 @@ async function scan(env,options={}){
       if(result.executed){executed++;state.executions++;markEvent(state,key);await sendTelegram(env,[result.positionVerified?"✅ GMX POSITION VERIFIED":"⚠️ GMX ORDER SUBMITTED — VERIFICATION PENDING","━━━━━━━━━━━━━━━━━━",`${setup.symbol}/USD ${setup.direction}`,`Trigger: ${setup.trigger}`,`Entry: ${setup.entryPrice}`,`SL: ${setup.stopLoss}`,`TP1: ${setup.tp1}`,`Request: ${result.requestId||"n/a"}`,`Position verified: ${result.positionVerified?"YES":"NO"}`].join("\n"),"entry");break;}
     }catch(e){executionResults.push({executed:false,symbol:setup.symbol,error:safeError(e)});}
   }
-  state.lastScan={at:Date.now(),durationMs:Date.now()-started,candidates:candidates.length,executed};state.diagnostics={version:CONFIG.VERSION,structureModel:"EVENT_SEQUENCE_NO_SCORE",markets:markets.length,deepScanned:scanRows.length,entries:candidates.length,executed,flowAvailable:flowData.available,topTraderAvailable:traders.available,errors};await saveState(env,state);
+  state.lastScan={at:Date.now(),durationMs:Date.now()-started,candidates:candidates.length,executed};state.diagnostics={version:CONFIG.VERSION,structureModel:"EVENT_SEQUENCE_NO_SCORE",markets:markets.length,deepScanned:scanRows.length,entries:candidates.length,executed,flowAvailable:flowData.available,topTraderAvailable:traders.available,eventStats,telegram:{remaining:tgBudget(env).remaining,attempted:tgBudget(env).attempted},statePersistence:Boolean(env?.BOT_STATE),errors};await saveState(env,state);
   return {ok:true,status:candidates.length?"ENTRY_READY":"WATCHING",scanned:scanRows.length,requested:markets.length,entries:candidates,executionResults,executed,diagnostics:state.diagnostics,timestamp:Date.now()};
 }
 

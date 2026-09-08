@@ -1,6 +1,6 @@
 // Smart Money Futures AI Bot — GitHub Actions adapter
-// V17.0.0-GITHUB-ACTIONS-EXECUTION-ALIGNMENT
-// Runs one complete scheduled cycle using the deployed V16.2.0 engine.
+// V17.0.1-GITHUB-ACTIONS-EXECUTION-ALIGNMENT
+// Runs one complete scheduled cycle using the deployed V17.0.1 engine.
 // Persistent Cloudflare KV bindings are emulated with JSON files in ./state.
 
 import fs from "node:fs/promises";
@@ -97,7 +97,7 @@ async function main() {
   console.log("[GITHUB][START]", {
     scheduledTime,
     worker: "worker_core.js",
-    expectedVersion: "V16.2.0-TOP-TRADER-INTELLIGENCE-NON-BLOCKING",
+    expectedVersion: "V17.0.1-SMART-MONEY-STRUCTURE-ENGINE",
     executionEnabled: env.EXECUTION_ENABLED,
     executionEnabledSource: process.env.EXECUTION_ENABLED == null ? "runner-default-true" : "github-env"
   });
