@@ -1,9 +1,9 @@
-GMX V17.0.1 — SMART MONEY STRUCTURE ENGINE
+GMX V17.0.2 — SMART MONEY STRUCTURE ENGINE
 
 Changes in this repair:
 - Persistent GitHub Actions state via actions/cache restore/save.
 - Breakout -> waiting retest -> retest confirmation now survives scheduled runs.
-- Runner version alignment updated to V17.0.1.
+- Runner version alignment updated to V17.0.2.
 - Structured diagnostics expose S/R, flow, volume, reactions, breakouts, retests, exhaustion and entries.
 - Every scanned symbol is logged with structural state; WAITING_RETEST is no longer hidden.
 - No score threshold was added or loosened.

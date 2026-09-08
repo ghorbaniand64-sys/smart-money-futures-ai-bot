@@ -21,7 +21,7 @@ const { getViemChain } = require("@gmx-io/sdk/configs/chains");
 // ================================================================
 
 const CONFIG = {
-  VERSION: "V17.0.1-SMART-MONEY-STRUCTURE-ENGINE",
+  VERSION: "V17.0.2-SMART-MONEY-STRUCTURE-ENGINE",
   CHAIN_ID: 42161,
   EXECUTION_ENABLED: true,
   TELEGRAM_ENABLED: true,
@@ -205,6 +205,69 @@ function normalizeSymbol(symbol) {
   s = s.replace(/[^A-Z0-9.]/g, "");
   return s || null;
 }
+
+// ================================================================
+// GMX MARKET -> INDEX TOKEN RESOLVER
+//
+// GMX market identifiers and the candle API tokenSymbol are NOT the
+// same thing. A market can be represented as BTCUSDWBTC.B, for example,
+// while /prices/candles expects BTC. Never send the composite market
+// identifier directly to the candle endpoint.
+// ================================================================
+function explicitIndexTokenSymbol(m) {
+  const candidates = [
+    m?.indexTokenSymbol,
+    m?.indexName,
+    m?.indexToken?.symbol,
+    m?.indexToken?.tokenSymbol,
+    m?.indexToken?.name,
+    m?.indexTokenData?.symbol,
+    m?.token?.symbol,
+  ];
+  for (const value of candidates) {
+    const s = normalizeSymbol(value);
+    if (s) return s;
+  }
+  return null;
+}
+
+function parseIndexTokenFromMarketString(value) {
+  if (!value) return null;
+  const raw = String(value).trim().toUpperCase();
+  if (!raw) return null;
+
+  // Human-readable form: BTC/USD, BTC/USD [WBTC-USDC], etc.
+  const slash = raw.match(/^([A-Z0-9.]+)\s*\/\s*USD(?:\b|\s|\[)/);
+  if (slash?.[1]) return normalizeSymbol(slash[1]);
+
+  // Composite GMX API identifiers: BTCUSDWBTC.B, LTCUSDETH, ARBUSDARB.
+  const usd = raw.indexOf("USD");
+  if (usd > 0) {
+    const left = normalizeSymbol(raw.slice(0, usd));
+    if (left) return left;
+  }
+
+  // Simple symbols such as BTC-PERP or BTC/USD.
+  const simple = normalizeSymbol(raw);
+  if (simple && !/[A-Z0-9]USD[A-Z0-9.]/.test(simple)) return simple;
+  return null;
+}
+
+function resolveIndexTokenSymbol(m) {
+  return explicitIndexTokenSymbol(m) ||
+    parseIndexTokenFromMarketString(m?.symbol) ||
+    parseIndexTokenFromMarketString(m?.name) ||
+    parseIndexTokenFromMarketString(m?.ticker) ||
+    null;
+}
+
+function marketIdentity(m, fallback) {
+  return String(
+    m?.marketTokenAddress || m?.marketToken || m?.marketAddress ||
+    m?.address || m?.market?.address || m?.symbol || m?.name ||
+    m?.indexTokenAddress || fallback || ""
+  ).trim();
+}
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 function executionEnabled(env) {
@@ -368,8 +431,8 @@ function smfMarketKey(value){const s=String(value||"").trim().toLowerCase();retu
 function smfSetMarketMap(markets){
   const map=Object.create(null);
   for(const m of markets||[]){
-    const sym=smfNormSymbol(m?.symbol??m?.name??m?.ticker??m?.indexTokenSymbol); if(!sym)continue;
-    for(const k of [m?.marketToken,m?.marketAddress,m?.address,m?.market?.address,m?.market?.marketToken,m?.indexTokenAddress,m?.indexToken?.address]){
+    const sym=smfNormSymbol(resolveIndexTokenSymbol(m)); if(!sym)continue;
+    for(const k of [m?.marketToken,m?.marketTokenAddress,m?.marketAddress,m?.address,m?.market?.address,m?.market?.marketToken,m?.indexTokenAddress,m?.indexToken?.address]){
       const key=smfMarketKey(k);if(key)map[key]=sym;
     }
   }
@@ -758,7 +821,14 @@ async function getLiveContext(env){
   LIVE_CONTEXT={sdk,signer,account:signer.address,rpc:env.ARBITRUM_RPC};return LIVE_CONTEXT;
 }
 function toBigIntDecimal(value,decimals){const n=Number(value);if(!Number.isFinite(n))throw new Error("Invalid decimal value");const s=n.toFixed(Math.min(decimals,8));const [w,f=""]=s.split(".");return BigInt(w)*10n**BigInt(decimals)+BigInt((f+"0".repeat(decimals)).slice(0,decimals)||"0");}
-function sdkMarket(markets,symbol,collateral){const wanted=normalizeSymbol(symbol);const matches=(markets||[]).filter(m=>!m?.isSpotOnly&&normalizeSymbol(String(m?.symbol||m?.name||"").split("/")[0])===wanted);if(!collateral)return matches[0]||null;const c=String(collateral).toUpperCase();return matches.find(m=>JSON.stringify(m).toUpperCase().includes(c))||matches[0]||null;}
+function sdkMarket(markets,symbol,collateral){
+  const wanted=normalizeSymbol(symbol);
+  if(!wanted)return null;
+  const matches=(markets||[]).filter(m=>!m?.isSpotOnly&&resolveIndexTokenSymbol(m)===wanted);
+  if(!collateral)return matches[0]||null;
+  const c=String(collateral).toUpperCase();
+  return matches.find(m=>JSON.stringify(m).toUpperCase().includes(c))||matches[0]||null;
+}
 function balancesMap(balances){const arr=Array.isArray(balances)?balances:Array.isArray(balances?.balances)?balances.balances:Object.values(balances||{}),out={};for(const b of arr){let s=String(b?.tokenSymbol??b?.symbol??b?.token?.symbol??"").toUpperCase();if(s==="USDC.E")s="USDC";if(!["USDC","USDT"].includes(s))continue;let usd=finite(b?.balanceUsd??b?.balanceUSD??b?.usdValue);const raw=finite(b?.balance??b?.amount);if(!(usd>0)&&raw>0)usd=raw/10**finite(b?.decimals,6);if(usd>0)out[s]={usd,balance:raw,decimals:finite(b?.decimals,6)};}return out;}
 function chooseCollateral(markets,symbol,balances){const map=balancesMap(balances);for(const c of ["USDC","USDT"]){if(map[c]?.usd>0&&sdkMarket(markets,symbol,c))return {...map[c],symbol:c,market:sdkMarket(markets,symbol,c)};}return null;}
 function riskNotional(wallet,entry,stop,risk){const frac=Math.abs(entry-stop)/Math.max(entry,1e-12);return frac>0?(wallet*risk)/frac:0;}
@@ -787,11 +857,26 @@ async function scan(env,options={}){
   const state=await loadState(env);resetDailyLoss(state);if(!state.running)return {ok:true,status:"PAUSED"};
   const started=Date.now(),errors=[];
   const eventStats={supportZones:0,resistanceZones:0,flowEvents:0,volumeEvents:0,supportReactions:0,resistanceReactions:0,breakouts:0,waitingRetests:0,retestConfirmed:0,exhausted:0,entryReady:0};
+  const resolverStats={inputMarkets:0,resolvedMarkets:0,unresolvedMarkets:0,uniqueMarkets:0,deepScanCandidates:0,deepScannedValid:0,unsupportedToken:0,candleErrors:0};
   let info,catalog;try{info=marketArray(await fetchMarketsInfo());}catch(e){return {ok:false,status:"DATA_ERROR",error:safeError(e)};}
   try{catalog=marketArray(await fetchMarketsCatalog());}catch(e){catalog=[];errors.push({scope:"markets",error:safeError(e)});
   }
-  const unique=new Map();for(const m of [...info,...catalog]){const s=normalizeSymbol(m?.symbol??m?.name??m?.ticker??m?.indexTokenSymbol);if(s)unique.set(s,{...(unique.get(s)||{}),...m,symbol:s});}
-  const markets=[...unique.values()].filter(m=>m.isListed!==false&&m.isActive!==false);smfSetMarketMap(markets);
+  // Build a market universe keyed by the actual GMX market identity.
+  // Do NOT key this map by index token symbol: BTC can legitimately have
+  // more than one GMX market/collateral configuration.
+  const unique=new Map();
+  resolverStats.inputMarkets=[...info,...catalog].length;
+  for(const m of [...info,...catalog]){
+    const tokenSymbol=resolveIndexTokenSymbol(m);
+    if(!tokenSymbol){resolverStats.unresolvedMarkets++;continue;}
+    resolverStats.resolvedMarkets++;
+    const key=marketIdentity(m,tokenSymbol);
+    const prev=unique.get(key)||{};
+    unique.set(key,{...prev,...m,symbol:tokenSymbol,indexTokenSymbol:tokenSymbol});
+  }
+  const markets=[...unique.values()].filter(m=>m.isListed!==false&&m.isActive!==false);
+  resolverStats.uniqueMarkets=markets.length;
+  smfSetMarketMap(markets);
   const flowData=await fetchSmartMoneyFlow(state);persistFlowHistory(state,flowData);const traders=await fetchTopTraders();
   const candidates=[];
   // Prioritize abnormal flow, but always rotate through the broader market universe
@@ -802,10 +887,15 @@ async function scan(env,options={}){
   const hot=ranked.filter(x=>x.priority>=3).slice(0,Math.min(5,limit));
   const cursor=Math.abs(finite(state.scanCursor))%Math.max(1,ranked.length);
   const rotation=[];for(let i=0;i<ranked.length&&rotation.length<limit;i++){const r=ranked[(cursor+i)%ranked.length];if(!hot.includes(r))rotation.push(r);}
-  const scanRows=[...hot,...rotation].slice(0,limit);state.scanCursor=(cursor+scanRows.length)%Math.max(1,ranked.length);
+  const scanRows=[...hot,...rotation].slice(0,limit);
+  resolverStats.deepScanCandidates=scanRows.length;
+  state.scanCursor=(cursor+scanRows.length)%Math.max(1,ranked.length);
   for(const row of scanRows){
     try{
+      const resolvedToken=resolveIndexTokenSymbol(row.m)||row.s;
+      if(resolvedToken!==row.s)row.s=resolvedToken;
       const [c5,c15,c1h,c4h]=await Promise.all([fetchCandles(row.s,"5m"),fetchCandles(row.s,"15m"),fetchCandles(row.s,"1h"),fetchCandles(row.s,"4h")]);
+      resolverStats.deepScannedValid++;
       const price=positive(priceFromRow(row.m))||positive(c5.at(-1)?.close);if(!(price>0))continue;
       const flow=row.f||{imbalance:0,totalUsd:0};const previousState=state.structureStates?.[row.s]||{};
       const analysis=classifyStructure(row.s,{"5m":c5,"15m":c15,"1h":c1h,"4h":c4h},price,flow,previousState);analysis.candles={"5m":c5,"15m":c15,"1h":c1h,"4h":c4h};analysis.flow=flow;analysis.price=price;
@@ -824,8 +914,13 @@ async function scan(env,options={}){
       const setup=buildSetup(row.s,analysis,flow,traders);if(setup){candidates.push(setup);eventStats.entryReady++;}
       const wait=formatWaitingTelegram(row.s,analysis);if(wait&&!eventFresh(state,`WAIT|${row.s}|${analysis.state}`)){await sendTelegram(env,wait,"normal");markEvent(state,`WAIT|${row.s}|${analysis.state}`);}
       if(CONFIG.RADAR.enabled){const radar=formatRadarTelegram(row.s,analysis);if(radar&&!eventFresh(state,`RADAR|${row.s}|${analysis.state}|${analysis.direction}`)){await sendTelegram(env,radar,"radar");state.radarTelegramEvents[`RADAR|${row.s}|${analysis.state}|${analysis.direction}`]=Date.now();}}
-      console.log("[TRACE][MARKET]",{symbol:row.s,state:analysis.state,direction:analysis.direction,move5:analysis.move5,preMove5:analysis.preMove5,preMove15:analysis.preMove15,extension:analysis.extension,flow:flow.imbalance,flowSurge:Boolean(flow.flowSurge||flow.explosiveFlow),volume:analysis.volume?.volumeRatio,range:analysis.volume?.rangeRatio,support:analysis.zones?.support?.[0]?.center||null,resistance:analysis.zones?.resistance?.[0]?.center||null,supportDistanceAtr:analysis.zones?.support?.[0]?.distanceAtr??null,resistanceDistanceAtr:analysis.zones?.resistance?.[0]?.distanceAtr??null,pendingRetest:Boolean(analysis.nextState?.pendingRetest),entries:(analysis.entries||[]).map(e=>({direction:e.direction,trigger:e.trigger,evidence:e.evidence||[]})),watched:(analysis.watched||[]).map(w=>({type:w.type,confirmed:Boolean(w.bounce?.confirmed||w.rejection?.confirmed||w.retest?.confirmed),evidence:w.bounce?.evidence||w.rejection?.evidence||[],retest:w.retest?{touched:w.retest.touched,holds:w.retest.holds,rejection:w.retest.rejection,activity:w.retest.activity,confirmed:w.retest.confirmed}:undefined})),events:analysis.eventFlags||{}});
-    }catch(e){errors.push({symbol:row.s,error:safeError(e)});}
+      console.log("[STRUCTURE]",{symbol:row.s,state:analysis.state,direction:analysis.direction,move5:analysis.move5,flow:flow.imbalance,flowSurge:Boolean(flow.flowSurge||flow.explosiveFlow),volume:analysis.volume?.volumeRatio,range:analysis.volume?.rangeRatio,support:analysis.zones?.support?.[0]?.center||null,resistance:analysis.zones?.resistance?.[0]?.center||null,pendingRetest:Boolean(analysis.nextState?.pendingRetest),events:analysis.eventFlags||{}});
+    }catch(e){
+      const message=safeError(e);
+      if(/unsupported token/i.test(message))resolverStats.unsupportedToken++;
+      if(/candle|prices\/candles|HTTP 4/i.test(message))resolverStats.candleErrors++;
+      errors.push({symbol:row.s,error:message});
+    }
   }
   // Only one Core live entry per cycle; a structural trigger must exist.
   candidates.sort((a,b)=>{const at=(a.topTrader?.confirmed?1:0)+(a.flow?.flowSurge?1:0);const bt=(b.topTrader?.confirmed?1:0)+(b.flow?.flowSurge?1:0);return bt-at;});
@@ -837,7 +932,7 @@ async function scan(env,options={}){
       if(result.executed){executed++;state.executions++;markEvent(state,key);await sendTelegram(env,[result.positionVerified?"✅ GMX POSITION VERIFIED":"⚠️ GMX ORDER SUBMITTED — VERIFICATION PENDING","━━━━━━━━━━━━━━━━━━",`${setup.symbol}/USD ${setup.direction}`,`Trigger: ${setup.trigger}`,`Entry: ${setup.entryPrice}`,`SL: ${setup.stopLoss}`,`TP1: ${setup.tp1}`,`Request: ${result.requestId||"n/a"}`,`Position verified: ${result.positionVerified?"YES":"NO"}`].join("\n"),"entry");break;}
     }catch(e){executionResults.push({executed:false,symbol:setup.symbol,error:safeError(e)});}
   }
-  state.lastScan={at:Date.now(),durationMs:Date.now()-started,candidates:candidates.length,executed};state.diagnostics={version:CONFIG.VERSION,structureModel:"EVENT_SEQUENCE_NO_SCORE",markets:markets.length,deepScanned:scanRows.length,entries:candidates.length,executed,flowAvailable:flowData.available,topTraderAvailable:traders.available,eventStats,telegram:{remaining:tgBudget(env).remaining,attempted:tgBudget(env).attempted},statePersistence:Boolean(env?.BOT_STATE),errors};await saveState(env,state);
+  state.lastScan={at:Date.now(),durationMs:Date.now()-started,candidates:candidates.length,executed};state.diagnostics={version:CONFIG.VERSION,structureModel:"EVENT_SEQUENCE_NO_SCORE",markets:markets.length,deepScanned:scanRows.length,entries:candidates.length,executed,flowAvailable:flowData.available,topTraderAvailable:traders.available,resolver:resolverStats,eventStats,telegram:{remaining:tgBudget(env).remaining,attempted:tgBudget(env).attempted},statePersistence:Boolean(env?.BOT_STATE),errors};await saveState(env,state);
   return {ok:true,status:candidates.length?"ENTRY_READY":"WATCHING",scanned:scanRows.length,requested:markets.length,entries:candidates,executionResults,executed,diagnostics:state.diagnostics,timestamp:Date.now()};
 }
 
@@ -865,8 +960,7 @@ async function scheduled(event,env,ctx){
   try{
     const exits=executionEnabled(env)?await monitorLivePositions(env):[];
     const result=await scan(env,{source:"scheduled"});
-    console.log("[SCHEDULED][DONE]",{status:result.status,scanned:result.scanned,entries:result.entries?.length||0,executed:result.executed||0,executionResults:(result.executionResults||[]).map(x=>({symbol:x?.symbol||x?.setup?.symbol||null,executed:Boolean(x?.executed),positionVerified:Boolean(x?.positionVerified),reason:x?.reason||null,error:x?.error||null})),exits});
-    if(result.diagnostics){console.log("[TRACE][SUMMARY]",result.diagnostics);}
+    console.log("[SCHEDULED][DONE]",{status:result.status,scanned:result.scanned,entries:result.entries?.length||0,executed:result.executed||0,resolver:result.diagnostics?.resolver||null,executionResults:(result.executionResults||[]).map(x=>({symbol:x?.symbol||x?.setup?.symbol||null,executed:Boolean(x?.executed),positionVerified:Boolean(x?.positionVerified),reason:x?.reason||null,error:x?.error||null})),exits});
     return result;
   }catch(error){console.error("[SCHEDULED][ERROR]",{error:safeError(error),stack:error?.stack||null});return {ok:false,status:"ERROR",error:safeError(error)};}
 }
