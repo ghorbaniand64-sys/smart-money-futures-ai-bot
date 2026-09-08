@@ -4,7 +4,7 @@ import { getViemChain } from "@gmx-io/sdk/configs/chains";
  
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V16.1.5 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor
+// Version: V16.2.0 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
 // Platform: GitHub Actions + Node.js
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -359,7 +359,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V16.1.5-MARKET-MINIMUM-SIZING-REPAIR-RADAR-DIAGNOSTICS",
+VERSION: "V16.2.0-TOP-TRADER-INTELLIGENCE-NON-BLOCKING",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -507,6 +507,17 @@ SMART_MONEY_FLOW_SPIKE_THRESHOLD: 1.80,
 SMART_MONEY_FLOW_EXPLOSIVE_THRESHOLD: 3.00,
 SMART_MONEY_FLOW_MIN_NOTIONAL_USD: 5000,
 SMART_MONEY_FLOW_SCORE_MAX: 18,
+// V16.2 Top Trader Intelligence: read-only GMX all-account trade cohort.
+// This layer can add positive confluence only; it never creates a hard gate,
+// never subtracts score, and never blocks an otherwise eligible execution.
+TOP_TRADER_INTELLIGENCE_ENABLED: true,
+TOP_TRADER_INTELLIGENCE_CACHE_MS: 60000,
+TOP_TRADER_INTELLIGENCE_LOOKBACK_MS: 60 * 60 * 1000,
+TOP_TRADER_INTELLIGENCE_LIMIT: 750,
+TOP_TRADER_INTELLIGENCE_MAX_ACCOUNTS: 40,
+TOP_TRADER_INTELLIGENCE_MIN_TRADES: 2,
+TOP_TRADER_INTELLIGENCE_SCORE_MAX: 6,
+TOP_TRADER_INTELLIGENCE_MIN_NOTIONAL_USD: 1000,
 // V15.6 Multi-Source Data Center
 DATA_CENTER_ENABLED: true,
 DATA_CENTER_TIMEOUT_MS: 5000,
@@ -865,6 +876,7 @@ const pct=((c-p)/p)*100;
 return Number.isFinite(pct)&&Math.abs(pct)<=10000?pct:0;
 }
 let SMART_MONEY_FLOW_CACHE = { at: 0, result: null };
+let TOP_TRADER_INTELLIGENCE_CACHE = { at: 0, result: null };
 function smfNum(...values){for(const value of values){const n=Number(value);if(Number.isFinite(n))return n;}return 0;}
 // V15.6.2 FIX: Smart-Money parser is global, so it must not reference
 // v156Finite/v156ScaledUsd which live inside FUTURES_V6 scope.
@@ -989,6 +1001,70 @@ function smfReversalMetrics(flow,direction){
 }
 function smfConfidence(flow){if(!flow)return{level:"UNAVAILABLE",score:0};const total=Number(flow.totalUsd||0),trades=Number(flow.tradeCount||0),large=Number(flow.largeTradeCount||0),imbalance=Math.abs(Number(flow.imbalance||0)),surge=Boolean(flow.flowSurge||flow.explosiveFlow);let score=0;if(total>0)score+=20;if(trades>=3)score+=20;if(trades>=10)score+=15;if(large>=1)score+=20;if(large>=2)score+=10;if(imbalance>=0.20)score+=10;if(surge)score+=15;score=Math.min(100,score);return{level:score>=75?"HIGH":score>=45?"MEDIUM":"LOW",score};}
 function smfFlowReasons(flow,direction){if(!flow||!["LONG","SHORT"].includes(direction))return[];const aligned=direction==="LONG"?Number(flow.imbalance||0):-Number(flow.imbalance||0),reasons=[];if(aligned>=.2)reasons.push("smart_money_imbalance");if(aligned>=.45)reasons.push("strong_smart_money_flow");if(Number(flow.flowSpikeRatio||1)>=Number(CONFIG.SMART_MONEY_FLOW_SPIKE_THRESHOLD||1.8))reasons.push("flow_surge");if(Number(flow.flowSpikeRatio||1)>=Number(CONFIG.SMART_MONEY_FLOW_EXPLOSIVE_THRESHOLD||3))reasons.push("explosive_flow");if(Number(flow.largeTradeCount||0)>=2)reasons.push("large_order_participation");return reasons;}
+function ttiNum(v){
+  const n=Number(v); return Number.isFinite(n)?n:0;
+}
+function ttiAccount(t){
+  return String(t?.account??t?.trader??t?.userAddress??t?.user??t?.owner??t?.address??t?.accountAddress??"").toLowerCase();
+}
+function ttiPnl(t){
+  for(const v of [t?.realizedPnlUsd,t?.realizedPnl,t?.pnlUsd,t?.pnl,t?.profitUsd,t?.profit,t?.position?.realizedPnlUsd,t?.debug?.realizedPnlUsd]){
+    const n=Number(v); if(Number.isFinite(n)) return Math.abs(n)>=1e18?n/1e30:n;
+  }
+  return null;
+}
+function ttiTimestamp(t){
+  const n=Number(t?.timestamp??t?.createdAt??t?.updatedAt??t?.blockTimestamp??0);
+  return n>1e12?n:n*1000;
+}
+function ttiBuildCohort(trades){
+  const accounts=new Map();
+  for(const t of trades||[]){
+    const account=ttiAccount(t), symbol=smfTradeSymbol(t), direction=smfDirection(t), notional=smfTradeNotionalUsd(t);
+    if(!account||!symbol||!direction||!(notional>=Number(CONFIG.TOP_TRADER_INTELLIGENCE_MIN_NOTIONAL_USD||0))) continue;
+    const a=accounts.get(account)||{account,trades:0,notional:0,longUsd:0,shortUsd:0,pnlKnown:0,pnlSum:0,pnlWins:0,pnlLosses:0,lastTs:0,bySymbol:{}};
+    a.trades++; a.notional+=notional; if(direction==='LONG')a.longUsd+=notional; else a.shortUsd+=notional;
+    const pnl=ttiPnl(t); if(pnl!==null){a.pnlKnown++;a.pnlSum+=pnl;if(pnl>0)a.pnlWins++;else if(pnl<0)a.pnlLosses++;}
+    a.lastTs=Math.max(a.lastTs,ttiTimestamp(t));
+    const x=a.bySymbol[symbol]||={longUsd:0,shortUsd:0,trades:0}; x.trades++; if(direction==='LONG')x.longUsd+=notional; else x.shortUsd+=notional;
+    accounts.set(account,a);
+  }
+  const ranked=[...accounts.values()].filter(a=>a.trades>=Number(CONFIG.TOP_TRADER_INTELLIGENCE_MIN_TRADES||2)).map(a=>{
+    const pnlQuality=a.pnlKnown>0?Math.max(0,Math.min(1,a.pnlSum>=0?0.6+0.4*(a.pnlWins/Math.max(1,a.pnlKnown)):0.25)):0.5;
+    const sizeQuality=Math.min(1,Math.log10(Math.max(1,a.notional))/7);
+    const consistency=a.pnlKnown>=3?Math.min(1,a.pnlWins/a.pnlKnown):0.5;
+    a.quality=100*(0.45*pnlQuality+0.30*sizeQuality+0.25*consistency); return a;
+  }).sort((a,b)=>b.quality-a.quality).slice(0,Number(CONFIG.TOP_TRADER_INTELLIGENCE_MAX_ACCOUNTS||40));
+  return ranked;
+}
+function ttiScoreForSymbol(cohort,symbol,direction){
+  if(!Array.isArray(cohort)||!cohort.length||!['LONG','SHORT'].includes(direction)) return {available:false,boost:0,alignment:0,conflict:0,activeTraders:0,quality:0,notionalUsd:0};
+  let aligned=0,opposed=0,qualitySum=0,active=0;
+  for(const a of cohort){const x=a.bySymbol?.[symbol];if(!x)continue;active++;const q=Math.max(0,Math.min(1,a.quality/100));qualitySum+=a.quality; if(direction==='LONG'){aligned+=x.longUsd*q;opposed+=x.shortUsd*q;}else{aligned+=x.shortUsd*q;opposed+=x.longUsd*q;}}
+  const total=aligned+opposed, alignment=total>0?aligned/total:0, conflict=total>0?opposed/total:0;
+  // Positive-only confluence: opposing top-trader flow is reported but never penalizes/block execution.
+  const boost=Math.min(Number(CONFIG.TOP_TRADER_INTELLIGENCE_SCORE_MAX||6),Math.max(0,(alignment-0.50)*12)+Math.min(2,active*0.35));
+  return {available:active>0,boost:Number(boost.toFixed(2)),alignment:Number(alignment.toFixed(3)),conflict:Number(conflict.toFixed(3)),activeTraders:active,quality:Number((active?qualitySum/active:0).toFixed(1)),notionalUsd:Number(total.toFixed(2))};
+}
+async function fetchTopTraderIntelligence(env){
+  if(!CONFIG.TOP_TRADER_INTELLIGENCE_ENABLED)return {available:false,source:null,cohort:[],error:'disabled'};
+  const now=Date.now();
+  if(TOP_TRADER_INTELLIGENCE_CACHE.result&&now-TOP_TRADER_INTELLIGENCE_CACHE.at<Number(CONFIG.TOP_TRADER_INTELLIGENCE_CACHE_MS||60000))return TOP_TRADER_INTELLIGENCE_CACHE.result;
+  try{
+    const params={forAllAccounts:'true',fromTimestamp:Math.floor((now-Number(CONFIG.TOP_TRADER_INTELLIGENCE_LOOKBACK_MS||3600000))/1000),limit:Number(CONFIG.TOP_TRADER_INTELLIGENCE_LIMIT||750),showDebugValues:'true'};
+    const direct=await fetchGmxApiTradesSearch(params);
+    let trades=direct.ok?direct.trades:[]; let source=direct.source||null;
+    if(!trades.length&&typeof GmxApiSdk!=='undefined'){
+      const sdk=new GmxApiSdk({chainId:42161});
+      const result=await sdk.searchTrades({forAllAccounts:true,fromTimestamp:params.fromTimestamp,limit:params.limit,showDebugValues:true});
+      trades=smfExtractTradeRows(result); source='SDK_V2_SEARCH_TRADES';
+    }
+    const cohort=ttiBuildCohort(trades.slice(0,Number(CONFIG.TOP_TRADER_INTELLIGENCE_LIMIT||750)));
+    const out={available:cohort.length>0,source:source||'GMX_API_TRADES_SEARCH',cohort,accounts:cohort.length,trades:trades.length,lookbackMs:Number(CONFIG.TOP_TRADER_INTELLIGENCE_LOOKBACK_MS||3600000),cacheMs:Number(CONFIG.TOP_TRADER_INTELLIGENCE_CACHE_MS||60000),mode:'NON_BLOCKING_POSITIVE_CONFLUENCE'};
+    TOP_TRADER_INTELLIGENCE_CACHE={at:now,result:out}; return out;
+  }catch(error){const out={available:false,source:null,cohort:[],accounts:0,trades:0,error:safeError(error),mode:'NON_BLOCKING_POSITIVE_CONFLUENCE'};TOP_TRADER_INTELLIGENCE_CACHE={at:now,result:out};return out;}
+}
+
 async function fetchSmartMoneyFlowData(env,flowHistory={}){
 if(!CONFIG.SMART_MONEY_FLOW_ENABLED)return{available:false,source:null,bySymbol:{},trades:0,parsedTrades:0,symbols:0,rejectedTrades:0,error:"disabled"};
 const now=Date.now();
@@ -3001,7 +3077,7 @@ function v15613TrendConfluence(trend, direction) {
   return { bullish, bearish, selected: direction === 'LONG' ? bullish : direction === 'SHORT' ? bearish : 0 };
 }
 
-function scoreSignal(snapshot, previousMarket) {
+function scoreSignal(snapshot, previousMarket, topTraderIntelligence = null) {
 const c5 = snapshot.candles["5m"] || [];
 const c15 = snapshot.candles["15m"] || [];
 const c1h = snapshot.candles["1h"] || [];
@@ -3012,6 +3088,9 @@ const momentum = momentumScore(c15);
 const participation = participationScore(c15);
 const structure = structureScore(c15);
 const derivatives = derivativesScore(snapshot.market, previousMarket);
+
+const topTraderLong = ttiScoreForSymbol(topTraderIntelligence?.cohort, snapshot.symbol || snapshot.market?.symbol || snapshot.market?.name || "", "LONG");
+const topTraderShort = ttiScoreForSymbol(topTraderIntelligence?.cohort, snapshot.symbol || snapshot.market?.symbol || snapshot.market?.name || "", "SHORT");
  
 const riskParts = {
 fakeMove: fakeMoveRisk(c15),
@@ -3160,10 +3239,10 @@ const shortRaw = Object.values(contributions.short).reduce((a,b) => a + b, 0);
 // V15.3 keeps the risk penalty and advanced confirmation layer unchanged.
 // Only the treatment of genuinely unavailable evidence changed.
 const longScore = Math.max(0, Math.min(100,
-  longRaw - risk * 0.30 + advancedLong.boost
+  longRaw - risk * 0.30 + advancedLong.boost + topTraderLong.boost
 ));
 const shortScore = Math.max(0, Math.min(100,
-  shortRaw - risk * 0.30 + advancedShort.boost
+  shortRaw - risk * 0.30 + advancedShort.boost + topTraderShort.boost
 ));
 const edge = Math.abs(longScore - shortScore);
 
@@ -3338,6 +3417,7 @@ long: Number(longRaw.toFixed(2)),
 short: Number(shortRaw.toFixed(2))
 },
 riskParts,
+topTraderIntelligence: { long: topTraderLong, short: topTraderShort, mode: "POSITIVE_CONFLUENCE_ONLY_NO_BLOCK" },
 advanced: {
 long: advancedLong,
 short: advancedShort,
@@ -3362,12 +3442,12 @@ trendConfluence: trendBridge,
 scoreModel: {
 normalizedTo100: true,
 weightedMaximum: 100,
-activeComponents: ["trend", "momentum", "participation", "structure", "derivatives"],
+activeComponents: ["trend", "momentum", "participation", "structure", "derivatives", "topTraderConfluence"],
 excludedComponents: ["asset_identity", "market_cap", "major_symbol_bias", "liquidity_bonus"],
 fairAssetScoring: true,
 availabilityAwareScoring: true,
 scoreEngineVersion: "V15.3-VELOCITY-RADAR-AVAILABILITY-AWARE-MULTIFACTOR",
-note: "Score is asset-agnostic and availability-aware: available current market evidence determines the score; unavailable factors are neutral and their weights are re-normalized. Asset identity, market size, major-symbol status and liquidity do not add entry-score points."
+note: "Score is asset-agnostic and availability-aware. Top Trader Intelligence is a capped positive-only confluence boost; unavailable or conflicting trader data is neutral and never creates a gate or execution block."
 },
 gates: {
 validScore: CONFIG.VALID_SIGNAL_SCORE,
@@ -3518,8 +3598,10 @@ const snapshot = await buildMarketSnapshot(normalized, env, options);
 // Full scans keep the previous market snapshot in the single state object
 // instead of doing one KV read/write per symbol.
 const previousMarket = options.previousMarket || null;
- 
-const analysis = scoreSignal(snapshot, previousMarket);
+
+const topTraderIntelligence = options.topTraderIntelligence || await fetchTopTraderIntelligence(env);
+
+const analysis = scoreSignal(snapshot, previousMarket, topTraderIntelligence);
 const plan = buildTradePlan(snapshot, analysis);
  
 // RPC health is not part of signal generation. It is checked once by
@@ -3564,6 +3646,7 @@ radarMicro: v1611CandleMicrostructure(snapshot.candles?.["5m"] || []),
 signalDiagnostics: analysis.diagnostics,
 entryQuality: analysis.entryQuality || null,
 executionGateDiagnostics: Array.isArray(analysis.executionGateDiagnostics) ? analysis.executionGateDiagnostics : [],
+topTraderIntelligence: analysis.diagnostics?.topTraderIntelligence || null,
 directionalScores: analysis.directionalScores || {
   long: 0,
   short: 0,
