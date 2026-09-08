@@ -359,7 +359,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V16.0.4-GITHUB-ACTIONS-AUTOMATIC-EXECUTION-FIX-RADAR-SCOPE-REPAIR-EXECUTION-DIAGNOSTICS",
+VERSION: "V16.1.4-EXECUTION-MIN-ORDER-REPAIR-RADAR-DIAGNOSTICS",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -488,11 +488,12 @@ RADAR_LIVE_MAX_POSITIONS: 1,
 RADAR_LIVE_RISK_PER_TRADE: 0.005,
 RADAR_LIVE_CAPITAL_ALLOCATION: 0.03,
 RADAR_LIVE_MAX_POSITION_NOTIONAL_USD: 2500,
-// V16.1.3: qualified live signals may use the configured minimum order floor
-// when the wallet can fund it without exceeding a 1.5% stop-loss wallet risk.
+// V16.1.4: qualified live signals may use the configured minimum order floor
+// when the wallet can fund it without exceeding the explicit minimum-order
+// risk ceiling. This changes sizing only; Core signal gates remain unchanged.
 RADAR_HOT_MIN_NOTIONAL_USD: 10,
-RADAR_HOT_MAX_WALLET_RISK: 0.015,
-EXECUTION_MIN_WALLET_RISK: 0.015,
+RADAR_HOT_MAX_WALLET_RISK: 0.0225,
+EXECUTION_MIN_WALLET_RISK: 0.0225,
 RADAR_LIVE_REVERSAL_CONFIRMATIONS: 1,
 RADAR_LIVE_LEDGER_TTL_SEC: 86400,
 // V14.0.5.5: live collateral may be USDC or USDT when the selected GMX perp market supports it.
@@ -8836,10 +8837,10 @@ const riskBasedNotional = stopFraction > 0 ? riskCapital / stopFraction : 0;
 const allocationNotional = collateralUsd * leverage;
 let notionalUsd = Math.min(allocationNotional, riskBasedNotional, CONFIG.RADAR_LIVE_MAX_POSITION_NOTIONAL_USD, capacityUsd > 0 ? capacityUsd : Number.MAX_SAFE_INTEGER);
 
-// V16.1.3 HOT sizing repair: the old 0.5% risk formula could produce a
-// sub-minimum order (the reported MON case was $3.50), so a valid signal
-// never reached GMX. HOT may lift to the minimum only when its stop-loss
-// exposure remains <= 1.5% of the live wallet.
+// V16.1.4 HOT sizing repair: the old 0.5% risk formula could produce a
+// sub-minimum order, so a valid HOT signal never reached GMX. HOT may lift
+// to the minimum only when its stop-loss exposure remains inside the explicit
+// minimum-order risk ceiling.
 const isHotRadar = Number(plan.score || 0) >= Number(CONFIG.PUMP_RADAR_HOT_SCORE || 72);
 const hotMinNotional = Number(CONFIG.RADAR_HOT_MIN_NOTIONAL_USD || CONFIG.MIN_POSITION_NOTIONAL_USD || 10);
 const hotMaxWalletRisk = Number(CONFIG.RADAR_HOT_MAX_WALLET_RISK || CONFIG.EXECUTION_MIN_WALLET_RISK || 0.015);
@@ -8847,7 +8848,7 @@ const hotRiskCapNotional = stopFraction > 0 && hotMaxWalletRisk > 0 ? (walletUsd
 if (isHotRadar && hotRiskCapNotional >= hotMinNotional) notionalUsd = Math.max(notionalUsd, hotMinNotional);
 notionalUsd = Math.min(notionalUsd, CONFIG.RADAR_LIVE_MAX_POSITION_NOTIONAL_USD, capacityUsd > 0 ? capacityUsd : Number.MAX_SAFE_INTEGER, isHotRadar && hotRiskCapNotional > 0 ? hotRiskCapNotional : Number.MAX_SAFE_INTEGER);
 if (notionalUsd < CONFIG.MIN_POSITION_NOTIONAL_USD) {
-  throw new Error(`Radar calculated notional too small: ${notionalUsd} (wallet=$${walletUsd.toFixed(2)}, stop=${(stopFraction*100).toFixed(2)}%, hot=${isHotRadar}, riskCap=$${hotRiskCapNotional.toFixed(2)})`);
+  throw new Error(`RADAR_SIZING_BLOCKED: minimum=$${Number(CONFIG.MIN_POSITION_NOTIONAL_USD).toFixed(2)}, computed=$${notionalUsd.toFixed(2)}, wallet=$${walletUsd.toFixed(2)}, stop=${(stopFraction*100).toFixed(2)}%, riskCap=$${hotRiskCapNotional.toFixed(2)}, hot=${isHotRadar}, allocationNotional=$${allocationNotional.toFixed(2)}, riskBasedNotional=$${riskBasedNotional.toFixed(2)}, capacity=$${capacityUsd.toFixed(2)}`);
 }
 
 // Keep collateral consistent with the leveraged notional; never silently
@@ -8855,7 +8856,7 @@ if (notionalUsd < CONFIG.MIN_POSITION_NOTIONAL_USD) {
 const maxCollateralUsd = Math.min(walletUsd * CONFIG.MAX_CAPITAL_ALLOCATION, CONFIG.RADAR_LIVE_MAX_POSITION_NOTIONAL_USD / Math.max(leverage, 1));
 if (notionalUsd / Math.max(leverage, 1) > maxCollateralUsd) notionalUsd = maxCollateralUsd * Math.max(leverage, 1);
 const finalCollateralUsd = Math.min(maxCollateralUsd, Math.max(collateralUsd, notionalUsd / Math.max(leverage, 1)));
-if (notionalUsd < CONFIG.MIN_POSITION_NOTIONAL_USD) throw new Error(`Radar minimum notional cannot be funded safely: ${notionalUsd}`);
+if (notionalUsd < CONFIG.MIN_POSITION_NOTIONAL_USD) throw new Error(`RADAR_MIN_NOTIONAL_BLOCKED: minimum=$${Number(CONFIG.MIN_POSITION_NOTIONAL_USD).toFixed(2)}, computed=$${notionalUsd.toFixed(2)}, collateral=$${finalCollateralUsd.toFixed(2)}, leverage=${leverage}, wallet=$${walletUsd.toFixed(2)}, stop=${(stopFraction*100).toFixed(2)}%, riskCap=$${hotRiskCapNotional.toFixed(2)}`);
 const size = toBigIntDecimal(notionalUsd, 30);
 const collateralAmount = toBigIntDecimal(finalCollateralUsd, 6);
 const tp = toBigIntDecimal(plan.tp1, 30);
@@ -8977,20 +8978,19 @@ if (!(riskBasedNotional>0)) throw new Error("Risk-based position sizing is inval
 const allocationNotional=collateralUsd*leverage;
 let notionalUsd=Math.min(allocationNotional,riskBasedNotional,CONFIG.MAX_POSITION_NOTIONAL_USD,capacityUsd>0?capacityUsd:Number.MAX_SAFE_INTEGER);
 
-// V16.1.3: once Core has passed the explicit execution gate, do not strand
-// the order below the configured minimum. The floor is allowed only if the
-// stop-loss exposure stays <= 1.5% of the live wallet. Signal thresholds are
-// unchanged.
+// V16.1.4: once Core has passed the explicit execution gate, do not strand
+// the order below the configured minimum when that minimum can be funded
+// inside the explicit minimum-order risk ceiling. Signal thresholds are unchanged.
 const executionMinRisk=Number(CONFIG.EXECUTION_MIN_WALLET_RISK||0.015);
 const minExecutableNotional=Number(CONFIG.MIN_POSITION_NOTIONAL_USD||10);
 const executionRiskCapNotional=stopFraction>0&&executionMinRisk>0 ? (walletUsd*executionMinRisk)/stopFraction : 0;
 if (executionRiskCapNotional>=minExecutableNotional) notionalUsd=Math.max(notionalUsd,minExecutableNotional);
 notionalUsd=Math.min(notionalUsd,CONFIG.MAX_POSITION_NOTIONAL_USD,capacityUsd>0?capacityUsd:Number.MAX_SAFE_INTEGER,executionRiskCapNotional>0?executionRiskCapNotional:Number.MAX_SAFE_INTEGER);
-if (notionalUsd<CONFIG.MIN_POSITION_NOTIONAL_USD) throw new Error(`Calculated notional too small: ${notionalUsd} (wallet=$${walletUsd.toFixed(2)}, stop=${(stopFraction*100).toFixed(2)}%, riskCap=$${executionRiskCapNotional.toFixed(2)})`);
+if (notionalUsd<CONFIG.MIN_POSITION_NOTIONAL_USD) throw new Error(`CORE_SIZING_BLOCKED: minimum=$${Number(CONFIG.MIN_POSITION_NOTIONAL_USD).toFixed(2)}, computed=$${notionalUsd.toFixed(2)}, wallet=$${walletUsd.toFixed(2)}, stop=${(stopFraction*100).toFixed(2)}%, riskCap=$${executionRiskCapNotional.toFixed(2)}, allocationNotional=$${allocationNotional.toFixed(2)}, riskBasedNotional=$${riskBasedNotional.toFixed(2)}, capacity=$${capacityUsd.toFixed(2)}`);
 const maxCollateralUsd=Math.min(walletUsd*CONFIG.MAX_CAPITAL_ALLOCATION,CONFIG.MAX_POSITION_NOTIONAL_USD/Math.max(leverage,1));
 if (notionalUsd/Math.max(leverage,1)>maxCollateralUsd) notionalUsd=maxCollateralUsd*Math.max(leverage,1);
 const finalCollateralUsd=Math.min(maxCollateralUsd,Math.max(collateralUsd,notionalUsd/Math.max(leverage,1)));
-if (notionalUsd<CONFIG.MIN_POSITION_NOTIONAL_USD) throw new Error(`Minimum executable notional cannot be funded: ${notionalUsd}`);
+if (notionalUsd<CONFIG.MIN_POSITION_NOTIONAL_USD) throw new Error(`CORE_MIN_NOTIONAL_BLOCKED: minimum=$${Number(CONFIG.MIN_POSITION_NOTIONAL_USD).toFixed(2)}, computed=$${notionalUsd.toFixed(2)}, collateral=$${finalCollateralUsd.toFixed(2)}, leverage=${leverage}, wallet=$${walletUsd.toFixed(2)}, stop=${(stopFraction*100).toFixed(2)}%, riskCap=$${executionRiskCapNotional.toFixed(2)}`);
 const size=toBigIntDecimal(notionalUsd,30);
 const collateralAmount=toBigIntDecimal(finalCollateralUsd,6);
 const tp=toBigIntDecimal(signal.tradePlan.tp1,30);
