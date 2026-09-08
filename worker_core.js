@@ -5,7 +5,7 @@ const { GmxApiSdk, PrivateKeySigner } = require("@gmx-io/sdk/v2");
 const { getViemChain } = require("@gmx-io/sdk/configs/chains");
 
 // ================================================================
-// GMX SMART MONEY STRUCTURE ENGINE V17.0.0
+// GMX SMART MONEY STRUCTURE ENGINE V17.1.1
 // ================================================================
 // Decision model: MARKET EVENT + STRUCTURE + FLOW, not weighted score.
 //
@@ -21,7 +21,7 @@ const { getViemChain } = require("@gmx-io/sdk/configs/chains");
 // ================================================================
 
 const CONFIG = {
-  VERSION: "V17.0.2-SMART-MONEY-STRUCTURE-ENGINE",
+  VERSION: "V17.1.1-HYBRID-DYNAMIC-TP1-STOP",
   CHAIN_ID: 42161,
   EXECUTION_ENABLED: true,
   TELEGRAM_ENABLED: true,
@@ -115,9 +115,10 @@ const CONFIG = {
   RISK: {
     riskPerTrade: 0.01,
     maxTotalRisk: 0.03,
-    capitalAllocation: 0.05,
-    maxCapitalAllocation: 0.15,
-    defaultLeverage: 3,
+    capitalAllocation: 0.20,
+    maxCapitalAllocation: 0.20,
+    minLeverage: 3,
+    defaultLeverage: 5,
     maxLeverage: 10,
     stopAtrBuffer: 0.25,
     minStopPercent: 0.35,
@@ -126,7 +127,7 @@ const CONFIG = {
     tp2R: 2.0,
     tp3R: 3.0,
     maxNotionalUsd: 5000,
-    executionMinWalletRisk: 0.015,
+    maxExecutionRisk: 0.015,
     maxPositions: 3,
   },
 
@@ -178,7 +179,7 @@ let SMART_MONEY_CACHE = { at: 0, result: null };
 let TOP_TRADER_CACHE = { at: 0, result: null };
 
 const DEFAULT_STATE = {
-  stateVersion: 2,
+  stateVersion: 3,
   running: true,
   dayKey: new Date().toISOString().slice(0, 10),
   dailyLoss: 0,
@@ -187,6 +188,8 @@ const DEFAULT_STATE = {
   lastScan: null,
   structureStates: {},
   flowHistory: {},
+  activePositions: {},
+  completedTrades: {},
   telegramEvents: {},
   radarTelegramEvents: {},
   liveExecutionLocks: {},
@@ -757,7 +760,7 @@ async function loadState(env){
     base.structureStates={};
     base.scanCursor=0;
   }
-  return {...base,scanCursor:finite(base.scanCursor,0),structureStates:base.structureStates&&typeof base.structureStates==="object"?base.structureStates:{},flowHistory:base.flowHistory&&typeof base.flowHistory==="object"?base.flowHistory:{},telegramEvents:base.telegramEvents&&typeof base.telegramEvents==="object"?base.telegramEvents:{},radarTelegramEvents:base.radarTelegramEvents&&typeof base.radarTelegramEvents==="object"?base.radarTelegramEvents:{},liveExecutionLocks:base.liveExecutionLocks&&typeof base.liveExecutionLocks==="object"?base.liveExecutionLocks:{}};
+  return {...base,scanCursor:finite(base.scanCursor,0),structureStates:base.structureStates&&typeof base.structureStates==="object"?base.structureStates:{},flowHistory:base.flowHistory&&typeof base.flowHistory==="object"?base.flowHistory:{},activePositions:base.activePositions&&typeof base.activePositions==="object"?base.activePositions:{},completedTrades:base.completedTrades&&typeof base.completedTrades==="object"?base.completedTrades:{},telegramEvents:base.telegramEvents&&typeof base.telegramEvents==="object"?base.telegramEvents:{},radarTelegramEvents:base.radarTelegramEvents&&typeof base.radarTelegramEvents==="object"?base.radarTelegramEvents:{},liveExecutionLocks:base.liveExecutionLocks&&typeof base.liveExecutionLocks==="object"?base.liveExecutionLocks:{}};
 }
 async function saveState(env,state){if(env?.BOT_STATE)await env.BOT_STATE.put("engine_state",JSON.stringify(state));}
 function resetDailyLoss(state){const d=new Date().toISOString().slice(0,10);if(state.dayKey!==d){state.dayKey=d;state.dailyLoss=0;}}
@@ -798,6 +801,19 @@ function formatSetupTelegram(setup){
     "ℹ️ Top-trader data confirms only; it never blocks an entry."
   ].join("\n");
 }
+function formatEntryExecutedTelegram(setup,result){
+  const icon=setup.direction==="LONG"?"🟢":"🔴";
+  return [`${icon} GMX ENTRY EXECUTED — ${setup.direction}`,"━━━━━━━━━━━━━━━━━━",`📌 ${setup.symbol}/USD`,`🧭 Trigger: ${setup.trigger}`,`💵 Entry: ${setup.entryPrice}`,`📦 Position: $${Number(result.notionalUsd||0).toFixed(2)}`,`💰 Collateral: $${Number(result.collateralUsd||0).toFixed(2)}`,`⚡ Leverage: ${result.leverage}x`,`🛑 SL: ${setup.stopLoss}`,`🎯 TP1/TP2/TP3: ${setup.tp1} / ${setup.tp2} / ${setup.tp3}`,`📈 Expected PnL (planned): $${Number(result.plannedExpectedPnlUsd||0).toFixed(2)}`,`🔐 Position verified: YES`,`🆔 Request: ${result.requestId||"n/a"}`].join("\\n");
+}
+function formatBlockedTelegram(setup,result){
+  const d=result.details||{};
+  return ["⛔ GMX ENTRY BLOCKED","━━━━━━━━━━━━━━━━━━",`📌 ${setup.symbol}/USD ${setup.direction}`,`🧭 Trigger: ${setup.trigger}`,`❌ Reason: ${result.reason}`,d.message?`📝 Detail: ${d.message}`:null,d.requiredUsd?`Required: $${Number(d.requiredUsd).toFixed(4)}`:null,d.calculatedUsd?`Calculated: $${Number(d.calculatedUsd).toFixed(4)}`:null,d.openPositions!=null?`Open positions: ${d.openPositions}/${d.maxPositions}`:null,`Entry: ${setup.entryPrice}`,`SL: ${setup.stopLoss}`].filter(Boolean).join("\\n");
+}
+function formatDynamicStopTelegram(trade,dyn){return ["🔒 GMX DYNAMIC STOP ARMED","━━━━━━━━━━━━━━━━━━",`📌 ${trade.symbol}/USD ${trade.direction}`,`🎯 TP1 executed: ${Number(trade.tp1).toFixed(8)}`,`🛡️ New SL: ${Number(trade.tp1).toFixed(8)}`,`📦 Remaining position: $${Number(dyn.remainingSize||0).toFixed(2)}`,`📊 Remaining: ${(Number(dyn.remainingRatio||0)*100).toFixed(1)}%`,`ℹ️ If price reverses, the remaining position exits at TP1 instead of returning to the original SL.`].join("\n");}
+function formatExitTelegram(trade){
+  const pnl=Number(trade.actualPnlUsd||0),expected=Number(trade.plannedExpectedPnlUsd||0),delta=pnl-expected,eff=expected?((pnl/expected)*100):0;
+  return [pnl>=0?"✅ GMX POSITION CLOSED":"🔴 GMX POSITION CLOSED","━━━━━━━━━━━━━━━━━━",`📌 ${trade.symbol}/USD ${trade.direction}`,`🚪 Exit: ${trade.exitReason||"CLOSED"}`,`💵 Entry: ${Number(trade.entryPrice||0).toFixed(8)}`,`💵 Exit: ${Number(trade.exitPrice||0).toFixed(8)}`,`💰 Realized PnL: $${pnl.toFixed(4)}`,`🎯 Planned PnL: $${expected.toFixed(4)}`,`📊 Actual vs Planned: ${delta>=0?"+":""}$${delta.toFixed(4)} (${eff.toFixed(1)}%)`,`⚡ Leverage: ${trade.leverage}x`,`🧭 Trigger: ${trade.trigger}`].join("\\n");
+}
 function formatWaitingTelegram(symbol,analysis){
   const p=analysis.entries?.find(e=>e.direction==="WAIT");if(!p)return null;
   return [`⏳ GMX STRUCTURE — WAIT RETEST`,`━━━━━━━━━━━━━━━━━━`,`📌 ${symbol}/USD`,`🔻 ${p.trigger}`,`📍 Level: ${p.zone.low.toFixed(6)} — ${p.zone.high.toFixed(6)}`,`🧭 Next: ${p.direction==="LONG"?"retest above resistance → LONG":"retest below support → SHORT"}`,`📊 Evidence: ${(p.evidence||[]).join(" • ")}`].join("\n");
@@ -833,21 +849,75 @@ function balancesMap(balances){const arr=Array.isArray(balances)?balances:Array.
 function chooseCollateral(markets,symbol,balances){const map=balancesMap(balances);for(const c of ["USDC","USDT"]){if(map[c]?.usd>0&&sdkMarket(markets,symbol,c))return {...map[c],symbol:c,market:sdkMarket(markets,symbol,c)};}return null;}
 function riskNotional(wallet,entry,stop,risk){const frac=Math.abs(entry-stop)/Math.max(entry,1e-12);return frac>0?(wallet*risk)/frac:0;}
 async function verifyPosition(sdk,account,symbol,direction,attempts=3){for(let i=0;i<attempts;i++){try{const p=await sdk.fetchPositionsInfo({address:account});const want=normalizeSymbol(symbol),long=direction==="LONG";const found=(p||[]).find(x=>normalizeSymbol(String(x?.indexName||x?.symbol||"").split("/")[0])===want&&Boolean(x?.isLong)===long&&finite(x?.sizeInUsd)>0);if(found)return {verified:true,position:found};}catch(_){ }if(i<attempts-1)await sleep(500);}return {verified:false,position:null};}
+function leverageForSetup(setup){
+  const e=new Set(setup?.evidence||[]);
+  const trigger=String(setup?.trigger||"");
+  let lev=CONFIG.RISK.defaultLeverage;
+  if(trigger.includes("RETEST"))lev=8;
+  if(e.has("FLOW_CONFIRMATION")&&e.has("ACTIVITY"))lev=Math.max(lev,9);
+  if(e.has("FLOW_CONFIRMATION")&&e.has("ACTIVITY")&&e.has("RETEST_HOLD"))lev=10;
+  if(trigger.includes("SUPPORT_BOUNCE")||trigger.includes("RESISTANCE_REJECTION"))lev=Math.max(lev,6);
+  return clamp(Math.round(lev),CONFIG.RISK.minLeverage,CONFIG.RISK.maxLeverage);
+}
+function executionBlock(reason,setup,details={}){return {executed:false,blocked:true,reason:String(reason),details,setup,symbol:setup?.symbol,direction:setup?.direction};}
+function plannedExpectedPnl(setup,notional){
+  const entry=positive(setup?.entryPrice),r=positive(setup?.riskDistance);if(!(entry>0&&r>0&&notional>0))return 0;
+  const move=r/entry;
+  return notional*(0.40*move+0.30*(2*move)+0.30*(3*move));
+}
 async function executeSetup(setup,env){
-  if(!executionEnabled(env))return {executed:false,reason:"EXECUTION_DISABLED",setup};
-  const {sdk,signer,account}=await getLiveContext(env);const positions=await sdk.fetchPositionsInfo({address:account});if(Array.isArray(positions)&&positions.length>=CONFIG.RISK.maxPositions) return {executed:false,reason:"MAX_POSITIONS",setup};
-  const markets=await sdk.fetchMarkets();const balances=await sdk.fetchWalletBalances({address:account});const collateral=chooseCollateral(markets,setup.symbol,balances);if(!collateral)throw new Error("NO_USDC_USDT_COLLATERAL_MARKET");
-  const market=collateral.market,sdkSymbol=market.symbol,orderDirection=setup.direction==="LONG"?"long":"short";const capacity=await sdk.getTradingCapacity({symbol:sdkSymbol,direction:orderDirection});const capacityUsd=scaledUsd(capacity?.availableLiquidity||0);const walletUsd=collateral.usd;
-  const leverage=CONFIG.RISK.defaultLeverage,allocation=CONFIG.RISK.capitalAllocation;const entry=setup.entryPrice,stop=setup.stopLoss;const rb=riskNotional(walletUsd,entry,stop,CONFIG.RISK.riskPerTrade);const allocationNotional=walletUsd*allocation*leverage;let notional=Math.min(rb,allocationNotional,CONFIG.RISK.maxNotionalUsd,capacityUsd>0?capacityUsd:Number.MAX_SAFE_INTEGER);
-  const frac=Math.abs(entry-stop)/Math.max(entry,1e-12),riskCap=riskNotional(walletUsd,entry,stop,CONFIG.RISK.executionMinWalletRisk);notional=Math.min(notional,riskCap);if(!(notional>0))throw new Error("INVALID_RISK_NOTIONAL");
-  const minPos=scaledUsd(market?.minPositionSizeUsd||0),minCol=scaledUsd(market?.minCollateralUsd||0);const collateralUsd=notional/leverage;if(minPos>0&&notional<minPos)throw new Error(`MARKET_MIN_POSITION_BLOCKED:${minPos}`);if(minCol>0&&collateralUsd<minCol)throw new Error(`MARKET_MIN_COLLATERAL_BLOCKED:${minCol}`);
-  const size=toBigIntDecimal(notional,30),collateralAmount=toBigIntDecimal(collateralUsd,6),tp=toBigIntDecimal(setup.tp1,30),sl=toBigIntDecimal(setup.stopLoss,30);
-  const lockKey=`LIVE|${normalizeSymbol(setup.symbol)}|${setup.direction}|${setup.trigger}|${setup.candleTimestamp}`;const stateLocks=env.BOT_STATE?await env.BOT_STATE.get("live_locks","json"):{};if(stateLocks?.[lockKey])return {executed:false,reason:"DUPLICATE_EXECUTION",setup};const locks={...(stateLocks||{}),[lockKey]:Date.now()};if(env.BOT_STATE)await env.BOT_STATE.put("live_locks",JSON.stringify(locks),{expirationTtl:86400});
+  if(!executionEnabled(env))return executionBlock("EXECUTION_DISABLED",setup);
+  let ctx;
+  try{ctx=await getLiveContext(env);}catch(e){return executionBlock("LIVE_CONTEXT_ERROR",setup,{message:safeError(e)});}
+  const {sdk,signer,account}=ctx;
+  let positions=[];
+  try{positions=await sdk.fetchPositionsInfo({address:account});}catch(e){return executionBlock("POSITION_READ_FAILED",setup,{message:safeError(e)});}
+  if(Array.isArray(positions)&&positions.length>=CONFIG.RISK.maxPositions)return executionBlock("MAX_POSITIONS",setup,{openPositions:positions.length,maxPositions:CONFIG.RISK.maxPositions});
+  let markets,balances;
+  try{markets=await sdk.fetchMarkets();balances=await sdk.fetchWalletBalances({address:account});}catch(e){return executionBlock("ACCOUNT_MARKET_READ_FAILED",setup,{message:safeError(e)});}
+  const collateral=chooseCollateral(markets,setup.symbol,balances);
+  if(!collateral)return executionBlock("NO_USDC_USDT_COLLATERAL_MARKET",setup,{symbol:setup.symbol});
+  const market=collateral.market,sdkSymbol=market.symbol,orderDirection=setup.direction==="LONG"?"long":"short";
+  let capacity;
+  try{capacity=await sdk.getTradingCapacity({symbol:sdkSymbol,direction:orderDirection});}catch(e){return executionBlock("TRADING_CAPACITY_READ_FAILED",setup,{message:safeError(e)});}
+  const capacityUsd=scaledUsd(capacity?.availableLiquidity||0),walletUsd=collateral.usd;
+  const entry=setup.entryPrice,stop=setup.stopLoss;
+  const rb=riskNotional(walletUsd,entry,stop,CONFIG.RISK.riskPerTrade);
+  const riskCap=riskNotional(walletUsd,entry,stop,CONFIG.RISK.maxExecutionRisk);
+  let notional=Math.min(rb,riskCap,CONFIG.RISK.maxNotionalUsd,capacityUsd>0?capacityUsd:Number.MAX_SAFE_INTEGER);
+  const targetCollateral=walletUsd*CONFIG.RISK.capitalAllocation;
+  const requiredLeverage=targetCollateral>0?notional/targetCollateral:CONFIG.RISK.defaultLeverage;
+  const signalLeverage=leverageForSetup(setup);
+  const leverage=Math.max(CONFIG.RISK.minLeverage,Math.min(CONFIG.RISK.maxLeverage,Math.max(signalLeverage,requiredLeverage||CONFIG.RISK.defaultLeverage)));
+  const allocationNotional=targetCollateral*leverage;
+  notional=Math.min(notional,allocationNotional);
+  if(!(notional>0))return executionBlock("INVALID_RISK_NOTIONAL",setup,{walletUsd,entry,stop,leverage});
+  const frac=Math.abs(entry-stop)/Math.max(entry,1e-12);
+  if(!(frac>0))return executionBlock("INVALID_STOP_DISTANCE",setup,{entry,stop});
+  const minPos=scaledUsd(market?.minPositionSizeUsd||0),minCol=scaledUsd(market?.minCollateralUsd||0);
+  const collateralUsd=notional/leverage;
+  if(minPos>0&&notional<minPos)return executionBlock("MARKET_MIN_POSITION_BLOCKED",setup,{requiredUsd:minPos,calculatedUsd:notional});
+  if(minCol>0&&collateralUsd<minCol)return executionBlock("MARKET_MIN_COLLATERAL_BLOCKED",setup,{requiredUsd:minCol,calculatedUsd:collateralUsd});
+  const size=toBigIntDecimal(notional,30),collateralAmount=toBigIntDecimal(collateralUsd,6);
+  const tp1=toBigIntDecimal(setup.tp1,30),tp2=toBigIntDecimal(setup.tp2,30),tp3=toBigIntDecimal(setup.tp3,30),sl=toBigIntDecimal(setup.stopLoss,30);
+  const size1=toBigIntDecimal(notional*0.40,30),size2=toBigIntDecimal(notional*0.30,30),size3=toBigIntDecimal(notional*0.30,30);
+  const lockKey=`LIVE|${normalizeSymbol(setup.symbol)}|${setup.direction}|${setup.trigger}|${setup.candleTimestamp}`;
+  const stateLocks=env.BOT_STATE?await env.BOT_STATE.get("live_locks","json"):{};
+  if(stateLocks?.[lockKey])return executionBlock("DUPLICATE_EXECUTION",setup,{lockKey});
+  const locks={...(stateLocks||{}),[lockKey]:Date.now()};if(env.BOT_STATE)await env.BOT_STATE.put("live_locks",JSON.stringify(locks),{expirationTtl:86400});
   try{
-    const result=await sdk.executeExpressOrder({kind:"increase",symbol:sdkSymbol,direction:orderDirection,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:collateralAmount,token:collateral.symbol},mode:"express",from:account,tpsl:[{type:"take-profit",triggerPrice:tp,size},{type:"stop-loss",triggerPrice:sl,size}]},signer);
-    const verification=await verifyPosition(sdk,account,sdkSymbol,setup.direction,3);
-    return {executed:true,orderSubmitted:true,positionVerified:verification.verified,requestId:result?.requestId||null,status:result?.status||null,account,symbol:sdkSymbol,direction:setup.direction,notionalUsd:notional,collateralUsd,collateralToken:collateral.symbol,leverage,setup};
-  }finally{}
+    const result=await sdk.executeExpressOrder({kind:"increase",symbol:sdkSymbol,direction:orderDirection,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:collateralAmount,token:collateral.symbol},mode:"express",from:account,tpsl:[
+      {type:"take-profit",triggerPrice:tp1,size:size1},
+      {type:"take-profit",triggerPrice:tp2,size:size2},
+      {type:"take-profit",triggerPrice:tp3,size:size3},
+      {type:"stop-loss",triggerPrice:sl,size}
+    ]},signer);
+    const verification=await verifyPosition(sdk,account,sdkSymbol,setup.direction,5);
+    if(!verification.verified)return {executed:true,orderSubmitted:true,positionVerified:false,requestId:result?.requestId||null,status:result?.status||null,account,symbol:sdkSymbol,direction:setup.direction,notionalUsd:notional,collateralUsd,collateralToken:collateral.symbol,leverage,setup,verificationWarning:"ORDER_SUBMITTED_BUT_POSITION_NOT_VERIFIED"};
+    const pos=verification.position||{};
+    const tradeId=String(pos.positionKey||pos.key||`${sdkSymbol}|${setup.direction}|${Date.now()}`);
+    return {executed:true,orderSubmitted:true,positionVerified:true,requestId:result?.requestId||null,status:result?.status||null,account,symbol:sdkSymbol,direction:setup.direction,notionalUsd:notional,collateralUsd,collateralToken:collateral.symbol,leverage,tradeId,plannedExpectedPnlUsd:plannedExpectedPnl(setup,notional),setup,position:pos};
+  }catch(e){return executionBlock("ORDER_SUBMISSION_FAILED",setup,{message:safeError(e),sdkSymbol,leverage,notionalUsd:notional,collateralUsd});}
 }
 
 // ================================================================
@@ -912,8 +982,6 @@ async function scan(env,options={}){
       eventStats.retestConfirmed+=ef.retestConfirmed?1:0;
       eventStats.exhausted+=ef.exhausted?1:0;
       const setup=buildSetup(row.s,analysis,flow,traders);if(setup){candidates.push(setup);eventStats.entryReady++;}
-      const wait=formatWaitingTelegram(row.s,analysis);if(wait&&!eventFresh(state,`WAIT|${row.s}|${analysis.state}`)){await sendTelegram(env,wait,"normal");markEvent(state,`WAIT|${row.s}|${analysis.state}`);}
-      if(CONFIG.RADAR.enabled){const radar=formatRadarTelegram(row.s,analysis);if(radar&&!eventFresh(state,`RADAR|${row.s}|${analysis.state}|${analysis.direction}`)){await sendTelegram(env,radar,"radar");state.radarTelegramEvents[`RADAR|${row.s}|${analysis.state}|${analysis.direction}`]=Date.now();}}
       console.log("[STRUCTURE]",{symbol:row.s,state:analysis.state,direction:analysis.direction,move5:analysis.move5,flow:flow.imbalance,flowSurge:Boolean(flow.flowSurge||flow.explosiveFlow),volume:analysis.volume?.volumeRatio,range:analysis.volume?.rangeRatio,support:analysis.zones?.support?.[0]?.center||null,resistance:analysis.zones?.resistance?.[0]?.center||null,pendingRetest:Boolean(analysis.nextState?.pendingRetest),events:analysis.eventFlags||{}});
     }catch(e){
       const message=safeError(e);
@@ -929,8 +997,16 @@ async function scan(env,options={}){
     const key=eventKey("ENTRY",setup);if(eventFresh(state,key))continue;
     try{
       const result=await executeSetup(setup,env);executionResults.push(result);
-      if(result.executed){executed++;state.executions++;markEvent(state,key);await sendTelegram(env,[result.positionVerified?"✅ GMX POSITION VERIFIED":"⚠️ GMX ORDER SUBMITTED — VERIFICATION PENDING","━━━━━━━━━━━━━━━━━━",`${setup.symbol}/USD ${setup.direction}`,`Trigger: ${setup.trigger}`,`Entry: ${setup.entryPrice}`,`SL: ${setup.stopLoss}`,`TP1: ${setup.tp1}`,`Request: ${result.requestId||"n/a"}`,`Position verified: ${result.positionVerified?"YES":"NO"}`].join("\n"),"entry");break;}
-    }catch(e){executionResults.push({executed:false,symbol:setup.symbol,error:safeError(e)});}
+      if(result.executed){
+        executed++;state.executions++;markEvent(state,key);
+        if(result.positionVerified){
+          const tradeKey=String(result.tradeId||`${result.symbol}|${result.direction}|${Date.now()}`);
+          state.activePositions[tradeKey]={tradeId:tradeKey,symbol:result.symbol,marketSymbol:result.symbol,direction:result.direction,account:result.account,openedAt:Date.now(),requestId:result.requestId||null,entryPrice:setup.entryPrice,stopLoss:setup.stopLoss,tp1:setup.tp1,tp2:setup.tp2,tp3:setup.tp3,notionalUsd:result.notionalUsd,collateralUsd:result.collateralUsd,collateralToken:result.collateralToken||"USDC",leverage:result.leverage,plannedExpectedPnlUsd:result.plannedExpectedPnlUsd,evidence:setup.evidence||[],trigger:setup.trigger,lastPrice:setup.entryPrice,maxPnlUsd:0,tp1StopArmed:false};
+        }
+        await sendTelegram(env,formatEntryExecutedTelegram(setup,result),"entry");break;
+      }
+      if(result.blocked){await sendTelegram(env,formatBlockedTelegram(setup,result),"entry");}
+    }catch(e){const blocked=executionBlock("UNEXPECTED_EXECUTION_ERROR",setup,{message:safeError(e)});executionResults.push(blocked);await sendTelegram(env,formatBlockedTelegram(setup,blocked),"entry");}
   }
   state.lastScan={at:Date.now(),durationMs:Date.now()-started,candidates:candidates.length,executed};state.diagnostics={version:CONFIG.VERSION,structureModel:"EVENT_SEQUENCE_NO_SCORE",markets:markets.length,deepScanned:scanRows.length,entries:candidates.length,executed,flowAvailable:flowData.available,topTraderAvailable:traders.available,resolver:resolverStats,eventStats,telegram:{remaining:tgBudget(env).remaining,attempted:tgBudget(env).attempted},statePersistence:Boolean(env?.BOT_STATE),errors};await saveState(env,state);
   return {ok:true,status:candidates.length?"ENTRY_READY":"WATCHING",scanned:scanRows.length,requested:markets.length,entries:candidates,executionResults,executed,diagnostics:state.diagnostics,timestamp:Date.now()};
@@ -939,17 +1015,160 @@ async function scan(env,options={}){
 // ================================================================
 // LIVE POSITION MONITOR — safety only. It does not manufacture entries.
 // ================================================================
+function positionMatchesTracked(p,trade){
+  const sym=normalizeSymbol(String(p?.indexName||p?.symbol||"").split("/")[0]);
+  return sym===normalizeSymbol(trade.symbol)&&Boolean(p?.isLong)===(trade.direction==="LONG")&&finite(p?.sizeInUsd)>0;
+}
+function tradePnlUsd(t){
+  const keys=["realizedPnlUsd","realisedPnlUsd","realizedPnl","realisedPnl","pnlUsd","pnl","basePnlUsd","basePnl"];
+  for(const k of keys){if(t?.[k]!==undefined&&t?.[k]!==null){const v=scaledUsd(t[k]);if(Number.isFinite(v)&&v!==0)return v;}}
+  return 0;
+}
+function tradeExitPrice(t){return positive(t?.executionPrice)||positive(t?.price)||positive(t?.triggerPrice)||0;}
+async function findActualClosedPnl(sdk,trade){
+  if(typeof sdk.searchTrades!=="function")return {pnlUsd:0,exitPrice:0,source:"unavailable"};
+  try{
+    const since=Math.max(0,Math.floor((finite(trade.openedAt)-120000)/1000));
+    const res=await sdk.searchTrades({address:trade.account,fromTimestamp:since,limit:100});
+    const list=tradeRows(res).filter(t=>{
+      const sym=normalizeSymbol(String(t?.indexName||t?.symbol||t?.market||"").split("/")[0]);
+      const ts=finite(t?.timestamp||t?.createdAt||t?.updatedAt)*1000;
+      const event=String(t?.eventName||t?.action||t?.type||"").toLowerCase();
+      return sym===normalizeSymbol(trade.symbol)&&(ts===0||ts>=finite(trade.openedAt)-120000)&&(/decrease|close|liquidat|take.?profit|stop.?loss|realiz/.test(event)||tradePnlUsd(t)!==0);
+    });
+    const pnl=list.reduce((a,t)=>a+tradePnlUsd(t),0);const exits=list.map(tradeExitPrice).filter(Boolean);return {pnlUsd:pnl,exitPrice:exits.length?exits[exits.length-1]:0,source:"GMX_TRADE_HISTORY",rows:list.length};
+  }catch(e){return {pnlUsd:0,exitPrice:0,source:"trade_history_error",error:safeError(e)};}
+}
+
+function orderSymbol(o){
+  return normalizeSymbol(String(o?.indexName||o?.symbol||o?.marketSymbol||o?.market||"").split("/")[0]);
+}
+function orderTypeName(o){
+  return String(o?.orderType||o?.type||o?.orderTypeName||"").toLowerCase();
+}
+function orderTrigger(o){return positive(o?.triggerPrice||o?.acceptablePrice||o?.price)||0;}
+
+async function submitPreparedExpressIntent(sdk, prepared, signer, account){
+  const signature=await sdk.signOrder(prepared,signer);
+  return sdk.submitOrder({
+    mode:prepared.mode,
+    requestId:prepared.requestId,
+    signature,
+    from:account,
+    idempotencyKey:prepared.idempotencyKey,
+    eip712Data:{batchParams:prepared.payload.batchParams,relayParams:prepared.payload.relayParams},
+  });
+}
+
+async function findTrackedExitOrders(sdk, account, trade){
+  if(typeof sdk.fetchOrders!=="function")return [];
+  try{
+    const orders=await sdk.fetchOrders({address:account});
+    const sym=normalizeSymbol(trade.symbol);
+    return (Array.isArray(orders)?orders:[]).filter(o=>{
+      const os=orderSymbol(o);
+      const longMatch=Boolean(o?.isLong)===(trade.direction==="LONG");
+      return os===sym&&longMatch&&(/stop.?loss|take.?profit/.test(orderTypeName(o)));
+    });
+  }catch(e){return [];}
+}
+
+async function armTp1AsDynamicStop(sdk, signer, account, trade, position){
+  if(trade.tp1StopArmed)return {armed:false,already:true};
+  const currentSize=finite(position?.sizeInUsd);
+  const originalSize=finite(trade.notionalUsd);
+  if(!(currentSize>0&&originalSize>0))return {armed:false,reason:"POSITION_SIZE_UNAVAILABLE"};
+
+  // TP1 is 40% of the original position. Only arm the dynamic stop after
+  // the live position has actually shrunk to roughly the remaining 60%.
+  const remainingRatio=currentSize/originalSize;
+  const tp1SizeReductionConfirmed=remainingRatio<=0.72;
+  if(!tp1SizeReductionConfirmed)return {armed:false,reason:"TP1_NOT_CONFIRMED",remainingRatio};
+
+  const orders=await findTrackedExitOrders(sdk,account,trade);
+  const oldStop=orders.find(o=>{
+    const t=orderTypeName(o),tr=orderTrigger(o);
+    return /stop.?loss/.test(t)&&Math.abs(tr-trade.stopLoss)<=Math.max(Math.abs(trade.stopLoss)*0.0005,1e-8);
+  });
+
+  const tp1=toBigIntDecimal(trade.tp1,30);
+  const size=BigInt(Math.floor(currentSize));
+  const stopResult=await sdk.executeExpressOrder({
+    kind:"decrease",
+    symbol:trade.marketSymbol||trade.symbol,
+    direction:trade.direction.toLowerCase()==="long"?"long":"short",
+    orderType:"stop-loss",
+    size,
+    triggerPrice:tp1,
+    collateralToken:trade.collateralToken||"USDC",
+    receiveToken:trade.collateralToken||"USDC",
+    mode:"express",
+    from:account,
+  },signer);
+
+  let cancelResult=null;
+  if(oldStop?.key&&typeof sdk.prepareCancelOrder==="function"){
+    try{
+      const prepared=await sdk.prepareCancelOrder({orderIds:[oldStop.key],mode:"express",from:account});
+      cancelResult=await submitPreparedExpressIntent(sdk,prepared,signer,account);
+    }catch(e){
+      // The new higher stop is already live; retaining the old lower stop is
+      // safer than removing protection if cancellation fails.
+      cancelResult={error:safeError(e)};
+    }
+  }
+  return {
+    armed:true,
+    tp1:trade.tp1,
+    remainingSize:currentSize,
+    remainingRatio,
+    newStopRequestId:stopResult?.requestId||null,
+    newStopOrderKeys:stopResult?.orderKeys||[],
+    oldStopOrderKey:oldStop?.key||null,
+    oldStopCancel:cancelResult,
+  };
+}
+
 async function monitorLivePositions(env){
   if(!executionEnabled(env))return [];
-  const {sdk,account}=await getLiveContext(env);const positions=await sdk.fetchPositionsInfo({address:account});if(!Array.isArray(positions)||!positions.length)return [];
-  const markets=await sdk.fetchMarkets();const actions=[];
-  for(const p of positions){try{
-    const symbol=normalizeSymbol(String(p?.indexName||p?.symbol||"").split("/")[0]);if(!symbol||!(finite(p?.sizeInUsd)>0))continue;
-    const c5=await fetchCandles(symbol,"5m",80);const price=positive(c5.at(-1)?.close);if(!(price>0))continue;const entry=positive(p?.entryPrice||p?.entryPriceUsd||p?.averagePrice);const side=p?.isLong?"LONG":"SHORT";const stop=positive(p?.stopLossPrice||p?.stopLoss);const hardStop=stop>0&&(side==="LONG"?price<=stop:price>=stop);
-    const pnlPct=entry>0?(side==="LONG"?(price-entry)/entry:(entry-price)/entry)*100:0;
-    if(hardStop){const market=sdkMarket(markets,symbol);if(market){const collateral=String(p?.collateralToken||p?.collateralSymbol||"USDC").toUpperCase()==="USDT"?"USDT":"USDC";const size=BigInt(Math.floor(finite(p?.sizeInUsd)));try{const r=await sdk.executeExpressOrder({kind:"decrease",symbol:market.symbol,direction:side==="LONG"?"long":"short",orderType:"market",size,collateralToken:collateral,receiveToken:collateral,mode:"express",from:account},LIVE_CONTEXT.signer);actions.push({symbol,direction:side,action:"HARD_STOP",pnlPct,requestId:r?.requestId||null});}catch(e){actions.push({symbol,direction:side,action:"HARD_STOP_ERROR",error:safeError(e)});}}}
-  }catch(e){actions.push({symbol: p?.indexName||"UNKNOWN",action:"MONITOR_ERROR",error:safeError(e)});}}
-  return actions;
+  const {sdk,account,signer}=await getLiveContext(env);const positions=await sdk.fetchPositionsInfo({address:account});const current=Array.isArray(positions)?positions:[];const actions=[];
+  const state=await loadState(env);const active=state.activePositions||{};const markets=await sdk.fetchMarkets();
+  for(const [tradeKey,trade] of Object.entries(active)){
+    try{
+      const p=current.find(x=>positionMatchesTracked(x,trade));
+      if(p){
+        const symbol=normalizeSymbol(String(p?.indexName||p?.symbol||trade.symbol).split("/")[0]);const c5=await fetchCandles(symbol,"5m",80);const price=positive(c5.at(-1)?.close);const entry=positive(p?.entryPrice||trade.entryPrice);const side=trade.direction;const stop=positive(trade.stopLoss);const pnlPct=entry>0?(side==="LONG"?(price-entry)/entry:(entry-price)/entry)*100:0;const pnlUsd=side==="LONG"?trade.notionalUsd*((price-entry)/entry):trade.notionalUsd*((entry-price)/entry);trade.lastPrice=price||trade.lastPrice;trade.lastPnlUsd=pnlUsd;trade.maxPnlUsd=Math.max(finite(trade.maxPnlUsd),pnlUsd);
+        if(!trade.tp1StopArmed){
+          try{
+            const dyn=await armTp1AsDynamicStop(sdk,signer,account,trade,p);
+            if(dyn.armed){
+              trade.tp1StopArmed=true;
+              trade.dynamicStopPrice=trade.tp1;
+              trade.dynamicStopArmedAt=Date.now();
+              trade.dynamicStopOrderKeys=dyn.newStopOrderKeys||[];
+              trade.dynamicStopRequestId=dyn.newStopRequestId||null;
+              trade.oldStopOrderKey=dyn.oldStopOrderKey||null;
+              actions.push({symbol:trade.symbol,direction:trade.direction,action:"TP1_HIT_DYNAMIC_STOP_ARMED",tp1:trade.tp1,remainingSize:dyn.remainingSize,remainingRatio:dyn.remainingRatio,newStopRequestId:dyn.newStopRequestId||null,oldStopOrderKey:dyn.oldStopOrderKey||null,oldStopCancelError:dyn.oldStopCancel?.error||null});
+              await sendTelegram(env,formatDynamicStopTelegram(trade,dyn),"exit");
+            }
+          }catch(e){
+            actions.push({symbol:trade.symbol,direction:trade.direction,action:"TP1_DYNAMIC_STOP_ERROR",error:safeError(e)});
+          }
+        }
+        state.activePositions[tradeKey]=trade;
+        const hardStop=stop>0&&price>0&&(side==="LONG"?price<=stop:price>=stop);
+        if(hardStop){const market=sdkMarket(markets,symbol,trade.collateralToken);if(!market){actions.push({symbol,direction:side,action:"HARD_STOP_BLOCKED",reason:"MARKET_NOT_FOUND"});continue;}const size=BigInt(Math.floor(finite(p?.sizeInUsd)));try{const r=await sdk.executeExpressOrder({kind:"decrease",symbol:market.symbol,direction:side==="LONG"?"long":"short",orderType:"market",size,collateralToken:trade.collateralToken||"USDC",receiveToken:trade.collateralToken||"USDC",mode:"express",from:account},signer);actions.push({symbol,direction:side,action:"HARD_STOP_SUBMITTED",requestId:r?.requestId||null,pnlPct});}catch(e){actions.push({symbol,direction:side,action:"HARD_STOP_ERROR",error:safeError(e)});}}
+        continue;
+      }
+      const actual=await findActualClosedPnl(sdk,trade);
+      if(actual.source!=="GMX_TRADE_HISTORY"||!(actual.rows>0)){
+        actions.push({symbol:trade.symbol,direction:trade.direction,action:"POSITION_CLOSED_AWAITING_HISTORY",pnlSource:actual.source});
+        continue;
+      }
+      const exitPrice=actual.exitPrice||trade.lastPrice||0;const completed={...trade,closedAt:Date.now(),actualPnlUsd:actual.pnlUsd,exitPrice,exitReason:"GMX_EXECUTED_EXIT",pnlSource:actual.source};state.completedTrades[tradeKey]=completed;delete state.activePositions[tradeKey];actions.push({symbol:trade.symbol,direction:trade.direction,action:"POSITION_CLOSED",actualPnlUsd:actual.pnlUsd,plannedExpectedPnlUsd:trade.plannedExpectedPnlUsd,exitPrice,pnlSource:actual.source});await sendTelegram(env,formatExitTelegram(completed),"exit");
+    }catch(e){actions.push({symbol:trade?.symbol||"UNKNOWN",action:"EXIT_MONITOR_ERROR",error:safeError(e)});}
+  }
+  await saveState(env,state);return actions;
 }
 
 // ================================================================

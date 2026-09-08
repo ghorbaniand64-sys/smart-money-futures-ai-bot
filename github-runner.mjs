@@ -97,7 +97,7 @@ async function main() {
   console.log("[GITHUB][START]", {
     scheduledTime,
     worker: "worker_core.js",
-    expectedVersion: "V17.0.2-SMART-MONEY-STRUCTURE-ENGINE",
+    expectedVersion: "V17.1.1-HYBRID-DYNAMIC-TP1-STOP",
     executionEnabled: env.EXECUTION_ENABLED,
     executionEnabledSource: process.env.EXECUTION_ENABLED == null ? "runner-default-true" : "github-env"
   });
