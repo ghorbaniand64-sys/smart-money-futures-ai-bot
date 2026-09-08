@@ -404,7 +404,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.1.9-HYBRID-ALL-ALTCOIN-COVERAGE",
+VERSION: "V17.1.9.1-HYBRID-DEEP-SCAN-DIAGNOSTIC-REPAIR",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -4326,26 +4326,40 @@ async function runFullScan(env, scanOptions = {}) {
   // The broad pass above is what gives every altcoin continuous observation coverage.
   const limit=Math.min(Number(CONFIG.HYBRID_DEEP_SCAN_LIMIT||CONFIG.DEEP_SCAN_LIMIT||18),Math.max(1,ranked.length));
   const cursor=Math.abs(Number(state.hybridScanCursor||0))%Math.max(1,ranked.length),rows=[];const hot=ranked.filter(x=>x.priority>=4).slice(0,Math.min(6,limit));
-  for(const x of hot)if(!rows.includes(x))rows.push(x);
+  // Retest states get first-class rotation priority so a valid breakout is not lost
+  // simply because its symbol moved out of the top-flow slice on the next cycle.
+  const pendingSymbols=new Set(Object.entries(state.hybridStructureStates||{}).filter(([,v])=>v?.pendingRetest).map(([k])=>normalizeSymbol(k)));
+  for(const x of ranked)if(pendingSymbols.has(x.s)&&rows.length<limit&&!rows.includes(x))rows.push(x);
+  for(const x of hot)if(!rows.includes(x)&&rows.length<limit)rows.push(x);
   for(let i=0;i<ranked.length&&rows.length<limit;i++){const x=ranked[(cursor+i)%ranked.length];if(!rows.includes(x))rows.push(x);}
   state.hybridScanCursor=(cursor+rows.length)%Math.max(1,ranked.length);
   console.log("[HYBRID][DEEP_PLAN]",{universe:markets.length,broad5mScanned:broad5m.size,deepPlanned:rows.length,cursorBefore:cursor,cursorAfter:state.hybridScanCursor,hotSelected:hot.length,rotating:true});
   const eventStats={supportZones:0,resistanceZones:0,flowEvents:0,volumeEvents:0,supportReactions:0,resistanceReactions:0,breakouts:0,waitingRetests:0,retestConfirmed:0,entryReady:0};
   let eventCandidates=0;
+  let deepAttempted=0,deepSucceeded=0,deepErrors=0;
+  console.log("[HYBRID][DEEP_START]",{planned:rows.length,universe:markets.length,broad5mScanned:broad5m.size});
   for(const row of rows){
+    deepAttempted++;
+    let deepStage="START";
+    console.log("[HYBRID][DEEP_ROW]",{symbol:row.s,priority:row.priority,stage:deepStage});
     try{
+      deepStage="5M";
       const c5=broad5m.get(row.s)?.candles || await fetchCandlesScan(row.s,"5m",CONFIG.CANDLE_LIMIT["5m"]);
+      deepStage="MTF";
       const [c15,c1h,c4h]=await Promise.all([fetchCandlesScan(row.s,"15m",CONFIG.CANDLE_LIMIT["15m"]),fetchCandlesScan(row.s,"1h",CONFIG.CANDLE_LIMIT["1h"]),fetchCandlesScan(row.s,"4h",CONFIG.CANDLE_LIMIT["4h"])]);
-      const price=Number(c5.at(-1)?.close||c15.at(-1)?.close||0);if(!(price>0))continue;
+      deepStage="ANALYZE";
+      const price=Number(c5.at(-1)?.close||c15.at(-1)?.close||0);if(!(price>0)){deepErrors++;console.warn("[HYBRID][DEEP_ERROR]",{symbol:row.s,stage:"PRICE",error:"INVALID_PRICE"});continue;}
       const flow=row.f||{imbalance:0,totalUsd:0};const prev=state.hybridStructureStates?.[row.s]||{};
       const analysis=hybridClassifyStructure(row.s,{"5m":c5,"15m":c15,"1h":c1h,"4h":c4h},price,flow,prev);analysis.price=price;analysis.candles={"5m":c5,"15m":c15,"1h":c1h,"4h":c4h};
       if(!state.hybridStructureStates)state.hybridStructureStates={};state.hybridStructureStates[row.s]=analysis.nextState||prev;
       const ef=analysis.eventFlags||{};eventStats.supportZones+=ef.supportZone?1:0;eventStats.resistanceZones+=ef.resistanceZone?1:0;eventStats.flowEvents+=(flow.flowSurge||flow.explosiveFlow)?1:0;eventStats.volumeEvents+=(analysis.volume?.volumeSurge||analysis.volume?.rangeExpansion||analysis.volume?.volumeExplosive)?1:0;eventStats.supportReactions+=ef.supportReaction?1:0;eventStats.resistanceReactions+=ef.resistanceReaction?1:0;eventStats.breakouts+=ef.breakout?1:0;eventStats.waitingRetests+=ef.waitingRetest?1:0;eventStats.retestConfirmed+=ef.retestConfirmed?1:0;
       if(ef.supportReaction||ef.resistanceReaction||ef.breakout||ef.waitingRetest||ef.retestConfirmed)eventCandidates++;
       const setup=hybridBuildSetup(row.s,analysis,flow,traders);if(setup){eventStats.entryReady++;signals.push({id:crypto.randomUUID(),symbol:setup.symbol,market:pairSymbol(setup.symbol),direction:setup.direction,status:"EVENT_ENTRY_READY",score:100,confidence:100,price:setup.entryPrice,tradePlan:{valid:true,entry:setup.entryPrice,stopLoss:setup.stopLoss,tp1:setup.tp1,tp2:setup.tp2,tp3:setup.tp3,leverage:setup.leverage,allocation:setup.allocation,allocationPercent:20},trend:{},components:{structureEvent:setup.trigger,volume:analysis.volume,flow:flow},diagnostics:setup.evidence,signalTier:"EVENT_SEQUENCE",executionEligible:true,edge:100,riskScore:0,entryQuality:{overextended:false},topTraderIntelligence:setup.topTrader,hybridSetup:setup,generatedAt:Date.now()});}
+      deepSucceeded++;
       console.log("[HYBRID][STRUCTURE]",{symbol:row.s,state:analysis.state,direction:analysis.direction,move5:analysis.move5,flow:flow.imbalance,flowSurge:Boolean(flow.flowSurge||flow.explosiveFlow),volume:analysis.volume?.volumeRatio,range:analysis.volume?.rangeRatio,support:analysis.zones?.support?.[0]?.center||null,resistance:analysis.zones?.resistance?.[0]?.center||null,events:analysis.eventFlags||{}});
-    }catch(e){errors.push({symbol:row.s,error:safeError(e)});}
+    }catch(e){deepErrors++;const detail=safeError(e);errors.push({symbol:row.s,scope:"deep-structure",stage:deepStage,error:detail});console.error("[HYBRID][DEEP_ERROR]",{symbol:row.s,stage:deepStage,error:detail});}
   }
+  console.log("[HYBRID][DEEP_DONE]",{attempted:deepAttempted,succeeded:deepSucceeded,errors:deepErrors,planned:rows.length,eventCandidates});
   // Entry selection is intentionally simple: an actual structural event is enough.
   // Top Trader is positive confirmation only; it never blocks an event.
   signals.sort((a,b)=>{const at=a.hybridSetup?.topTrader?.boost||0,bt=b.hybridSetup?.topTrader?.boost||0;return bt-at;});
@@ -4359,10 +4373,10 @@ async function runFullScan(env, scanOptions = {}) {
     }catch(e){executionResults.push({executed:false,mode:"LIVE",symbol:signal.symbol,error:safeError(e)});errors.push({symbol:signal.symbol,error:safeError(e)});}
   }
   state.lastScan={at:Date.now(),durationMs:Date.now()-started,candidates:signals.length,executed:executionResults.filter(x=>x?.executed).length};
-  state.lastDiagnostics={version:"V17.1.9-HYBRID-ALL-ALTCOIN-COVERAGE",engine:"STRUCTURE+VOLUME+SMART_MONEY_NO_ENTRY_SCORE_GATE",markets:markets.length,broad5mScanned:broad5m.size,deepScanned:rows.length,eventCandidates,entries:signals.length,executed:executionResults.filter(x=>x?.executed).length,flowAvailable:Boolean(flowData?.available),topTraderAvailable:Boolean(traders?.available),eventStats,errors};
+  state.lastDiagnostics={version:"V17.1.9.1-HYBRID-DEEP-SCAN-DIAGNOSTIC-REPAIR",engine:"STRUCTURE+VOLUME+SMART_MONEY_NO_ENTRY_SCORE_GATE",markets:markets.length,broad5mScanned:broad5m.size,deepScanned:rows.length,eventCandidates,entries:signals.length,executed:executionResults.filter(x=>x?.executed).length,flowAvailable:Boolean(flowData?.available),topTraderAvailable:Boolean(traders?.available),eventStats,errors};
   try{await saveState(env,state);}catch(e){errors.push({scope:"state",error:safeError(e)});
   }
-  return{ok:true,status:signals.length?"ENTRY_READY":"WATCHING",scanned:markets.length,requested:markets.length,broad5mScanned:broad5m.size,deepScanned:rows.length,eventCandidates,candidates:signals.length,signals,executionResults,errors,eventStats,diagnostics:state.lastDiagnostics,timestamp:Date.now()};
+  return{ok:true,status:signals.length?"ENTRY_READY":"WATCHING",scanned:markets.length,requested:markets.length,broad5mScanned:broad5m.size,deepPlanned:rows.length,deepAttempted,deepSucceeded,deepErrors,deepScanned:deepSucceeded,eventCandidates,candidates:signals.length,signals,executionResults,errors,eventStats,diagnostics:state.lastDiagnostics,timestamp:Date.now()};
 }
 
 async function riskGuard(env, state) {
