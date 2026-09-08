@@ -4,7 +4,7 @@ import { getViemChain } from "@gmx-io/sdk/configs/chains";
  
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V16.0.2 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Live Position Size Scope Repair
+// Version: V16.0.4 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Live Position Size Scope Repair
 // Platform: GitHub Actions + Node.js
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -359,7 +359,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V16.0.2-GITHUB-ACTIONS-AUTOMATIC-EXECUTION-FIX-RADAR-SCOPE-REPAIR-EXECUTION-DIAGNOSTICS",
+VERSION: "V16.0.4-GITHUB-ACTIONS-AUTOMATIC-EXECUTION-FIX-RADAR-SCOPE-REPAIR-EXECUTION-DIAGNOSTICS",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -397,7 +397,7 @@ MIN_SCORE: 88,
 WATCH_SCORE: 65,
 VALID_SIGNAL_SCORE: 75,
 STRONG_SIGNAL_SCORE: 85,
-EXECUTION_SCORE: 88,
+EXECUTION_SCORE: 85,
 MIN_SIGNAL_SCORE: 75,
 MIN_EDGE: 7,
 EXECUTION_MIN_EDGE: 10,
@@ -3486,14 +3486,14 @@ function v15610ExecutionGateReasons(signal) {
   const score = Number(signal?.score || 0);
   const edge = Number(signal?.edge || 0);
   const risk = Number(signal?.riskScore ?? 100);
-  if (score < Number(CONFIG.EXECUTION_SCORE || 88)) reasons.push(`SCORE_BELOW_${CONFIG.EXECUTION_SCORE || 88}`);
+  if (score < Number(CONFIG.EXECUTION_SCORE || 85)) reasons.push(`SCORE_BELOW_${CONFIG.EXECUTION_SCORE || 88}`);
   if (edge < Number(CONFIG.EXECUTION_MIN_EDGE || 10)) reasons.push(`EDGE_BELOW_${CONFIG.EXECUTION_MIN_EDGE || 10}`);
   if (risk > Number(CONFIG.EXECUTION_MAX_RISK || 40)) reasons.push(`RISK_ABOVE_${CONFIG.EXECUTION_MAX_RISK || 40}`);
   const direction = String(signal?.direction || "").toUpperCase();
   const trend = signal?.trend || {};
   const trendBridge = v15613TrendConfluence(trend, direction);
   const trendConfluence = trendBridge.selected;
-  if (["LONG","SHORT"].includes(direction) && trendConfluence < 3) reasons.push(`TREND_CONFLUENCE_${trendConfluence}_OF_4`);
+  if (["LONG","SHORT"].includes(direction) && trendConfluence < 2) reasons.push(`TREND_CONFLUENCE_${trendConfluence}_OF_4`);
   if (signal?.entryQuality?.overextended) reasons.push("OVEREXTENDED_ENTRY");
   if (!signal?.tradePlan?.valid) reasons.push("TRADE_PLAN_INVALID");
   if (!['LONG','SHORT'].includes(String(signal?.direction || '').toUpperCase())) reasons.push("DIRECTION_INVALID");
@@ -8598,7 +8598,7 @@ async function verifyLiveEntryPosition(sdk, account, sdkSymbol, direction, attem
   return {verified:false,position:null};
 }
 
-// V16.0.2: Module-scope live position-size bridge.
+// V16.0.4: Module-scope live position-size bridge.
 // calculatePositionSize historically lived inside FUTURES_V6, while the live
 // execution pipeline runs at module scope after that IIFE closes. Keep the
 // exact risk-based sizing formula available to live execution without changing
@@ -8618,7 +8618,7 @@ const direction = String(signal?.direction || "").toUpperCase();
 const trendBridge = v15613TrendConfluence(signal?.trend || {}, direction);
 const explicitExecutionGate =
   ["LONG","SHORT"].includes(direction) &&
-  Number(signal?.score || 0) >= Number(CONFIG.EXECUTION_SCORE || 88) &&
+  Number(signal?.score || 0) >= Number(CONFIG.EXECUTION_SCORE || 85) &&
   Number(signal?.edge || 0) >= Number(CONFIG.EXECUTION_MIN_EDGE || 10) &&
   Number(trendBridge.selected || 0) >= 3 &&
   Number(signal?.riskScore ?? 100) < Number(CONFIG.EXECUTION_MAX_RISK || 40) &&
