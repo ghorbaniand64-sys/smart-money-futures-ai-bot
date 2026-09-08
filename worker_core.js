@@ -3172,6 +3172,15 @@ selectedDirection: direction,
 entryQuality,
 executionTrendConfluence,
 executionGateDiagnostics,
+directionalScores: {
+  long: Number(longScore || 0),
+  short: Number(shortScore || 0),
+  selected: Number(executionScore || 0),
+  selectedDirection: direction,
+  threshold: Number(CONFIG.EXECUTION_SCORE || 0),
+  longPassesExecutionScore: Number(longScore || 0) >= Number(CONFIG.EXECUTION_SCORE || 0),
+  shortPassesExecutionScore: Number(shortScore || 0) >= Number(CONFIG.EXECUTION_SCORE || 0)
+},
 trendConfluence: trendBridge,
 scoreModel: {
 normalizedTo100: true,
@@ -3377,6 +3386,15 @@ dataQuality: analysis.dataQuality,
 signalDiagnostics: analysis.diagnostics,
 entryQuality: analysis.entryQuality || null,
 executionGateDiagnostics: Array.isArray(analysis.executionGateDiagnostics) ? analysis.executionGateDiagnostics : [],
+directionalScores: analysis.directionalScores || {
+  long: 0,
+  short: 0,
+  selected: 0,
+  selectedDirection: analysis.direction || "NO_TRADE",
+  threshold: Number(CONFIG.EXECUTION_SCORE || 0),
+  longPassesExecutionScore: false,
+  shortPassesExecutionScore: false
+},
  
 execution: {
 enabled: executionEnabled(env),
@@ -3938,6 +3956,10 @@ const executionTrace=valid.map(signal=>{
   direction:signal.direction,
   tier:signal.signalTier,
   score:Number(signal.score||0),
+  longScore:Number(signal.longScore ?? signal.directionalScores?.long ?? signal.scoreModel?.longScore ?? 0),
+  shortScore:Number(signal.shortScore ?? signal.directionalScores?.short ?? signal.scoreModel?.shortScore ?? 0),
+  executionScore:Number(signal.direction === "LONG" ? (signal.longScore ?? signal.directionalScores?.long ?? 0) : signal.direction === "SHORT" ? (signal.shortScore ?? signal.directionalScores?.short ?? 0) : 0),
+  executionScoreThreshold:Number(CONFIG.EXECUTION_SCORE || 0),
   confidence:Number(signal.confidence||0),
   edge:Number(signal.edge||0),
   risk:Number(signal.riskScore||0),
@@ -4009,7 +4031,7 @@ const executionSummary={
   verified:executionTrace.filter(x=>x.positionVerified).length,
   blocked:executionTrace.filter(x=>!x.selected).length,
   failed:executionTrace.filter(x=>x.attempted&&!!x.resultError).length,
-  blockedReasons:executionTrace.filter(x=>!x.selected).map(x=>({symbol:x.symbol,score:x.score,executionEligible:x.executionEligible,reasons:x.gateReasons,reasonsText:x.gateReasonsText})),
+  blockedReasons:executionTrace.filter(x=>!x.selected).map(x=>({symbol:x.symbol,score:x.score,longScore:x.longScore,shortScore:x.shortScore,executionScore:x.executionScore,executionScoreThreshold:x.executionScoreThreshold,direction:x.direction,executionEligible:x.executionEligible,reasons:x.gateReasons,reasonsText:x.gateReasonsText})),
   traces:executionTrace.slice(0,20)
 };
 console.log("[EXECUTION][TRACE]", JSON.stringify(executionSummary, null, 2));
