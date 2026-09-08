@@ -49,7 +49,7 @@ function normalizeSymbol(symbol){
 
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V17.1.6 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
+// Version: V17.1.10 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
 // Platform: GitHub Actions + Node.js
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -404,7 +404,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.1.9.1-HYBRID-DEEP-SCAN-DIAGNOSTIC-REPAIR",
+VERSION: "V17.2.1-ADAPTIVE-TIERED-EVENT-ENTRY",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -454,7 +454,7 @@ DEEP_SCAN_LIMIT: 18,
   // Only the most relevant markets receive the expensive 15m/1h/4h structure pass.
   HYBRID_BROAD_5M_SCAN_ENABLED: true,
   HYBRID_BROAD_5M_BATCH_SIZE: 20,
-  HYBRID_BROAD_5M_LIMIT: 9999,
+  HYBRID_BROAD_5M_LIMIT: 60,
   HYBRID_DEEP_SCAN_LIMIT: 18,
 // V15: asset-agnostic ranking. Asset identity/size must not add score or selection priority.
 FAIR_ASSET_SCORING_ENABLED: true,
@@ -633,24 +633,28 @@ HYBRID_EVENT_ENGINE_ENABLED: true,
 HYBRID_SR: {
   pivotLeft: 2, pivotRight: 2,
   lookback5m: 120, lookback15m: 120, lookback1h: 120, lookback4h: 120,
-  mergeAtrDistance: 0.45, zoneAtrWidth: 0.18,
-  minTouches: 1, maxZonesPerSide: 8, proximityAtr: 1.35,
-  rejectionWickRatio: 0.28, rejectionCloseRatio: 0.55,
-  sweepDepthAtr: 0.12, breakoutBufferAtr: 0.08, retestToleranceAtr: 0.28
+  mergeAtrDistance: 0.40, zoneAtrWidth: 0.16,
+  minTouches: 2, maxZonesPerSide: 8, proximityAtr: 1.20,
+  rejectionWickRatio: 0.30, rejectionCloseRatio: 0.60,
+  sweepDepthAtr: 0.15, breakoutBufferAtr: 0.10, retestToleranceAtr: 0.22
 },
 HYBRID_VOLUME: {
-  expansionStrong: 1.35, expansionExplosive: 2.20,
+  expansionStrong: 1.40, expansionExplosive: 2.20,
   rangeExpansionStrong: 1.25, rangeExpansionExplosive: 1.80
 },
 HYBRID_ENTRY: {
   minEvidence: 1, requireFlowOrVolume: false,
+  minReactionVolumeRatio: 1.10, minReactionFlowImbalance: 0.08,
   minBreakoutVolumeRatio: 1.15, minBreakoutFlowImbalance: 0.08,
-  breakoutMinBodyRatio: 0.45, retestMinBodyRatio: 0.30,
-  breakoutRetestTtlMs: 45 * 60 * 1000, maxChaseAtr: 2.20,
-  priorMovePct: 0.20
+  breakoutMinBodyRatio: 0.45, retestMinBodyRatio: 0.25,
+  breakoutRetestTtlMs: 35 * 60 * 1000, maxChaseAtr: 2.10,
+  priorMovePct: 0.20, minZoneQuality: 2, maxEntryDistanceAtr: 1.05,
+  maxRetestDistanceAtr: 0.70,
+  tierFastAllocation: 0.45, tierNormalAllocation: 0.75, tierPrimeAllocation: 1.00,
+  allowNeutralActivity: true
 },
 HYBRID_RISK: {
-  capitalAllocation: 0.20, minLeverage: 3, defaultLeverage: 5, maxLeverage: 10,
+  capitalAllocation: 0.05, minLeverage: 3, defaultLeverage: 5, maxLeverage: 10,
   stopAtrBuffer: 0.25, tp1R: 1.0, tp2R: 2.0, tp3R: 3.0,
   maxNotionalUsd: 5000, maxExecutionRisk: 0.015
 }
@@ -664,175 +668,55 @@ HYBRID_RISK: {
 // No weighted score or trend-count gate is used for entry.
 // ================================================================
 function hybridAtr(candles, period=14){
-  const a=Array.isArray(candles)?candles:[];
-  if(a.length<2)return null;
-  const tr=[];
-  for(let i=0;i<a.length;i++){
-    const h=Number(a[i]?.high),l=Number(a[i]?.low);
-    if(!Number.isFinite(h)||!Number.isFinite(l))continue;
-    if(i===0){tr.push(Math.max(0,h-l));continue;}
-    const prev=Number(a[i-1]?.close);
-    tr.push(Math.max(0,h-l,Number.isFinite(prev)?Math.abs(h-prev):0,Number.isFinite(prev)?Math.abs(l-prev):0));
-  }
-  if(tr.length<Math.max(2,Number(period)||14))return null;
-  const n=Math.max(2,Number(period)||14);
-  let value=tr.slice(0,n).reduce((x,y)=>x+y,0)/n;
-  for(let i=n;i<tr.length;i++)value=((value*(n-1))+tr[i])/n;
-  return Number.isFinite(value)&&value>0?value:null;
+  const a=Array.isArray(candles)?candles:[]; if(a.length<2)return null; const tr=[];
+  for(let i=0;i<a.length;i++){const h=Number(a[i]?.high),l=Number(a[i]?.low);if(!Number.isFinite(h)||!Number.isFinite(l))continue;if(i===0){tr.push(Math.max(0,h-l));continue;}const prev=Number(a[i-1]?.close);tr.push(Math.max(0,h-l,Number.isFinite(prev)?Math.abs(h-prev):0,Number.isFinite(prev)?Math.abs(l-prev):0));}
+  const n=Math.max(2,Number(period)||14);if(tr.length<n)return null;let value=tr.slice(0,n).reduce((x,y)=>x+y,0)/n;for(let i=n;i<tr.length;i++)value=((value*(n-1))+tr[i])/n;return Number.isFinite(value)&&value>0?value:null;
 }
-
-function hybridCandleMetrics(c){
-  const open=Number(c?.open),high=Number(c?.high),low=Number(c?.low),close=Number(c?.close);
-  const range=Math.max(0,high-low),body=Math.abs(close-open);
-  return {bullish:close>open,bearish:close<open,range,body,bodyRatio:range>0?body/range:0,
-    lowerWick:range>0?(Math.min(open,close)-low)/range:0,
-    upperWick:range>0?(high-Math.max(open,close))/range:0,
-    closeLocation:range>0?(close-low)/range:0};
-}
-function hybridFlowAligned(flow,direction){
-  const f=Number(flow?.imbalance||0);
-  return Number.isFinite(f)?(direction==='LONG'?f:-f):0;
-}
-function hybridFlowEvidence(flow,direction){
-  const a=hybridFlowAligned(flow,direction),r=[];
-  if(a>=0.15)r.push('SMART_MONEY_FLOW');
-  if(a>=0.30)r.push('STRONG_SMART_MONEY_FLOW');
-  if(Number(flow?.flowSpikeRatio||1)>=Number(CONFIG.SMART_MONEY_FLOW_SPIKE_THRESHOLD||1.8))r.push('FLOW_SURGE');
-  if(Number(flow?.flowSpikeRatio||1)>=Number(CONFIG.SMART_MONEY_FLOW_EXPLOSIVE_THRESHOLD||3))r.push('EXPLOSIVE_FLOW');
-  if(Number(flow?.largeTradeCount||0)>=1)r.push('LARGE_TRADE_PARTICIPATION');
-  if(direction==='LONG' && Number(flow?.longOpenUsd||0)>Number(flow?.longCloseUsd||0))r.push('LONG_OPENING_PRESSURE');
-  if(direction==='SHORT' && Number(flow?.shortOpenUsd||0)>Number(flow?.shortCloseUsd||0))r.push('SHORT_OPENING_PRESSURE');
-  return r;
-}
-function hybridCollectPivots(candles,type,lookback){
-  const a=(candles||[]).slice(-lookback),out=[];
-  const l=CONFIG.HYBRID_SR.pivotLeft,r=CONFIG.HYBRID_SR.pivotRight;
-  for(let i=l;i<a.length-r;i++){
-    const v=type==='R'?Number(a[i].high):Number(a[i].low); if(!(v>0))continue; let ok=true;
-    for(let j=i-l;j<=i+r;j++) if(j!==i){ const x=type==='R'?Number(a[j].high):Number(a[j].low); if((type==='R'&&x>=v)||(type==='S'&&x<=v)){ok=false;break;} }
-    if(ok)out.push({price:v,at:Number(a[i].timestamp)||0});
-  } return out;
-}
+function hybridTsMs(ts){const n=Number(ts);if(!Number.isFinite(n)||n<=0)return 0;return n<1e12?n*1000:n;}
+function hybridCandleIntervalMs(tf){return ({'5m':300000,'15m':900000,'1h':3600000,'4h':14400000}[tf]||300000);}
+function hybridClosedCandles(candles,tf){const a=Array.isArray(candles)?candles.filter(Boolean):[];if(a.length<2)return a;const ts=hybridTsMs(a.at(-1)?.timestamp);return ts>0&&ts+hybridCandleIntervalMs(tf)>Date.now()+5000?a.slice(0,-1):a;}
+function hybridCandleMetrics(c){const open=Number(c?.open),high=Number(c?.high),low=Number(c?.low),close=Number(c?.close),range=Math.max(0,high-low),body=Math.abs(close-open);return{bullish:close>open,bearish:close<open,range,body,bodyRatio:range>0?body/range:0,lowerWick:range>0?(Math.min(open,close)-low)/range:0,upperWick:range>0?(high-Math.max(open,close))/range:0,closeLocation:range>0?(close-low)/range:0};}
+function hybridFlowAligned(flow,direction){const f=Number(flow?.imbalance||0);return Number.isFinite(f)?(direction==='LONG'?f:-f):0;}
+function hybridFlowEvidence(flow,direction){const a=hybridFlowAligned(flow,direction),r=[];if(a>=0.15)r.push('SMART_MONEY_FLOW');if(a>=0.30)r.push('STRONG_SMART_MONEY_FLOW');if(Number(flow?.flowSpikeRatio||1)>=Number(CONFIG.SMART_MONEY_FLOW_SPIKE_THRESHOLD||1.8))r.push('FLOW_SURGE');if(Number(flow?.flowSpikeRatio||1)>=Number(CONFIG.SMART_MONEY_FLOW_EXPLOSIVE_THRESHOLD||3))r.push('EXPLOSIVE_FLOW');if(Number(flow?.largeTradeCount||0)>=1)r.push('LARGE_TRADE_PARTICIPATION');if(direction==='LONG'&&Number(flow?.longOpenUsd||0)>Number(flow?.longCloseUsd||0))r.push('LONG_OPENING_PRESSURE');if(direction==='SHORT'&&Number(flow?.shortOpenUsd||0)>Number(flow?.shortCloseUsd||0))r.push('SHORT_OPENING_PRESSURE');return r;}
+function hybridCollectPivots(candles,type,lookback){const a=(candles||[]).slice(-lookback),out=[],l=CONFIG.HYBRID_SR.pivotLeft,r=CONFIG.HYBRID_SR.pivotRight;for(let i=l;i<a.length-r;i++){const v=type==='R'?Number(a[i].high):Number(a[i].low);if(!(v>0))continue;let ok=true;for(let j=i-l;j<=i+r;j++)if(j!==i){const x=type==='R'?Number(a[j].high):Number(a[j].low);if((type==='R'&&x>=v)||(type==='S'&&x<=v)){ok=false;break;}}if(ok)out.push({price:v,at:hybridTsMs(a[i].timestamp)});}return out;}
 function hybridBuildZones(candlesByTf,currentPrice,currentAtr){
-  const atrValue=Number(currentAtr)>0?Number(currentAtr):currentPrice*0.005,all={S:[],R:[]};
-  const weights={'5m':1,'15m':1.4,'1h':1.8,'4h':2.1};
-  for(const [tf,c] of Object.entries(candlesByTf||{})){
-    const look=CONFIG.HYBRID_SR['lookback'+tf]||120;
-    for(const type of ['S','R']) for(const p of hybridCollectPivots(c,type,look)) all[type].push({...p,tf,weight:weights[tf]||1});
-  }
+  const atrValue=Number(currentAtr)>0?Number(currentAtr):currentPrice*0.005,all={S:[],R:[]},weights={'5m':1,'15m':1.4,'1h':1.8,'4h':2.1};
+  for(const [tf,raw] of Object.entries(candlesByTf||{})){const c=hybridClosedCandles(raw,tf),look=CONFIG.HYBRID_SR['lookback'+tf]||120,tfAtr=Number(hybridAtr(c,14))||atrValue;for(const type of ['S','R'])for(const p of hybridCollectPivots(c,type,look))all[type].push({...p,tf,weight:weights[tf]||1,tfAtr});}
   const out={support:[],resistance:[]};
-  for(const type of ['S','R']){
-    const zones=[];
-    for(const p of all[type].sort((a,b)=>b.at-a.at)){
-      let z=zones.find(x=>Math.abs(x.center-p.price)<=atrValue*CONFIG.HYBRID_SR.mergeAtrDistance);
-      if(!z){z={center:p.price,low:p.price-atrValue*CONFIG.HYBRID_SR.zoneAtrWidth,high:p.price+atrValue*CONFIG.HYBRID_SR.zoneAtrWidth,touches:0,weight:0,timeframes:new Set(),lastAt:p.at};zones.push(z);}
-      z.touches++;z.weight+=p.weight;z.timeframes.add(p.tf);z.center=(z.center*(z.touches-1)+p.price)/z.touches;
-      z.low=Math.min(z.low,p.price-atrValue*CONFIG.HYBRID_SR.zoneAtrWidth);z.high=Math.max(z.high,p.price+atrValue*CONFIG.HYBRID_SR.zoneAtrWidth);z.lastAt=Math.max(z.lastAt,p.at);
-    }
-    const usable=zones.filter(z=>z.touches>=CONFIG.HYBRID_SR.minTouches||z.timeframes.size>=2).map(z=>({...z,timeframes:[...z.timeframes],distanceAtr:Math.abs(currentPrice-z.center)/atrValue,below:currentPrice>z.high,above:currentPrice<z.low})).sort((a,b)=>a.distanceAtr-b.distanceAtr).slice(0,CONFIG.HYBRID_SR.maxZonesPerSide);
-    if(type==='S')out.support=usable; else out.resistance=usable;
-  } return out;
+  for(const type of ['S','R']){const zones=[];for(const p of all[type].sort((a,b)=>b.at-a.at)){const mergeDistance=Math.max(atrValue*CONFIG.HYBRID_SR.mergeAtrDistance,Number(p.tfAtr||atrValue)*0.25),zoneWidth=Math.max(atrValue*CONFIG.HYBRID_SR.zoneAtrWidth,Number(p.tfAtr||atrValue)*0.08);let z=zones.find(x=>Math.abs(x.center-p.price)<=mergeDistance);if(!z){z={center:p.price,low:p.price-zoneWidth,high:p.price+zoneWidth,touches:0,weight:0,timeframes:new Set(),lastAt:p.at};zones.push(z);}z.touches++;z.weight+=p.weight;z.timeframes.add(p.tf);z.center=(z.center*(z.touches-1)+p.price)/z.touches;z.low=Math.min(z.low,p.price-zoneWidth);z.high=Math.max(z.high,p.price+zoneWidth);z.lastAt=Math.max(z.lastAt,p.at);}
+    const usable=zones.filter(z=>z.touches>=CONFIG.HYBRID_SR.minTouches||z.timeframes.size>=2).map(z=>({...z,timeframes:[...z.timeframes],quality:Number((z.touches+Math.min(3,z.timeframes.size)*0.75+Math.min(3,z.weight)*0.25).toFixed(2)),distanceAtr:Math.abs(currentPrice-z.center)/atrValue})).filter(z=>z.quality>=CONFIG.HYBRID_ENTRY.minZoneQuality).sort((a,b)=>b.quality-a.quality||a.distanceAtr-b.distanceAtr).slice(0,CONFIG.HYBRID_SR.maxZonesPerSide);
+    if(type==='S')out.support=usable;else out.resistance=usable;}return out;
 }
-function hybridNearestZone(zones,price,maxAtr,atrValue,side){
-  return (zones||[]).filter(z=>z.distanceAtr<=maxAtr&&(side==='S'?price>=z.low:price<=z.high)).sort((a,b)=>a.distanceAtr-b.distanceAtr)[0]||null;
-}
-function hybridPercentChange(candles,bars){
-  const a=Array.isArray(candles)?candles:[];
-  const n=Math.max(1,Math.floor(Number(bars)||1));
-  if(a.length<=n)return 0;
-  const last=Number(a[a.length-1]?.close),prev=Number(a[a.length-1-n]?.close);
-  return prev?((last-prev)/prev)*100:0;
-}
-
-function hybridSma(values, period){
-  const arr=Array.isArray(values)?values:[];
-  const p=Math.max(1,Math.floor(Number(period)||1));
-  if(arr.length<p)return null;
-  const slice=arr.slice(-p);
-  const sum=slice.reduce((a,b)=>a+Number(b||0),0);
-  return Number.isFinite(sum)?sum/p:null;
-}
-
-function hybridVolumeContext(candles){
-  const a=(candles||[]).slice(-40),vol=a.map(c=>Number(c.volume)).filter(v=>v>0),ranges=a.map(c=>Number(c.high)-Number(c.low)).filter(v=>v>0);
-  const recentVol=hybridSma(vol,5),baseVol=hybridSma(vol.slice(0,-5),Math.min(20,Math.max(1,vol.length-5)));
-  const recentRange=hybridSma(ranges,5),baseRange=hybridSma(ranges.slice(0,-5),Math.min(20,Math.max(1,ranges.length-5)));
-  const va=vol.length>=15&&baseVol>0,vr=va?recentVol/baseVol:1,rr=baseRange>0?recentRange/baseRange:1;
-  return {volumeAvailable:va,volumeRatio:vr,rangeRatio:rr,volumeSurge:vr>=CONFIG.HYBRID_VOLUME.expansionStrong,volumeExplosive:vr>=CONFIG.HYBRID_VOLUME.expansionExplosive,volumeDrying:va&&vr<=0.65,rangeExpansion:rr>=CONFIG.HYBRID_VOLUME.rangeExpansionStrong,rangeExplosive:rr>=CONFIG.HYBRID_VOLUME.rangeExpansionExplosive,rangeDrying:rr<=0.75};
-}
-function hybridReactionSupport(c,level,flow,vol,atrValue){
-  const m=hybridCandleMetrics(c),inside=c.close>=level.low,wick=m.lowerWick>=CONFIG.HYBRID_SR.rejectionWickRatio,closeBack=m.closeLocation>=CONFIG.HYBRID_SR.rejectionCloseRatio;
-  const sweep=(level.low-c.low)>=atrValue*CONFIG.HYBRID_SR.sweepDepthAtr&&inside,evidence=[];
-  if(wick)evidence.push('LOWER_WICK_REJECTION');if(closeBack)evidence.push('CLOSE_BACK_ABOVE_SUPPORT');if(sweep)evidence.push('LIQUIDITY_SWEEP_RECLAIM');
-  const a=hybridFlowAligned(flow,'LONG');if(a>=0.15)evidence.push('BUY_FLOW');if(vol.volumeSurge||vol.rangeExpansion)evidence.push('ACTIVITY_EXPANSION');if(vol.volumeDrying||vol.rangeDrying)evidence.push('ACTIVITY_DRYING');
-  return {confirmed:inside&&m.bullish&&(wick||sweep)&&evidence.length>=CONFIG.HYBRID_ENTRY.minEvidence,evidence,sweep,wick,flowAligned:a};
-}
-function hybridReactionResistance(c,level,flow,vol,atrValue){
-  const m=hybridCandleMetrics(c),inside=c.close<=level.high,wick=m.upperWick>=CONFIG.HYBRID_SR.rejectionWickRatio,closeBack=(1-m.closeLocation)>=CONFIG.HYBRID_SR.rejectionCloseRatio;
-  const sweep=(c.high-level.high)>=atrValue*CONFIG.HYBRID_SR.sweepDepthAtr&&inside,evidence=[];
-  if(wick)evidence.push('UPPER_WICK_REJECTION');if(closeBack)evidence.push('CLOSE_BACK_BELOW_RESISTANCE');if(sweep)evidence.push('LIQUIDITY_SWEEP_RECLAIM');
-  const a=hybridFlowAligned(flow,'SHORT');if(a>=0.15)evidence.push('SELL_FLOW');if(vol.volumeSurge||vol.rangeExpansion)evidence.push('ACTIVITY_EXPANSION');if(vol.volumeDrying||vol.rangeDrying)evidence.push('ACTIVITY_DRYING');
-  return {confirmed:inside&&m.bearish&&(wick||sweep)&&evidence.length>=CONFIG.HYBRID_ENTRY.minEvidence,evidence,sweep,wick,flowAligned:a};
-}
-function hybridBreakout(c,level,direction,flow,vol,atrValue){
-  const m=hybridCandleMetrics(c),buffer=atrValue*CONFIG.HYBRID_SR.breakoutBufferAtr;
-  const above=c.close>level.high+buffer,below=c.close<level.low-buffer,a=hybridFlowAligned(flow,direction);
-  const volumeOk=vol.volumeAvailable?vol.volumeRatio>=CONFIG.HYBRID_ENTRY.minBreakoutVolumeRatio:vol.rangeRatio>=1.15,flowOk=a>=CONFIG.HYBRID_ENTRY.minBreakoutFlowImbalance,bodyOk=m.bodyRatio>=CONFIG.HYBRID_ENTRY.breakoutMinBodyRatio;
-  const broken=direction==='LONG'?above&&m.bullish:below&&m.bearish;
-  return {broken:broken&&bodyOk&&(volumeOk||flowOk),above,below,bodyOk,volumeOk,flowOk,aligned:a};
-}
-function hybridRetest(c,level,direction,flow,vol,atrValue){
-  const tol=atrValue*CONFIG.HYBRID_SR.retestToleranceAtr,m=hybridCandleMetrics(c);
-  const touched=direction==='LONG'?c.low<=level.high+tol&&c.low>=level.low-tol:c.high>=level.low-tol&&c.high<=level.high+tol;
-  const holds=direction==='LONG'?c.close>level.high:c.close<level.low;
-  const rejection=direction==='LONG'?(m.bullish&&m.lowerWick>=0.15):(m.bearish&&m.upperWick>=0.15);
-  const a=hybridFlowAligned(flow,direction),activity=vol.volumeSurge||vol.rangeExpansion||a>=0.08;
-  return {touched,holds,rejection,activity,aligned:a,confirmed:touched&&holds&&rejection&&activity&&m.bodyRatio>=CONFIG.HYBRID_ENTRY.retestMinBodyRatio};
-}
+function hybridNearestZone(zones,price,maxAtr,atrValue,side){const tol=atrValue*maxAtr;return(zones||[]).filter(z=>side==='S'?Number(z.center)<=price+tol&&price>=Number(z.low)-tol:Number(z.center)>=price-tol&&price<=Number(z.high)+tol).sort((a,b)=>a.distanceAtr-b.distanceAtr||b.quality-a.quality)[0]||null;}
+function hybridPercentChange(candles,bars){const a=Array.isArray(candles)?candles:[],n=Math.max(1,Math.floor(Number(bars)||1));if(a.length<=n)return 0;const last=Number(a.at(-1)?.close),prev=Number(a[a.length-1-n]?.close);return prev?((last-prev)/prev)*100:0;}
+function hybridSma(values,period){const arr=Array.isArray(values)?values:[],p=Math.max(1,Math.floor(Number(period)||1));if(arr.length<p)return null;const sum=arr.slice(-p).reduce((a,b)=>a+Number(b||0),0);return Number.isFinite(sum)?sum/p:null;}
+function hybridVolumeContext(candles){const a=(candles||[]).slice(-40),vol=a.map(c=>Number(c.volume)).filter(v=>v>0),ranges=a.map(c=>Number(c.high)-Number(c.low)).filter(v=>v>0),recentVol=hybridSma(vol,5),baseVol=hybridSma(vol.slice(0,-5),Math.min(20,Math.max(1,vol.length-5))),recentRange=hybridSma(ranges,5),baseRange=hybridSma(ranges.slice(0,-5),Math.min(20,Math.max(1,ranges.length-5))),va=vol.length>=15&&baseVol>0,vr=va?recentVol/baseVol:1,rr=baseRange>0?recentRange/baseRange:1;return{volumeAvailable:va,volumeRatio:vr,rangeRatio:rr,volumeSurge:vr>=CONFIG.HYBRID_VOLUME.expansionStrong,volumeExplosive:vr>=CONFIG.HYBRID_VOLUME.expansionExplosive,volumeDrying:va&&vr<=0.65,rangeExpansion:rr>=CONFIG.HYBRID_VOLUME.rangeExpansionStrong,rangeExplosive:rr>=CONFIG.HYBRID_VOLUME.rangeExpansionExplosive,rangeDrying:rr<=0.75};}
+function hybridReactionSupport(c,level,flow,vol,atrValue){const m=hybridCandleMetrics(c),inside=c.low<=level.high+atrValue*0.25&&c.close>=level.low,wick=m.lowerWick>=CONFIG.HYBRID_SR.rejectionWickRatio,closeBack=m.closeLocation>=CONFIG.HYBRID_SR.rejectionCloseRatio,sweep=(level.low-c.low)>=atrValue*CONFIG.HYBRID_SR.sweepDepthAtr&&inside,a=hybridFlowAligned(flow,'LONG'),flowOk=a>=CONFIG.HYBRID_ENTRY.minReactionFlowImbalance,volumeOk=vol.volumeAvailable?vol.volumeRatio>=CONFIG.HYBRID_ENTRY.minReactionVolumeRatio:vol.rangeRatio>=1.15,evidence=[];if(wick)evidence.push('LOWER_WICK_REJECTION');if(closeBack)evidence.push('CLOSE_BACK_ABOVE_SUPPORT');if(sweep)evidence.push('LIQUIDITY_SWEEP_RECLAIM');if(flowOk)evidence.push('BUY_FLOW');if(volumeOk)evidence.push('ACTIVITY_CONFIRMATION');return{confirmed:inside&&m.bullish&&(wick||sweep)&&closeBack,evidence,sweep,wick,flowAligned:a,flowOk,volumeOk};}
+function hybridReactionResistance(c,level,flow,vol,atrValue){const m=hybridCandleMetrics(c),inside=c.high>=level.low-atrValue*0.20&&c.close<=level.high,wick=m.upperWick>=CONFIG.HYBRID_SR.rejectionWickRatio,closeBack=(1-m.closeLocation)>=CONFIG.HYBRID_SR.rejectionCloseRatio,sweep=(c.high-level.high)>=atrValue*CONFIG.HYBRID_SR.sweepDepthAtr&&inside,a=hybridFlowAligned(flow,'SHORT'),flowOk=a>=CONFIG.HYBRID_ENTRY.minReactionFlowImbalance,volumeOk=vol.volumeAvailable?vol.volumeRatio>=CONFIG.HYBRID_ENTRY.minReactionVolumeRatio:vol.rangeRatio>=1.20,evidence=[];if(wick)evidence.push('UPPER_WICK_REJECTION');if(closeBack)evidence.push('CLOSE_BACK_BELOW_RESISTANCE');if(sweep)evidence.push('LIQUIDITY_SWEEP_RECLAIM');if(flowOk)evidence.push('SELL_FLOW');if(volumeOk)evidence.push('ACTIVITY_CONFIRMATION');return{confirmed:inside&&m.bearish&&(wick||sweep)&&closeBack,evidence,sweep,wick,flowAligned:a,flowOk,volumeOk};}
+function hybridBreakout(c,level,direction,flow,vol,atrValue){const m=hybridCandleMetrics(c),buffer=atrValue*CONFIG.HYBRID_SR.breakoutBufferAtr,above=c.close>level.high+buffer,below=c.close<level.low-buffer,a=hybridFlowAligned(flow,direction),volumeOk=vol.volumeAvailable?vol.volumeRatio>=CONFIG.HYBRID_ENTRY.minBreakoutVolumeRatio:vol.rangeRatio>=1.15,flowOk=a>=CONFIG.HYBRID_ENTRY.minBreakoutFlowImbalance,bodyOk=m.bodyRatio>=CONFIG.HYBRID_ENTRY.breakoutMinBodyRatio,broken=direction==='LONG'?above&&m.bullish:below&&m.bearish;return{broken:broken&&bodyOk,above,below,bodyOk,volumeOk,flowOk,aligned:a};}
+function hybridRetest(c,level,direction,flow,vol,atrValue){const tol=atrValue*CONFIG.HYBRID_SR.retestToleranceAtr,m=hybridCandleMetrics(c),touched=direction==='LONG'?c.low<=level.high+tol&&c.low>=level.low-tol:c.high>=level.low-tol&&c.high<=level.high+tol,holds=direction==='LONG'?c.close>level.high:c.close<level.low,rejection=direction==='LONG'?(m.bullish&&m.lowerWick>=0.15):(m.bearish&&m.upperWick>=0.15),a=hybridFlowAligned(flow,direction),activity=vol.volumeSurge||vol.rangeExpansion||a>=CONFIG.HYBRID_ENTRY.minReactionFlowImbalance||CONFIG.HYBRID_ENTRY.allowNeutralActivity;return{touched,holds,rejection,activity,aligned:a,confirmed:touched&&holds&&rejection&&activity&&m.bodyRatio>=CONFIG.HYBRID_ENTRY.retestMinBodyRatio};}
 function hybridZoneId(z){return z?`${Number(z.center).toFixed(6)}:${Number(z.low).toFixed(6)}:${Number(z.high).toFixed(6)}`:'';}
 function hybridClassifyStructure(symbol,candles,price,flow,previousState={}){
-  const c5=candles['5m']||[],c15=candles['15m']||[],c1h=candles['1h']||[],c4h=candles['4h']||[],current=c5.at(-1);
-  if(!current)return {state:'NO_DATA',direction:'NONE',entries:[],zones:{support:[],resistance:[]}};
-  const atr5=Number(hybridAtr(c5,14))||price*0.005,zones=hybridBuildZones({'5m':c5,'15m':c15,'1h':c1h,'4h':c4h},price,atr5),vol=hybridVolumeContext(c5),entries=[],watched=[];
-  const preMove5=hybridPercentChange(c5.slice(0,-1),5),support=hybridNearestZone(zones.support,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'S'),resistance=hybridNearestZone(zones.resistance,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'R');
-  if(support){const bounce=hybridReactionSupport(current,support,flow,vol,atr5);watched.push({type:'SUPPORT',zone:support,bounce});if(bounce.confirmed&&preMove5<=-CONFIG.HYBRID_ENTRY.priorMovePct)entries.push({direction:'LONG',trigger:'SUPPORT_BOUNCE',zone:support,evidence:['PRIOR_DOWN_MOVE',...bounce.evidence],atr:atr5,price,volume:vol,flow});
-    const br=hybridBreakout(current,support,'SHORT',flow,vol,atr5);if(br.broken)entries.push({direction:'WAIT',trigger:'SUPPORT_BREAK_WAIT_RETEST',zone:support,evidence:['SUPPORT_BROKEN',...(br.volumeOk?['ACTIVITY_CONFIRMATION']:[]),...(br.flowOk?['FLOW_CONFIRMATION']:[])],breakoutAt:current.timestamp,atr:atr5,price,flow,volume:vol});}
-  if(resistance){const rej=hybridReactionResistance(current,resistance,flow,vol,atr5);watched.push({type:'RESISTANCE',zone:resistance,rejection:rej});if(rej.confirmed&&preMove5>=CONFIG.HYBRID_ENTRY.priorMovePct)entries.push({direction:'SHORT',trigger:'RESISTANCE_REJECTION',zone:resistance,evidence:['PRIOR_UP_MOVE',...rej.evidence],atr:atr5,price,volume:vol,flow});
-    const br=hybridBreakout(current,resistance,'LONG',flow,vol,atr5);if(br.broken)entries.push({direction:'WAIT',trigger:'RESISTANCE_BREAK_WAIT_RETEST',zone:resistance,evidence:['RESISTANCE_BROKEN',...(br.volumeOk?['ACTIVITY_CONFIRMATION']:[]),...(br.flowOk?['FLOW_CONFIRMATION']:[])],breakoutAt:current.timestamp,atr:atr5,price,flow,volume:vol});}
-  const next={...(previousState||{}),updatedAt:Date.now()};
-  const wait=entries.find(x=>x.direction==='WAIT');if(wait)next.pendingRetest={direction:wait.trigger.startsWith('SUPPORT')?'SHORT':'LONG',zone:wait.zone,zoneId:hybridZoneId(wait.zone),createdAt:Date.now(),breakoutAt:wait.breakoutAt,atr:atr5};
-  if(next.pendingRetest&&Date.now()-Number(next.pendingRetest.createdAt||0)>CONFIG.HYBRID_ENTRY.breakoutRetestTtlMs)delete next.pendingRetest;
-  const p=next.pendingRetest;
-  if(p){const fresh=Number(current.timestamp)>Number(p.breakoutAt||0),rt=fresh?hybridRetest(current,p.zone,p.direction,flow,vol,atr5):{confirmed:false,touched:false,holds:false,rejection:false,activity:false,aligned:hybridFlowAligned(flow,p.direction)};watched.push({type:'RETEST',zone:p.zone,direction:p.direction,retest:rt,freshCandle:fresh});if(fresh&&rt.confirmed){entries.push({direction:p.direction,trigger:p.direction==='LONG'?'RESISTANCE_BREAK_RETEST_LONG':'SUPPORT_BREAK_RETEST_SHORT',zone:p.zone,evidence:['BREAKOUT_RETEST','RETEST_HOLD',...(rt.activity?['ACTIVITY']:[]),...(rt.aligned>=0.08?['FLOW_CONFIRMATION']:[])],atr:atr5,price,volume:vol,flow});delete next.pendingRetest;}}
-  const move5=Math.abs(hybridPercentChange(c5,5)),extension=atr5>0?Math.abs(price-current.open)/atr5:0,near=Boolean(support||resistance||p);
-  if(!entries.length&&move5>=1.5&&extension>=CONFIG.HYBRID_ENTRY.maxChaseAtr&&!near)next.lastState='EXHAUSTED_NO_CHASE';else if(!entries.length)next.lastState=near?'WATCH_LEVEL':'NO_SETUP';
-  return {state:entries.length?(entries.some(e=>e.direction!=='WAIT')?'ENTRY_READY':'WAITING_RETEST'):next.lastState,direction:entries.find(e=>e.direction!=='WAIT')?.direction||'NONE',entries,zones,watched,volume:vol,atr:atr5,nextState:next,move5,preMove5,extension,eventFlags:{supportZone:Boolean(support),resistanceZone:Boolean(resistance),supportReaction:watched.some(x=>x.type==='SUPPORT'&&x.bounce?.confirmed),resistanceReaction:watched.some(x=>x.type==='RESISTANCE'&&x.rejection?.confirmed),breakout:entries.some(x=>x.trigger.includes('WAIT_RETEST')),waitingRetest:Boolean(next.pendingRetest),retestConfirmed:entries.some(x=>x.trigger.includes('RETEST')),exhausted:next.lastState==='EXHAUSTED_NO_CHASE'}};
+  const c5=hybridClosedCandles(candles['5m']||[],'5m'),c15=hybridClosedCandles(candles['15m']||[],'15m'),c1h=hybridClosedCandles(candles['1h']||[],'1h'),c4h=hybridClosedCandles(candles['4h']||[],'4h'),current=c5.at(-1);if(!current)return{state:'NO_DATA',direction:'NONE',entries:[],zones:{support:[],resistance:[]}};
+  const atr5=Number(hybridAtr(c5,14))||price*0.005,zones=hybridBuildZones({'5m':c5,'15m':c15,'1h':c1h,'4h':c4h},price,atr5),vol=hybridVolumeContext(c5),entries=[],watched=[],priorC5=c5.slice(0,-1),preMove5=hybridPercentChange(priorC5,5),support=hybridNearestZone(zones.support,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'S'),resistance=hybridNearestZone(zones.resistance,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'R');
+  const pushReaction=(direction,trigger,zone,rx)=>{const distance=Math.abs(price-zone.center)/atr5;const priorOk=direction==='LONG'?preMove5<=-CONFIG.HYBRID_ENTRY.priorMovePct:preMove5>=CONFIG.HYBRID_ENTRY.priorMovePct;const structural=rx.confirmed&&distance<=CONFIG.HYBRID_ENTRY.maxEntryDistanceAtr;if(structural&&(priorOk||rx.sweep)){const evidence=[...(rx.evidence||[])];const confirmations=Number(Boolean(rx.sweep))+Number(Boolean(rx.flowOk))+Number(Boolean(rx.volumeOk));const tier=rx.sweep&&confirmations>=2?'PRIME':confirmations>=1?'NORMAL':'FAST';entries.push({direction,trigger,zone,evidence,atr:atr5,price,volume:vol,flow,entryDistanceAtr:distance,tier,confirmationCount:confirmations});}};
+  if(support){const bounce=hybridReactionSupport(current,support,flow,vol,atr5);watched.push({type:'SUPPORT',zone:support,bounce});if(preMove5<=-CONFIG.HYBRID_ENTRY.priorMovePct)pushReaction('LONG','SUPPORT_BOUNCE',support,bounce);const br=hybridBreakout(current,support,'SHORT',flow,vol,atr5);if(br.broken)entries.push({direction:'WAIT',trigger:'SUPPORT_BREAK_WAIT_RETEST',zone:support,evidence:['SUPPORT_BROKEN',...(br.volumeOk?['ACTIVITY_CONFIRMATION']:[]),...(br.flowOk?['FLOW_CONFIRMATION']:[])],breakoutAt:Number(current.timestamp)||Date.now(),atr:atr5,price,flow,volume:vol});}
+  if(resistance){const rej=hybridReactionResistance(current,resistance,flow,vol,atr5);watched.push({type:'RESISTANCE',zone:resistance,rejection:rej});if(preMove5>=CONFIG.HYBRID_ENTRY.priorMovePct)pushReaction('SHORT','RESISTANCE_REJECTION',resistance,rej);const br=hybridBreakout(current,resistance,'LONG',flow,vol,atr5);if(br.broken)entries.push({direction:'WAIT',trigger:'RESISTANCE_BREAK_WAIT_RETEST',zone:resistance,evidence:['RESISTANCE_BROKEN',...(br.volumeOk?['ACTIVITY_CONFIRMATION']:[]),...(br.flowOk?['FLOW_CONFIRMATION']:[])],breakoutAt:Number(current.timestamp)||Date.now(),atr:atr5,price,flow,volume:vol});}
+  const next={...(previousState||{}),updatedAt:Date.now()},wait=entries.find(x=>x.direction==='WAIT');if(wait)next.pendingRetest={direction:wait.trigger.startsWith('SUPPORT')?'SHORT':'LONG',zone:wait.zone,zoneId:hybridZoneId(wait.zone),createdAt:Date.now(),breakoutAt:wait.breakoutAt,atr:atr5};if(next.pendingRetest&&Date.now()-Number(next.pendingRetest.createdAt||0)>CONFIG.HYBRID_ENTRY.breakoutRetestTtlMs)delete next.pendingRetest;
+  const p=next.pendingRetest;if(p){const fresh=Number(current.timestamp)>Number(p.breakoutAt||0),rt=fresh?hybridRetest(current,p.zone,p.direction,flow,vol,atr5):{confirmed:false,touched:false,holds:false,rejection:false,activity:false,aligned:hybridFlowAligned(flow,p.direction)};watched.push({type:'RETEST',zone:p.zone,direction:p.direction,retest:rt,freshCandle:fresh});const distance=Math.abs(price-Number(p.zone.center))/atr5;if(fresh&&rt.confirmed&&distance<=CONFIG.HYBRID_ENTRY.maxRetestDistanceAtr){entries.push({direction:p.direction,trigger:p.direction==='LONG'?'RESISTANCE_BREAK_RETEST_LONG':'SUPPORT_BREAK_RETEST_SHORT',zone:p.zone,evidence:['BREAKOUT_RETEST','RETEST_HOLD',...(rt.activity?['ACTIVITY']:[]),...(rt.aligned>=CONFIG.HYBRID_ENTRY.minReactionFlowImbalance?['FLOW_CONFIRMATION']:[])],atr:atr5,price,volume:vol,flow,entryDistanceAtr:distance});delete next.pendingRetest;}}
+  const move5=Math.abs(hybridPercentChange(c5,5)),extension=atr5>0?Math.abs(price-Number(current.open))/atr5:0,near=Boolean(support||resistance||p);if(!entries.length&&move5>=1.5&&extension>=CONFIG.HYBRID_ENTRY.maxChaseAtr&&!near)next.lastState='EXHAUSTED_NO_CHASE';else if(!entries.length)next.lastState=near?'WATCH_LEVEL':'NO_SETUP';
+  return{state:entries.length?(entries.some(e=>e.direction!=='WAIT')?'ENTRY_READY':'WAITING_RETEST'):next.lastState,direction:entries.find(e=>e.direction!=='WAIT')?.direction||'NONE',entries,zones,watched,volume:vol,atr:atr5,nextState:next,move5,preMove5,extension,eventFlags:{supportZone:Boolean(support),resistanceZone:Boolean(resistance),supportReaction:watched.some(x=>x.type==='SUPPORT'&&x.bounce?.confirmed),resistanceReaction:watched.some(x=>x.type==='RESISTANCE'&&x.rejection?.confirmed),breakout:entries.some(x=>x.trigger.includes('WAIT_RETEST')),waitingRetest:Boolean(next.pendingRetest),retestConfirmed:entries.some(x=>x.trigger.includes('RETEST')),exhausted:next.lastState==='EXHAUSTED_NO_CHASE'}};
 }
-function hybridLeverage(setup){
-  let l=Number(CONFIG.HYBRID_RISK.defaultLeverage||5);const t=String(setup?.trigger||'');
-  if(t.includes('RETEST'))l=8;else if(t.includes('BOUNCE')||t.includes('REJECTION'))l=6;
-  if(setup?.flow?.flowSurge)l=Math.max(l,9);if(setup?.flow?.explosiveFlow)l=Math.max(l,10);
-  return Math.max(CONFIG.HYBRID_RISK.minLeverage,Math.min(CONFIG.HYBRID_RISK.maxLeverage,l));
-}
+function hybridLeverage(setup){let l=Number(CONFIG.HYBRID_RISK.defaultLeverage||5),t=String(setup?.trigger||'');if(t.includes('RETEST'))l=7;else if(t.includes('BOUNCE')||t.includes('REJECTION'))l=5;if(setup?.flow?.flowSurge)l=Math.max(l,7);if(setup?.flow?.explosiveFlow)l=Math.max(l,8);return Math.max(CONFIG.HYBRID_RISK.minLeverage,Math.min(CONFIG.HYBRID_RISK.maxLeverage,l));}
 function hybridBuildSetup(symbol,analysis,flow,topTrader){
-  const e=analysis.entries?.find(x=>x.direction==='LONG'||x.direction==='SHORT');if(!e)return null;
-  const price=Number(analysis.price||e.price),atrValue=Number(analysis.atr||e.atr),direction=e.direction,zone=e.zone;
-  const stopBase=direction==='LONG'?Number(zone.low):Number(zone.high),buffer=atrValue*CONFIG.HYBRID_RISK.stopAtrBuffer;
-  const stop=direction==='LONG'?stopBase-buffer:stopBase+buffer,r=Math.max(Math.abs(price-stop),buffer);
-  // First target prefers the nearest opposite S/R zone when it is a practical
-  // profit target; otherwise fall back to the normal R multiple. This makes
-  // exits level-aware without adding an entry gate.
-  const oppositeZones=direction==='LONG'?(analysis.zones?.resistance||[]):(analysis.zones?.support||[]);
-  const levelTarget=oppositeZones.find(z=>direction==='LONG'?Number(z.center)>price:Number(z.center)<price);
-  const levelDistance=levelTarget?Math.abs(Number(levelTarget.center)-price):0;
-  const rMin=r*0.70;
-  const tp1=levelTarget&&levelDistance>=rMin?(direction==='LONG'?Number(levelTarget.center):Number(levelTarget.center)):(direction==='LONG'?price+r*CONFIG.HYBRID_RISK.tp1R:price-r*CONFIG.HYBRID_RISK.tp1R);
-  const tp2=direction==='LONG'?Math.max(price+r*CONFIG.HYBRID_RISK.tp2R,tp1+r*0.5):Math.min(price-r*CONFIG.HYBRID_RISK.tp2R,tp1-r*0.5);
-  const tp3=direction==='LONG'?Math.max(price+r*CONFIG.HYBRID_RISK.tp3R,tp2+r*0.5):Math.min(price-r*CONFIG.HYBRID_RISK.tp3R,tp2-r*0.5);
-  const trader=ttiScoreForSymbol(topTrader?.cohort||[],hybridNormalizeSymbol(symbol),direction);
-  return {valid:true,symbol:hybridNormalizeSymbol(symbol),direction,trigger:e.trigger,state:'ENTRY_READY',entry:price,entryPrice:price,stopLoss:Number(stop.toFixed(8)),tp1:Number(tp1.toFixed(8)),tp2:Number(tp2.toFixed(8)),tp3:Number(tp3.toFixed(8)),atr:atrValue,stopDistance:r,stopPercent:Number((r/price*100).toFixed(3)),leverage:hybridLeverage({trigger:e.trigger,flow}),allocation:CONFIG.HYBRID_RISK.capitalAllocation,allocationPercent:20,riskPerTradePercent:Number((CONFIG.RISK_PER_TRADE*100).toFixed(2)),zone,zoneType:e.trigger.includes('SUPPORT')?'SUPPORT':'RESISTANCE',evidence:[...new Set([...(e.evidence||[]),...hybridFlowEvidence(flow,direction)])],flow,topTrader:trader,topTraderPolicy:'CONFIRMATION_ONLY_NO_BLOCK',volume:analysis.volume,candleTimestamp:Number(candlesTimestamp(analysis))||0,createdAt:Date.now()};
+  const e=analysis.entries?.find(x=>x.direction==='LONG'||x.direction==='SHORT');if(!e)return null;const price=Number(analysis.price||e.price),atrValue=Number(analysis.atr||e.atr),direction=e.direction,zone=e.zone;if(!(price>0)||!(atrValue>0)||!zone||Number(zone.quality||0)<CONFIG.HYBRID_ENTRY.minZoneQuality)return null;const entryDistanceAtr=Math.abs(price-Number(zone.center))/atrValue;if(entryDistanceAtr>CONFIG.HYBRID_ENTRY.maxEntryDistanceAtr)return null;
+  const stopBase=direction==='LONG'?Number(zone.low):Number(zone.high),buffer=atrValue*CONFIG.HYBRID_RISK.stopAtrBuffer,stop=direction==='LONG'?stopBase-buffer:stopBase+buffer,r=Math.max(Math.abs(price-stop),buffer),oppositeZones=direction==='LONG'?(analysis.zones?.resistance||[]):(analysis.zones?.support||[]),levelTarget=oppositeZones.filter(z=>direction==='LONG'?Number(z.center)>price:Number(z.center)<price).sort((a,b)=>Math.abs(Number(a.center)-price)-Math.abs(Number(b.center)-price))[0],levelDistance=levelTarget?Math.abs(Number(levelTarget.center)-price):0,rMin=r*0.90,tp1=levelTarget&&levelDistance>=rMin?Number(levelTarget.center):(direction==='LONG'?price+r*CONFIG.HYBRID_RISK.tp1R:price-r*CONFIG.HYBRID_RISK.tp1R),tp2=direction==='LONG'?Math.max(price+r*CONFIG.HYBRID_RISK.tp2R,tp1+r*0.5):Math.min(price-r*CONFIG.HYBRID_RISK.tp2R,tp1-r*0.5),tp3=direction==='LONG'?Math.max(price+r*CONFIG.HYBRID_RISK.tp3R,tp2+r*0.5):Math.min(price-r*CONFIG.HYBRID_RISK.tp3R,tp2-r*0.5),trader=ttiScoreForSymbol(topTrader?.cohort||[],hybridNormalizeSymbol(symbol),direction);
+  if((direction==='LONG'&&!(stop<price))||(direction==='SHORT'&&!(stop>price)))return null;if((direction==='LONG'&&!(tp1>price&&tp2>tp1&&tp3>tp2))||(direction==='SHORT'&&!(tp1<price&&tp2<tp1&&tp3<tp2)))return null;const tier=['FAST','NORMAL','PRIME'].includes(e.tier)?e.tier:(String(e.trigger).includes('RETEST')?'PRIME':'NORMAL');const mult=tier==='PRIME'?CONFIG.HYBRID_ENTRY.tierPrimeAllocation:tier==='NORMAL'?CONFIG.HYBRID_ENTRY.tierNormalAllocation:CONFIG.HYBRID_ENTRY.tierFastAllocation;const allocation=CONFIG.HYBRID_RISK.capitalAllocation*mult;
+  return{valid:true,symbol:hybridNormalizeSymbol(symbol),direction,trigger:e.trigger,tier,state:'ENTRY_READY',entry:price,entryPrice:price,stopLoss:Number(stop.toFixed(8)),tp1:Number(tp1.toFixed(8)),tp2:Number(tp2.toFixed(8)),tp3:Number(tp3.toFixed(8)),atr:atrValue,stopDistance:r,stopPercent:Number((r/price*100).toFixed(3)),entryDistanceAtr:Number(entryDistanceAtr.toFixed(3)),leverage:hybridLeverage({trigger:e.trigger,flow}),allocation,allocationPercent:Number((allocation*100).toFixed(2)),riskPerTradePercent:Number((CONFIG.RISK_PER_TRADE*100).toFixed(2)),zone,zoneType:e.trigger.includes('SUPPORT')?'SUPPORT':'RESISTANCE',evidence:[...new Set([...(e.evidence||[]),...hybridFlowEvidence(flow,direction)])],confirmationCount:Number(e.confirmationCount||0),entryTier:tier,flow,topTrader:trader,topTraderPolicy:'CONFIRMATION_ONLY_NO_BLOCK',volume:analysis.volume,candleTimestamp:Number(candlesTimestamp(analysis))||0,createdAt:Date.now()};
 }
 function candlesTimestamp(a){return a?.candles?.['5m']?.at(-1)?.timestamp||0;}
+function hybridEventPriority(signal){const s=signal?.hybridSetup||{},t=String(s.trigger||'');let p=0;if(t.includes('RETEST'))p+=40;else if(t.includes('BOUNCE')||t.includes('REJECTION'))p+=30;p+=Math.min(20,Number(s.zone?.quality||0)*2);const d=Number(s.entryDistanceAtr||9);p+=Math.max(0,12-d*8);const f=Math.abs(Number(s.flow?.imbalance||0));p+=Math.min(12,f*30);if(s.volume?.volumeSurge||s.volume?.rangeExpansion)p+=6;if(s.flow?.flowSurge)p+=5;if(s.flow?.explosiveFlow)p+=5;return p;}
+
 function hybridResolveIndexSymbol(m){
   const vals=[m?.indexTokenSymbol,m?.indexName,m?.indexToken?.symbol,m?.indexToken?.tokenSymbol,m?.indexToken?.name,m?.indexTokenData?.symbol,m?.token?.symbol];
   for(const v of vals){const s=hybridNormalizeSymbol(String(v||''));if(s&&s.length<=12)return s;}
@@ -1751,6 +1635,8 @@ telegramEvents: {},
 radarTelegramEvents: {},
 radarHistory: {},
 smartMoneyFlowHistory: {},
+hybridStructureStates: {},
+hybridScanCursor: 0,
 universeRotationCursor: 0,
 lastExitDiagnostics: [],
 resourceUsage: null
@@ -1971,6 +1857,8 @@ async function loadState(env) {
     radarTelegramEvents: data?.radarTelegramEvents && typeof data.radarTelegramEvents === "object" ? data.radarTelegramEvents : {},
     radarHistory: data?.radarHistory && typeof data.radarHistory === "object" ? data.radarHistory : {},
     smartMoneyFlowHistory: data?.smartMoneyFlowHistory && typeof data.smartMoneyFlowHistory === "object" ? data.smartMoneyFlowHistory : {},
+    hybridStructureStates: data?.hybridStructureStates && typeof data.hybridStructureStates === "object" ? data.hybridStructureStates : {},
+    hybridScanCursor: Number.isFinite(Number(data?.hybridScanCursor)) ? Number(data.hybridScanCursor) : 0,
     universeRotationCursor: Number.isFinite(Number(data?.universeRotationCursor)) ? Number(data.universeRotationCursor) : 0,
     lastExitDiagnostics: Array.isArray(data?.lastExitDiagnostics) ? data.lastExitDiagnostics : [],
     resourceUsage: data?.resourceUsage && typeof data.resourceUsage === "object" ? data.resourceUsage : null
@@ -4071,7 +3959,7 @@ function v15610RadarGateReasons(candidate) {
 function selectPrioritySignals(signals, positions) {
 const ranked = [...signals]
 .filter(s => s?.executionEligible && s?.tradePlan?.valid)
-.sort((a,b) => signalPriorityScore(b) - signalPriorityScore(a));
+.sort((a,b) => (a?.signalTier==='EVENT_SEQUENCE' && b?.signalTier==='EVENT_SEQUENCE') ? hybridEventPriority(b)-hybridEventPriority(a) : a?.signalTier==='EVENT_SEQUENCE' ? -1 : b?.signalTier==='EVENT_SEQUENCE' ? 1 : signalPriorityScore(b)-signalPriorityScore(a));
  
 const selected = [];
 let totalAllocation = 0;
@@ -4383,22 +4271,24 @@ async function runFullScan(env, scanOptions = {}) {
       deepStage="MTF";
       const [c15,c1h,c4h]=await Promise.all([fetchCandlesScan(row.s,"15m",CONFIG.CANDLE_LIMIT["15m"]),fetchCandlesScan(row.s,"1h",CONFIG.CANDLE_LIMIT["1h"]),fetchCandlesScan(row.s,"4h",CONFIG.CANDLE_LIMIT["4h"])]);
       deepStage="ANALYZE";
-      const price=Number(c5.at(-1)?.close||c15.at(-1)?.close||0);if(!(price>0)){deepErrors++;console.warn("[HYBRID][DEEP_ERROR]",{symbol:row.s,stage:"PRICE",error:"INVALID_PRICE"});continue;}
+      const closed5=hybridClosedCandles(c5,'5m'),price=Number(closed5.at(-1)?.close||c15.at(-1)?.close||0);if(!(price>0)){deepErrors++;console.warn("[HYBRID][DEEP_ERROR]",{symbol:row.s,stage:"PRICE",error:"INVALID_PRICE"});continue;}
       const flow=row.f||{imbalance:0,totalUsd:0};const prev=state.hybridStructureStates?.[row.s]||{};
       const analysis=hybridClassifyStructure(row.s,{"5m":c5,"15m":c15,"1h":c1h,"4h":c4h},price,flow,prev);analysis.price=price;analysis.candles={"5m":c5,"15m":c15,"1h":c1h,"4h":c4h};
       if(!state.hybridStructureStates)state.hybridStructureStates={};state.hybridStructureStates[row.s]=analysis.nextState||prev;
       const ef=analysis.eventFlags||{};eventStats.supportZones+=ef.supportZone?1:0;eventStats.resistanceZones+=ef.resistanceZone?1:0;eventStats.flowEvents+=(flow.flowSurge||flow.explosiveFlow)?1:0;eventStats.volumeEvents+=(analysis.volume?.volumeSurge||analysis.volume?.rangeExpansion||analysis.volume?.volumeExplosive)?1:0;eventStats.supportReactions+=ef.supportReaction?1:0;eventStats.resistanceReactions+=ef.resistanceReaction?1:0;eventStats.breakouts+=ef.breakout?1:0;eventStats.waitingRetests+=ef.waitingRetest?1:0;eventStats.retestConfirmed+=ef.retestConfirmed?1:0;
       if(ef.supportReaction||ef.resistanceReaction||ef.breakout||ef.waitingRetest||ef.retestConfirmed)eventCandidates++;
-      const setup=hybridBuildSetup(row.s,analysis,flow,traders);if(setup){eventStats.entryReady++;signals.push({id:crypto.randomUUID(),symbol:setup.symbol,market:pairSymbol(setup.symbol),direction:setup.direction,status:"EVENT_ENTRY_READY",score:100,confidence:100,price:setup.entryPrice,tradePlan:{valid:true,entry:setup.entryPrice,stopLoss:setup.stopLoss,tp1:setup.tp1,tp2:setup.tp2,tp3:setup.tp3,leverage:setup.leverage,allocation:setup.allocation,allocationPercent:20},trend:{},components:{structureEvent:setup.trigger,volume:analysis.volume,flow:flow},diagnostics:setup.evidence,signalTier:"EVENT_SEQUENCE",executionEligible:true,edge:100,riskScore:0,entryQuality:{overextended:false},topTraderIntelligence:setup.topTrader,hybridSetup:setup,generatedAt:Date.now()});}
+      const setup=hybridBuildSetup(row.s,analysis,flow,traders);if(setup){eventStats.entryReady++;signals.push({id:crypto.randomUUID(),symbol:setup.symbol,market:pairSymbol(setup.symbol),direction:setup.direction,status:"EVENT_ENTRY_READY",score:0,confidence:0,price:setup.entryPrice,tradePlan:{valid:true,entry:setup.entryPrice,stopLoss:setup.stopLoss,tp1:setup.tp1,tp2:setup.tp2,tp3:setup.tp3,leverage:setup.leverage,allocation:setup.allocation,allocationPercent:Number((setup.allocation*100).toFixed(2))},trend:{},components:{structureEvent:setup.trigger,volume:analysis.volume,flow:flow},diagnostics:setup.evidence,signalTier:"EVENT_SEQUENCE",executionEligible:true,edge:0,riskScore:0,entryQuality:{overextended:false},topTraderIntelligence:setup.topTrader,hybridSetup:setup,generatedAt:Date.now()});}
       deepSucceeded++;
       console.log("[HYBRID][STRUCTURE]",{symbol:row.s,state:analysis.state,direction:analysis.direction,move5:analysis.move5,flow:flow.imbalance,flowSurge:Boolean(flow.flowSurge||flow.explosiveFlow),volume:analysis.volume?.volumeRatio,range:analysis.volume?.rangeRatio,support:analysis.zones?.support?.[0]?.center||null,resistance:analysis.zones?.resistance?.[0]?.center||null,events:analysis.eventFlags||{}});
     }catch(e){deepErrors++;const detail=safeError(e);errors.push({symbol:row.s,scope:"deep-structure",stage:deepStage,error:detail});console.error("[HYBRID][DEEP_ERROR]",{symbol:row.s,stage:deepStage,error:detail});}
   }
   console.log("[HYBRID][DEEP_DONE]",{attempted:deepAttempted,succeeded:deepSucceeded,errors:deepErrors,planned:rows.length,eventCandidates});
-  // Entry selection is intentionally simple: an actual structural event is enough.
-  // Top Trader is positive confirmation only; it never blocks an event.
-  signals.sort((a,b)=>{const at=a.hybridSetup?.topTrader?.boost||0,bt=b.hybridSetup?.topTrader?.boost||0;return bt-at;});
-  for(const signal of signals.slice(0,Math.max(1,Number(CONFIG.MAX_POSITIONS||3)))){
+  // Entry selection remains event-based, but execution MUST still pass portfolio/risk limits.
+  // Top Trader is positive confirmation only; it never creates an entry.
+  const openPositions = await loadPositions(env);
+  const selectedEvents = selectPrioritySignals(signals, openPositions).selected;
+  selectedEvents.sort((a,b)=>hybridEventPriority(b)-hybridEventPriority(a));
+  for(const signal of selectedEvents){
     const key=signal.id;
     try{
       const result=await executeLiveSignal(signal,env);
@@ -4407,8 +4297,8 @@ async function runFullScan(env, scanOptions = {}) {
       if(result?.error)errors.push({symbol:signal.symbol,error:result.error});
     }catch(e){executionResults.push({executed:false,mode:"LIVE",symbol:signal.symbol,error:safeError(e)});errors.push({symbol:signal.symbol,error:safeError(e)});}
   }
-  state.lastScan={at:Date.now(),durationMs:Date.now()-started,candidates:signals.length,executed:executionResults.filter(x=>x?.executed).length};
-  state.lastDiagnostics={version:"V17.1.9.1-HYBRID-DEEP-SCAN-DIAGNOSTIC-REPAIR",engine:"STRUCTURE+VOLUME+SMART_MONEY_NO_ENTRY_SCORE_GATE",markets:markets.length,broad5mScanned:broad5m.size,deepScanned:rows.length,eventCandidates,entries:signals.length,executed:executionResults.filter(x=>x?.executed).length,flowAvailable:Boolean(flowData?.available),topTraderAvailable:Boolean(traders?.available),eventStats,errors};
+  state.lastScan={at:Date.now(),durationMs:Date.now()-started,candidates:signals.length,selected:selectedEvents.length,executionRejected:Math.max(0,signals.length-selectedEvents.length),executed:executionResults.filter(x=>x?.executed).length};
+  state.lastDiagnostics={version:"V17.2.1-PRO-STRUCTURE-EVENT-ENTRY",engine:"STRUCTURE_EVENT_SEQUENCE_NO_ENTRY_SCORE",markets:markets.length,broad5mScanned:broad5m.size,deepScanned:rows.length,eventCandidates,entries:signals.length,executed:executionResults.filter(x=>x?.executed).length,flowAvailable:Boolean(flowData?.available),topTraderAvailable:Boolean(traders?.available),eventStats,errors};
   try{await saveState(env,state);}catch(e){errors.push({scope:"state",error:safeError(e)});
   }
   return{ok:true,status:signals.length?"ENTRY_READY":"WATCHING",scanned:markets.length,requested:markets.length,broad5mScanned:broad5m.size,deepPlanned:rows.length,deepAttempted,deepSucceeded,deepErrors,deepScanned:deepSucceeded,eventCandidates,candidates:signals.length,signals,executionResults,errors,eventStats,diagnostics:state.lastDiagnostics,timestamp:Date.now()};
@@ -4469,6 +4359,8 @@ telegramEvents: data?.telegramEvents && typeof data.telegramEvents === "object" 
 radarTelegramEvents: data?.radarTelegramEvents && typeof data.radarTelegramEvents === "object" ? data.radarTelegramEvents : {},
 radarHistory: data?.radarHistory && typeof data.radarHistory === "object" ? data.radarHistory : {},
 smartMoneyFlowHistory: data?.smartMoneyFlowHistory && typeof data.smartMoneyFlowHistory === "object" ? data.smartMoneyFlowHistory : {},
+    hybridStructureStates: data?.hybridStructureStates && typeof data.hybridStructureStates === "object" ? data.hybridStructureStates : {},
+    hybridScanCursor: Number.isFinite(Number(data?.hybridScanCursor)) ? Number(data.hybridScanCursor) : 0,
 universeRotationCursor: Number.isFinite(Number(data?.universeRotationCursor)) ? Number(data.universeRotationCursor) : 0,
 lastExitDiagnostics: Array.isArray(data?.lastExitDiagnostics) ? data.lastExitDiagnostics : [],
 resourceUsage: data?.resourceUsage && typeof data.resourceUsage === "object" ? data.resourceUsage : null
@@ -8644,11 +8536,11 @@ INFLIGHT.set(key, Date.now());
 try {
 if (env.BOT_STATE) {
 const existing = await env.BOT_STATE.get(`live_exec:${key}`, "json");
-if (existing && existing.status === "submitted") {
+if (existing && (existing.status === "submitted" || (existing.status === "inflight" && Date.now() - Number(existing.at || 0) < 10 * 60 * 1000))) {
 INFLIGHT.delete(key);
 return { acquired:false, reason:"Duplicate live execution blocked", key, existing };
 }
-await env.BOT_STATE.put(`live_exec:${key}`, JSON.stringify({status:"submitted",at:Date.now(),symbol:signal?.symbol,direction:signal?.direction}), { expirationTtl: 86400 });
+await env.BOT_STATE.put(`live_exec:${key}`, JSON.stringify({status:"inflight",at:Date.now(),symbol:signal?.symbol,direction:signal?.direction}), { expirationTtl: 600 });
 }
 return { acquired:true, key };
 } catch (error) {
@@ -8658,6 +8550,18 @@ throw error;
 }
 
 function releaseLiveExecutionLock(key) { if (key) INFLIGHT.delete(key); }
+
+async function markLiveExecutionSubmitted(env, key, signal, result) {
+  if (!env?.BOT_STATE || !key) return;
+  await env.BOT_STATE.put(`live_exec:${key}`, JSON.stringify({
+    status:"submitted", at:Date.now(), symbol:signal?.symbol, direction:signal?.direction, requestId:result?.requestId || null
+  }), { expirationTtl: 86400 });
+}
+
+async function clearLiveExecutionLock(env, key) {
+  if (!env?.BOT_STATE || !key) return;
+  try { await env.BOT_STATE.delete(`live_exec:${key}`); } catch (_) {}
+}
 
 
 function radarLiveLedgerKey(symbol) {
@@ -8907,6 +8811,8 @@ const collateralUsd=Math.min(collateralTargetUsd,collateralCapUsd,walletUsd*CONF
 const entryPrice=Number(signal.tradePlan.entry||0);
 const stopPrice=Number(signal.tradePlan.stopLoss||0);
 const stopFraction=Math.abs(entryPrice-stopPrice)/Math.max(entryPrice,1e-12);
+if ((direction === "LONG" && !(stopPrice < entryPrice)) || (direction === "SHORT" && !(stopPrice > entryPrice))) throw new Error("Invalid stop side relative to entry");
+if (!(stopFraction > 0) || !Number.isFinite(stopFraction)) throw new Error("Invalid stop distance");
 const riskBasedNotional=calculatePositionSize(walletUsd,entryPrice,stopPrice);
 if (!(riskBasedNotional>0)) throw new Error("Risk-based position sizing is invalid");
 const allocationNotional=collateralUsd*leverage;
@@ -8941,10 +8847,14 @@ const size3=toBigIntDecimal(notionalUsd*0.30,30);
 const prepared=await sdk.prepareOrder({kind:"increase",symbol:sdkSymbol,direction:orderDirection,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:collateralAmount,token:collateral.symbol},mode:"express",from:account,tpsl:[{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp1,30),size:size1},{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp2,30),size:size2},{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp3,30),size:size3},{type:"stop-loss",triggerPrice:sl,size}]});
 const signature=await sdk.signOrder(prepared,signer);
 const result=await sdk.submitOrder({mode:prepared.mode,requestId:prepared.requestId,signature,from:account,idempotencyKey:prepared.idempotencyKey,eip712Data:{batchParams:prepared.payload.batchParams,relayParams:prepared.payload.relayParams}});
+await markLiveExecutionSubmitted(env, lock.key, signal, result);
 const verification=await verifyLiveEntryPosition(sdk,account,sdkSymbol,orderDirection,2);
 const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:verification.verified,executionKey:lock.key};
 try { await sendTelegram(env, formatTelegramLiveEntry(entryNotice)); } catch(_) {}
 return entryNotice;
+} catch (error) {
+  await clearLiveExecutionLock(env, lock.key);
+  throw error;
 } finally {
 releaseLiveExecutionLock(lock.key);
 }
