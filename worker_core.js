@@ -404,7 +404,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.1.7-HYBRID-STRUCTURE-EXECUTION-SAFE",
+VERSION: "V17.1.8-HYBRID-ALL-ALTCOIN-COVERAGE",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -450,6 +450,12 @@ EXECUTION_MAX_RISK: 40,
 MAX_MARKETS: 30,
 // V15.6: broad Radar is not capped by this legacy compatibility field.
 DEEP_SCAN_LIMIT: 18,
+  // V17.1.8: every listed/active market gets a lightweight 5m pass each cycle.
+  // Only the most relevant markets receive the expensive 15m/1h/4h structure pass.
+  HYBRID_BROAD_5M_SCAN_ENABLED: true,
+  HYBRID_BROAD_5M_BATCH_SIZE: 20,
+  HYBRID_BROAD_5M_LIMIT: 60,
+  HYBRID_DEEP_SCAN_LIMIT: 18,
 // V15: asset-agnostic ranking. Asset identity/size must not add score or selection priority.
 FAIR_ASSET_SCORING_ENABLED: true,
 FAIR_LIQUIDITY_SCORE_IN_RADAR: false,
@@ -4283,8 +4289,42 @@ async function runFullScan(env, scanOptions = {}) {
   const flowData=await fetchSmartMoneyFlowData(env,state.smartMoneyFlowHistory||{});
   state.smartMoneyFlowHistory=smfPersistHistory(state.smartMoneyFlowHistory||{},flowData);
   let traders={available:false,cohort:[]};try{traders=await fetchTopTraderIntelligence(env);}catch(_){}
-  const ranked=markets.map(m=>{const s=normalizeSymbol(m.symbol),f=flowData.bySymbol?.[s]||null;const abs=Math.abs(Number(f?.imbalance||0));return{m,s,f,priority:(f?.explosiveFlow?5:f?.flowSurge?4:0)+(abs>=0.30?2:abs>=0.15?1:0)+(Number(f?.largeTradeCount||0)>0?1:0)};}).sort((a,b)=>b.priority-a.priority);
-  const limit=Math.min(Number(CONFIG.DEEP_SCAN_LIMIT||18),Math.max(1,Math.floor((Number(CONFIG.MAX_SCAN_SUBREQUESTS||50)-Number(CONFIG.RESERVED_SCAN_SUBREQUESTS||10))/4)));
+  // V17.1.8 ALL-ALTCOIN COVERAGE:
+  // First observe the entire active/listed GMX universe with a cheap 5m pass.
+  // This prevents PEPE/PUMP/VVV/CHZ/CAKE and other altcoins from disappearing
+  // merely because they were outside the old 10-market deep-scan window.
+  const broad5m=new Map();
+  if(CONFIG.HYBRID_BROAD_5M_SCAN_ENABLED!==false){
+    const batchSize=Math.max(1,Number(CONFIG.HYBRID_BROAD_5M_BATCH_SIZE||20));
+    const broadLimit=Math.max(30,Number(CONFIG.HYBRID_BROAD_5M_LIMIT||60));
+    for(let start=0;start<markets.length;start+=batchSize){
+      const batch=markets.slice(start,start+batchSize);
+      const fetched=await Promise.all(batch.map(async m=>{
+        const s=normalizeSymbol(m.symbol);
+        try{
+          const c5=await fetchCandlesScan(s,"5m",broadLimit);
+          const last=c5.at(-1)||{},prev=c5.at(-2)||{};
+          const close=Number(last.close||0),prevClose=Number(prev.close||close);
+          const body=Math.abs(Number(last.close||0)-Number(last.open||0));
+          const range=Math.max(0,Number(last.high||0)-Number(last.low||0));
+          const avgVol=c5.slice(-20).reduce((a,c)=>a+Number(c.volume||0),0)/Math.max(1,Math.min(20,c5.length));
+          const vol=Number(last.volume||0);
+          broad5m.set(s,{candles:c5,price:close,move5m:prevClose>0?(close-prevClose)/prevClose:0,range,body,volumeRatio:avgVol>0?vol/avgVol:0});
+          return true;
+        }catch(e){ errors.push({symbol:s,scope:"broad-5m",error:safeError(e)}); return false; }
+      }));
+      console.log("[HYBRID][BROAD_5M]",{batchStart:start,batchSize:batch.length,ok:fetched.filter(Boolean).length,total:markets.length});
+    }
+  }
+  const ranked=markets.map(m=>{
+    const s=normalizeSymbol(m.symbol),f=flowData.bySymbol?.[s]||null,b=broad5m.get(s)||{};
+    const abs=Math.abs(Number(f?.imbalance||0));
+    const quick=Math.min(4,Math.abs(Number(b.move5m||0))*100)+(Number(b.volumeRatio||0)>=2?2:Number(b.volumeRatio||0)>=1.4?1:0);
+    return{m,s,f,b,priority:(f?.explosiveFlow?5:f?.flowSurge?4:0)+(abs>=0.30?2:abs>=0.15?1:0)+(Number(f?.largeTradeCount||0)>0?1:0)+quick};
+  }).sort((a,b)=>b.priority-a.priority);
+  // Deep structure remains intentionally bounded, but it rotates across the COMPLETE universe.
+  // The broad pass above is what gives every altcoin continuous observation coverage.
+  const limit=Math.min(Number(CONFIG.HYBRID_DEEP_SCAN_LIMIT||CONFIG.DEEP_SCAN_LIMIT||18),Math.max(1,ranked.length));
   const cursor=Math.abs(Number(state.hybridScanCursor||0))%Math.max(1,ranked.length),rows=[];const hot=ranked.filter(x=>x.priority>=4).slice(0,Math.min(6,limit));
   for(const x of hot)if(!rows.includes(x))rows.push(x);
   for(let i=0;i<ranked.length&&rows.length<limit;i++){const x=ranked[(cursor+i)%ranked.length];if(!rows.includes(x))rows.push(x);}
@@ -4292,7 +4332,8 @@ async function runFullScan(env, scanOptions = {}) {
   const eventStats={supportZones:0,resistanceZones:0,flowEvents:0,volumeEvents:0,supportReactions:0,resistanceReactions:0,breakouts:0,waitingRetests:0,retestConfirmed:0,entryReady:0};
   for(const row of rows){
     try{
-      const [c5,c15,c1h,c4h]=await Promise.all([fetchCandlesScan(row.s,"5m",CONFIG.CANDLE_LIMIT["5m"]),fetchCandlesScan(row.s,"15m",CONFIG.CANDLE_LIMIT["15m"]),fetchCandlesScan(row.s,"1h",CONFIG.CANDLE_LIMIT["1h"]),fetchCandlesScan(row.s,"4h",CONFIG.CANDLE_LIMIT["4h"])]);
+      const c5=broad5m.get(row.s)?.candles || await fetchCandlesScan(row.s,"5m",CONFIG.CANDLE_LIMIT["5m"]);
+      const [c15,c1h,c4h]=await Promise.all([fetchCandlesScan(row.s,"15m",CONFIG.CANDLE_LIMIT["15m"]),fetchCandlesScan(row.s,"1h",CONFIG.CANDLE_LIMIT["1h"]),fetchCandlesScan(row.s,"4h",CONFIG.CANDLE_LIMIT["4h"])]);
       const price=Number(c5.at(-1)?.close||c15.at(-1)?.close||0);if(!(price>0))continue;
       const flow=row.f||{imbalance:0,totalUsd:0};const prev=state.hybridStructureStates?.[row.s]||{};
       const analysis=hybridClassifyStructure(row.s,{"5m":c5,"15m":c15,"1h":c1h,"4h":c4h},price,flow,prev);analysis.price=price;analysis.candles={"5m":c5,"15m":c15,"1h":c1h,"4h":c4h};
@@ -4315,10 +4356,10 @@ async function runFullScan(env, scanOptions = {}) {
     }catch(e){executionResults.push({executed:false,mode:"LIVE",symbol:signal.symbol,error:safeError(e)});errors.push({symbol:signal.symbol,error:safeError(e)});}
   }
   state.lastScan={at:Date.now(),durationMs:Date.now()-started,candidates:signals.length,executed:executionResults.filter(x=>x?.executed).length};
-  state.lastDiagnostics={version:"V17-HYBRID-ON-V16",engine:"STRUCTURE+VOLUME+SMART_MONEY_NO_ENTRY_SCORE_GATE",markets:markets.length,deepScanned:rows.length,entries:signals.length,executed:executionResults.filter(x=>x?.executed).length,flowAvailable:Boolean(flowData?.available),topTraderAvailable:Boolean(traders?.available),eventStats,errors};
+  state.lastDiagnostics={version:"V17.1.8-HYBRID-ALL-ALTCOIN-COVERAGE",engine:"STRUCTURE+VOLUME+SMART_MONEY_NO_ENTRY_SCORE_GATE",markets:markets.length,broad5mScanned:broad5m.size,deepScanned:rows.length,entries:signals.length,executed:executionResults.filter(x=>x?.executed).length,flowAvailable:Boolean(flowData?.available),topTraderAvailable:Boolean(traders?.available),eventStats,errors};
   try{await saveState(env,state);}catch(e){errors.push({scope:"state",error:safeError(e)});
   }
-  return{ok:true,status:signals.length?"ENTRY_READY":"WATCHING",scanned:rows.length,requested:markets.length,candidates:signals.length,signals,executionResults,errors,eventStats,diagnostics:state.lastDiagnostics,timestamp:Date.now()};
+  return{ok:true,status:signals.length?"ENTRY_READY":"WATCHING",scanned:markets.length,requested:markets.length,broad5mScanned:broad5m.size,deepScanned:rows.length,candidates:signals.length,signals,executionResults,errors,eventStats,diagnostics:state.lastDiagnostics,timestamp:Date.now()};
 }
 
 async function riskGuard(env, state) {
