@@ -463,6 +463,15 @@ RADAR_REVERSAL_FLOW_RATIO: 0.35,
 RADAR_REVERSAL_CLOSE_RATIO: 0.30,
 RADAR_REVERSAL_PENALTY_MAX: 28,
 RADAR_REVERSAL_OPPOSITE_BONUS_MAX: 24,
+// V16.1.1: candle-aware microstructure overlay.
+RADAR_CANDLE_REVERSAL_THRESHOLD: 55,
+RADAR_CANDLE_DUMP_SCORE: 60,
+RADAR_CANDLE_PUMP_SCORE: 60,
+RADAR_CANDLE_RANGE_EXPANSION: 1.45,
+RADAR_CANDLE_CLOSE_EXTREME: 0.22,
+RADAR_CANDLE_WICK_REJECTION: 0.45,
+RADAR_CANDLE_MOVE3_PCT: 1.00,
+RADAR_CANDLE_MOVE5_PCT: 1.50,
 RADAR_EXIT_SCORE: 65,
 RADAR_REVERSAL_EDGE: 8,
 RADAR_RISK_PER_TRADE: 0.005,
@@ -623,6 +632,9 @@ return 0;
 function extractOpenInterest(m){
 const direct=v156UsdValue(
 m?.openInterest,m?.openInterestUsd,m?.totalOpenInterest,m?.openInterestUSD,
+m?.longInterestUsd,m?.shortInterestUsd,m?.longOpenInterestUsd,m?.shortOpenInterestUsd,
+m?.ticker?.longInterestUsd,m?.ticker?.shortInterestUsd,m?.ticker?.openInterestUsd,
+m?.marketInfo?.longInterestUsd,m?.marketInfo?.shortInterestUsd,
 m?.openInterest?.usd,m?.openInterest?.value,m?.values?.openInterest,m?.marketValues?.openInterest
 );
 if(direct>0)return direct;
@@ -660,7 +672,10 @@ return longOi+shortOi;
 function extractOpenInterestMeta(m){
 const fields=[
 m?.openInterest,m?.openInterestUsd,m?.totalOpenInterest,m?.openInterestUSD,
-m?.longInterestUsd,m?.shortInterestUsd,m?.longInterestUsdUsingLongToken,m?.longInterestUsdUsingShortToken,
+m?.longInterestUsd,m?.shortInterestUsd,m?.longOpenInterestUsd,m?.shortOpenInterestUsd,
+m?.ticker?.longInterestUsd,m?.ticker?.shortInterestUsd,m?.ticker?.openInterestUsd,
+m?.marketInfo?.longInterestUsd,m?.marketInfo?.shortInterestUsd,
+m?.longInterestUsdUsingLongToken,m?.longInterestUsdUsingShortToken,
 m?.shortInterestUsdUsingLongToken,m?.shortInterestUsdUsingShortToken,m?.longOpenInterestUsd,m?.shortOpenInterestUsd,
 m?.values?.longInterestUsdUsingLongToken,m?.values?.longInterestUsdUsingShortToken,
 m?.values?.shortInterestUsdUsingLongToken,m?.values?.shortInterestUsdUsingShortToken,
@@ -2620,6 +2635,63 @@ fetchedAt: Date.now()
 }
  
 // ======================================================
+// V16.1.1: candle-aware microstructure overlay.
+// The independent Radar history is intentionally lightweight and can be stale
+// on scheduled runners. The deep scan already fetches 5m candles, so reuse
+// those candles to detect an intrabar impulse/rejection without extra HTTP.
+function v1611CandleMicrostructure(candles) {
+  const rows = Array.isArray(candles) ? candles.filter(c =>
+    c && Number.isFinite(Number(c.open)) && Number.isFinite(Number(c.high)) &&
+    Number.isFinite(Number(c.low)) && Number.isFinite(Number(c.close)) &&
+    Number(c.high) >= Number(c.low) && Number(c.close) > 0
+  ) : [];
+  if (rows.length < 20) return {available:false, reason:"INSUFFICIENT_5M_CANDLES", longScore:0, shortScore:0, longReversalRisk:0, shortReversalRisk:0, reasons:[]};
+  const last=rows[rows.length-1], prev=rows[rows.length-2];
+  const close=Number(last.close), open=Number(last.open), high=Number(last.high), low=Number(last.low);
+  const move3=percentChange(rows,Math.min(3,rows.length-1)), move5=percentChange(rows,Math.min(5,rows.length-1));
+  const range=Math.max(0,high-low), body=Math.abs(close-open);
+  const upperWick=Math.max(0,high-Math.max(open,close)), lowerWick=Math.max(0,Math.min(open,close)-low);
+  const closeLocation=range>0?(close-low)/range:0.5;
+  const bodyRatio=range>0?body/range:0;
+  const priorRanges=rows.slice(-21,-1).map(c=>Math.max(0,Number(c.high)-Number(c.low))).filter(x=>x>0);
+  const baseRange=priorRanges.length?sma(priorRanges,Math.min(20,priorRanges.length)):0;
+  const rangeExpansion=baseRange>0?range/baseRange:1;
+  const lastRed=close<open,lastGreen=close>open,prevRed=Number(prev.close)<Number(prev.open),prevGreen=Number(prev.close)>Number(prev.open);
+  const rangeShock=rangeExpansion>=Number(CONFIG.RADAR_CANDLE_RANGE_EXPANSION||1.45);
+  const closeLow=closeLocation<=Number(CONFIG.RADAR_CANDLE_CLOSE_EXTREME||0.22),closeHigh=closeLocation>=1-Number(CONFIG.RADAR_CANDLE_CLOSE_EXTREME||0.22);
+  const bearishRejection=upperWick/Math.max(range,1e-12)>=Number(CONFIG.RADAR_CANDLE_WICK_REJECTION||0.45)&&closeLocation<0.45;
+  const bullishRejection=lowerWick/Math.max(range,1e-12)>=Number(CONFIG.RADAR_CANDLE_WICK_REJECTION||0.45)&&closeLocation>0.55;
+  const dumpImpulse=move3<=-Number(CONFIG.RADAR_CANDLE_MOVE3_PCT||1)||move5<=-Number(CONFIG.RADAR_CANDLE_MOVE5_PCT||1.5);
+  const pumpImpulse=move3>=Number(CONFIG.RADAR_CANDLE_MOVE3_PCT||1)||move5>=Number(CONFIG.RADAR_CANDLE_MOVE5_PCT||1.5);
+  const reversalFromGreen=lastRed&&prevGreen&&dumpImpulse;
+  const reversalFromRed=lastGreen&&prevRed&&pumpImpulse;
+  let shortScore=0,longScore=0,longReversalRisk=0,shortReversalRisk=0;
+  const shortReasons=[],longReasons=[],longReversalReasons=[],shortReversalReasons=[];
+  if(dumpImpulse){shortScore+=25;shortReasons.push("CANDLE_DUMP_IMPULSE");}
+  if(move3<=-2){shortScore+=12;shortReasons.push("CANDLE_DUMP_ACCELERATION");}
+  if(rangeShock&&lastRed){shortScore+=15;shortReasons.push("CANDLE_RANGE_SHOCK_SELL");}
+  if(closeLow&&lastRed){shortScore+=12;shortReasons.push("CANDLE_CLOSE_NEAR_LOW");}
+  if(lastRed&&prevRed){shortScore+=8;shortReasons.push("CANDLE_RED_SEQUENCE");}
+  if(bearishRejection){shortScore+=8;shortReasons.push("CANDLE_BEARISH_REJECTION");}
+  if(pumpImpulse){longScore+=25;longReasons.push("CANDLE_PUMP_IMPULSE");}
+  if(move3>=2){longScore+=12;longReasons.push("CANDLE_PUMP_ACCELERATION");}
+  if(rangeShock&&lastGreen){longScore+=15;longReasons.push("CANDLE_RANGE_SHOCK_BUY");}
+  if(closeHigh&&lastGreen){longScore+=12;longReasons.push("CANDLE_CLOSE_NEAR_HIGH");}
+  if(lastGreen&&prevGreen){longScore+=8;longReasons.push("CANDLE_GREEN_SEQUENCE");}
+  if(bullishRejection){longScore+=8;longReasons.push("CANDLE_BULLISH_REJECTION");}
+  if(reversalFromGreen){longReversalRisk+=30;longReversalReasons.push("LONG_TO_RED_CANDLE_FLIP");}
+  if(rangeShock&&lastRed){longReversalRisk+=18;longReversalReasons.push("LONG_RANGE_EXPANSION_AGAINST_SIDE");}
+  if(closeLow&&lastRed){longReversalRisk+=18;longReversalReasons.push("LONG_CLOSE_NEAR_LOW");}
+  if(bearishRejection){longReversalRisk+=12;longReversalReasons.push("LONG_BEARISH_REJECTION");}
+  if(dumpImpulse){longReversalRisk+=18;longReversalReasons.push("LONG_DOWNSIDE_IMPULSE");}
+  if(reversalFromRed){shortReversalRisk+=30;shortReversalReasons.push("SHORT_TO_GREEN_CANDLE_FLIP");}
+  if(rangeShock&&lastGreen){shortReversalRisk+=18;shortReversalReasons.push("SHORT_RANGE_EXPANSION_AGAINST_SIDE");}
+  if(closeHigh&&lastGreen){shortReversalRisk+=18;shortReversalReasons.push("SHORT_CLOSE_NEAR_HIGH");}
+  if(bullishRejection){shortReversalRisk+=12;shortReversalReasons.push("SHORT_BULLISH_REJECTION");}
+  if(pumpImpulse){shortReversalRisk+=18;shortReversalReasons.push("SHORT_UPSIDE_IMPULSE");}
+  return {available:true,move3:Number(move3.toFixed(3)),move5:Number(move5.toFixed(3)),rangeExpansion:Number(rangeExpansion.toFixed(3)),closeLocation:Number(closeLocation.toFixed(3)),bodyRatio:Number(bodyRatio.toFixed(3)),upperWickRatio:Number((upperWick/Math.max(range,1e-12)).toFixed(3)),lowerWickRatio:Number((lowerWick/Math.max(range,1e-12)).toFixed(3)),lastRed,lastGreen,prevRed,prevGreen,rangeShock,closeLow,closeHigh,bearishRejection,bullishRejection,dumpImpulse,pumpImpulse,reversalFromGreen,reversalFromRed,longScore:Math.min(100,longScore),shortScore:Math.min(100,shortScore),longReversalRisk:Math.min(100,longReversalRisk),shortReversalRisk:Math.min(100,shortReversalRisk),shortReasons:[...new Set(shortReasons)],longReasons:[...new Set(longReasons)],longReversalReasons:[...new Set(longReversalReasons)],shortReversalReasons:[...new Set(shortReversalReasons)],reasons:[...new Set([...shortReasons,...longReasons,...longReversalReasons,...shortReversalReasons])].slice(0,16),timestamp:Number(last.timestamp||0),close};
+}
+
 // SIGNAL ENGINE
 // ======================================================
  
@@ -3479,6 +3551,7 @@ opportunity: {type: analysis.opportunity?.type || "STANDARD", score: Number(anal
 riskScore: analysis.risk,
 edge: analysis.edge,
 dataQuality: analysis.dataQuality,
+radarMicro: v1611CandleMicrostructure(snapshot.candles?.["5m"] || []),
 signalDiagnostics: analysis.diagnostics,
 entryQuality: analysis.entryQuality || null,
 executionGateDiagnostics: Array.isArray(analysis.executionGateDiagnostics) ? analysis.executionGateDiagnostics : [],
@@ -4036,6 +4109,29 @@ const radarShortCount=radarDirectional.filter(x=>x.pumpRadar.direction==="SHORT"
 const fastFilterDiagnostics={total:allMarkets.length,eligible:fastRows.length,rejected:allMarkets.length-fastRows.length,rejectionReasons:fastReasonCounts,majorMarkets:allMarkets.map(m=>v8NormSymbol(m?.symbol??m?.name??m?.ticker)).filter(s=>V8_UNIVERSE.MAJOR_SYMBOLS.includes(s)).slice(0,30),pumpRadar:{enabled:!!CONFIG.PUMP_RADAR_ENABLED,watchScore:CONFIG.PUMP_RADAR_WATCH_SCORE,hotScore:CONFIG.PUMP_RADAR_HOT_SCORE,coverageMarkets:radarRows.length,directionalMarkets:radarDirectional.length,longMarkets:radarLongCount,shortMarkets:radarShortCount,top:radarRanked.slice(0,30)}};
 const results=[];const batchSize=Math.max(1, Math.min(CONFIG.SCAN_BATCH_SIZE || 2, 2));
 for(let i=0;i<symbols.length;i+=batchSize){const batch=symbols.slice(i,i+batchSize);const batchResults=await Promise.all(batch.map(async symbol=>{try{return await generateSignal(symbol,env,{scanMode:true,marketResult,previousMarket:previousSnapshots[symbol]?.market||null});}catch(error){errors.push({symbol,scope:"deep_scan",error:safeError(error)});return null;}}));results.push(...batchResults.filter(Boolean));}
+// V16.1.1: enrich independent Radar with the already-fetched 5m candle microstructure.
+// This closes the blind spot where scheduled history reports 0.00% 5m velocity
+// even though the deep 5m candle already contains a sharp sell-off.
+const resultBySymbol = new Map(results.map(r => [v8NormSymbol(r?.symbol), r]));
+for (const row of radarRows) {
+  const ref=resultBySymbol.get(v8NormSymbol(row?.symbol));
+  const micro=ref?.radarMicro;
+  if(!micro?.available||!row?.pumpRadar) continue;
+  const radar=row.pumpRadar;
+  const longRisk=Math.max(Number(radar.longReversalRisk||0),Number(micro.longReversalRisk||0));
+  const shortRisk=Math.max(Number(radar.shortReversalRisk||0),Number(micro.shortReversalRisk||0));
+  const longConfirmed=longRisk>=Number(CONFIG.RADAR_CANDLE_REVERSAL_THRESHOLD||55)&&(Number(micro.longReversalRisk||0)>0||Boolean(micro.reversalFromGreen));
+  const shortConfirmed=shortRisk>=Number(CONFIG.RADAR_CANDLE_REVERSAL_THRESHOLD||55)&&(Number(micro.shortReversalRisk||0)>0||Boolean(micro.reversalFromRed));
+  const blendedLong=Math.min(100,Number(radar.longScore||0)+Math.round(Number(micro.longScore||0)*0.55)-(longConfirmed?Math.round(longRisk*0.30):0));
+  const blendedShort=Math.min(100,Number(radar.shortScore||0)+Math.round(Number(micro.shortScore||0)*0.55)-(shortConfirmed?Math.round(shortRisk*0.30):0));
+  const reversalDirection=longConfirmed&&longRisk>shortRisk?"SHORT":shortConfirmed&&shortRisk>longRisk?"LONG":String(radar.reversalDirection||"NEUTRAL").toUpperCase();
+  const finalDirection=(reversalDirection==="SHORT"&&shortConfirmed&&blendedShort>=blendedLong-5)?"SHORT":(reversalDirection==="LONG"&&longConfirmed&&blendedLong>=blendedShort-5)?"LONG":(blendedLong===blendedShort?String(radar.direction||"NEUTRAL").toUpperCase():(blendedLong>blendedShort?"LONG":"SHORT"));
+  const reasons=finalDirection==="SHORT"?micro.shortReasons:finalDirection==="LONG"?micro.longReasons:micro.reasons;
+  row.pumpRadar={...radar,rawLongScore:Number(radar.rawLongScore||radar.longScore||0),rawShortScore:Number(radar.rawShortScore||radar.shortScore||0),longScore:Number(blendedLong.toFixed(2)),shortScore:Number(blendedShort.toFixed(2)),score:Number(Math.max(blendedLong,blendedShort).toFixed(2)),edge:Number(Math.abs(blendedLong-blendedShort).toFixed(2)),direction:finalDirection,reversalDirection,reversalScore:Number(Math.max(longRisk,shortRisk).toFixed(2)),longReversalRisk:Number(longRisk.toFixed(2)),shortReversalRisk:Number(shortRisk.toFixed(2)),longReversalConfirmed:longConfirmed,shortReversalConfirmed:shortConfirmed,reversalReasons:[...new Set([...(Array.isArray(radar.reversalReasons)?radar.reversalReasons:[]),...(reasons||[]),...(micro.longReversalReasons||[]),...(micro.shortReversalReasons||[])])].slice(0,16),candleMicro:micro,timingState:(longConfirmed&&finalDirection==="SHORT")?"REVERSAL_SHORT":(shortConfirmed&&finalDirection==="LONG")?"REVERSAL_LONG":radar.timingState,exhausted:Boolean(radar.exhausted||(finalDirection==="SHORT"&&longConfirmed)||(finalDirection==="LONG"&&shortConfirmed))};
+}
+const reranked=radarRows.map(x=>({...x,symbol:x.symbol,score:Number(x.pumpRadar?.score||0),direction:x.pumpRadar?.direction||"NEUTRAL",edge:Number(x.pumpRadar?.edge||0),reasons:x.pumpRadar?.reasons||[],pumpRadar:x.pumpRadar||null})).sort((a,b)=>b.score-a.score);
+radarRanked.splice(0,radarRanked.length,...reranked);
+radarDirectional.splice(0,radarDirectional.length,...radarRows.filter(x=>x?.pumpRadar?.direction!=="NEUTRAL"));
 const directional=results.filter(s=>s.direction!=="NO_TRADE").sort((a,b)=>signalPriorityScore(b)-signalPriorityScore(a));
 const radarEarly=results.filter(s=>s?.opportunity?.type==="EARLY_MOMENTUM"&&s?.opportunity?.score>=CONFIG.PUMP_RADAR_WATCH_SCORE);
 const valid=directional.filter(s=>["VALID","STRONG"].includes(s.signalTier)),watch=directional.filter(s=>s.signalTier==="WATCH"),notificationPool=[...valid,...watch,...radarEarly].filter(notificationEligible).sort((a,b)=>signalPriorityScore(b)-signalPriorityScore(a));
@@ -4293,6 +4389,7 @@ const radarTrace=radarRanked.slice(0,20).map(r=>({
   shortReversalConfirmed:Boolean(r.shortReversalConfirmed),
   reversalReasons:Array.isArray(r.reversalReasons)?r.reversalReasons:[],
   flowReversal:r.flowReversal||null,
+  candleMicro:r.candleMicro||null,
   valid5mSample:Boolean(r.valid5mSample),
   priceDataStatus:r.priceDataStatus||null,
   historySamples:Number(r.historySamples||0),
@@ -4911,6 +5008,8 @@ return [
 `⏱️ 1h Move: ${Number(radar.priceChange1h||0).toFixed(2)}%`,
 `🕐 4h Move: ${Number(radar.priceChange4h||0).toFixed(2)}%`,
 `⚡ 5m Velocity: ${Number(radar.velocity5m||0).toFixed(2)}%`,
+`🕯️ 5m Candles (15m/25m): ${Number(radar.candleMicro?.move3||0).toFixed(2)}% / ${Number(radar.candleMicro?.move5||0).toFixed(2)}%`,
+`🧨 Reversal Risk: ${Math.max(Number(radar.longReversalRisk||0),Number(radar.shortReversalRisk||0)).toFixed(0)}/100`,
 `📈 15m Move: ${Number(radar.move15m||0).toFixed(2)}%`,
 `⏱️ Detection: ${radar.timingState || "UNKNOWN"}`,
 `🛡️ Last-Scan Move: ${Number(radar.priorMovePct||0).toFixed(2)}%`,
@@ -4920,6 +5019,7 @@ return [
 `💸 Smart Money Sell: $${Number(flow.sellUsd||0).toFixed(0)}`,
 `⚖️ Flow Imbalance: ${(Number(flow.imbalance||0)*100).toFixed(1)}%`,
 `🚀 Flow Surge: ${flow.flowSurge?"YES":"NO"} • x${Number(flow.flowSpikeRatio||1).toFixed(2)}`,
+`🧠 Reversal: ${radar.reversalDirection||"NONE"} • ${Array.isArray(radar.reversalReasons)?radar.reversalReasons.slice(0,3).join(" • "):""}`,
 `🐋 Large Trades: ${Number(flow.largeTradeCount||0)}`,
 `🧠 Trigger: ${reasons}`,
 "⚠️ RADAR ALERT — notification only; not a trade execution signal."
