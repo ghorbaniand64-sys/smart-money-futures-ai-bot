@@ -444,6 +444,11 @@ RADAR_INDEPENDENT_ENABLED: true,
 RADAR_PAPER_ENABLED: true,
 RADAR_MAX_POSITIONS: 1,
 RADAR_ENTRY_SCORE: 72,
+// V16.1.2: a HOT Radar is an independent execution signal. Once HOT is
+// confirmed, timing-score/exhaustion gates must not silently convert it into
+// notification-only. Only invalid price or a confirmed reversal against the
+// selected HOT direction may block the entry before wallet/market checks.
+RADAR_HOT_EXECUTION_ENABLED: true,
 RADAR_EARLY_ENTRY_ENABLED: true,
 RADAR_EARLY_ENTRY_SCORE: 60,
 RADAR_EARLY_ENTRY_MIN_VELOCITY: 0.75,
@@ -4238,35 +4243,50 @@ console.log("[EXECUTION][TRACE]", JSON.stringify(executionSummary, null, 2));
 
 // V14.0: independent Radar live lane. It does not consume Core selection slots.
 let radarLiveResult = null;
+let radarLiveAttempts = [];
 if (executionEnabled(env) && CONFIG.RADAR_INDEPENDENT_ENABLED && CONFIG.RADAR_LIVE_ENABLED) {
   const radarCandidates = radarRows
     .filter(x => x?.pumpRadar?.direction !== "NEUTRAL")
     .filter(x => radarEntryEligible(x))
-    .sort((a,b) => Number(b?.pumpRadar?.score || 0) - Number(a?.pumpRadar?.score || 0))
+    // HOT first, then score. This keeps the highest-confidence independent
+    // Radar opportunity at the front without consulting Core selection slots.
+    .sort((a,b) => {
+      const ah=Number(a?.pumpRadar?.score||0)>=Number(CONFIG.PUMP_RADAR_HOT_SCORE||72)?1:0;
+      const bh=Number(b?.pumpRadar?.score||0)>=Number(CONFIG.PUMP_RADAR_HOT_SCORE||72)?1:0;
+      if(bh!==ah)return bh-ah;
+      return Number(b?.pumpRadar?.score || 0) - Number(a?.pumpRadar?.score || 0);
+    })
     .map(candidate => {
-      // The Radar candidate is normally included in the deep scan. Reuse the
-      // already-fetched candle price as a third, independent price reference.
-      // This adds zero network requests and protects Paper Radar from a bad
-      // Oracle/ticker scale without turning Radar into Core-style selection.
       const ref=results.find(r => v8NormSymbol(r?.symbol) === v8NormSymbol(candidate?.symbol));
       const referencePrice=v1565NormalizePrice(ref?.price);
       return referencePrice>0
         ? {...candidate,market:{...(candidate.market||{}),__radarReferencePrice:referencePrice}}
         : candidate;
     });
-  if (radarCandidates.length) {
+  // V16.1.2: attempt the eligible HOT candidate(s) in order until one is
+  // actually submitted. A technical failure on one market must not silently
+  // cancel an otherwise valid HOT Radar opportunity. Still stop immediately
+  // after the first successful order so Radar can never open multiple trades
+  // in one cycle.
+  for (const radarCandidate of radarCandidates) {
     try {
-      radarLiveResult = await executeLiveRadarCandidate(radarCandidates[0], env);
-      if (radarLiveResult?.executed && CONFIG.TELEGRAM_ENABLED) {
-        markRadarTelegramNotified(state, radarCandidates[0]);
-        try { await sendTelegram(env, formatTelegramRadarLiveEntry(radarLiveResult)); }
-        catch (telegramError) { errors.push({symbol:radarCandidates[0]?.symbol||null,scope:"radar_live_telegram",error:safeError(telegramError)}); }
+      const attempt = await executeLiveRadarCandidate(radarCandidate, env);
+      radarLiveAttempts.push({symbol:radarCandidate?.symbol||null,score:Number(radarCandidate?.pumpRadar?.score||0),direction:radarCandidate?.pumpRadar?.direction||null,executed:Boolean(attempt?.executed),reason:attempt?.reason||null,error:attempt?.error||null});
+      radarLiveResult = attempt;
+      if (attempt?.executed) {
+        if (CONFIG.TELEGRAM_ENABLED) {
+          markRadarTelegramNotified(state, radarCandidate);
+          try { await sendTelegram(env, formatTelegramRadarLiveEntry(attempt)); }
+          catch (telegramError) { errors.push({symbol:radarCandidate?.symbol||null,scope:"radar_live_telegram",error:safeError(telegramError)}); }
+        }
+        break;
       }
     } catch (error) {
       const err=safeError(error);
-      radarLiveResult = { executed:false, mode:"LIVE", lane:"RADAR", error:err, symbol:radarCandidates[0]?.symbol || null };
-      console.error("[RADAR][LIVE_ERROR]", { symbol:radarCandidates[0]?.symbol || null, error:err });
-      await auditLog(env, { type:"LIVE_RADAR_EXECUTION_ERROR", error:safeError(error), symbol:radarCandidates[0]?.symbol || null });
+      radarLiveAttempts.push({symbol:radarCandidate?.symbol||null,score:Number(radarCandidate?.pumpRadar?.score||0),direction:radarCandidate?.pumpRadar?.direction||null,executed:false,reason:null,error:err});
+      radarLiveResult = { executed:false, mode:"LIVE", lane:"RADAR", error:err, symbol:radarCandidate?.symbol || null };
+      console.error("[RADAR][LIVE_ERROR]", { symbol:radarCandidate?.symbol || null, error:err });
+      try { await auditLog(env, { type:"LIVE_RADAR_EXECUTION_ERROR", error:err, symbol:radarCandidate?.symbol || null }); } catch (_) {}
     }
   }
 }
@@ -4457,7 +4477,7 @@ const universeDiagnostics=buildUniverseDiagnostics(allMarkets,fastRows,radarMark
 universe:universeDiagnostics,fairAssetScoring:CONFIG.FAIR_ASSET_SCORING_ENABLED,dataCenter:{enabled:Boolean(CONFIG.DATA_CENTER_ENABLED),apiPeers:V156_DATA_CENTER.apiPeers,oraclePeers:V156_DATA_CENTER.oraclePeers,staleMs:Number(CONFIG.DATA_CENTER_STALE_MS||15000)},
 liquidityScoreInRadar:CONFIG.FAIR_LIQUIDITY_SCORE_IN_RADAR,
 majorSelectionBias:CONFIG.FAIR_MAJOR_SELECTION_BIAS,
-notifyEventMax:CONFIG.NOTIFY_EVENT_MAX},radarLane:{enabled:CONFIG.RADAR_INDEPENDENT_ENABLED,paperEnabled:CONFIG.RADAR_PAPER_ENABLED,liveEnabled:CONFIG.RADAR_LIVE_ENABLED,entryScore:CONFIG.RADAR_ENTRY_SCORE,earlyEntryEnabled:CONFIG.RADAR_EARLY_ENTRY_ENABLED,earlyEntryScore:CONFIG.RADAR_EARLY_ENTRY_SCORE,earlyMinVelocity:CONFIG.RADAR_EARLY_ENTRY_MIN_VELOCITY,earlyMinEdge:CONFIG.RADAR_EARLY_ENTRY_MIN_EDGE,exitScore:CONFIG.RADAR_EXIT_SCORE,maxPositions:CONFIG.RADAR_MAX_POSITIONS,coverageMarkets:radarRows.length,priceFeedCoverage:Object.keys(radarPriceFeed.prices||{}).length,directionalMarkets:radarDirectional.length,longMarkets:radarLongCount,shortMarkets:radarShortCount,watchCandidates:radarWatchCount,hotCandidateCount:radarHotCount,radarHistorySymbols:Object.keys(radarHistory).length,radarHistorySamples:Object.values(radarHistory).reduce((n,a)=>n+(Array.isArray(a)?a.length:0),0),radarPrioritySymbols:radarPrioritySymbols.slice(0,20),hotCandidates:radarRanked.filter(x=>x.score>=CONFIG.PUMP_RADAR_HOT_SCORE).slice(0,20),liveEntryGuard:"PRICE_OK + HOT_OR_EARLY + TIMING_NOT_EXHAUSTED",timingGuard:"EXHAUSTED_BLOCK + TIMING_SCORE + REVERSAL_RISK",reversalGuard:"REVERSAL_SCORE + FLOW_DIVERGENCE + PRICE_FLIP + EXTREME_REJECTION",result:radarPaperResult,liveResult:radarLiveResult,trace:radarTraceSummary},entryRisk:{appliedToScan:false,dailyLoss:Number(state.dailyLoss||0),maxDailyLoss:CONFIG.MAX_DAILY_LOSS,entryRiskAllowed:Number(state.dailyLoss||0)>-CONFIG.MAX_DAILY_LOSS,positionLimit:CONFIG.MAX_POSITIONS}};
+notifyEventMax:CONFIG.NOTIFY_EVENT_MAX},radarLane:{enabled:CONFIG.RADAR_INDEPENDENT_ENABLED,paperEnabled:CONFIG.RADAR_PAPER_ENABLED,liveEnabled:CONFIG.RADAR_LIVE_ENABLED,entryScore:CONFIG.RADAR_ENTRY_SCORE,earlyEntryEnabled:CONFIG.RADAR_EARLY_ENTRY_ENABLED,earlyEntryScore:CONFIG.RADAR_EARLY_ENTRY_SCORE,earlyMinVelocity:CONFIG.RADAR_EARLY_ENTRY_MIN_VELOCITY,earlyMinEdge:CONFIG.RADAR_EARLY_ENTRY_MIN_EDGE,exitScore:CONFIG.RADAR_EXIT_SCORE,maxPositions:CONFIG.RADAR_MAX_POSITIONS,coverageMarkets:radarRows.length,priceFeedCoverage:Object.keys(radarPriceFeed.prices||{}).length,directionalMarkets:radarDirectional.length,longMarkets:radarLongCount,shortMarkets:radarShortCount,watchCandidates:radarWatchCount,hotCandidateCount:radarHotCount,radarHistorySymbols:Object.keys(radarHistory).length,radarHistorySamples:Object.values(radarHistory).reduce((n,a)=>n+(Array.isArray(a)?a.length:0),0),radarPrioritySymbols:radarPrioritySymbols.slice(0,20),hotCandidates:radarRanked.filter(x=>x.score>=CONFIG.PUMP_RADAR_HOT_SCORE).slice(0,20),liveEntryGuard:"HOT_SCORE + PRICE_OK + NO_CONFIRMED_OPPOSITE_REVERSAL + WALLET/COLLATERAL/CAPACITY",timingGuard:"HOT_BYPASSES_TIMING_AND_EXHAUSTION; NON_HOT_USES_TIMING_GUARD",reversalGuard:"CONFIRMED_OPPOSITE_REVERSAL_ONLY",result:radarPaperResult,liveResult:radarLiveResult,liveAttempts:radarLiveAttempts,trace:radarTraceSummary},entryRisk:{appliedToScan:false,dailyLoss:Number(state.dailyLoss||0),maxDailyLoss:CONFIG.MAX_DAILY_LOSS,entryRiskAllowed:Number(state.dailyLoss||0)>-CONFIG.MAX_DAILY_LOSS,positionLimit:CONFIG.MAX_POSITIONS}};
 // V15.6.1 FIX: persist radar history + market snapshots between cron invocations.
 // Without this write, every scan reloaded one fresh sample per symbol, so
 // 5m/15m/30m velocity and acceleration stayed at zero forever.
@@ -4826,15 +4846,22 @@ const priceStatus = String(radar?.priceDataStatus || "INVALID").toUpperCase();
 const timingState = String(radar?.timingState || "UNKNOWN").toUpperCase();
 const timingScore = Number(radar?.entryTimingScore ?? 0);
 if (!['LONG','SHORT'].includes(direction) || priceStatus === "INVALID") return false;
-// V16.0.6: HOT strength cannot override an objectively exhausted entry.
-if (timingState === "EXHAUSTED") return false;
-// A confirmed reversal against the selected side blocks that side.
+// V16.1.2 HOT EXECUTION CONTRACT:
+// HOT means the independent Radar has already earned its execution score.
+// Do NOT re-apply Core execution gates, timing score, early-entry rules, or
+// exhaustion as a second hidden gate. The only pre-wallet directional safety
+// check retained here is a confirmed reversal explicitly favoring the
+// opposite direction; otherwise the live executor must proceed to wallet,
+// collateral, capacity and order submission immediately.
 const reversalBlocksDirection = direction === "LONG"
   ? Boolean(radar?.longReversalConfirmed && String(radar?.reversalDirection||"").toUpperCase() === "SHORT")
   : direction === "SHORT"
     ? Boolean(radar?.shortReversalConfirmed && String(radar?.reversalDirection||"").toUpperCase() === "LONG")
     : false;
+const hotThreshold = Number(CONFIG.PUMP_RADAR_HOT_SCORE || 72);
+if (CONFIG.RADAR_HOT_EXECUTION_ENABLED && score >= hotThreshold) return !reversalBlocksDirection;
 if (reversalBlocksDirection) return false;
+if (timingState === "EXHAUSTED") return false;
 if (timingScore < Number(CONFIG.RADAR_TIMING_MIN_ENTRY_SCORE || 45)) return false;
 if (score >= Number(CONFIG.RADAR_ENTRY_SCORE || 72)) return true;
 if (!CONFIG.RADAR_EARLY_ENTRY_ENABLED) return false;
