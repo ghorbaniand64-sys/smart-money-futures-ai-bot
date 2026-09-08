@@ -404,7 +404,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.1.8-HYBRID-ALL-ALTCOIN-COVERAGE",
+VERSION: "V17.1.9-HYBRID-ALL-ALTCOIN-COVERAGE",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -454,7 +454,7 @@ DEEP_SCAN_LIMIT: 18,
   // Only the most relevant markets receive the expensive 15m/1h/4h structure pass.
   HYBRID_BROAD_5M_SCAN_ENABLED: true,
   HYBRID_BROAD_5M_BATCH_SIZE: 20,
-  HYBRID_BROAD_5M_LIMIT: 60,
+  HYBRID_BROAD_5M_LIMIT: 9999,
   HYBRID_DEEP_SCAN_LIMIT: 18,
 // V15: asset-agnostic ranking. Asset identity/size must not add score or selection priority.
 FAIR_ASSET_SCORING_ENABLED: true,
@@ -4329,7 +4329,9 @@ async function runFullScan(env, scanOptions = {}) {
   for(const x of hot)if(!rows.includes(x))rows.push(x);
   for(let i=0;i<ranked.length&&rows.length<limit;i++){const x=ranked[(cursor+i)%ranked.length];if(!rows.includes(x))rows.push(x);}
   state.hybridScanCursor=(cursor+rows.length)%Math.max(1,ranked.length);
+  console.log("[HYBRID][DEEP_PLAN]",{universe:markets.length,broad5mScanned:broad5m.size,deepPlanned:rows.length,cursorBefore:cursor,cursorAfter:state.hybridScanCursor,hotSelected:hot.length,rotating:true});
   const eventStats={supportZones:0,resistanceZones:0,flowEvents:0,volumeEvents:0,supportReactions:0,resistanceReactions:0,breakouts:0,waitingRetests:0,retestConfirmed:0,entryReady:0};
+  let eventCandidates=0;
   for(const row of rows){
     try{
       const c5=broad5m.get(row.s)?.candles || await fetchCandlesScan(row.s,"5m",CONFIG.CANDLE_LIMIT["5m"]);
@@ -4339,6 +4341,7 @@ async function runFullScan(env, scanOptions = {}) {
       const analysis=hybridClassifyStructure(row.s,{"5m":c5,"15m":c15,"1h":c1h,"4h":c4h},price,flow,prev);analysis.price=price;analysis.candles={"5m":c5,"15m":c15,"1h":c1h,"4h":c4h};
       if(!state.hybridStructureStates)state.hybridStructureStates={};state.hybridStructureStates[row.s]=analysis.nextState||prev;
       const ef=analysis.eventFlags||{};eventStats.supportZones+=ef.supportZone?1:0;eventStats.resistanceZones+=ef.resistanceZone?1:0;eventStats.flowEvents+=(flow.flowSurge||flow.explosiveFlow)?1:0;eventStats.volumeEvents+=(analysis.volume?.volumeSurge||analysis.volume?.rangeExpansion||analysis.volume?.volumeExplosive)?1:0;eventStats.supportReactions+=ef.supportReaction?1:0;eventStats.resistanceReactions+=ef.resistanceReaction?1:0;eventStats.breakouts+=ef.breakout?1:0;eventStats.waitingRetests+=ef.waitingRetest?1:0;eventStats.retestConfirmed+=ef.retestConfirmed?1:0;
+      if(ef.supportReaction||ef.resistanceReaction||ef.breakout||ef.waitingRetest||ef.retestConfirmed)eventCandidates++;
       const setup=hybridBuildSetup(row.s,analysis,flow,traders);if(setup){eventStats.entryReady++;signals.push({id:crypto.randomUUID(),symbol:setup.symbol,market:pairSymbol(setup.symbol),direction:setup.direction,status:"EVENT_ENTRY_READY",score:100,confidence:100,price:setup.entryPrice,tradePlan:{valid:true,entry:setup.entryPrice,stopLoss:setup.stopLoss,tp1:setup.tp1,tp2:setup.tp2,tp3:setup.tp3,leverage:setup.leverage,allocation:setup.allocation,allocationPercent:20},trend:{},components:{structureEvent:setup.trigger,volume:analysis.volume,flow:flow},diagnostics:setup.evidence,signalTier:"EVENT_SEQUENCE",executionEligible:true,edge:100,riskScore:0,entryQuality:{overextended:false},topTraderIntelligence:setup.topTrader,hybridSetup:setup,generatedAt:Date.now()});}
       console.log("[HYBRID][STRUCTURE]",{symbol:row.s,state:analysis.state,direction:analysis.direction,move5:analysis.move5,flow:flow.imbalance,flowSurge:Boolean(flow.flowSurge||flow.explosiveFlow),volume:analysis.volume?.volumeRatio,range:analysis.volume?.rangeRatio,support:analysis.zones?.support?.[0]?.center||null,resistance:analysis.zones?.resistance?.[0]?.center||null,events:analysis.eventFlags||{}});
     }catch(e){errors.push({symbol:row.s,error:safeError(e)});}
@@ -4356,10 +4359,10 @@ async function runFullScan(env, scanOptions = {}) {
     }catch(e){executionResults.push({executed:false,mode:"LIVE",symbol:signal.symbol,error:safeError(e)});errors.push({symbol:signal.symbol,error:safeError(e)});}
   }
   state.lastScan={at:Date.now(),durationMs:Date.now()-started,candidates:signals.length,executed:executionResults.filter(x=>x?.executed).length};
-  state.lastDiagnostics={version:"V17.1.8-HYBRID-ALL-ALTCOIN-COVERAGE",engine:"STRUCTURE+VOLUME+SMART_MONEY_NO_ENTRY_SCORE_GATE",markets:markets.length,broad5mScanned:broad5m.size,deepScanned:rows.length,entries:signals.length,executed:executionResults.filter(x=>x?.executed).length,flowAvailable:Boolean(flowData?.available),topTraderAvailable:Boolean(traders?.available),eventStats,errors};
+  state.lastDiagnostics={version:"V17.1.9-HYBRID-ALL-ALTCOIN-COVERAGE",engine:"STRUCTURE+VOLUME+SMART_MONEY_NO_ENTRY_SCORE_GATE",markets:markets.length,broad5mScanned:broad5m.size,deepScanned:rows.length,eventCandidates,entries:signals.length,executed:executionResults.filter(x=>x?.executed).length,flowAvailable:Boolean(flowData?.available),topTraderAvailable:Boolean(traders?.available),eventStats,errors};
   try{await saveState(env,state);}catch(e){errors.push({scope:"state",error:safeError(e)});
   }
-  return{ok:true,status:signals.length?"ENTRY_READY":"WATCHING",scanned:markets.length,requested:markets.length,broad5mScanned:broad5m.size,deepScanned:rows.length,candidates:signals.length,signals,executionResults,errors,eventStats,diagnostics:state.lastDiagnostics,timestamp:Date.now()};
+  return{ok:true,status:signals.length?"ENTRY_READY":"WATCHING",scanned:markets.length,requested:markets.length,broad5mScanned:broad5m.size,deepScanned:rows.length,eventCandidates,candidates:signals.length,signals,executionResults,errors,eventStats,diagnostics:state.lastDiagnostics,timestamp:Date.now()};
 }
 
 async function riskGuard(env, state) {
@@ -5548,6 +5551,9 @@ scanned: scan?.scanned ?? null,
 signals: scan?.signalsDetected ?? scan?.topSignals?.length ?? 0,
 notificationEligible: scan?.notificationEligible ?? scan?.diagnostics?.notificationEligible ?? 0,
 eventCandidates: scan?.eventCandidates ?? scan?.diagnostics?.eventCandidates ?? 0,
+  broad5mScanned: scan?.broad5mScanned ?? scan?.diagnostics?.broad5mScanned ?? 0,
+  deepScanned: scan?.deepScanned ?? scan?.diagnostics?.deepScanned ?? 0,
+  eventStats: scan?.eventStats ?? scan?.diagnostics?.eventStats ?? null,
 signalsDeduped: scan?.signalsDeduped ?? scan?.diagnostics?.signalsDeduped ?? 0,
 notified: scan?.diagnostics?.notified ?? 0,
 coreDirectional: { long: scan?.diagnostics?.longAnalyzed ?? 0, short: scan?.diagnostics?.shortAnalyzed ?? 0, noTrade: scan?.diagnostics?.noTradeAnalyzed ?? 0, valid: scan?.diagnostics?.validSignals ?? 0, watch: scan?.diagnostics?.watchSignals ?? 0 },
