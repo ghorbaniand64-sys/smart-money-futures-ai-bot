@@ -1,5 +1,5 @@
 // Smart Money Futures AI Bot — GitHub Actions adapter
-// V16.2.0-GITHUB-ACTIONS-EXECUTION-ALIGNMENT
+// V17.0.0-GITHUB-ACTIONS-EXECUTION-ALIGNMENT
 // Runs one complete scheduled cycle using the deployed V16.2.0 engine.
 // Persistent Cloudflare KV bindings are emulated with JSON files in ./state.
 
