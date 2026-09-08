@@ -1,27 +1,48 @@
-// V17.1.3 SDK SAFE LOADER
+// V17.1.6 SDK SAFE LOADER
+// CommonJS resolution is intentional: GMX SDK 1.8.2 may expose a broken
+// ESM subpath in GitHub Actions while the package is resolvable via require().
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+
 let GmxApiSdk = null;
 let PrivateKeySigner = null;
 let getViemChain = null;
+let GMX_SDK_LOAD_ERROR = null;
 
 async function loadGmxSdkSafe(){
   if(GmxApiSdk && PrivateKeySigner && getViemChain) return true;
   try {
-    const sdk = await import("@gmx-io/sdk/v2");
-    const chains = await import("@gmx-io/sdk/configs/chains");
-    GmxApiSdk = sdk.GmxApiSdk || null;
-    PrivateKeySigner = sdk.PrivateKeySigner || null;
-    getViemChain = chains.getViemChain || null;
-    return Boolean(GmxApiSdk);
+    const sdk = require("@gmx-io/sdk/v2");
+    const chains = require("@gmx-io/sdk/configs/chains");
+    GmxApiSdk = sdk?.GmxApiSdk || null;
+    PrivateKeySigner = sdk?.PrivateKeySigner || null;
+    getViemChain = chains?.getViemChain || null;
+    GMX_SDK_LOAD_ERROR = null;
+    const ok = Boolean(GmxApiSdk && PrivateKeySigner && getViemChain);
+    if(!ok) GMX_SDK_LOAD_ERROR = "GMX_SDK_REQUIRED_EXPORTS_UNAVAILABLE";
+    console.log("[SDK][LOAD]", {ok,mode:"COMMONJS_REQUIRE",exports:{GmxApiSdk:Boolean(GmxApiSdk),PrivateKeySigner:Boolean(PrivateKeySigner),getViemChain:Boolean(getViemChain)}});
+    return ok;
   } catch(error){
-    console.log("[SDK][FALLBACK]", error?.message || String(error));
+    GMX_SDK_LOAD_ERROR = error?.message || String(error);
+    console.log("[SDK][FALLBACK]", GMX_SDK_LOAD_ERROR);
     return false;
   }
 }
 
- 
+// Hybrid-local symbol normalizer. Kept independent from the legacy V16
+// normalization helpers so the Event Engine can never fail because of a
+// missing/relocated legacy declaration.
+function hybridNormalizeSymbol(symbol){
+  if(symbol===null || symbol===undefined) return "";
+  let s=String(symbol).trim().toUpperCase();
+  s=s.replace(/[-_\/\.]?(PERP|USD|USDC|USDT)$/i,"");
+  s=s.replace(/[^A-Z0-9]/g,"");
+  return s || "";
+}
+
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V16.2.0 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
+// Version: V17.1.6 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
 // Platform: GitHub Actions + Node.js
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -376,7 +397,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17-HYBRID-STRUCTURE-ENGINE-ON-V16",
+VERSION: "V17.1.6-HYBRID-STRUCTURE-EXECUTION-SAFE",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -760,30 +781,17 @@ function hybridBuildSetup(symbol,analysis,flow,topTrader){
   const tp1=levelTarget&&levelDistance>=rMin?(direction==='LONG'?Number(levelTarget.center):Number(levelTarget.center)):(direction==='LONG'?price+r*CONFIG.HYBRID_RISK.tp1R:price-r*CONFIG.HYBRID_RISK.tp1R);
   const tp2=direction==='LONG'?Math.max(price+r*CONFIG.HYBRID_RISK.tp2R,tp1+r*0.5):Math.min(price-r*CONFIG.HYBRID_RISK.tp2R,tp1-r*0.5);
   const tp3=direction==='LONG'?Math.max(price+r*CONFIG.HYBRID_RISK.tp3R,tp2+r*0.5):Math.min(price-r*CONFIG.HYBRID_RISK.tp3R,tp2-r*0.5);
-  const trader=ttiScoreForSymbol(topTrader?.cohort||[],normalizeSymbol(symbol),direction);
-  return {valid:true,symbol:normalizeSymbol(symbol),direction,trigger:e.trigger,state:'ENTRY_READY',entry:price,entryPrice:price,stopLoss:Number(stop.toFixed(8)),tp1:Number(tp1.toFixed(8)),tp2:Number(tp2.toFixed(8)),tp3:Number(tp3.toFixed(8)),atr:atrValue,stopDistance:r,stopPercent:Number((r/price*100).toFixed(3)),leverage:hybridLeverage({trigger:e.trigger,flow}),allocation:CONFIG.HYBRID_RISK.capitalAllocation,allocationPercent:20,riskPerTradePercent:Number((CONFIG.RISK_PER_TRADE*100).toFixed(2)),zone,zoneType:e.trigger.includes('SUPPORT')?'SUPPORT':'RESISTANCE',evidence:[...new Set([...(e.evidence||[]),...hybridFlowEvidence(flow,direction)])],flow,topTrader:trader,topTraderPolicy:'CONFIRMATION_ONLY_NO_BLOCK',volume:analysis.volume,candleTimestamp:Number(candlesTimestamp(analysis))||0,createdAt:Date.now()};
+  const trader=ttiScoreForSymbol(topTrader?.cohort||[],hybridNormalizeSymbol(symbol),direction);
+  return {valid:true,symbol:hybridNormalizeSymbol(symbol),direction,trigger:e.trigger,state:'ENTRY_READY',entry:price,entryPrice:price,stopLoss:Number(stop.toFixed(8)),tp1:Number(tp1.toFixed(8)),tp2:Number(tp2.toFixed(8)),tp3:Number(tp3.toFixed(8)),atr:atrValue,stopDistance:r,stopPercent:Number((r/price*100).toFixed(3)),leverage:hybridLeverage({trigger:e.trigger,flow}),allocation:CONFIG.HYBRID_RISK.capitalAllocation,allocationPercent:20,riskPerTradePercent:Number((CONFIG.RISK_PER_TRADE*100).toFixed(2)),zone,zoneType:e.trigger.includes('SUPPORT')?'SUPPORT':'RESISTANCE',evidence:[...new Set([...(e.evidence||[]),...hybridFlowEvidence(flow,direction)])],flow,topTrader:trader,topTraderPolicy:'CONFIRMATION_ONLY_NO_BLOCK',volume:analysis.volume,candleTimestamp:Number(candlesTimestamp(analysis))||0,createdAt:Date.now()};
 }
 function candlesTimestamp(a){return a?.candles?.['5m']?.at(-1)?.timestamp||0;}
-// ======================================================
-// HYBRID V17 SYMBOL NORMALIZER
-// Must be declared in the module scope because the Hybrid Event
-// Engine runs before the legacy normalization section.
-// ======================================================
-function normalizeSymbol(symbol) {
-  if (!symbol) return null;
-  let s = String(symbol).trim().toUpperCase();
-  s = s.replace(/[-_/]?(PERP|USD|USDC|USDT)$/i, "");
-  s = s.replace(/[^A-Z0-9]/g, "");
-  return s || null;
-}
-
 function hybridResolveIndexSymbol(m){
   const vals=[m?.indexTokenSymbol,m?.indexName,m?.indexToken?.symbol,m?.indexToken?.tokenSymbol,m?.indexToken?.name,m?.indexTokenData?.symbol,m?.token?.symbol];
-  for(const v of vals){const s=normalizeSymbol(String(v||''));if(s&&s.length<=12)return s;}
+  for(const v of vals){const s=hybridNormalizeSymbol(String(v||''));if(s&&s.length<=12)return s;}
   const raw=String(m?.symbol||m?.name||m?.ticker||'');const first=raw.split('/')[0].split('[')[0];
-  const s=normalizeSymbol(first);if(s&&s.length<=12)return s;
+  const s=hybridNormalizeSymbol(first);if(s&&s.length<=12)return s;
   const compact=raw.toUpperCase().replace(/[^A-Z0-9.]/g,'');const known=compact.match(/^(BTC|WBTC|ETH|WETH|SOL|ARB|AVAX|LINK|OP|APT|INJ|NEAR|TAO|ZRO|LTC|BCH|AAVE|VVV|DOGE|XRP|UNI|ATOM|SUI|SEI|ENA|PEPE|BONK)/);
-  return known?normalizeSymbol(known[1]):'';
+  return known?hybridNormalizeSymbol(known[1]):'';
 }
 
 // ======================================================
@@ -5439,10 +5447,19 @@ const task = (async () => {
 const restoreResourceFetch = resourceUsageInstallFetchTracker();
 try {
 console.log("[SCHEDULED][START]", { cron, scheduledTime, recommendedCron: CONFIG.CRON_RECOMMENDED, cronMatchesRecommended: cron === CONFIG.CRON_RECOMMENDED });
+console.log("[EXECUTION][RUNTIME]", {mode:executionEnabled(env)?"LIVE":"PAPER",sdkLoaded:Boolean(GmxApiSdk && PrivateKeySigner && getViemChain),sdkLoadError:GMX_SDK_LOAD_ERROR || null});
  
-const exits = executionEnabled(env)
-? await FUTURES_V6.monitorLivePositions(env)
-: await FUTURES_V6.updatePaperPositions(env);
+let exits = [];
+if (executionEnabled(env)) {
+  try {
+    exits = await FUTURES_V6.monitorLivePositions(env);
+  } catch (exitError) {
+    console.warn("[EXECUTION][MONITOR_ERROR_CONTINUE_SCAN]", {reason:safeError(exitError),code:exitError?.code || null,detail:exitError?.detail || null});
+    exits = [];
+  }
+} else {
+  exits = await FUTURES_V6.updatePaperPositions(env);
+}
  
 let scheduledOpenPositions = 0;
 try {
@@ -8396,7 +8413,13 @@ if (!/^0x[0-9a-fA-F]{64}$/.test(String(key || ""))) throw new Error("GMX_PRIVATE
 async function getLiveContext(env) {
 if (!executionEnabled(env)) throw new Error("Execution disabled: set Cloudflare ENV EXECUTION_ENABLED=true");
 if (!GmxApiSdk || !PrivateKeySigner || !getViemChain) {
-throw new Error("Bundled GMX SDK exports are unavailable");
+  const loaded = await loadGmxSdkSafe();
+  if(!loaded || !GmxApiSdk || !PrivateKeySigner || !getViemChain){
+    const err=new Error("SDK_UNAVAILABLE");
+    err.code="SDK_UNAVAILABLE";
+    err.detail=GMX_SDK_LOAD_ERROR || "GMX SDK exports unavailable";
+    throw err;
+  }
 }
 validatePrivateKey(env.GMX_PRIVATE_KEY);
 if (!env.ARBITRUM_RPC) throw new Error("ARBITRUM_RPC is required");
@@ -8825,6 +8848,13 @@ releaseLiveExecutionLock(lock.key);
 }
 
 async function monitorLivePositions(env) {
+if(!GmxApiSdk || !PrivateKeySigner || !getViemChain){
+  const loaded=await loadGmxSdkSafe();
+  if(!loaded){
+    console.warn("[EXECUTION][MONITOR_SKIP]", {reason:"SDK_UNAVAILABLE",detail:GMX_SDK_LOAD_ERROR || "GMX SDK exports unavailable"});
+    return [];
+  }
+}
 const { sdk, signer, account } = await getLiveContext(env);
 const positions = await sdk.fetchPositionsInfo({
 address: account,
