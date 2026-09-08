@@ -1,5 +1,22 @@
-import { GmxApiSdk, PrivateKeySigner } from "@gmx-io/sdk/v2";
-import { getViemChain } from "@gmx-io/sdk/configs/chains";
+// V17.1.3 SDK SAFE LOADER
+let GmxApiSdk = null;
+let PrivateKeySigner = null;
+let getViemChain = null;
+
+async function loadGmxSdkSafe(){
+  if(GmxApiSdk && PrivateKeySigner && getViemChain) return true;
+  try {
+    const sdk = await import("@gmx-io/sdk/v2");
+    const chains = await import("@gmx-io/sdk/configs/chains");
+    GmxApiSdk = sdk.GmxApiSdk || null;
+    PrivateKeySigner = sdk.PrivateKeySigner || null;
+    getViemChain = chains.getViemChain || null;
+    return Boolean(GmxApiSdk);
+  } catch(error){
+    console.log("[SDK][FALLBACK]", error?.message || String(error));
+    return false;
+  }
+}
 
  
 // ======================================================
@@ -5410,6 +5427,7 @@ export default {
  
  
 async scheduled(event, env, ctx) {
+await loadGmxSdkSafe();
 const cron = event?.cron || "unknown";
 const scheduledTime = event?.scheduledTime ?? null;
  
