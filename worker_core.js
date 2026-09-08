@@ -21,7 +21,7 @@ const { getViemChain } = require("@gmx-io/sdk/configs/chains");
 // ================================================================
 
 const CONFIG = {
-  VERSION: "V17.1.1-HYBRID-DYNAMIC-TP1-STOP",
+  VERSION: "V17.1.2-HYBRID-SDK-BIGINT-REPAIR",
   CHAIN_ID: 42161,
   EXECUTION_ENABLED: true,
   TELEGRAM_ENABLED: true,
@@ -197,7 +197,11 @@ const DEFAULT_STATE = {
   scanCursor: 0,
 };
 
-function safeError(error) { return error?.message || String(error || "Unknown error"); }
+function safeError(error) {
+  const message=error?.message||String(error||"Unknown error");
+  if(/BigInt/i.test(message))return "GMX_SDK_BIGINT_SERIALIZATION_ERROR";
+  return message;
+}
 function finite(n, fallback = 0) { const x = Number(n); return Number.isFinite(x) ? x : fallback; }
 function positive(n, fallback = 0) { const x = Number(n); return Number.isFinite(x) && x > 0 ? x : fallback; }
 function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, finite(n, lo))); }
@@ -865,6 +869,17 @@ function plannedExpectedPnl(setup,notional){
   const move=r/entry;
   return notional*(0.40*move+0.30*(2*move)+0.30*(3*move));
 }
+async function executeExpressCompat(sdk, request, signer){
+  // V17.1.2: avoid sdk.executeExpressOrder() convenience wrapper.
+  // The wrapper can attempt to JSON-serialize bigint fields in some SDK/runtime
+  // combinations. GMX SDK v2 officially supports the explicit prepare -> sign -> submit flow.
+  if(typeof sdk.prepareOrder!=="function"||typeof sdk.signOrder!=="function"||typeof sdk.submitOrder!=="function")
+    throw new Error("GMX_SDK_PREPARE_SIGN_SUBMIT_UNAVAILABLE");
+  const prepared=await sdk.prepareOrder(request);
+  const submitted=await submitPreparedExpressIntent(sdk,prepared,signer,request.from);
+  return {requestId:submitted?.requestId||prepared?.requestId||null,status:submitted?.status||null,txHash:submitted?.txHash||null,error:submitted?.error||null,traceId:submitted?.traceId||null};
+}
+
 async function executeSetup(setup,env){
   if(!executionEnabled(env))return executionBlock("EXECUTION_DISABLED",setup);
   let ctx;
@@ -906,7 +921,7 @@ async function executeSetup(setup,env){
   if(stateLocks?.[lockKey])return executionBlock("DUPLICATE_EXECUTION",setup,{lockKey});
   const locks={...(stateLocks||{}),[lockKey]:Date.now()};if(env.BOT_STATE)await env.BOT_STATE.put("live_locks",JSON.stringify(locks),{expirationTtl:86400});
   try{
-    const result=await sdk.executeExpressOrder({kind:"increase",symbol:sdkSymbol,direction:orderDirection,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:collateralAmount,token:collateral.symbol},mode:"express",from:account,tpsl:[
+    const result=await executeExpressCompat(sdk,{kind:"increase",symbol:sdkSymbol,direction:orderDirection,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:collateralAmount,token:collateral.symbol},mode:"express",from:account,tpsl:[
       {type:"take-profit",triggerPrice:tp1,size:size1},
       {type:"take-profit",triggerPrice:tp2,size:size2},
       {type:"take-profit",triggerPrice:tp3,size:size3},
@@ -1093,7 +1108,7 @@ async function armTp1AsDynamicStop(sdk, signer, account, trade, position){
 
   const tp1=toBigIntDecimal(trade.tp1,30);
   const size=BigInt(Math.floor(currentSize));
-  const stopResult=await sdk.executeExpressOrder({
+  const stopResult=await executeExpressCompat(sdk,{
     kind:"decrease",
     symbol:trade.marketSymbol||trade.symbol,
     direction:trade.direction.toLowerCase()==="long"?"long":"short",
@@ -1157,7 +1172,7 @@ async function monitorLivePositions(env){
         }
         state.activePositions[tradeKey]=trade;
         const hardStop=stop>0&&price>0&&(side==="LONG"?price<=stop:price>=stop);
-        if(hardStop){const market=sdkMarket(markets,symbol,trade.collateralToken);if(!market){actions.push({symbol,direction:side,action:"HARD_STOP_BLOCKED",reason:"MARKET_NOT_FOUND"});continue;}const size=BigInt(Math.floor(finite(p?.sizeInUsd)));try{const r=await sdk.executeExpressOrder({kind:"decrease",symbol:market.symbol,direction:side==="LONG"?"long":"short",orderType:"market",size,collateralToken:trade.collateralToken||"USDC",receiveToken:trade.collateralToken||"USDC",mode:"express",from:account},signer);actions.push({symbol,direction:side,action:"HARD_STOP_SUBMITTED",requestId:r?.requestId||null,pnlPct});}catch(e){actions.push({symbol,direction:side,action:"HARD_STOP_ERROR",error:safeError(e)});}}
+        if(hardStop){const market=sdkMarket(markets,symbol,trade.collateralToken);if(!market){actions.push({symbol,direction:side,action:"HARD_STOP_BLOCKED",reason:"MARKET_NOT_FOUND"});continue;}const size=BigInt(Math.floor(finite(p?.sizeInUsd)));try{const r=await executeExpressCompat(sdk,{kind:"decrease",symbol:market.symbol,direction:side==="LONG"?"long":"short",orderType:"market",size,collateralToken:trade.collateralToken||"USDC",receiveToken:trade.collateralToken||"USDC",mode:"express",from:account},signer);actions.push({symbol,direction:side,action:"HARD_STOP_SUBMITTED",requestId:r?.requestId||null,pnlPct});}catch(e){actions.push({symbol,direction:side,action:"HARD_STOP_ERROR",error:safeError(e)});}}
         continue;
       }
       const actual=await findActualClosedPnl(sdk,trade);
