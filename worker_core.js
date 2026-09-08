@@ -824,7 +824,7 @@ async function scan(env,options={}){
       const setup=buildSetup(row.s,analysis,flow,traders);if(setup){candidates.push(setup);eventStats.entryReady++;}
       const wait=formatWaitingTelegram(row.s,analysis);if(wait&&!eventFresh(state,`WAIT|${row.s}|${analysis.state}`)){await sendTelegram(env,wait,"normal");markEvent(state,`WAIT|${row.s}|${analysis.state}`);}
       if(CONFIG.RADAR.enabled){const radar=formatRadarTelegram(row.s,analysis);if(radar&&!eventFresh(state,`RADAR|${row.s}|${analysis.state}|${analysis.direction}`)){await sendTelegram(env,radar,"radar");state.radarTelegramEvents[`RADAR|${row.s}|${analysis.state}|${analysis.direction}`]=Date.now();}}
-      console.log("[STRUCTURE]",{symbol:row.s,state:analysis.state,direction:analysis.direction,move5:analysis.move5,flow:flow.imbalance,flowSurge:Boolean(flow.flowSurge||flow.explosiveFlow),volume:analysis.volume?.volumeRatio,range:analysis.volume?.rangeRatio,support:analysis.zones?.support?.[0]?.center||null,resistance:analysis.zones?.resistance?.[0]?.center||null,pendingRetest:Boolean(analysis.nextState?.pendingRetest),events:analysis.eventFlags||{}});
+      console.log("[TRACE][MARKET]",{symbol:row.s,state:analysis.state,direction:analysis.direction,move5:analysis.move5,preMove5:analysis.preMove5,preMove15:analysis.preMove15,extension:analysis.extension,flow:flow.imbalance,flowSurge:Boolean(flow.flowSurge||flow.explosiveFlow),volume:analysis.volume?.volumeRatio,range:analysis.volume?.rangeRatio,support:analysis.zones?.support?.[0]?.center||null,resistance:analysis.zones?.resistance?.[0]?.center||null,supportDistanceAtr:analysis.zones?.support?.[0]?.distanceAtr??null,resistanceDistanceAtr:analysis.zones?.resistance?.[0]?.distanceAtr??null,pendingRetest:Boolean(analysis.nextState?.pendingRetest),entries:(analysis.entries||[]).map(e=>({direction:e.direction,trigger:e.trigger,evidence:e.evidence||[]})),watched:(analysis.watched||[]).map(w=>({type:w.type,confirmed:Boolean(w.bounce?.confirmed||w.rejection?.confirmed||w.retest?.confirmed),evidence:w.bounce?.evidence||w.rejection?.evidence||[],retest:w.retest?{touched:w.retest.touched,holds:w.retest.holds,rejection:w.retest.rejection,activity:w.retest.activity,confirmed:w.retest.confirmed}:undefined})),events:analysis.eventFlags||{}});
     }catch(e){errors.push({symbol:row.s,error:safeError(e)});}
   }
   // Only one Core live entry per cycle; a structural trigger must exist.
@@ -866,6 +866,7 @@ async function scheduled(event,env,ctx){
     const exits=executionEnabled(env)?await monitorLivePositions(env):[];
     const result=await scan(env,{source:"scheduled"});
     console.log("[SCHEDULED][DONE]",{status:result.status,scanned:result.scanned,entries:result.entries?.length||0,executed:result.executed||0,executionResults:(result.executionResults||[]).map(x=>({symbol:x?.symbol||x?.setup?.symbol||null,executed:Boolean(x?.executed),positionVerified:Boolean(x?.positionVerified),reason:x?.reason||null,error:x?.error||null})),exits});
+    if(result.diagnostics){console.log("[TRACE][SUMMARY]",result.diagnostics);}
     return result;
   }catch(error){console.error("[SCHEDULED][ERROR]",{error:safeError(error),stack:error?.stack||null});return {ok:false,status:"ERROR",error:safeError(error)};}
 }
