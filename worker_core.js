@@ -1,5 +1,8 @@
-import { GmxApiSdk, PrivateKeySigner } from "@gmx-io/sdk/v2";
-import { getViemChain } from "@gmx-io/sdk/configs/chains";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { GmxApiSdk, PrivateKeySigner } = require("@gmx-io/sdk/v2");
+const { getViemChain } = require("@gmx-io/sdk/configs/chains");
 
  
 // ======================================================

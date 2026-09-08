@@ -1,19 +1,48 @@
-GMX V16.2.0 EXECUTION REPAIR
+GMX V16.2.0 — COMPLETE GITHUB DEPLOYMENT PACKAGE
+================================================
 
-Replace these two files in the GitHub repository:
-1) worker_core.js
-2) github-runner.mjs
+Files included:
+- worker_core.js              V16.2.0 execution engine
+- github-runner.mjs          GitHub Actions runner
+- package.json               Node >=22 + @gmx-io/sdk 1.8.2
+- .github/workflows/gmx-bot.yml  scheduled/manual workflow
 
-Important:
-- The runner now executes the V16.2.0 worker_core.js.
-- EXECUTION_ENABLED defaults to true when the GitHub environment variable is absent.
-- An explicit EXECUTION_ENABLED=false/0/no/off still disables live execution as an emergency switch.
-- Execution thresholds were NOT lowered.
-- No arbitrary $10 minimum order was added.
-- Runner cron event is aligned to * * * * *; the GitHub workflow schedule itself must also be changed if it currently runs every 5 minutes.
-- Required GitHub secrets/env remain: ARBITRUM_RPC, GMX_PRIVATE_KEY, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID.
+IMPORTANT SDK FIX
+------------------
+The worker is ESM, but the published GMX SDK supports CommonJS loading.
+The SDK imports are therefore loaded through node:module createRequire().
+This avoids Node ESM resolution failure at @gmx-io/sdk/build/esm/src/configs/api.
 
-Validation performed:
-- node --check worker_core.js: PASS
-- node --check github-runner.mjs: PASS
-- suspicious-command scan: CLEAN
+SDK version remains 1.8.2. No downgrade/upgrade is required.
+
+INSTALL
+-------
+The workflow uses `npm install`, not `npm ci`, because this deployment package
+intentionally does not require a pre-generated package-lock.json.
+
+NODE
+----
+GitHub Actions uses Node.js 22.
+
+EXECUTION
+---------
+EXECUTION_ENABLED is explicitly set to "true" in the workflow.
+The worker still honors an explicit false/off value as an emergency shutdown.
+
+SECRETS REQUIRED
+----------------
+ARBITRUM_RPC
+GMX_PRIVATE_KEY
+TELEGRAM_TOKEN
+TELEGRAM_CHAT_ID
+
+SCHEDULE
+--------
+The workflow is scheduled every 5 minutes and can also be started manually
+with Run workflow.
+
+VALIDATION
+----------
+worker_core.js and github-runner.mjs pass Node syntax checks.
+The SDK import change follows GMX's documented CommonJS support for
+@gmx-io/sdk/v2 and @gmx-io/sdk/configs/chains.
