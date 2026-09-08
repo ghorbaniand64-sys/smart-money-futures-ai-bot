@@ -453,6 +453,16 @@ RADAR_TIMING_EXHAUSTED_MOVE15: 3.0,
 RADAR_TIMING_EXHAUSTED_MOVE30: 5.0,
 RADAR_TIMING_DECELERATION: 0.20,
 RADAR_TIMING_MIN_ENTRY_SCORE: 45,
+// V16.1: separate reversal intelligence from movement strength.
+RADAR_HISTORY_RETENTION_SAMPLES: 240,
+RADAR_FLOW_HISTORY_RETENTION_SAMPLES: 120,
+RADAR_REVERSAL_SCORE_THRESHOLD: 50,
+RADAR_REVERSAL_STRONG_THRESHOLD: 70,
+RADAR_REVERSAL_PRICE_FLIP_PCT: 0.35,
+RADAR_REVERSAL_FLOW_RATIO: 0.35,
+RADAR_REVERSAL_CLOSE_RATIO: 0.30,
+RADAR_REVERSAL_PENALTY_MAX: 28,
+RADAR_REVERSAL_OPPOSITE_BONUS_MAX: 24,
 RADAR_EXIT_SCORE: 65,
 RADAR_REVERSAL_EDGE: 8,
 RADAR_RISK_PER_TRADE: 0.005,
@@ -799,7 +809,7 @@ for(const x of out){
   if(last&&Math.abs(x.at-last.at)<15000){ dedup[dedup.length-1]=x; }
   else dedup.push(x);
 }
-return dedup.slice(-96);
+return dedup.slice(-Number(CONFIG.RADAR_HISTORY_RETENTION_SAMPLES||240));
 }
 function v8WindowSample(hist,minutes,now=Date.now()){
 // V15.6.12: GitHub Actions is a scheduled runner, so the real interval can
@@ -932,6 +942,27 @@ const buyUsd=smfNum(raw?.buyUsd),sellUsd=smfNum(raw?.sellUsd),totalUsd=buyUsd+se
 return{buyUsd,sellUsd,totalUsd,signedUsd,buyShare,imbalance,flowSpikeRatio,flowSurge:flowSpikeRatio>=Number(CONFIG.SMART_MONEY_FLOW_SPIKE_THRESHOLD||1.8),explosiveFlow:flowSpikeRatio>=Number(CONFIG.SMART_MONEY_FLOW_EXPLOSIVE_THRESHOLD||3),confidence:smfConfidence({totalUsd,signedUsd,imbalance,flowSpikeRatio,flowSurge:flowSpikeRatio>=Number(CONFIG.SMART_MONEY_FLOW_SPIKE_THRESHOLD||1.8),explosiveFlow:flowSpikeRatio>=Number(CONFIG.SMART_MONEY_FLOW_EXPLOSIVE_THRESHOLD||3),tradeCount:Number(raw?.tradeCount||0),largeTradeCount:Number(raw?.largeTradeCount||0)}),tradeCount:Number(raw?.tradeCount||0),largeTradeCount:Number(raw?.largeTradeCount||0),longOpenUsd:smfNum(raw?.longOpenUsd),shortOpenUsd:smfNum(raw?.shortOpenUsd),longCloseUsd:smfNum(raw?.longCloseUsd),shortCloseUsd:smfNum(raw?.shortCloseUsd)};
 }
 function smfDirectionalBoost(flow,direction){if(!flow||!["LONG","SHORT"].includes(direction))return 0;const imbalance=Number(flow.imbalance||0),aligned=direction==="LONG"?imbalance:-imbalance;if(!Number.isFinite(aligned))return 0;let boost=Math.min(8,Math.max(0,aligned)*12),spike=Number(flow.flowSpikeRatio||1);if(spike>=Number(CONFIG.SMART_MONEY_FLOW_EXPLOSIVE_THRESHOLD||3))boost+=5;else if(spike>=Number(CONFIG.SMART_MONEY_FLOW_SPIKE_THRESHOLD||1.8))boost+=3;if(Number(flow.largeTradeCount||0)>=2)boost+=2;return Math.min(Number(CONFIG.SMART_MONEY_FLOW_SCORE_MAX||18),Math.max(0,boost));}
+function smfReversalMetrics(flow,direction){
+  if(!flow||!["LONG","SHORT"].includes(direction)) return {risk:0,opposingUsd:0,supportingUsd:0,opposingRatio:0,closeRatio:0,divergence:false,reasons:[]};
+  const longOpen=Number(flow.longOpenUsd||0),shortOpen=Number(flow.shortOpenUsd||0),longClose=Number(flow.longCloseUsd||0),shortClose=Number(flow.shortCloseUsd||0);
+  const supportingUsd=direction==="LONG"?(longOpen+shortClose):(shortOpen+longClose);
+  const opposingUsd=direction==="LONG"?(longClose+shortOpen):(shortClose+longOpen);
+  const total=Math.max(0,supportingUsd)+Math.max(0,opposingUsd);
+  const opposingRatio=total>0?opposingUsd/total:0;
+  const closeUsd=direction==="LONG"?longClose:shortClose;
+  const openUsd=direction==="LONG"?longOpen:shortOpen;
+  const closeRatio=(closeUsd+openUsd)>0?closeUsd/(closeUsd+openUsd):0;
+  const imbalance=Number(flow.imbalance||0);
+  const against=direction==="LONG"?imbalance< -Number(CONFIG.RADAR_REVERSAL_FLOW_RATIO||0.35):imbalance>Number(CONFIG.RADAR_REVERSAL_FLOW_RATIO||0.35);
+  let risk=0;const reasons=[];
+  if(opposingRatio>=Number(CONFIG.RADAR_REVERSAL_FLOW_RATIO||0.35)){risk+=20;reasons.push("OPPOSING_FLOW_RATIO_HIGH");}
+  if(opposingRatio>=0.50){risk+=12;reasons.push("OPPOSING_FLOW_DOMINANT");}
+  if(closeRatio>=Number(CONFIG.RADAR_REVERSAL_CLOSE_RATIO||0.30)){risk+=18;reasons.push("POSITION_CLOSURES_ELEVATED");}
+  if(closeRatio>=0.50){risk+=10;reasons.push("POSITION_CLOSURES_DOMINANT");}
+  if(against){risk+=18;reasons.push("FLOW_DIVERGENCE");}
+  if(Number(flow.flowSpikeRatio||1)>=Number(CONFIG.SMART_MONEY_FLOW_SPIKE_THRESHOLD||1.8)&&against){risk+=8;reasons.push("FLOW_SURGE_AGAINST_DIRECTION");}
+  return {risk:Math.min(100,risk),opposingUsd,supportingUsd,opposingRatio,closeRatio,divergence:against,reasons:[...new Set(reasons)]};
+}
 function smfConfidence(flow){if(!flow)return{level:"UNAVAILABLE",score:0};const total=Number(flow.totalUsd||0),trades=Number(flow.tradeCount||0),large=Number(flow.largeTradeCount||0),imbalance=Math.abs(Number(flow.imbalance||0)),surge=Boolean(flow.flowSurge||flow.explosiveFlow);let score=0;if(total>0)score+=20;if(trades>=3)score+=20;if(trades>=10)score+=15;if(large>=1)score+=20;if(large>=2)score+=10;if(imbalance>=0.20)score+=10;if(surge)score+=15;score=Math.min(100,score);return{level:score>=75?"HIGH":score>=45?"MEDIUM":"LOW",score};}
 function smfFlowReasons(flow,direction){if(!flow||!["LONG","SHORT"].includes(direction))return[];const aligned=direction==="LONG"?Number(flow.imbalance||0):-Number(flow.imbalance||0),reasons=[];if(aligned>=.2)reasons.push("smart_money_imbalance");if(aligned>=.45)reasons.push("strong_smart_money_flow");if(Number(flow.flowSpikeRatio||1)>=Number(CONFIG.SMART_MONEY_FLOW_SPIKE_THRESHOLD||1.8))reasons.push("flow_surge");if(Number(flow.flowSpikeRatio||1)>=Number(CONFIG.SMART_MONEY_FLOW_EXPLOSIVE_THRESHOLD||3))reasons.push("explosive_flow");if(Number(flow.largeTradeCount||0)>=2)reasons.push("large_order_participation");return reasons;}
 async function fetchSmartMoneyFlowData(env,flowHistory={}){
@@ -963,11 +994,11 @@ SMART_MONEY_FLOW_CACHE={at:now,result:out};return out;
 function smfPersistHistory(flowHistory,flowData,now=Date.now()){
 const next=flowHistory&&typeof flowHistory==="object"?{...flowHistory}:{};
 for(const [symbol,flow] of Object.entries(flowData?.bySymbol||{})){
-const arr=Array.isArray(next[symbol])?next[symbol].slice(-47):[];
+const arr=Array.isArray(next[symbol])?next[symbol].slice(-(Number(CONFIG.RADAR_FLOW_HISTORY_RETENTION_SAMPLES||120)-1)):[];
 const sample={at:now,totalUsd:Number(flow.totalUsd||0),buyUsd:Number(flow.buyUsd||0),sellUsd:Number(flow.sellUsd||0),imbalance:Number(flow.imbalance||0)};
 const last=arr[arr.length-1];
 if(!last||now-Number(last.at||0)>=Number(CONFIG.RADAR_HISTORY_SAMPLE_MS||30000))arr.push(sample);else arr[arr.length-1]=sample;
-next[symbol]=arr.slice(-48);
+next[symbol]=arr.slice(-Number(CONFIG.RADAR_FLOW_HISTORY_RETENTION_SAMPLES||120));
 }
 return next;
 }
@@ -993,7 +1024,7 @@ const nearLow=price>0&&low24h>0&&price/low24h<=1.008;
 const rangePct=price>0&&high24h>0&&low24h>0?((high24h-low24h)/price)*100:0;
 const priorMovePct=v8PctMove(price,prevPrice);
 
-const rawHist=Array.isArray(history)?history.filter(x=>Number(x?.price)>0&&Number(x?.at)>0).slice(-96):[];
+const rawHist=Array.isArray(history)?history.filter(x=>Number(x?.price)>0&&Number(x?.at)>0).slice(-Number(CONFIG.RADAR_HISTORY_RETENTION_SAMPLES||240)):[];
 const hist=v8RadarSanitizeHistory(rawHist,price);
 const now=Date.now();
 const latest=hist.length?hist[hist.length-1]:null;
@@ -1075,9 +1106,46 @@ if(breakoutPressure>0&&negativeMove<-0.5){short+=breakoutPressure;reasonsShort.p
 const liquidity=v8LiquidityScore(market);
 const liquidityBoost=CONFIG.FAIR_LIQUIDITY_SCORE_IN_RADAR?Math.min(8,liquidity/12.5):0;
 long+=liquidityBoost;short+=liquidityBoost;
-const longScore=Math.min(100,long),shortScore=Math.min(100,short),edge=Math.abs(longScore-shortScore);
+const rawLongScore=Math.min(100,long),rawShortScore=Math.min(100,short);
+// V16.1: reversal intelligence. Strength and entry timing are separate dimensions.
+const longFlowReversal=smfReversalMetrics(smartMoneyFlow,"LONG");
+const shortFlowReversal=smfReversalMetrics(smartMoneyFlow,"SHORT");
+const longPriceFlip=Boolean(velocity5m<=-Number(CONFIG.RADAR_REVERSAL_PRICE_FLIP_PCT||0.35) && prior5m>=0.50);
+const shortPriceFlip=Boolean(velocity5m>=Number(CONFIG.RADAR_REVERSAL_PRICE_FLIP_PCT||0.35) && prior5m<=-0.50);
+const longRejection=Boolean(nearHigh && velocity5m<0);
+const shortRejection=Boolean(nearLow && velocity5m>0);
+const longDecelAfterMove=Boolean(move15m>=Number(CONFIG.RADAR_TIMING_EXHAUSTED_MOVE15||3) && acceleration5m<=-Number(CONFIG.RADAR_TIMING_DECELERATION||0.20));
+const shortDecelAfterMove=Boolean(move15m<=-Number(CONFIG.RADAR_TIMING_EXHAUSTED_MOVE15||3) && acceleration5m>=Number(CONFIG.RADAR_TIMING_DECELERATION||0.20));
+let longReversalRisk=longFlowReversal.risk,shortReversalRisk=shortFlowReversal.risk;
+if(longPriceFlip)longReversalRisk+=25;
+if(shortPriceFlip)shortReversalRisk+=25;
+if(longRejection)longReversalRisk+=15;
+if(shortRejection)shortReversalRisk+=15;
+if(longDecelAfterMove)longReversalRisk+=12;
+if(shortDecelAfterMove)shortReversalRisk+=12;
+longReversalRisk=Math.min(100,longReversalRisk);
+shortReversalRisk=Math.min(100,shortReversalRisk);
+const longReversalEvidenceCount=(longFlowReversal.risk>0?1:0)+(longPriceFlip?1:0)+(longRejection?1:0)+(longDecelAfterMove?1:0);
+const shortReversalEvidenceCount=(shortFlowReversal.risk>0?1:0)+(shortPriceFlip?1:0)+(shortRejection?1:0)+(shortDecelAfterMove?1:0);
+const longReversalConfirmed=longReversalRisk>=Number(CONFIG.RADAR_REVERSAL_SCORE_THRESHOLD||50)&&longReversalEvidenceCount>=2;
+const shortReversalConfirmed=shortReversalRisk>=Number(CONFIG.RADAR_REVERSAL_SCORE_THRESHOLD||50)&&shortReversalEvidenceCount>=2;
+const longPenalty=Math.min(Number(CONFIG.RADAR_REVERSAL_PENALTY_MAX||28),Math.round(longReversalRisk*0.35));
+const shortPenalty=Math.min(Number(CONFIG.RADAR_REVERSAL_PENALTY_MAX||28),Math.round(shortReversalRisk*0.35));
+const longOppositeBonus=longReversalConfirmed?Math.min(Number(CONFIG.RADAR_REVERSAL_OPPOSITE_BONUS_MAX||24),Math.round(longReversalRisk*0.40)):0;
+const shortOppositeBonus=shortReversalConfirmed?Math.min(Number(CONFIG.RADAR_REVERSAL_OPPOSITE_BONUS_MAX||24),Math.round(shortReversalRisk*0.40)):0;
+const longScore=Math.min(100,Math.max(0,rawLongScore-longPenalty+shortOppositeBonus));
+const shortScore=Math.min(100,Math.max(0,rawShortScore-shortPenalty+longOppositeBonus));
+const edge=Math.abs(longScore-shortScore);
 const direction=edge>=CONFIG.PUMP_RADAR_MIN_DIRECTIONAL_EDGE?(longScore>shortScore?"LONG":"SHORT"):"NEUTRAL";
-// V16.0.6 Radar Timing Engine: distinguish movement strength from entry timing.
+const reversalDirection = longReversalConfirmed && longReversalRisk > shortReversalRisk ? "SHORT" : shortReversalConfirmed && shortReversalRisk > longReversalRisk ? "LONG" : direction;
+const reversalScore=Math.max(longReversalRisk,shortReversalRisk);
+const reversalReasons=[...(longReversalRisk>=shortReversalRisk?longFlowReversal.reasons:shortFlowReversal.reasons)];
+if(longPriceFlip&&longReversalRisk>=shortReversalRisk)reversalReasons.push("LONG_PRICE_VELOCITY_FLIP");
+if(shortPriceFlip&&shortReversalRisk>longReversalRisk)reversalReasons.push("SHORT_PRICE_VELOCITY_FLIP");
+if(longRejection&&longReversalRisk>=shortReversalRisk)reversalReasons.push("LONG_HIGH_REJECTION");
+if(shortRejection&&shortReversalRisk>longReversalRisk)reversalReasons.push("SHORT_LOW_REJECTION");
+if(longDecelAfterMove&&longReversalRisk>=shortReversalRisk)reversalReasons.push("LONG_MOMENTUM_DECELERATION");
+if(shortDecelAfterMove&&shortReversalRisk>longReversalRisk)reversalReasons.push("SHORT_MOMENTUM_DECELERATION");
 const directionalVelocity=direction==="LONG"?Number(velocity5m||0):direction==="SHORT"?-Number(velocity5m||0):0;
 const directionalAcceleration=direction==="LONG"?Number(acceleration5m||0):direction==="SHORT"?-Number(acceleration5m||0):0;
 const directionalMove15=direction==="LONG"?Number(move15m||0):direction==="SHORT"?-Number(move15m||0):0;
@@ -1086,11 +1154,13 @@ const directionalNearExtreme=direction==="LONG"?Boolean(nearHigh):direction==="S
 const momentumDecelerating=directionalVelocity>=0.5&&directionalAcceleration<=-Number(CONFIG.RADAR_TIMING_DECELERATION||0.20);
 const largeRecentMove=directionalMove15>=Number(CONFIG.RADAR_TIMING_EXHAUSTED_MOVE15||3)||directionalMove30>=Number(CONFIG.RADAR_TIMING_EXHAUSTED_MOVE30||5);
 const exhausted=direction!=="NEUTRAL"&&!radarWarmup&&directionalNearExtreme&&(largeRecentMove||momentumDecelerating||directionalVelocity<0.35);
-const timingState=direction==="NEUTRAL"?"NEUTRAL":
+let timingState=direction==="NEUTRAL"?"NEUTRAL":
   (radarWarmup?"WARMUP":
    (exhausted?"EXHAUSTED":
     ((Math.abs(velocity5m)>=0.75||Math.abs(acceleration5m)>=0.35)?"EARLY_FAST":
      (Math.abs(move15m)>=2||Math.abs(move30m)>=4)?"ACTIVE":"LATE_OR_SLOW")));
+if(direction==="SHORT"&&longReversalConfirmed&&longReversalRisk>=Number(CONFIG.RADAR_REVERSAL_STRONG_THRESHOLD||70)) timingState="REVERSAL_SHORT";
+if(direction==="LONG"&&shortReversalConfirmed&&shortReversalRisk>=Number(CONFIG.RADAR_REVERSAL_STRONG_THRESHOLD||70)) timingState="REVERSAL_LONG";
 let entryTimingScore=50;
 if(Math.abs(velocity5m)>=0.75)entryTimingScore+=20;
 if(Math.abs(acceleration5m)>=0.35)entryTimingScore+=15;
@@ -1101,7 +1171,8 @@ if(largeRecentMove)entryTimingScore-=15;
 if(timingState==="EXHAUSTED")entryTimingScore-=15;
 entryTimingScore=Math.min(100,Math.max(0,entryTimingScore));
 return{
-score:Number(Math.max(longScore,shortScore).toFixed(2)),longScore:Number(longScore.toFixed(2)),shortScore:Number(shortScore.toFixed(2)),edge:Number(edge.toFixed(2)),direction,
+score:Number(Math.max(longScore,shortScore).toFixed(2)),longScore:Number(longScore.toFixed(2)),shortScore:Number(shortScore.toFixed(2)),rawLongScore:Number(rawLongScore.toFixed(2)),rawShortScore:Number(rawShortScore.toFixed(2)),edge:Number(edge.toFixed(2)),direction,
+reversalDirection,reversalScore:Number(reversalScore.toFixed(2)),longReversalRisk:Number(longReversalRisk.toFixed(2)),shortReversalRisk:Number(shortReversalRisk.toFixed(2)),longReversalEvidenceCount,shortReversalEvidenceCount,longReversalConfirmed,shortReversalConfirmed,reversalReasons:[...new Set(reversalReasons)].slice(0,10),flowReversal:{long:longFlowReversal,short:shortFlowReversal},
 priceChange24h:Number(p24.toFixed(3)),priceChange1h:Number(p1h.toFixed(3)),priceChange4h:Number(p4h.toFixed(3)),priorMovePct:Number(priorMovePct.toFixed(3)),
 move10m:Number(move10m.toFixed(3)),move15m:Number(move15m.toFixed(3)),move30m:Number(move30m.toFixed(3)),velocity5m:Number(velocity5m.toFixed(3)),acceleration5m:Number(acceleration5m.toFixed(3)),timingState,
 directionalVelocity:Number(directionalVelocity.toFixed(3)),directionalAcceleration:Number(directionalAcceleration.toFixed(3)),directionalMove15:Number(directionalMove15.toFixed(3)),directionalMove30:Number(directionalMove30.toFixed(3)),directionalNearExtreme,momentumDecelerating,largeRecentMove,exhausted,entryTimingScore:Number(entryTimingScore.toFixed(2)),
@@ -3556,6 +3627,8 @@ function v15610RadarGateReasons(candidate) {
   if (priceStatus === "INVALID") reasons.push("PRICE_DATA_INVALID");
   if (score < Number(CONFIG.PUMP_RADAR_WATCH_SCORE || 60)) reasons.push(`SCORE_BELOW_RADAR_WATCH_${CONFIG.PUMP_RADAR_WATCH_SCORE || 60}`);
   if (timingState === "EXHAUSTED") reasons.push("ENTRY_TIMING_EXHAUSTED");
+  if (Number(radar?.reversalScore||0) >= Number(CONFIG.RADAR_REVERSAL_STRONG_THRESHOLD||70)) reasons.push(`REVERSAL_SCORE_${Number(radar.reversalScore||0).toFixed(0)}`);
+  if (["LONG","SHORT"].includes(String(radar?.reversalDirection||"").toUpperCase()) && String(radar.reversalDirection).toUpperCase() !== direction && Number(radar?.reversalScore||0) >= Number(CONFIG.RADAR_REVERSAL_SCORE_THRESHOLD||50)) reasons.push(`REVERSAL_FAVORS_${String(radar.reversalDirection).toUpperCase()}`);
   if (Boolean(radar?.directionalNearExtreme)) reasons.push(direction === "LONG" ? "LONG_NEAR_24H_HIGH" : "SHORT_NEAR_24H_LOW");
   if (Boolean(radar?.momentumDecelerating)) reasons.push("MOMENTUM_DECELERATING");
   if (Boolean(radar?.largeRecentMove)) reasons.push("LARGE_RECENT_MOVE");
@@ -3905,7 +3978,7 @@ for(const m of radarMarkets){
   if(!sym) continue;
   const px=Number(m?.price??m?.markPrice??m?.indexPrice??m?.oraclePrice??m?.midPrice);
   if(!Number.isFinite(px) || px<=0) continue;
-  const arr=Array.isArray(radarHistory[sym])?radarHistory[sym].slice(-47):[];
+  const arr=Array.isArray(radarHistory[sym])?radarHistory[sym].slice(-(Number(CONFIG.RADAR_HISTORY_RETENTION_SAMPLES||240)-1)):[];
   const last=arr[arr.length-1];
   const vol=Number(m?.volume24h??m?.volume??m?.stats?.volume24h??m?.stats?.volume??0)||0;
   if(!last || radarNow-Number(last.at||0)>=30000){
@@ -3913,7 +3986,7 @@ for(const m of radarMarkets){
   }else{
     arr[arr.length-1]={at:Number(last.at||radarNow),price:px,volume24h:vol};
   }
-  radarHistory[sym]=arr.slice(-48);
+  radarHistory[sym]=arr.slice(-Number(CONFIG.RADAR_HISTORY_RETENTION_SAMPLES||240));
 }
 state.radarHistory=radarHistory;
 const radarMarketsWithFlow=radarMarkets.map(m=>{const sym=v8NormSymbol(m?.symbol??m?.name??m?.ticker??m?.indexTokenSymbol);const flow=smartMoneyFlowData?.bySymbol?.[sym]||null;return flow?{...m,__smartMoneyFlow:flow}:m;});
@@ -4210,6 +4283,16 @@ const radarTrace=radarRanked.slice(0,20).map(r=>({
   momentumDecelerating:Boolean(r.momentumDecelerating),
   largeRecentMove:Boolean(r.largeRecentMove),
   exhausted:Boolean(r.exhausted),
+  reversalDirection:r.reversalDirection||"NEUTRAL",
+  reversalScore:Number(r.reversalScore||0),
+  longReversalRisk:Number(r.longReversalRisk||0),
+  shortReversalRisk:Number(r.shortReversalRisk||0),
+  longReversalEvidenceCount:Number(r.longReversalEvidenceCount||0),
+  shortReversalEvidenceCount:Number(r.shortReversalEvidenceCount||0),
+  longReversalConfirmed:Boolean(r.longReversalConfirmed),
+  shortReversalConfirmed:Boolean(r.shortReversalConfirmed),
+  reversalReasons:Array.isArray(r.reversalReasons)?r.reversalReasons:[],
+  flowReversal:r.flowReversal||null,
   valid5mSample:Boolean(r.valid5mSample),
   priceDataStatus:r.priceDataStatus||null,
   historySamples:Number(r.historySamples||0),
@@ -4220,6 +4303,7 @@ const radarTrace=radarRanked.slice(0,20).map(r=>({
   radarHistoryReady:Boolean(r.radarHistoryReady),
   historyIntegrityOk:Boolean(r.historyIntegrityOk),
   watchEligible:Boolean(r.direction!=="NEUTRAL" && Number(r.score||0)>=Number(CONFIG.PUMP_RADAR_WATCH_SCORE||60)),
+  reversalBlocksDirection:Boolean((r.direction==="LONG"&&r.longReversalConfirmed&&String(r.reversalDirection||"").toUpperCase()==="SHORT")||(r.direction==="SHORT"&&r.shortReversalConfirmed&&String(r.reversalDirection||"").toUpperCase()==="LONG")),
   entryEligible:Boolean(radarEntryEligible(r)),
   radarEntryScoreThreshold:Number(CONFIG.RADAR_ENTRY_SCORE || 72),
   radarEarlyEntryScoreThreshold:Number(CONFIG.RADAR_EARLY_ENTRY_SCORE || 60),
@@ -4236,7 +4320,7 @@ const radarTraceSummary={
   top:radarTrace
 };
 console.log("[RADAR][TRACE]", JSON.stringify(radarTraceSummary, null, 2));
-console.log("[RADAR][TIMING_DIAGNOSTICS]", JSON.stringify(radarTrace.slice(0,10).map(x => ({symbol:x.symbol,direction:x.selectedDirection,longScore:x.longScore,shortScore:x.shortScore,score:x.score,edge:x.edge,timingState:x.timingState,entryTimingScore:x.entryTimingScore,directionalVelocity:x.directionalVelocity,directionalAcceleration:x.directionalAcceleration,directionalMove15:x.directionalMove15,directionalMove30:x.directionalMove30,nearExtreme:x.directionalNearExtreme,momentumDecelerating:x.momentumDecelerating,largeRecentMove:x.largeRecentMove,exhausted:x.exhausted,entryEligible:x.entryEligible,reasons:x.gateReasons})), null, 2));
+console.log("[RADAR][TIMING_DIAGNOSTICS]", JSON.stringify(radarTrace.slice(0,10).map(x => ({symbol:x.symbol,direction:x.selectedDirection,longScore:x.longScore,shortScore:x.shortScore,score:x.score,edge:x.edge,timingState:x.timingState,entryTimingScore:x.entryTimingScore,directionalVelocity:x.directionalVelocity,directionalAcceleration:x.directionalAcceleration,directionalMove15:x.directionalMove15,directionalMove30:x.directionalMove30,nearExtreme:x.directionalNearExtreme,momentumDecelerating:x.momentumDecelerating,largeRecentMove:x.largeRecentMove,exhausted:x.exhausted,reversalDirection:x.reversalDirection,reversalScore:x.reversalScore,longReversalRisk:x.longReversalRisk,shortReversalRisk:x.shortReversalRisk,longReversalEvidenceCount:x.longReversalEvidenceCount,shortReversalEvidenceCount:x.shortReversalEvidenceCount,reversalReasons:x.reversalReasons,entryEligible:x.entryEligible,reasons:x.gateReasons})), null, 2));
 if (CONFIG.TELEGRAM_ENABLED && CONFIG.PUMP_RADAR_ENABLED) {
   const radarEventPool = [];
   const radarSeen = new Set();
@@ -4276,7 +4360,7 @@ const universeDiagnostics=buildUniverseDiagnostics(allMarkets,fastRows,radarMark
 universe:universeDiagnostics,fairAssetScoring:CONFIG.FAIR_ASSET_SCORING_ENABLED,dataCenter:{enabled:Boolean(CONFIG.DATA_CENTER_ENABLED),apiPeers:V156_DATA_CENTER.apiPeers,oraclePeers:V156_DATA_CENTER.oraclePeers,staleMs:Number(CONFIG.DATA_CENTER_STALE_MS||15000)},
 liquidityScoreInRadar:CONFIG.FAIR_LIQUIDITY_SCORE_IN_RADAR,
 majorSelectionBias:CONFIG.FAIR_MAJOR_SELECTION_BIAS,
-notifyEventMax:CONFIG.NOTIFY_EVENT_MAX},radarLane:{enabled:CONFIG.RADAR_INDEPENDENT_ENABLED,paperEnabled:CONFIG.RADAR_PAPER_ENABLED,liveEnabled:CONFIG.RADAR_LIVE_ENABLED,entryScore:CONFIG.RADAR_ENTRY_SCORE,earlyEntryEnabled:CONFIG.RADAR_EARLY_ENTRY_ENABLED,earlyEntryScore:CONFIG.RADAR_EARLY_ENTRY_SCORE,earlyMinVelocity:CONFIG.RADAR_EARLY_ENTRY_MIN_VELOCITY,earlyMinEdge:CONFIG.RADAR_EARLY_ENTRY_MIN_EDGE,exitScore:CONFIG.RADAR_EXIT_SCORE,maxPositions:CONFIG.RADAR_MAX_POSITIONS,coverageMarkets:radarRows.length,priceFeedCoverage:Object.keys(radarPriceFeed.prices||{}).length,directionalMarkets:radarDirectional.length,longMarkets:radarLongCount,shortMarkets:radarShortCount,watchCandidates:radarWatchCount,hotCandidateCount:radarHotCount,radarHistorySymbols:Object.keys(radarHistory).length,radarHistorySamples:Object.values(radarHistory).reduce((n,a)=>n+(Array.isArray(a)?a.length:0),0),radarPrioritySymbols:radarPrioritySymbols.slice(0,20),hotCandidates:radarRanked.filter(x=>x.score>=CONFIG.PUMP_RADAR_HOT_SCORE).slice(0,20),liveEntryGuard:"PRICE_OK + HOT_OR_EARLY + TIMING_NOT_EXHAUSTED",timingGuard:"EXHAUSTED_BLOCK + TIMING_SCORE",result:radarPaperResult,liveResult:radarLiveResult,trace:radarTraceSummary},entryRisk:{appliedToScan:false,dailyLoss:Number(state.dailyLoss||0),maxDailyLoss:CONFIG.MAX_DAILY_LOSS,entryRiskAllowed:Number(state.dailyLoss||0)>-CONFIG.MAX_DAILY_LOSS,positionLimit:CONFIG.MAX_POSITIONS}};
+notifyEventMax:CONFIG.NOTIFY_EVENT_MAX},radarLane:{enabled:CONFIG.RADAR_INDEPENDENT_ENABLED,paperEnabled:CONFIG.RADAR_PAPER_ENABLED,liveEnabled:CONFIG.RADAR_LIVE_ENABLED,entryScore:CONFIG.RADAR_ENTRY_SCORE,earlyEntryEnabled:CONFIG.RADAR_EARLY_ENTRY_ENABLED,earlyEntryScore:CONFIG.RADAR_EARLY_ENTRY_SCORE,earlyMinVelocity:CONFIG.RADAR_EARLY_ENTRY_MIN_VELOCITY,earlyMinEdge:CONFIG.RADAR_EARLY_ENTRY_MIN_EDGE,exitScore:CONFIG.RADAR_EXIT_SCORE,maxPositions:CONFIG.RADAR_MAX_POSITIONS,coverageMarkets:radarRows.length,priceFeedCoverage:Object.keys(radarPriceFeed.prices||{}).length,directionalMarkets:radarDirectional.length,longMarkets:radarLongCount,shortMarkets:radarShortCount,watchCandidates:radarWatchCount,hotCandidateCount:radarHotCount,radarHistorySymbols:Object.keys(radarHistory).length,radarHistorySamples:Object.values(radarHistory).reduce((n,a)=>n+(Array.isArray(a)?a.length:0),0),radarPrioritySymbols:radarPrioritySymbols.slice(0,20),hotCandidates:radarRanked.filter(x=>x.score>=CONFIG.PUMP_RADAR_HOT_SCORE).slice(0,20),liveEntryGuard:"PRICE_OK + HOT_OR_EARLY + TIMING_NOT_EXHAUSTED",timingGuard:"EXHAUSTED_BLOCK + TIMING_SCORE + REVERSAL_RISK",reversalGuard:"REVERSAL_SCORE + FLOW_DIVERGENCE + PRICE_FLIP + EXTREME_REJECTION",result:radarPaperResult,liveResult:radarLiveResult,trace:radarTraceSummary},entryRisk:{appliedToScan:false,dailyLoss:Number(state.dailyLoss||0),maxDailyLoss:CONFIG.MAX_DAILY_LOSS,entryRiskAllowed:Number(state.dailyLoss||0)>-CONFIG.MAX_DAILY_LOSS,positionLimit:CONFIG.MAX_POSITIONS}};
 // V15.6.1 FIX: persist radar history + market snapshots between cron invocations.
 // Without this write, every scan reloaded one fresh sample per symbol, so
 // 5m/15m/30m velocity and acceleration stayed at zero forever.
@@ -4647,6 +4731,13 @@ const timingScore = Number(radar?.entryTimingScore ?? 0);
 if (!['LONG','SHORT'].includes(direction) || priceStatus === "INVALID") return false;
 // V16.0.6: HOT strength cannot override an objectively exhausted entry.
 if (timingState === "EXHAUSTED") return false;
+// A confirmed reversal against the selected side blocks that side.
+const reversalBlocksDirection = direction === "LONG"
+  ? Boolean(radar?.longReversalConfirmed && String(radar?.reversalDirection||"").toUpperCase() === "SHORT")
+  : direction === "SHORT"
+    ? Boolean(radar?.shortReversalConfirmed && String(radar?.reversalDirection||"").toUpperCase() === "LONG")
+    : false;
+if (reversalBlocksDirection) return false;
 if (timingScore < Number(CONFIG.RADAR_TIMING_MIN_ENTRY_SCORE || 45)) return false;
 if (score >= Number(CONFIG.RADAR_ENTRY_SCORE || 72)) return true;
 if (!CONFIG.RADAR_EARLY_ENTRY_ENABLED) return false;
