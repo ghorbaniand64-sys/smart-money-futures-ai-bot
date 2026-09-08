@@ -663,6 +663,24 @@ HYBRID_RISK: {
 // entry decision logic with structure + volume + smart-money event sequencing.
 // No weighted score or trend-count gate is used for entry.
 // ================================================================
+function hybridAtr(candles, period=14){
+  const a=Array.isArray(candles)?candles:[];
+  if(a.length<2)return null;
+  const tr=[];
+  for(let i=0;i<a.length;i++){
+    const h=Number(a[i]?.high),l=Number(a[i]?.low);
+    if(!Number.isFinite(h)||!Number.isFinite(l))continue;
+    if(i===0){tr.push(Math.max(0,h-l));continue;}
+    const prev=Number(a[i-1]?.close);
+    tr.push(Math.max(0,h-l,Number.isFinite(prev)?Math.abs(h-prev):0,Number.isFinite(prev)?Math.abs(l-prev):0));
+  }
+  if(tr.length<Math.max(2,Number(period)||14))return null;
+  const n=Math.max(2,Number(period)||14);
+  let value=tr.slice(0,n).reduce((x,y)=>x+y,0)/n;
+  for(let i=n;i<tr.length;i++)value=((value*(n-1))+tr[i])/n;
+  return Number.isFinite(value)&&value>0?value:null;
+}
+
 function hybridCandleMetrics(c){
   const open=Number(c?.open),high=Number(c?.high),low=Number(c?.low),close=Number(c?.close);
   const range=Math.max(0,high-low),body=Math.abs(close-open);
@@ -758,7 +776,7 @@ function hybridZoneId(z){return z?`${Number(z.center).toFixed(6)}:${Number(z.low
 function hybridClassifyStructure(symbol,candles,price,flow,previousState={}){
   const c5=candles['5m']||[],c15=candles['15m']||[],c1h=candles['1h']||[],c4h=candles['4h']||[],current=c5.at(-1);
   if(!current)return {state:'NO_DATA',direction:'NONE',entries:[],zones:{support:[],resistance:[]}};
-  const atr5=Number(atr(c5,14))||price*0.005,zones=hybridBuildZones({'5m':c5,'15m':c15,'1h':c1h,'4h':c4h},price,atr5),vol=hybridVolumeContext(c5),entries=[],watched=[];
+  const atr5=Number(hybridAtr(c5,14))||price*0.005,zones=hybridBuildZones({'5m':c5,'15m':c15,'1h':c1h,'4h':c4h},price,atr5),vol=hybridVolumeContext(c5),entries=[],watched=[];
   const preMove5=percentChange(c5.slice(0,-1),5),support=hybridNearestZone(zones.support,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'S'),resistance=hybridNearestZone(zones.resistance,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'R');
   if(support){const bounce=hybridReactionSupport(current,support,flow,vol,atr5);watched.push({type:'SUPPORT',zone:support,bounce});if(bounce.confirmed&&preMove5<=-CONFIG.HYBRID_ENTRY.priorMovePct)entries.push({direction:'LONG',trigger:'SUPPORT_BOUNCE',zone:support,evidence:['PRIOR_DOWN_MOVE',...bounce.evidence],atr:atr5,price,volume:vol,flow});
     const br=hybridBreakout(current,support,'SHORT',flow,vol,atr5);if(br.broken)entries.push({direction:'WAIT',trigger:'SUPPORT_BREAK_WAIT_RETEST',zone:support,evidence:['SUPPORT_BROKEN',...(br.volumeOk?['ACTIVITY_CONFIRMATION']:[]),...(br.flowOk?['FLOW_CONFIRMATION']:[])],breakoutAt:current.timestamp,atr:atr5,price,flow,volume:vol});}
