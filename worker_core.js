@@ -40,6 +40,13 @@ function hybridNormalizeSymbol(symbol){
   return s || "";
 }
 
+// V17.1.7 COMPATIBILITY REPAIR: legacy V16 helpers still call normalizeSymbol.
+// Keep one canonical normalizer so legacy and hybrid engines use the same symbol mapping.
+function normalizeSymbol(symbol){
+  return hybridNormalizeSymbol(symbol);
+}
+
+
 // ======================================================
 // Smart Money Futures AI Bot
 // Version: V17.1.6 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
@@ -397,7 +404,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.1.6-HYBRID-STRUCTURE-EXECUTION-SAFE",
+VERSION: "V17.1.7-HYBRID-STRUCTURE-EXECUTION-SAFE",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
