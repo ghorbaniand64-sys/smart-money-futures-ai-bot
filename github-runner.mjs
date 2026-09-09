@@ -85,7 +85,7 @@ async function buildEnv() {
     TELEGRAM_TOKEN: envValue("TELEGRAM_TOKEN"),
     TELEGRAM_CHAT_ID: envValue("TELEGRAM_CHAT_ID"),
     EXECUTION_ENABLED: envValue("EXECUTION_ENABLED", "true"),
-    EXPECTED_VERSION: "V17.3.10-ONCHAIN-ALLOWANCE-HARDENING",
+    EXPECTED_VERSION: "V17.3.11-CANONICAL-COLLATERAL-TOKEN",
     BOT_STATE: makeFileKvBinding("bot_state"),
     GMX_CACHE: makeFileKvBinding("gmx_cache")
   };
@@ -97,7 +97,7 @@ async function main() {
   const event = { cron: "* * * * *", scheduledTime };
   const actualVersion = String(worker?.VERSION || "");
   const configuredVersion = envValue("EXPECTED_VERSION", "");
-  const expectedVersion = "V17.3.10-ONCHAIN-ALLOWANCE-HARDENING";
+  const expectedVersion = "V17.3.11-CANONICAL-COLLATERAL-TOKEN";
 
   console.log("[GITHUB][START]", {
     scheduledTime,
