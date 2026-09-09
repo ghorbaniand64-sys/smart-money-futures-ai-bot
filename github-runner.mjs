@@ -1,5 +1,5 @@
 // Smart Money Futures AI Bot — GitHub Actions adapter
-// V17.2.2-GITHUB-RUNNER-SCAN-DEDUPE
+// V17.2.3-GITHUB-RUNNER-TELEGRAM-DIAGNOSTICS
 // Runs one complete scheduled cycle using the deployed V17.2.2 engine.
 // Persistent Cloudflare KV bindings are emulated with JSON files in ./state.
 
@@ -125,6 +125,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error("[GITHUB][FATAL]", { scanId: typeof scanId !== "undefined" ? scanId : null, error: error?.stack || error?.message || String(error) });
+  console.error("[GITHUB][FATAL]", { error: error?.stack || error?.message || String(error) });
   process.exitCode = 1;
 });

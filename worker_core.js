@@ -404,7 +404,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.2.2-RUNNER-SCAN-DEDUPE",
+VERSION: "V17.2.3-TELEGRAM-EXECUTION-DIAGNOSTICS",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -4301,13 +4301,41 @@ async function runFullScan(env, scanOptions = {}) {
     const key=signal.id;
     try{
       const result=await executeLiveSignal(signal,env);
-      executionResults.push(result);
+      executionResults.push({...result,symbol:result?.symbol||signal.symbol});
       if(result?.executed){state.executions=Number(state.executions||0)+1;break;}
-      if(result?.error)errors.push({symbol:signal.symbol,error:result.error});
-    }catch(e){executionResults.push({executed:false,mode:"LIVE",symbol:signal.symbol,error:safeError(e)});errors.push({symbol:signal.symbol,error:safeError(e)});}
+      if(result?.error || result?.reason){
+        const reason=String(result.error||result.reason);
+        errors.push({symbol:signal.symbol,error:reason});
+        try {
+          const tg=await sendTelegram(env,formatTelegramExecutionFailure(signal,reason,result));
+          console.log("[TELEGRAM][EXECUTION_BLOCKED]",{scanId,symbol:signal.symbol,sent:Boolean(tg?.ok),reason:tg?.reason||null});
+        } catch(tgError) {
+          console.error("[TELEGRAM][EXECUTION_BLOCKED_SEND_ERROR]",{scanId,symbol:signal.symbol,error:safeError(tgError)});
+        }
+      }
+    }catch(e){
+      const detail=safeError(e);
+      const failure={executed:false,mode:"LIVE",symbol:signal.symbol,direction:signal.direction,error:detail};
+      executionResults.push(failure);
+      errors.push({symbol:signal.symbol,error:detail});
+      try {
+        const tg=await sendTelegram(env,formatTelegramExecutionFailure(signal,detail,failure));
+        console.log("[TELEGRAM][EXECUTION_FAILURE]",{scanId,symbol:signal.symbol,sent:Boolean(tg?.ok),reason:tg?.reason||null});
+      } catch(tgError) {
+        console.error("[TELEGRAM][EXECUTION_FAILURE_SEND_ERROR]",{scanId,symbol:signal.symbol,error:safeError(tgError)});
+      }
+    }
+  }
+  try {
+    const heartbeat = await sendTelegram(env, formatTelegramScanHeartbeat({
+      ...{status:signals.length?"ENTRY_READY":"WATCHING",scanned:markets.length,broad5mScanned:broad5m.size,deepScanned:deepSucceeded,deepPlanned:rows.length,eventCandidates,candidates:signals.length,eventStats,executionResults}
+    }, scanId));
+    console.log("[TELEGRAM][CYCLE_REPORT]", {scanId, sent:Boolean(heartbeat?.ok), reason:heartbeat?.reason||null});
+  } catch (tgError) {
+    console.error("[TELEGRAM][CYCLE_REPORT_ERROR]", {scanId,error:safeError(tgError)});
   }
   state.lastScan={at:Date.now(),durationMs:Date.now()-started,candidates:signals.length,selected:selectedEvents.length,executionRejected:Math.max(0,signals.length-selectedEvents.length),executed:executionResults.filter(x=>x?.executed).length};
-  state.lastDiagnostics={version:"V17.2.1-PRO-STRUCTURE-EVENT-ENTRY",engine:"STRUCTURE_EVENT_SEQUENCE_NO_ENTRY_SCORE",markets:markets.length,broad5mScanned:broad5m.size,deepScanned:rows.length,eventCandidates,entries:signals.length,executed:executionResults.filter(x=>x?.executed).length,flowAvailable:Boolean(flowData?.available),topTraderAvailable:Boolean(traders?.available),eventStats,errors};
+  state.lastDiagnostics={version:CONFIG.VERSION,engine:"STRUCTURE_EVENT_SEQUENCE_NO_ENTRY_SCORE",markets:markets.length,broad5mScanned:broad5m.size,deepScanned:rows.length,eventCandidates,entries:signals.length,executed:executionResults.filter(x=>x?.executed).length,flowAvailable:Boolean(flowData?.available),topTraderAvailable:Boolean(traders?.available),eventStats,errors};
   try{await saveState(env,state);}catch(e){errors.push({scope:"state",error:safeError(e)});
   }
   return{ok:true,status:signals.length?"ENTRY_READY":"WATCHING",scanned:markets.length,requested:markets.length,broad5mScanned:broad5m.size,deepPlanned:rows.length,deepAttempted,deepSucceeded,deepErrors,deepScanned:deepSucceeded,eventCandidates,candidates:signals.length,signals,executionResults,errors,eventStats,diagnostics:state.lastDiagnostics,timestamp:Date.now()};
@@ -5668,7 +5696,7 @@ url.searchParams.get("test") === "telegram"
  
 const sent = await sendTelegram(
 env,
-"Telegram test successful - Smart Money Futures AI Bot V6.3.1"
+`✅ Telegram test successful — ${CONFIG.VERSION}`
 );
  
 return jsonResponse({
@@ -8739,6 +8767,50 @@ return { executed:true, mode:"LIVE", lane:"RADAR", account, symbol, direction:pl
 }
 
 
+function formatTelegramExecutionFailure(signal, error, result=null) {
+  const symbol = tgText(signal?.symbol || result?.symbol || "UNKNOWN");
+  const direction = String(signal?.direction || result?.direction || "UNKNOWN").toUpperCase();
+  const reason = tgText(result?.reason || result?.error || error || "UNKNOWN_EXECUTION_ERROR");
+  const tier = tgText(signal?.signalTier || signal?.hybridSetup?.tier || "EVENT");
+  return [
+    "🔴 LIVE EXECUTION FAILED",
+    "━━━━━━━━━━━━━━━━━━",
+    `🪙 ${symbol}`,
+    `📌 Direction: ${direction}`,
+    `🏷️ Tier: ${tier}`,
+    `❌ Reason: ${reason}`,
+    `🕐 ${new Date().toISOString()}`,
+    `#${symbol} #GMX #ExecutionError`
+  ].join("\n");
+}
+
+function formatTelegramScanHeartbeat(result, scanId) {
+  const stats = result?.eventStats || {};
+  const exec = Array.isArray(result?.executionResults) ? result.executionResults : [];
+  const executed = exec.filter(x => x?.executed).length;
+  const failures = exec.filter(x => x && x.executed === false && (x.error || x.reason)).length;
+  const status = String(result?.status || "UNKNOWN");
+  const icon = executed > 0 ? "🟢" : result?.candidates > 0 ? "🟡" : "🔵";
+  return [
+    `${icon} GMX BOT — CYCLE REPORT`,
+    "━━━━━━━━━━━━━━━━━━",
+    `📡 Status: ${status}`,
+    `🪙 Universe: ${Number(result?.scanned || 0)}`,
+    `🔎 Broad 5M: ${Number(result?.broad5mScanned || 0)}`,
+    `🧠 Deep: ${Number(result?.deepScanned || result?.deepPlanned || 0)}`,
+    `⚡ Event candidates: ${Number(result?.eventCandidates || 0)}`,
+    `🎯 Entry ready: ${Number(result?.candidates || 0)}`,
+    `🟢 Executed: ${executed}`,
+    `🔴 Execution failures: ${failures}`,
+    `📍 Reactions: S ${Number(stats.supportReactions || 0)} / R ${Number(stats.resistanceReactions || 0)}`,
+    `💥 Breakouts: ${Number(stats.breakouts || 0)}`,
+    `🔁 Retests: ${Number(stats.retestConfirmed || 0)}`,
+    `🆔 Scan: ${tgText(scanId, "n/a")}`,
+    `🕐 ${new Date().toISOString()}`,
+    "ℹ️ این گزارش برای تشخیص مسیر Scan → Selection → Execution ارسال می‌شود."
+  ].join("\n");
+}
+
 function formatTelegramLiveEntry(result) {
   const direction=String(result?.direction||"UNKNOWN").toUpperCase();
   const icon=direction==="LONG"?"🟢":"🔴";
@@ -9432,7 +9504,7 @@ timestamp: Date.now()
 // The WeakMap is keyed by the current Worker env object, so separate
 // invocations do not share counters.
 const TELEGRAM_BUDGETS = new WeakMap();
-const TELEGRAM_MAX_SENDS_PER_INVOCATION = 4;
+const TELEGRAM_MAX_SENDS_PER_INVOCATION = 6;
 
 function telegramBudget(env) {
   let budget = TELEGRAM_BUDGETS.get(env);
