@@ -3,7 +3,7 @@
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
 ║  V17.3.1 — EARLY IMPULSE TELEMETRY                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.3.1-EARLY-IMPULSE-TELEMETRY                                   ║
+║  RELEASE: V17.3.5-ALLOWANCE-REPAIR                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -430,7 +430,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.3.1-EARLY-IMPULSE-TELEMETRY",
+VERSION: "V17.3.6-ALLOWANCE-PREFLIGHT",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -572,6 +572,13 @@ RADAR_HOT_MAX_WALLET_RISK: 0.015,
 EXECUTION_MIN_WALLET_RISK: 0.015,
 RADAR_LIVE_REVERSAL_CONFIRMATIONS: 1,
 RADAR_LIVE_LEDGER_TTL_SEC: 86400,
+// V17.3.6: warm the GMX Router allowance before market scanning. This is a
+// read-only check when allowance is already sufficient; an on-chain ERC20
+// approval is sent only when the current one-position collateral ceiling is
+// not covered. Approval never transfers collateral and never changes sizing.
+ALLOWANCE_PREFLIGHT_ENABLED: true,
+ALLOWANCE_PREFLIGHT_ALL_AVAILABLE_COLLATERALS: true,
+ALLOWANCE_PREFLIGHT_MAX_TOKENS: 2,
 // V14.0.5.5: live collateral may be USDC or USDT when the selected GMX perp market supports it.
 LIVE_COLLATERAL_PREFERENCE: ["USDC","USDT"],
 RADAR_SUBREQUEST_RESERVE: 0,
@@ -4457,7 +4464,7 @@ async function runFullScan(env, scanOptions = {}) {
   }
   try {
     const heartbeat = await sendTelegram(env, formatTelegramScanHeartbeat({
-      ...{status:signals.length?"ENTRY_READY":"WATCHING",scanned:markets.length,broad5mScanned:broad5m.size,deepScanned:deepSucceeded,deepPlanned:rows.length,eventCandidates,candidates:signals.length,eventStats,executionResults}
+      ...{status:signals.length?"ENTRY_READY":"WATCHING",scanned:markets.length,broad5mScanned:broad5m.size,deepScanned:deepSucceeded,deepPlanned:rows.length,eventCandidates,candidates:signals.length,eventStats,executionResults,allowancePreflight:scanOptions?.allowancePreflight||null}
     }, scanId));
     console.log("[TELEGRAM][CYCLE_REPORT]", {scanId, sent:Boolean(heartbeat?.ok), reason:heartbeat?.reason||null});
   } catch (tgError) {
@@ -5622,6 +5629,12 @@ if (executionEnabled(env)) {
   exits = await FUTURES_V6.updatePaperPositions(env);
 }
  
+let allowancePreflight = {enabled:false,attempted:false,ok:true,approved:[],sufficient:[],skipped:["NOT_RUN"],errors:[],elapsedMs:0};
+if (executionEnabled(env)) {
+  // V17.3.6: warm Router allowance BEFORE scanning so an approval tx, if needed,
+  // is paid/waited for outside the signal's latency-critical execution path.
+  allowancePreflight = await preflightGmxCollateralAllowances(env);
+}
 let scheduledOpenPositions = 0;
 try {
 const scheduledPositions = await FUTURES_V6.positions(env);
@@ -5643,7 +5656,8 @@ if (resourceGuardSnapshot.paused) {
   scan = await FUTURES_V6.scan(env, {
     additionalSubrequestReserve: scheduledPositionReserve,
     source: "cron",
-    scanId
+    scanId,
+    allowancePreflight
   });
 }
  
@@ -5671,6 +5685,7 @@ notified: scan?.diagnostics?.notified ?? 0,
 coreDirectional: { long: scan?.diagnostics?.longAnalyzed ?? 0, short: scan?.diagnostics?.shortAnalyzed ?? 0, noTrade: scan?.diagnostics?.noTradeAnalyzed ?? 0, valid: scan?.diagnostics?.validSignals ?? 0, watch: scan?.diagnostics?.watchSignals ?? 0 },
 execution: scan?.executionSummary || scan?.diagnostics?.executionSummary || (Array.isArray(scan?.executionResults) ? {attempted:scan.executionResults.length,executed:scan.executionResults.filter(x=>x?.executed).length,failed:scan.executionResults.filter(x=>x && x.executed===false && (x.error||x.reason)).length} : null),
 executionResults: Array.isArray(scan?.executionResults) ? scan.executionResults.slice(0,3).map(x => ({symbol:x?.symbol || null,executed:Boolean(x?.executed),reason:x?.reason || null,error:x?.error || null})) : [],
+allowancePreflight,
 radar: { coverage: scan?.radarCoverageMarkets ?? scan?.diagnostics?.radarLane?.coverageMarkets ?? 0, directional: scan?.radarDirectionalMarkets ?? scan?.diagnostics?.radarLane?.directionalMarkets ?? 0, long: scan?.radarLongMarkets ?? scan?.diagnostics?.radarLane?.longMarkets ?? 0, short: scan?.radarShortMarkets ?? scan?.diagnostics?.radarLane?.shortMarkets ?? 0, hot: scan?.radarHotCandidates ?? scan?.diagnostics?.radarLane?.hotCandidateCount ?? 0, watch: scan?.radarWatchCandidates ?? scan?.diagnostics?.radarLane?.watchCandidates ?? 0, trace: scan?.diagnostics?.radarLane?.trace || null },
 telegram: scan?.diagnostics?.telegram || null,
 radarLive: scan?.radarLiveResult ? {executed:Boolean(scan.radarLiveResult.executed),symbol:scan.radarLiveResult.symbol || null,reason:scan.radarLiveResult.reason || null,error:scan.radarLiveResult.error || null} : null,
@@ -8621,6 +8636,121 @@ function liveBaseAsset(symbol) {
 return liveNormalizeSymbol(symbol)?.replace(/-PERP$/i, "") || null;
 }
 
+
+// V17.3.5 — GMX ERC20 allowance preflight / exact auto-approval.
+function allowanceNumber(value) {
+  if (value===null || value===undefined || value==="") return null;
+  if (typeof value==="bigint") return value;
+  if (typeof value==="number") return Number.isFinite(value)?BigInt(Math.trunc(value)):null;
+  if (typeof value==="string") { try { return BigInt(value.trim()); } catch (_) { return null; } }
+  if (typeof value==="object") for (const k of ["allowance","amount","value","raw","balance","available","spendable"]) { if(value?.[k]!==undefined){const n=allowanceNumber(value[k]);if(n!==null)return n;} }
+  return null;
+}
+function allowanceEntryForToken(raw, tokenSymbol) {
+  const wanted=String(tokenSymbol||"").toUpperCase(), canonical=wanted==="USDC.E"?"USDC":wanted;
+  const visit=(v,keyHint="",depth=0)=>{
+    if(depth>6||v==null)return null;
+    if(Array.isArray(v)){for(const x of v){const n=visit(x,"",depth+1);if(n!==null)return n;}return null;}
+    if(typeof v!=="object") return String(keyHint).toUpperCase()===canonical?allowanceNumber(v):null;
+    const sym=String(v?.tokenSymbol||v?.symbol||v?.token?.symbol||v?.name||keyHint||"").toUpperCase();
+    if(sym===canonical||sym===wanted||(sym==="USDC.E"&&canonical==="USDC")){const n=allowanceNumber(v?.allowance??v?.amount??v?.value??v?.raw);if(n!==null)return n;}
+    for(const [k,x] of Object.entries(v)){if([canonical,wanted].includes(String(k).toUpperCase())){const n=allowanceNumber(x);if(n!==null)return n;}const n=visit(x,k,depth+1);if(n!==null)return n;}
+    return null;
+  }; return visit(raw);
+}
+function tokenAddressFromObject(value, tokenSymbol) {
+  const wanted=String(tokenSymbol||"").toUpperCase(), canonical=wanted==="USDC.E"?"USDC":wanted;
+  const visit=(v,depth=0)=>{
+    if(depth>6||v==null)return null;
+    if(Array.isArray(v)){for(const x of v){const a=visit(x,depth+1);if(a)return a;}return null;}
+    if(typeof v!=="object")return null;
+    const sym=String(v?.tokenSymbol||v?.symbol||v?.token?.symbol||v?.name||"").toUpperCase();
+    const a=v?.address||v?.tokenAddress||v?.contractAddress||v?.token?.address||v?.token?.tokenAddress;
+    if((sym===canonical||sym===wanted||(sym==="USDC.E"&&canonical==="USDC"))&&/^0x[0-9a-fA-F]{40}$/.test(String(a||"")))return String(a);
+    for(const x of Object.values(v)){const z=visit(x,depth+1);if(z)return z;} return null;
+  }; return visit(value);
+}
+async function resolveGmxCollateralTokenAddress(sdk,symbol,balances){
+  const a=tokenAddressFromObject(balances,symbol); if(a)return a;
+  if(typeof sdk.fetchTokens==="function"){const t=await sdk.fetchTokens();const b=tokenAddressFromObject(t,symbol);if(b)return b;}
+  return null;
+}
+async function fetchGmxRouterAllowance(sdk,account,symbol){
+  if(typeof sdk.fetchAllowances!=="function") throw new Error("GMX SDK does not expose fetchAllowances");
+  const raw=await sdk.fetchAllowances({address:account,spender:"router"});
+  const allowance=allowanceEntryForToken(raw,symbol);
+  if(allowance===null) throw new Error(`GMX_ROUTER_ALLOWANCE_UNAVAILABLE: token=${symbol}`);
+  return {raw,allowance};
+}
+async function waitForGmxRouterAllowance(sdk,account,symbol,required,attempts=30){
+  let last=0n; for(let i=0;i<attempts;i++){last=(await fetchGmxRouterAllowance(sdk,account,symbol)).allowance;if(last>=required)return {ok:true,allowance:last,polls:i+1};if(i+1<attempts)await new Promise(r=>setTimeout(r,1000));} return {ok:false,allowance:last,polls:attempts};
+}
+async function ensureGmxCollateralAllowance(sdk,signer,account,symbol,requiredAmount,balances){
+  const required=allowanceNumber(requiredAmount); if(required===null||required<=0n)throw new Error("GMX_ALLOWANCE_REQUIRED_AMOUNT_INVALID");
+  const before=await fetchGmxRouterAllowance(sdk,account,symbol);
+  const tokenAddress=await resolveGmxCollateralTokenAddress(sdk,symbol,balances); if(!tokenAddress)throw new Error(`GMX_COLLATERAL_TOKEN_ADDRESS_UNAVAILABLE: token=${symbol}`);
+  const meta={token:symbol,tokenAddress,spender:"router",requiredAmount:required.toString(),allowanceBefore:before.allowance.toString(),approved:false,approvalTxHash:null};
+  if(before.allowance>=required)return {...meta,sufficient:true,allowanceAfter:before.allowance.toString(),polls:0};
+  if(typeof sdk.executeErc20Approve!=="function")throw executionStageError("ERC20_APPROVAL",new Error("SDK executeErc20Approve unavailable"),meta);
+  let approvalResult; try{approvalResult=await sdk.executeErc20Approve(signer,{tokenAddress,spender:"router",amount:required});}catch(error){throw executionStageError("ERC20_APPROVAL",error,meta);}
+  const tx=approvalResult?.hash||approvalResult?.transactionHash||approvalResult?.txHash||approvalResult?.transaction?.hash||null;
+  const verified=await waitForGmxRouterAllowance(sdk,account,symbol,required,30);
+  if(!verified.ok)throw executionStageError("ERC20_APPROVAL_VERIFY",new Error(`Allowance verification failed: required=${required}, allowance=${verified.allowance}`),{...meta,approvalTxHash:tx,allowanceAfter:verified.allowance.toString(),polls:verified.polls});
+  return {...meta,sufficient:true,approved:true,approvalTxHash:tx,allowanceAfter:verified.allowance.toString(),polls:verified.polls};
+}
+
+// V17.3.6 — Cycle-start allowance warmup.
+// Runs before the expensive market scan so an approval transaction, when
+// genuinely needed, does not occur in the critical entry-execution path.
+// The approval target is capped at one position's maximum collateral (20%
+// of the currently available wallet collateral), so this does NOT loosen any
+// portfolio/risk limit. When allowance is already sufficient, this function
+// performs only RPC/API reads and consumes no gas.
+async function preflightGmxCollateralAllowances(env){
+  const started=Date.now();
+  const base={enabled:CONFIG.ALLOWANCE_PREFLIGHT_ENABLED!==false,attempted:false,ok:true,approved:[],sufficient:[],skipped:[],errors:[],elapsedMs:0};
+  if(CONFIG.ALLOWANCE_PREFLIGHT_ENABLED===false || !executionEnabled(env)){
+    base.skipped.push(executionEnabled(env)?"DISABLED_BY_CONFIG":"EXECUTION_DISABLED");
+    base.elapsedMs=Date.now()-started;
+    return base;
+  }
+  try{
+    const {sdk,signer,account}=await getLiveContext(env);
+    const balances=await sdk.fetchWalletBalances({address:account});
+    const collateralBalances=extractCollateralBalances(balances);
+    const walletUsd=Object.values(collateralBalances).reduce((sum,b)=>sum+Number(b?.usd||0),0);
+    if(!(walletUsd>0)){
+      base.skipped.push("NO_USDC_USDT_BALANCE");
+      base.elapsedMs=Date.now()-started;
+      return base;
+    }
+    const symbols=CONFIG.ALLOWANCE_PREFLIGHT_ALL_AVAILABLE_COLLATERALS!==false
+      ? ["USDC","USDT"].filter(sym=>collateralBalances[sym]?.usd>0).slice(0,Math.max(1,Number(CONFIG.ALLOWANCE_PREFLIGHT_MAX_TOKENS||2)))
+      : [collateralBalances.USDC?.usd>0?"USDC":collateralBalances.USDT?.usd>0?"USDT":null].filter(Boolean);
+    base.attempted=true;
+    for(const symbol of symbols){
+      const tokenUsd=Number(collateralBalances[symbol]?.usd||0);
+      // Never approve more than the actual token balance or the 20% per-position cap.
+      const targetUsd=Math.min(tokenUsd,walletUsd*Number(CONFIG.MAX_CAPITAL_ALLOCATION||0.20));
+      if(!(targetUsd>0)){base.skipped.push(`${symbol}:NO_TARGET`);continue;}
+      try{
+        const info=await ensureGmxCollateralAllowance(sdk,signer,account,symbol,toBigIntDecimal(targetUsd,6),balances);
+        if(info?.approved)base.approved.push({token:symbol,requiredUsd:Number(targetUsd.toFixed(6)),txHash:info.approvalTxHash||null,allowanceAfter:info.allowanceAfter||null,polls:info.polls||0});
+        else base.sufficient.push({token:symbol,requiredUsd:Number(targetUsd.toFixed(6)),allowanceAfter:info?.allowanceAfter||null});
+      }catch(error){
+        base.ok=false;
+        base.errors.push({token:symbol,stage:error?.executionStage||"ALLOWANCE_PREFLIGHT",error:safeError(error),meta:error?.executionMeta||null});
+      }
+    }
+  }catch(error){
+    base.ok=false;
+    base.errors.push({stage:error?.executionStage||"ALLOWANCE_PREFLIGHT_INIT",error:safeError(error),meta:error?.executionMeta||null});
+  }
+  base.elapsedMs=Date.now()-started;
+  console.log("[ALLOWANCE][PREFLIGHT]",base);
+  return base;
+}
+
 function findSdkMarket(markets, symbol) {
 const wanted = liveNormalizeSymbol(symbol);
 return markets.find(m => {
@@ -8881,6 +9011,7 @@ if (marketMinCollateralUsd > 0) {
 }
 const size = toBigIntDecimal(notionalUsd, 30);
 const collateralAmount = toBigIntDecimal(finalCollateralUsd, 6);
+const allowanceInfo=await ensureGmxCollateralAllowance(sdk,signer,account,collateral.symbol,collateralAmount,balances);
 const tp = toBigIntDecimal(plan.tp1, 30);
 const sl = toBigIntDecimal(plan.stopLoss, 30);
 const signalLike = { symbol, direction: plan.direction, signalTier: "RADAR", tradePlan: { entry: plan.entry, stopLoss: plan.stopLoss, tp1: plan.tp1 } };
@@ -8894,7 +9025,7 @@ tpsl:[{type:"take-profit",triggerPrice:tp,size},{type:"stop-loss",triggerPrice:s
 }, signer);
 ledger[key] = { status:"OPEN", lane:"RADAR", symbol, direction:plan.direction, radarScore:plan.score, radarEdge:Number(candidate?.pumpRadar?.edge || 0), entryPrice:plan.entry, initialStopPrice:plan.stopLoss, tp1:plan.tp1, tp2:plan.tp2, tp3:plan.tp3, leverage, notionalUsd, collateralToken:collateral.symbol, openedAt:Date.now(), requestId:result?.requestId || null };
 await saveRadarLiveLedger(env, ledger);
-return { executed:true, mode:"LIVE", lane:"RADAR", account, symbol, direction:plan.direction, radarScore:plan.score, radarEdge:Number(candidate?.pumpRadar?.edge || 0), leverage, walletUsd, collateralUsd, collateralToken:collateral.symbol, notionalUsd, riskBasedNotional, hotSizing:isHotRadar, marketMinPositionUsd, marketMinCollateralUsd, requestId:result?.requestId || null, executionKey:lock.key };
+return { executed:true, mode:"LIVE", lane:"RADAR", account, symbol, direction:plan.direction, radarScore:plan.score, radarEdge:Number(candidate?.pumpRadar?.edge || 0), leverage, walletUsd, collateralUsd, collateralToken:collateral.symbol, notionalUsd, riskBasedNotional, hotSizing:isHotRadar, marketMinPositionUsd, marketMinCollateralUsd, allowance:allowanceInfo, requestId:result?.requestId || null, executionKey:lock.key };
 } finally { releaseLiveExecutionLock(lock.key); }
 }
 
@@ -8920,6 +9051,11 @@ function formatTelegramExecutionFailure(signal, error, result=null) {
     `📊 Allocation: ${Number(p.allocationPercent!=null?p.allocationPercent:Number(p.allocation||0)*100).toFixed(2)}%`,
     `⚙️ Leverage: ${Number(p.leverage||1).toFixed(1)}x`,
     `🔧 Stage: ${stage}`,
+    result?.executionMeta?.token ? `🪙 Allowance Token: ${telegramTextSafe(result.executionMeta.token)}` : null,
+    result?.executionMeta?.requiredAmount ? `🔐 Allowance Required: ${result.executionMeta.requiredAmount}` : null,
+    result?.executionMeta?.allowanceBefore ? `🔐 Allowance Before: ${result.executionMeta.allowanceBefore}` : null,
+    result?.executionMeta?.allowanceAfter ? `🔐 Allowance After: ${result.executionMeta.allowanceAfter}` : null,
+    result?.executionMeta?.approvalTxHash ? `🧾 Approval Tx: ${result.executionMeta.approvalTxHash}` : null,
     `❌ Reason: ${reason}`,
     `🕐 ${new Date().toISOString()}`,
     `#${symbol} #GMX #ExecutionError`
@@ -8961,6 +9097,7 @@ ${icon2} EXECUTED #${i+1} — ${telegramTextSafe(x?.symbol || "UNKNOWN")}`,
     `🔎 Broad 5M: ${Number(result?.broad5mScanned || 0)}`,
     `🧠 Deep: ${Number(result?.deepScanned || result?.deepPlanned || 0)}`,
     `⚡ Event candidates: ${Number(result?.eventCandidates || 0)}`,
+    result?.allowancePreflight ? `🔐 Allowance preflight: ${result.allowancePreflight.ok ? "READY" : "ISSUE"} | Approved ${Number(result.allowancePreflight.approved?.length||0)} | Existing ${Number(result.allowancePreflight.sufficient?.length||0)} | ${Number(result.allowancePreflight.elapsedMs||0)}ms` : null,
     `🚀 Early impulses: ${Number(stats.earlyImpulses || 0)}`,
     `🧪 Early debug: A ${Number(stats.earlyDebug?.attempted || 0)} / Q ${Number(stats.earlyDebug?.qualified || 0)} / R ${Number(stats.earlyDebug?.rejected || 0)}`,
     `🧩 Early gates: M ${Number(stats.earlyDebug?.movePass || 0)} | B ${Number(stats.earlyDebug?.bodyPass || 0)} | V ${Number(stats.earlyDebug?.volumePass || 0)} | F ${Number(stats.earlyDebug?.flowPass || 0)} | A ${Number(stats.earlyDebug?.accelerationPass || 0)} | Z ${Number(stats.earlyDebug?.zonePass || 0)} | S ${Number(stats.earlyDebug?.scorePass || 0)} | E ${Number(stats.earlyDebug?.edgePass || 0)}`,
@@ -9281,6 +9418,7 @@ try {
     throw executionStageError("PREPARE_ORDER", error, {collateralUsd:Number(usedCollateralUsd.toFixed(6)),allocationPercent:Number((allocation*100).toFixed(2)),walletUsd:Number(walletUsd.toFixed(6)),notionalUsd:Number(notionalUsd.toFixed(6)),leverage});
   }
 }
+const allowanceInfo=await ensureGmxCollateralAllowance(sdk,signer,account,collateral.symbol,toBigIntDecimal(usedCollateralUsd,6),balances);
 let signature;
 try { signature=await sdk.signOrder(prepared,signer); }
 catch(error) { throw executionStageError("SIGN_ORDER", error, {requestId:prepared?.requestId||null}); }
@@ -9338,7 +9476,7 @@ if (!verification.verified) {
 }
 const walletAfter=verification.walletAfter || await readLiveWalletSnapshot(sdk, account);
 const walletDelta=Number.isFinite(Number(verification.walletDelta)) ? Number(verification.walletDelta) : null;
-const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:true,walletBefore,walletAfter,walletDelta,settlementVerified:Boolean(verification.settled),executionKey:lock.key};
+const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,allowance:allowanceInfo,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:true,walletBefore,walletAfter,walletDelta,settlementVerified:Boolean(verification.settled),executionKey:lock.key};
 try { await sendTelegram(env, formatTelegramLiveEntry(entryNotice)); } catch(_) {}
 return entryNotice;
 } catch (error) {
@@ -9515,7 +9653,7 @@ await auditLog(env,{type:"LIVE_EXECUTION",signalId:signal.id,result});
 return {...result,signal};
 } catch(error) {
 await auditLog(env,{type:"LIVE_EXECUTION_ERROR",signalId:signal?.id,error:safeError(error)});
-return {executed:false,mode:"LIVE",error:safeError(error),signal};
+return {executed:false,mode:"LIVE",error:safeError(error),stage:error?.executionStage||null,executionMeta:error?.executionMeta||null,signal};
 }
 }
  
