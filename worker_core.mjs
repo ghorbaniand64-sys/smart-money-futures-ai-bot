@@ -430,7 +430,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.3.15-COLLATERAL-MARKET-MATCHING",
+VERSION: "V17.3.16-EXPRESS-BIGINT-FLOW",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -9803,23 +9803,28 @@ const direction = String(signal?.direction || "").toUpperCase();
 // Risk limits, valid direction/plan, wallet/market capacity and GMX-native minimums remain safety controls.
 if (!signal?.tradePlan?.valid || !["LONG","SHORT"].includes(direction)) return {executed:false,mode:"LIVE",reason:"Invalid live signal"};
 
-const {sdk,signer,account}=await getLiveContext(env);
-const positions=await sdk.fetchPositionsInfo({address:account});
+let sdk,signer,account;
+try { ({sdk,signer,account}=await getLiveContext(env)); } catch(error) { throw executionStageError("LIVE_CONTEXT", error); }
+let positions;
+try { positions=await sdk.fetchPositionsInfo({address:account}); } catch(error) { throw executionStageError("FETCH_POSITIONS", error); }
 const totalLivePositions = Array.isArray(positions) ? positions.filter(p => Number(p?.sizeInUsd || p?.size || 0) > 0).length : 0;
 if (totalLivePositions>=CONFIG.MAX_POSITIONS) throw new Error(`MAX_TOTAL_LIVE_POSITIONS_REACHED: ${totalLivePositions}/${CONFIG.MAX_POSITIONS}`);
-const markets=await sdk.fetchMarkets();
-const balances=await sdk.fetchWalletBalances({address:account});
-const resolvedBalances=await resolveLiveCollateralBalances(sdk,account,balances,env.ARBITRUM_RPC);
+let markets, balances, resolvedBalances;
+try { markets=await sdk.fetchMarkets(); } catch(error) { throw executionStageError("FETCH_MARKETS", error); }
+try { balances=await sdk.fetchWalletBalances({address:account}); } catch(error) { throw executionStageError("FETCH_WALLET_BALANCES", error); }
+try { resolvedBalances=await resolveLiveCollateralBalances(sdk,account,balances,env.ARBITRUM_RPC); } catch(error) { throw executionStageError("RESOLVE_COLLATERAL", error); }
 const collateral=selectLiveCollateral(markets, signal.symbol, resolvedBalances.balances);
 if (!collateral) {
   const candidates=(markets||[]).filter(m=>!m?.isSpotOnly && marketMatchesRequestedSymbol(m,liveNormalizeSymbol(signal.symbol))).slice(0,5).map(m=>({symbol:m?.symbol||m?.name||"?",collateral:[...marketCollateralSymbols(m)]}));
   throw new Error(`No usable USDC/USDT balance with a matching GMX collateral market was detected | walletUsd=${Number(resolvedBalances.walletUsd||0).toFixed(6)} | source=${resolvedBalances.source.join("+")||"NONE"} | market=${liveNormalizeSymbol(signal.symbol)} | candidates=${JSON.stringify(candidates)}`);
 }
-const walletBefore = await readLiveWalletSnapshot(sdk, account);
+let walletBefore;
+try { walletBefore=await readLiveWalletSnapshot(sdk, account); } catch(error) { throw executionStageError("READ_WALLET_SNAPSHOT", error); }
 const market=collateral.market;
 const sdkSymbol=market.symbol;
 const orderDirection=signal.direction==="LONG"?"long":"short";
-const capacity=await sdk.getTradingCapacity({symbol:sdkSymbol,direction:orderDirection});
+let capacity;
+try { capacity=await sdk.getTradingCapacity({symbol:sdkSymbol,direction:orderDirection}); } catch(error) { throw executionStageError("GET_TRADING_CAPACITY", error, {symbol:sdkSymbol,direction:orderDirection}); }
 const capacityUsd=Number(capacity?.availableLiquidity||0n)/1e30;
 const walletUsd=collateral.usd;
 const existingCollateralUsd=Array.isArray(positions)?positions.reduce((sum,p)=>{
@@ -9870,55 +9875,46 @@ if (finalCollateralUsd < minimumViableCollateralUsd) {
   }
   finalCollateralUsd=minimumViableCollateralUsd;
 }
-const size=toBigIntDecimal(notionalUsd,30);
-const collateralAmount=toBigIntDecimal(finalCollateralUsd,6);
-const tp=toBigIntDecimal(signal.tradePlan.tp1,30);
-const sl=toBigIntDecimal(signal.tradePlan.stopLoss,30);
-const lock = await acquireLiveExecutionLock(env, signal);
+let size, collateralAmount, tp, sl;
+try { size=toBigIntDecimal(notionalUsd,30); collateralAmount=toBigIntDecimal(finalCollateralUsd,6); tp=toBigIntDecimal(signal.tradePlan.tp1,30); sl=toBigIntDecimal(signal.tradePlan.stopLoss,30); } catch(error) { throw executionStageError("BUILD_BIGINTS", error, {notionalUsd,finalCollateralUsd}); }
+let lock;
+try { lock=await acquireLiveExecutionLock(env, signal); } catch(error) { throw executionStageError("ACQUIRE_EXECUTION_LOCK", error); }
 if (!lock.acquired) return {executed:false,mode:"LIVE",reason:lock.reason,executionKey:lock.key};
 
 try {
+let usedCollateralUsd = finalCollateralUsd;
 const size1=toBigIntDecimal(notionalUsd*0.40,30);
 const size2=toBigIntDecimal(notionalUsd*0.30,30);
 const size3=toBigIntDecimal(notionalUsd*0.30,30);
 const buildOrderRequest = (collateralUsdForOrder) => ({kind:"increase",symbol:sdkSymbol,direction:orderDirection,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:toBigIntDecimal(collateralUsdForOrder,6),token:collateral.symbol},mode:"express",from:account,tpsl:[{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp1,30),size:size1},{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp2,30),size:size2},{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp3,30),size:size3},{type:"stop-loss",triggerPrice:sl,size}]});
-let prepared;
-let usedCollateralUsd = finalCollateralUsd;
-try {
-  prepared=await sdk.prepareOrder(buildOrderRequest(usedCollateralUsd));
-} catch(error) {
-  // V17.3.8: previous recovery could retry at the exact same allocation cap.
-  // Retry once at the actual protocol viability amount when the caps permit it.
-  if (isCollateralAfterFeesMinimumError(error)) {
-    const recoveryCollateralUsd=Math.min(maxCollateralUsd,Math.max(usedCollateralUsd,gmxMinimumViableCollateralUsd()));
-    if (recoveryCollateralUsd > usedCollateralUsd + 0.000001) {
-      usedCollateralUsd=recoveryCollateralUsd;
-      try {
-        prepared=await sdk.prepareOrder(buildOrderRequest(usedCollateralUsd));
-      } catch(retryError) {
-        throw executionStageError("PREPARE_ORDER", retryError, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:true}));
-      }
-    } else {
-      throw executionStageError("PREPARE_ORDER_MIN_COLLATERAL", error, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:false}));
-    }
-  } else {
-    throw executionStageError("PREPARE_ORDER", error, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:false}));
-  }
-}
+
 let allowanceInfo;
 try {
   allowanceInfo=await ensureGmxCollateralAllowance(sdk,signer,account,collateral.symbol,toBigIntDecimal(usedCollateralUsd,6),balances,{rpcUrl:env.ARBITRUM_RPC});
 } catch(error) {
   throw executionStageError("ALLOWANCE_PREFLIGHT", error, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:usedCollateralUsd>requestedCollateralUsd+0.000001}));
 }
-let signature;
-try { signature=await sdk.signOrder(prepared,signer); }
-catch(error) { throw executionStageError("SIGN_ORDER", error, {requestId:prepared?.requestId||null}); }
+
+// V17.3.16: GMX documents executeExpressOrder() as the supported
+// prepare -> sign -> submit path. Keep native BigInt request fields and let
+// the SDK own the serialization/transport boundary.
 let result;
 try {
-  result=await sdk.submitOrder({mode:prepared.mode,requestId:prepared.requestId,signature,from:account,idempotencyKey:prepared.idempotencyKey,eip712Data:{batchParams:prepared.payload.batchParams,relayParams:prepared.payload.relayParams}});
+  if (typeof sdk?.executeExpressOrder !== "function") throw new Error("GMX SDK executeExpressOrder() is unavailable");
+  result=await sdk.executeExpressOrder(buildOrderRequest(usedCollateralUsd),signer);
 } catch(error) {
-  throw executionStageError("SUBMIT_ORDER", error, {requestId:prepared?.requestId||null});
+  if (isCollateralAfterFeesMinimumError(error)) {
+    const recoveryCollateralUsd=Math.min(maxCollateralUsd,Math.max(usedCollateralUsd,gmxMinimumViableCollateralUsd()));
+    if (recoveryCollateralUsd > usedCollateralUsd + 0.000001) {
+      usedCollateralUsd=recoveryCollateralUsd;
+      try { result=await sdk.executeExpressOrder(buildOrderRequest(usedCollateralUsd),signer); }
+      catch(retryError) { throw executionStageError("EXECUTE_EXPRESS_ORDER_MIN_COLLATERAL", retryError, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:true})); }
+    } else {
+      throw executionStageError("EXECUTE_EXPRESS_ORDER_MIN_COLLATERAL", error, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:false}));
+    }
+  } else {
+    throw executionStageError("EXECUTE_EXPRESS_ORDER", error, {symbol:sdkSymbol,direction:orderDirection,requestHasTpsl:true});
+  }
 }
 finalCollateralUsd = usedCollateralUsd;
 await markLiveExecutionSubmitted(env, lock.key, signal, result);
@@ -9934,9 +9930,7 @@ if (orderStatusResult?.available && orderStatusResult?.terminal && orderStatus !
     let repairInfo=null;
     try {
       repairInfo=await forceRefreshGmxAllowance(sdk,signer,account,collateral.symbol,toBigIntDecimal(usedCollateralUsd,6),balances,env.ARBITRUM_RPC);
-      const retryPrepared=await sdk.prepareOrder(buildOrderRequest(usedCollateralUsd));
-      const retrySignature=await sdk.signOrder(retryPrepared,signer);
-      const retryResult=await sdk.submitOrder({mode:retryPrepared.mode,requestId:retryPrepared.requestId,signature:retrySignature,from:account,idempotencyKey:retryPrepared.idempotencyKey,eip712Data:{batchParams:retryPrepared.payload.batchParams,relayParams:retryPrepared.payload.relayParams}});
+      const retryResult=await sdk.executeExpressOrder(buildOrderRequest(usedCollateralUsd),signer);
       const retryStatusResult=await pollLiveOrderStatus(sdk,retryResult?.requestId,60000,2000);
       const retryStatus=String(retryStatusResult?.status||retryResult?.status||"unknown").toLowerCase();
       if(retryStatusResult?.available && retryStatusResult?.terminal && retryStatus === "executed") {

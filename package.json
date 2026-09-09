@@ -1,4 +1,4 @@
 {
   "type": "module",
-  "dependencies": {"@gmx-io/sdk": "^1.8.0"}
+  "dependencies": {"@gmx-io/sdk": "1.8.2"}
 }
