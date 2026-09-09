@@ -1,0 +1,21 @@
+V17.3.10 — ON-CHAIN ALLOWANCE HARDENING
+
+Root cause addressed:
+- GMX SDK fetchAllowances({spender:"router"}) is API-backed and can be stale/cached relative to the live ERC20 allowance used by the relay.
+- Previous code treated that API value as authoritative.
+
+Changes:
+1. Resolve the actual GMX Router address from sdk.buildApproveTransaction().
+2. Read ERC20 allowance(owner, Router) directly from Arbitrum with eth_call before every live execution/preflight.
+3. Keep the GMX API allowance value only as telemetry; do not use it as the final gate.
+4. If allowance is insufficient, send the GMX SDK approval transaction.
+5. Wait for the approval transaction receipt and require status=success before retrying the order.
+6. Re-read allowance directly on-chain after approval.
+7. Relay-failure recovery uses MAX_UINT256 approval only when the direct on-chain allowance is actually insufficient.
+8. If direct on-chain allowance is already sufficient but GMX still returns transfer amount exceeds allowance, telemetry now exposes the actual token address, Router address, API allowance, and on-chain allowance so the next failure is diagnosable instead of blindly approving again.
+9. Existing risk rules are unchanged: 20% max per position, 3 total positions, 60% total capital.
+10. Existing order-status and position-verification protections are unchanged.
+
+Safety:
+- Approval only changes ERC20 spending permission; it does not transfer USDC.
+- MAX_UINT256 is only used on the confirmed allowance-recovery path.
