@@ -85,7 +85,7 @@ async function buildEnv() {
     TELEGRAM_TOKEN: envValue("TELEGRAM_TOKEN"),
     TELEGRAM_CHAT_ID: envValue("TELEGRAM_CHAT_ID"),
     EXECUTION_ENABLED: envValue("EXECUTION_ENABLED", "true"),
-    EXPECTED_VERSION: envValue("EXPECTED_VERSION", "V17.3.12-REAL-SPENDER-ALLOWANCE"),
+    EXPECTED_VERSION: envValue("EXPECTED_VERSION", "V17.3.13-REAL-SPENDER-EXECUTION-GUARD"),
     BOT_STATE: makeFileKvBinding("bot_state"),
     GMX_CACHE: makeFileKvBinding("gmx_cache")
   };
@@ -98,7 +98,7 @@ async function main() {
   console.log("[GITHUB][START]", {
     scheduledTime,
     worker: "worker_core.mjs",
-    expectedVersion: envValue("EXPECTED_VERSION", "V17.3.12-REAL-SPENDER-ALLOWANCE"),
+    expectedVersion: envValue("EXPECTED_VERSION", "V17.3.13-REAL-SPENDER-EXECUTION-GUARD"),
     executionEnabled: env.EXECUTION_ENABLED,
     executionEnabledSource: process.env.EXECUTION_ENABLED == null ? "runner-default-true" : "github-env"
   });
