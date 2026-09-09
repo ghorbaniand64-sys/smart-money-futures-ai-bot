@@ -8978,6 +8978,38 @@ ${icon2} EXECUTED #${i+1} — ${telegramTextSafe(x?.symbol || "UNKNOWN")}`,
   ].join("\n");
 }
 
+function formatTelegramLiveExecutionStatus(result) {
+  const direction=String(result?.direction||"UNKNOWN").toUpperCase();
+  const status=String(result?.status||"unknown").toLowerCase();
+  const terminal=status==="executed";
+  const icon=terminal?"🟢":(status==="cancelled"||status.includes("failed")||status.includes("reverted")?"🔴":"🟡");
+  const token=String(result?.collateralToken||"").toUpperCase();
+  const before=Number(result?.walletBefore?.[token]);
+  const after=Number(result?.walletAfter?.[token]);
+  const response=result?.statusResponse||{};
+  const err=result?.statusError || response?.error?.message || response?.cancellationReason || "n/a";
+  return [
+    `${icon} GMX ORDER STATUS — ${status.toUpperCase()}`,
+    "━━━━━━━━━━━━━━━━━━",
+    `🪙 ${result?.symbol||"UNKNOWN"}`,
+    `📌 Direction: ${direction}`,
+    `💵 Collateral: $${Number(result?.collateralUsd||0).toFixed(2)} ${token}`,
+    `🧾 Request ID: ${result?.requestId||"n/a"}`,
+    `📡 GMX Status: ${status}`,
+    `🔎 Polls: ${Number(result?.polls||0)}`,
+    `⏱️ Tracking: ${Number(result?.elapsedMs||0)} ms`,
+    `💰 Wallet BEFORE: ${Number.isFinite(before)?`$${before.toFixed(4)}`:"N/A"}`,
+    `💰 Wallet AFTER: ${Number.isFinite(after)?`$${after.toFixed(4)}`:"N/A"}`,
+    `📉 Wallet Δ: ${result?.walletDelta!=null?`$${Number(result.walletDelta).toFixed(6)}`:"N/A"}`,
+    response?.txHash ? `🔗 Relay Tx: ${response.txHash}` : null,
+    response?.createdTxnHash ? `🧾 Created Tx: ${response.createdTxnHash}` : null,
+    response?.executionTxnHash ? `⚡ Execution Tx: ${response.executionTxnHash}` : null,
+    response?.taskId ? `🤖 Task ID: ${response.taskId}` : null,
+    `❌ GMX Reason: ${telegramTextSafe(err)}`,
+    terminal ? "🟢 GMX relay reports EXECUTED — verifying on-chain position next." : "❌ No confirmed execution; this is NOT counted as Executed."
+  ].filter(Boolean).join("\n");
+}
+
 function formatTelegramLiveExecutionPending(result) {
   const direction=String(result?.direction||"UNKNOWN").toUpperCase();
   const icon=direction==="LONG"?"🟡":"🟠";
@@ -9093,6 +9125,50 @@ function walletDeltaText(before, after, symbol) {
   const a=Number(after?.[symbol]);
   if (!Number.isFinite(b) || !Number.isFinite(a)) return "N/A";
   return (a-b).toFixed(6);
+}
+
+async function pollLiveOrderStatus(sdk, requestId, timeoutMs=60000, intervalMs=2000) {
+  if (!requestId) return {available:false, status:null, error:{code:"MISSING_REQUEST_ID", message:"GMX submit response did not contain requestId"}};
+  if (typeof sdk?.fetchOrderStatus !== "function") {
+    return {available:false, status:null, error:{code:"FETCH_ORDER_STATUS_UNAVAILABLE", message:"GMX SDK does not expose fetchOrderStatus()"}};
+  }
+  const terminal = new Set(["executed","cancelled","relay_failed","relay_reverted"]);
+  const started = Date.now();
+  let last = null;
+  let polls = 0;
+  while (Date.now() - started <= timeoutMs) {
+    try {
+      last = await sdk.fetchOrderStatus({requestId});
+      polls++;
+      const status = String(last?.status || "unknown").toLowerCase();
+      if (terminal.has(status)) {
+        return {available:true, terminal:true, status, response:last, polls, elapsedMs:Date.now()-started};
+      }
+    } catch (error) {
+      last = {status:"status_unavailable", error:{code:"FETCH_ORDER_STATUS_ERROR", message:String(error?.message||error)}};
+      polls++;
+    }
+    if (Date.now() - started >= timeoutMs) break;
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+  }
+  return {
+    available:true,
+    terminal:false,
+    status:String(last?.status || "unknown").toLowerCase(),
+    response:last,
+    polls,
+    elapsedMs:Date.now()-started,
+    timedOut:true
+  };
+}
+
+function orderStatusFailureReason(statusResult) {
+  const r=statusResult?.response || {};
+  const err=r?.error;
+  return String(
+    err?.message || err?.code || r?.cancellationReason ||
+    statusResult?.status || "GMX_ORDER_STATUS_UNKNOWN"
+  );
 }
 
 async function verifyLiveEntrySettlement(sdk, account, sdkSymbol, direction, collateralSymbol, walletBefore, attempts=5) {
@@ -9216,6 +9292,44 @@ try {
 }
 finalCollateralUsd = usedCollateralUsd;
 await markLiveExecutionSubmitted(env, lock.key, signal, result);
+
+// V17.3.4: A GMX Express submit acknowledgement is NOT execution.
+// Track the exact requestId through the GMX order lifecycle before counting
+// anything as Executed. GMX documents terminal states as executed/cancelled/
+// relay_failed/relay_reverted; pending/accepted states remain inconclusive.
+const orderStatusResult = await pollLiveOrderStatus(sdk, result?.requestId, 60000, 2000);
+const orderStatus = String(orderStatusResult?.status || result?.status || "unknown").toLowerCase();
+if (orderStatusResult?.available && orderStatusResult?.terminal && orderStatus !== "executed") {
+  const walletAfterFailure = await readLiveWalletSnapshot(sdk, account);
+  const tokenKey=String(collateral.symbol||"").toUpperCase();
+  const beforeToken=Number(walletBefore?.[tokenKey]);
+  const afterToken=Number(walletAfterFailure?.[tokenKey]);
+  const delta=(Number.isFinite(beforeToken)&&Number.isFinite(afterToken)) ? afterToken-beforeToken : null;
+  const failed={
+    executed:false, mode:"LIVE", account, symbol:sdkSymbol, direction:orderDirection,
+    reason:`GMX_ORDER_${orderStatus.toUpperCase()}`,
+    stage:"GMX_ORDER_STATUS", requestId:result?.requestId||null,
+    status:orderStatus, statusResponse:orderStatusResult?.response||null,
+    statusError:orderStatusFailureReason(orderStatusResult), positionVerified:false,
+    walletBefore, walletAfter:walletAfterFailure, walletDelta:delta,
+    collateralToken:collateral.symbol, collateralUsd:finalCollateralUsd, executionKey:lock.key
+  };
+  try { await sendTelegram(env, formatTelegramLiveExecutionStatus(failed)); } catch(_) {}
+  return failed;
+}
+if (orderStatusResult?.timedOut || !orderStatusResult?.available || !orderStatusResult?.terminal) {
+  const pendingStatus={
+    executed:false, mode:"LIVE", account, symbol:sdkSymbol, direction:orderDirection,
+    reason:"GMX_ORDER_STATUS_PENDING", stage:"GMX_ORDER_STATUS", requestId:result?.requestId||null,
+    status:orderStatus, statusResponse:orderStatusResult?.response||null,
+    positionVerified:false, walletBefore, walletAfter:null, walletDelta:null,
+    collateralToken:collateral.symbol, collateralUsd:finalCollateralUsd, executionKey:lock.key
+  };
+  try { await sendTelegram(env, formatTelegramLiveExecutionStatus(pendingStatus)); } catch(_) {}
+  return pendingStatus;
+}
+
+// Only after GMX reports terminal `executed` do we verify the actual position.
 const verification=await verifyLiveEntrySettlement(sdk,account,sdkSymbol,orderDirection,collateral.symbol,walletBefore,5);
 if (!verification.verified) {
   const pending={executed:false,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,reason:"ORDER_SUBMITTED_BUT_POSITION_NOT_VERIFIED",stage:"POST_SUBMIT_VERIFY",requestId:result?.requestId||null,status:result?.status||null,positionVerified:false,walletBefore,walletAfter:verification.walletAfter,walletDelta:verification.walletDelta,collateralToken:collateral.symbol,collateralUsd:finalCollateralUsd,executionKey:lock.key};
