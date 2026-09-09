@@ -1,9 +1,9 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
-║  V17.3.9 — EARLY ENTRY ENGINE UNLOCK + PATH-AWARE QUALIFICATION                                          ║
+║  V17.3.1 — EARLY IMPULSE TELEMETRY                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.3.9-EARLY-ENTRY-ENGINE-UNLOCK                                   ║
+║  RELEASE: V17.3.5-ALLOWANCE-REPAIR                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -75,7 +75,7 @@ function normalizeSymbol(symbol){
 
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V17.3.9 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
+// Version: V17.3.1 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
 // Platform: GitHub Actions + Node.js
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -430,7 +430,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.3.9-EARLY-ENTRY-ENGINE-UNLOCK",
+VERSION: "V17.3.6-ALLOWANCE-PREFLIGHT",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -692,11 +692,10 @@ HYBRID_ENTRY: {
   earlyMinVolumeRatio: 1.35,
   earlyMinFlowImbalance: 0.07,
   earlyMinAccelerationPct: 0.04,
-  earlyMaxEntryDistanceAtr: 1.30,
-  earlyPrebreakToleranceAtr: 0.45,
+  earlyMaxEntryDistanceAtr: 1.15,
   earlyMaxExtensionAtr: 1.25,
   earlyMinScore: 62,
-  earlyMinEdge: 5,
+  earlyMinEdge: 6,
   earlyMinElapsedMs: 20 * 1000
 },
 HYBRID_RISK: {
@@ -759,190 +758,64 @@ function hybridZoneId(z){return z?`${Number(z.center).toFixed(6)}:${Number(z.low
 function hybridEarlyImpulse(symbol,candles,flow,debugStats=null){
   const dbg=debugStats&&typeof debugStats==='object'?debugStats:null;
   const bump=(key)=>{if(dbg)dbg[key]=(Number(dbg[key])||0)+1;};
-  const reject=(reason,meta={})=>{
-    bump('rejected');
-    bump(reason);
-    if(dbg?.lastRejections){
-      dbg.lastRejections.push({symbol,reason,...meta});
-      if(dbg.lastRejections.length>20)dbg.lastRejections.shift();
-    }
-    return null;
-  };
+  const reject=(reason,meta={})=>{bump('rejected');bump(reason);if(dbg?.lastRejections){dbg.lastRejections.push({symbol,reason,...meta});if(dbg.lastRejections.length>20)dbg.lastRejections.shift();}return null;};
   bump('attempted');
-
   if(CONFIG.HYBRID_ENTRY?.earlyEnabled===false)return reject('DISABLED');
-
   const raw=Array.isArray(candles?.["5m"])?candles["5m"]:[];
   if(raw.length<25)return reject('HISTORY');
-
   const closed=hybridClosedCandles(raw,"5m");
   const current=raw.at(-1);
   if(!current||closed.length<20)return reject('HISTORY');
-
   const now=Date.now(),ts=hybridTsMs(current.timestamp);
   if(ts>0&&now-ts<0)return reject('FUTURE_CANDLE');
   if(ts>0&&now-ts<Number(CONFIG.HYBRID_ENTRY.earlyMinElapsedMs||20000))return reject('TOO_EARLY');
   bump('elapsedPass');
-
   const price=Number(current.close||0),open=Number(current.open||price);
   if(!(price>0&&open>0))return reject('PRICE');
-
   const atr=Number(hybridAtr(closed,14))||price*0.005;
   if(!(atr>0))return reject('ATR');
-
   const m=hybridCandleMetrics(current);
-  const prev1=Number(closed.at(-1)?.close||0),prev2=Number(closed.at(-2)?.close||0);
+  const prev1=Number(closed.at(-1)?.close||0),prev2=Number(closed.at(-2)?.close||0),prev3=Number(closed.at(-3)?.close||0);
   const movePct=(price-open)/open*100;
   const prevMove1=prev2>0&&prev1>0?(prev1-prev2)/prev2*100:0;
+  const prevMove2=prev3>0&&prev2>0?(prev2-prev3)/prev3*100:0;
   const acceleration=movePct-prevMove1;
   const extension=Math.abs(price-open)/atr;
-
   const vol=hybridVolumeContext(raw);
   const alignedLong=hybridFlowAligned(flow,"LONG"),alignedShort=hybridFlowAligned(flow,"SHORT");
   const directionalMove=Math.abs(movePct);
   const dir=movePct>0?"LONG":movePct<0?"SHORT":null;
-
   if(!dir)return reject('NO_DIRECTION');
-  if(directionalMove<Number(CONFIG.HYBRID_ENTRY.earlyMinMovePct||0.12))
-    return reject('MOVE',{movePct:Number(movePct.toFixed(4))});
+  if(directionalMove<Number(CONFIG.HYBRID_ENTRY.earlyMinMovePct||0.12))return reject('MOVE');
   bump('movePass');
-
   const aligned=dir==="LONG"?alignedLong:alignedShort;
-  const volumeOk=vol.volumeAvailable
-    ? Number(vol.volumeRatio)>=Number(CONFIG.HYBRID_ENTRY.earlyMinVolumeRatio||1.35)
-    : Number(vol.rangeRatio)>=1.20;
+  const volumeOk=vol.volumeAvailable?Number(vol.volumeRatio)>=Number(CONFIG.HYBRID_ENTRY.earlyMinVolumeRatio||1.35):Number(vol.rangeRatio)>=1.20;
   const flowOk=aligned>=Number(CONFIG.HYBRID_ENTRY.earlyMinFlowImbalance||0.07);
   const bodyOk=m.bodyRatio>=Number(CONFIG.HYBRID_ENTRY.earlyMinBodyRatio||0.35);
-  const accelValue=dir==="LONG"?acceleration:-acceleration;
-  const accelOk=accelValue>=Number(CONFIG.HYBRID_ENTRY.earlyMinAccelerationPct||0.04);
-
-  if(bodyOk)bump('bodyPass');
-  else return reject('BODY',{bodyRatio:Number(m.bodyRatio.toFixed(3))});
-
+  const accelOk=(dir==="LONG"?acceleration:-acceleration)>=Number(CONFIG.HYBRID_ENTRY.earlyMinAccelerationPct||0.04);
+  if(bodyOk)bump('bodyPass');else return reject('BODY',{bodyRatio:Number(m.bodyRatio.toFixed(3))});
   if(volumeOk)bump('volumePass');
   if(flowOk)bump('flowPass');
-
-  // V17.3.9: activity is no longer a blind hard gate.
-  // A genuine momentum impulse can qualify when volume/flow is neutral,
-  // but only with materially stronger acceleration + candle body.
-  const momentumActivityOk=
-    accelValue>=Number(CONFIG.HYBRID_ENTRY.earlyMinAccelerationPct||0.04)*2 &&
-    m.bodyRatio>=0.45;
-  const activityOk=volumeOk||flowOk||momentumActivityOk;
-  const activityPath=volumeOk?"VOLUME":flowOk?"FLOW":momentumActivityOk?"MOMENTUM":"NONE";
-
-  if(momentumActivityOk&&!volumeOk&&!flowOk)bump('momentumActivityPass');
-  if(!activityOk)
-    return reject('ACTIVITY',{
-      volumeRatio:Number(vol.volumeRatio||0),
-      flowImbalance:Number(aligned||0),
-      accelerationPct:Number(accelValue.toFixed(4)),
-      bodyRatio:Number(m.bodyRatio.toFixed(3))
-    });
-
-  if(accelOk)bump('accelerationPass');
-  else return reject('ACCELERATION',{accelerationPct:Number(accelValue.toFixed(4))});
-
-  if(extension>Number(CONFIG.HYBRID_ENTRY.earlyMaxExtensionAtr||1.25))
-    return reject('EXTENSION',{extensionAtr:Number(extension.toFixed(3))});
+  if(!volumeOk&&!flowOk)return reject('ACTIVITY',{volumeRatio:Number(vol.volumeRatio||0),flowImbalance:Number(aligned||0)});
+  if(accelOk)bump('accelerationPass');else return reject('ACCELERATION',{accelerationPct:Number((dir==="LONG"?acceleration:-acceleration).toFixed(4))});
+  if(extension>Number(CONFIG.HYBRID_ENTRY.earlyMaxExtensionAtr||1.25))return reject('EXTENSION',{extensionAtr:Number(extension.toFixed(3))});
   bump('extensionPass');
-
   const zones=hybridBuildZones({"5m":closed,"15m":[],"1h":[],"4h":[]},price,atr);
-
-  // For an early LONG, the relevant structural target is resistance.
-  // For an early SHORT, the relevant structural target is support.
-  const zone=dir==="LONG"
-    ?hybridNearestZone(zones.resistance,price,Number(CONFIG.HYBRID_ENTRY.earlyMaxEntryDistanceAtr||1.30),atr,"R")
-    :hybridNearestZone(zones.support,price,Number(CONFIG.HYBRID_ENTRY.earlyMaxEntryDistanceAtr||1.30),atr,"S");
-
+  const zone=dir==="LONG"?hybridNearestZone(zones.resistance,price,Number(CONFIG.HYBRID_ENTRY.earlyMaxEntryDistanceAtr||1.15),atr,"R"):hybridNearestZone(zones.support,price,Number(CONFIG.HYBRID_ENTRY.earlyMaxEntryDistanceAtr||1.15),atr,"S");
   if(!zone)return reject('ZONE');
   bump('zonePass');
-
   const distance=Math.abs(price-Number(zone.center))/atr;
-  if(distance>Number(CONFIG.HYBRID_ENTRY.earlyMaxEntryDistanceAtr||1.30))
-    return reject('DISTANCE',{distanceAtr:Number(distance.toFixed(3))});
-
+  const nearBreak=dir==="LONG"?price>=Number(zone.low)-atr*0.20:price<=Number(zone.high)+atr*0.20;
+  if(!nearBreak)return reject('PREBREAK');
+  if(distance>Number(CONFIG.HYBRID_ENTRY.earlyMaxEntryDistanceAtr||1.15))return reject('DISTANCE',{distanceAtr:Number(distance.toFixed(3))});
   bump('proximityPass');
-
-  // V17.3.9: "near break" is a confirmation bonus, not a mandatory gate.
-  // This prevents the old PREBREAK choke where a valid early impulse was
-  // discarded simply because price had not yet touched the zone.
-  const nearBreak=dir==="LONG"
-    ?price>=Number(zone.low)-atr*Number(CONFIG.HYBRID_ENTRY.earlyPrebreakToleranceAtr||0.45)
-    :price<=Number(zone.high)+atr*Number(CONFIG.HYBRID_ENTRY.earlyPrebreakToleranceAtr||0.45);
-
-  if(nearBreak)bump('prebreakPass');
-  else if(!(momentumActivityOk&&distance<=0.90))
-    return reject('PREBREAK',{
-      distanceAtr:Number(distance.toFixed(3)),
-      nearBreak:false,
-      activityPath
-    });
-
-  // V17.3.9: score is normalized to the actual Early thresholds.
-  // The previous formula required roughly ~1% candle movement to reach
-  // earlyMinScore=62 even though earlyMinMovePct was only 0.12%.
-  const moveScore=Math.min(20,(directionalMove/Math.max(0.001,Number(CONFIG.HYBRID_ENTRY.earlyMinMovePct||0.12)))*20);
-  const accelScore=Math.min(15,(Math.max(0,accelValue)/Math.max(0.001,Number(CONFIG.HYBRID_ENTRY.earlyMinAccelerationPct||0.04)))*15);
-  const volumeScore=volumeOk
-    ?Math.min(15,Math.max(0,(Number(vol.volumeRatio||1)-1)/0.35*10))
-    :0;
-  const flowScore=flowOk
-    ?Math.min(15,Math.max(0,aligned)/0.07*10)
-    :0;
-  const bodyScore=Math.min(10,Math.max(0,(m.bodyRatio-0.35)/0.30*10));
-  const proximityScore=Math.min(10,Math.max(0,1-distance/Math.max(0.001,Number(CONFIG.HYBRID_ENTRY.earlyMaxEntryDistanceAtr||1.30)))*10);
-  const prebreakScore=nearBreak?5:0;
-  const score=Math.min(100,25+moveScore+accelScore+volumeScore+flowScore+bodyScore+proximityScore+prebreakScore);
-
-  // Momentum-only path receives enough edge from the impulse itself;
-  // volume/flow remain positive confluence, not mandatory evidence.
-  const edge=(volumeOk?3:0)+(flowOk?4:0)+(accelOk?3:0)+(m.bodyRatio>=0.55?2:0)+(extension<=0.75?2:0)+(momentumActivityOk&&!volumeOk&&!flowOk?2:0);
-
-  if(score>=Number(CONFIG.HYBRID_ENTRY.earlyMinScore||62))bump('scorePass');
-  else return reject('SCORE',{
-    score:Number(score.toFixed(1)),
-    required:Number(CONFIG.HYBRID_ENTRY.earlyMinScore||62),
-    activityPath,
-    distanceAtr:Number(distance.toFixed(3))
-  });
-
-  if(edge>=Number(CONFIG.HYBRID_ENTRY.earlyMinEdge||5))bump('edgePass');
-  else return reject('EDGE',{
-    edge:Number(edge.toFixed(1)),
-    required:Number(CONFIG.HYBRID_ENTRY.earlyMinEdge||5),
-    activityPath
-  });
-
+  const score=Math.min(100,40+Math.min(20,directionalMove*20)+Math.min(15,Math.max(0,Math.abs(acceleration))*35)+Math.min(15,Math.max(0,Number(vol.volumeRatio)-1)*8)+Math.min(10,Math.max(0,aligned)*20));
+  const edge=(volumeOk?3:0)+(flowOk?4:0)+(accelOk?3:0)+(m.bodyRatio>=0.55?2:0)+(extension<=0.75?2:0);
+  if(score>=Number(CONFIG.HYBRID_ENTRY.earlyMinScore||62))bump('scorePass');else return reject('SCORE',{score:Number(score.toFixed(1)),required:Number(CONFIG.HYBRID_ENTRY.earlyMinScore||62)});
+  if(edge>=Number(CONFIG.HYBRID_ENTRY.earlyMinEdge||6))bump('edgePass');else return reject('EDGE',{edge:Number(edge.toFixed(1)),required:Number(CONFIG.HYBRID_ENTRY.earlyMinEdge||6)});
   bump('qualified');
-
-  return {
-    direction:dir,
-    trigger:dir==="LONG"?"EARLY_IMPULSE_BREAKOUT_LONG":"EARLY_IMPULSE_BREAKOUT_SHORT",
-    zone,
-    evidence:[
-      "LIVE_5M_IMPULSE",
-      "ACCELERATION",
-      ...(volumeOk?["VOLUME_BURST"]:[]),
-      ...(flowOk?["FLOW_CONFIRMATION"]:[]),
-      ...(momentumActivityOk&&!volumeOk&&!flowOk?["MOMENTUM_ACTIVITY_CONFIRMATION"]:[]),
-      ...(nearBreak?["PRE_BREAKOUT_PROXIMITY"]:["STRUCTURAL_PROXIMITY"])
-    ],
-    atr,price,volume:vol,flow,entryDistanceAtr:distance,
-    tier:score>=82?"PRIME":score>=72?"NORMAL":"FAST",
-    confirmationCount:Number(volumeOk)+Number(flowOk)+Number(accelOk)+Number(momentumActivityOk&&!volumeOk&&!flowOk),
-    early:true,
-    earlyScore:Number(score.toFixed(1)),
-    edge:Number(edge.toFixed(1)),
-    movePct:Number(movePct.toFixed(4)),
-    accelerationPct:Number(acceleration.toFixed(4)),
-    extensionAtr:Number(extension.toFixed(3)),
-    activityPath,
-    nearBreak,
-    candleTimestamp:ts
-  };
+  return {direction:dir,trigger:dir==="LONG"?"EARLY_IMPULSE_BREAKOUT_LONG":"EARLY_IMPULSE_BREAKOUT_SHORT",zone,evidence:["LIVE_5M_IMPULSE","ACCELERATION",...(volumeOk?["VOLUME_BURST"]:[]),...(flowOk?["FLOW_CONFIRMATION"]:[]),...(nearBreak?["PRE_BREAKOUT_PROXIMITY"]:[])],atr,price,volume:vol,flow,entryDistanceAtr:distance,tier:score>=82?"PRIME":score>=72?"NORMAL":"FAST",confirmationCount:Number(volumeOk)+Number(flowOk)+Number(accelOk),early:true,earlyScore:Number(score.toFixed(1)),edge:Number(edge.toFixed(1)),movePct:Number(movePct.toFixed(4)),accelerationPct:Number(acceleration.toFixed(4)),extensionAtr:Number(extension.toFixed(3)),candleTimestamp:ts};
 }
-
 function hybridClassifyStructure(symbol,candles,price,flow,previousState={}){
   const c5=hybridClosedCandles(candles['5m']||[],'5m'),c15=hybridClosedCandles(candles['15m']||[],'15m'),c1h=hybridClosedCandles(candles['1h']||[],'1h'),c4h=hybridClosedCandles(candles['4h']||[],'4h'),current=c5.at(-1);if(!current)return{state:'NO_DATA',direction:'NONE',entries:[],zones:{support:[],resistance:[]}};
   const atr5=Number(hybridAtr(c5,14))||price*0.005,zones=hybridBuildZones({'5m':c5,'15m':c15,'1h':c1h,'4h':c4h},price,atr5),vol=hybridVolumeContext(c5),entries=[],watched=[],priorC5=c5.slice(0,-1),preMove5=hybridPercentChange(priorC5,5),support=hybridNearestZone(zones.support,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'S'),resistance=hybridNearestZone(zones.resistance,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'R');
@@ -956,7 +829,7 @@ function hybridClassifyStructure(symbol,candles,price,flow,previousState={}){
 }
 function hybridLeverage(setup){let l=Number(CONFIG.HYBRID_RISK.defaultLeverage||5),t=String(setup?.trigger||'');if(t.includes('RETEST'))l=7;else if(t.includes('BOUNCE')||t.includes('REJECTION'))l=5;if(setup?.flow?.flowSurge)l=Math.max(l,7);if(setup?.flow?.explosiveFlow)l=Math.max(l,8);return Math.max(CONFIG.HYBRID_RISK.minLeverage,Math.min(CONFIG.HYBRID_RISK.maxLeverage,l));}
 function hybridBuildSetup(symbol,analysis,flow,topTrader){
-  const e=analysis.entries?.find(x=>x.direction==='LONG'||x.direction==='SHORT');if(!e)return null;const price=Number(analysis.price||e.price),atrValue=Number(analysis.atr||e.atr),direction=e.direction,zone=e.zone;if(!(price>0)||!(atrValue>0)||!zone||Number(zone.quality||0)<CONFIG.HYBRID_ENTRY.minZoneQuality)return null;const entryDistanceAtr=Math.abs(price-Number(zone.center))/atrValue;const maxEntryDistanceAtr=e.early?Number(CONFIG.HYBRID_ENTRY.earlyMaxEntryDistanceAtr||CONFIG.HYBRID_ENTRY.maxEntryDistanceAtr):Number(CONFIG.HYBRID_ENTRY.maxEntryDistanceAtr);if(entryDistanceAtr>maxEntryDistanceAtr)return null;
+  const e=analysis.entries?.find(x=>x.direction==='LONG'||x.direction==='SHORT');if(!e)return null;const price=Number(analysis.price||e.price),atrValue=Number(analysis.atr||e.atr),direction=e.direction,zone=e.zone;if(!(price>0)||!(atrValue>0)||!zone||Number(zone.quality||0)<CONFIG.HYBRID_ENTRY.minZoneQuality)return null;const entryDistanceAtr=Math.abs(price-Number(zone.center))/atrValue;if(entryDistanceAtr>CONFIG.HYBRID_ENTRY.maxEntryDistanceAtr)return null;
   const stopBase=direction==='LONG'?Number(zone.low):Number(zone.high),buffer=atrValue*CONFIG.HYBRID_RISK.stopAtrBuffer,stop=direction==='LONG'?stopBase-buffer:stopBase+buffer,r=Math.max(Math.abs(price-stop),buffer),oppositeZones=direction==='LONG'?(analysis.zones?.resistance||[]):(analysis.zones?.support||[]),levelTarget=oppositeZones.filter(z=>direction==='LONG'?Number(z.center)>price:Number(z.center)<price).sort((a,b)=>Math.abs(Number(a.center)-price)-Math.abs(Number(b.center)-price))[0],levelDistance=levelTarget?Math.abs(Number(levelTarget.center)-price):0,rMin=r*0.90,tp1=levelTarget&&levelDistance>=rMin?Number(levelTarget.center):(direction==='LONG'?price+r*CONFIG.HYBRID_RISK.tp1R:price-r*CONFIG.HYBRID_RISK.tp1R),tp2=direction==='LONG'?Math.max(price+r*CONFIG.HYBRID_RISK.tp2R,tp1+r*0.5):Math.min(price-r*CONFIG.HYBRID_RISK.tp2R,tp1-r*0.5),tp3=direction==='LONG'?Math.max(price+r*CONFIG.HYBRID_RISK.tp3R,tp2+r*0.5):Math.min(price-r*CONFIG.HYBRID_RISK.tp3R,tp2-r*0.5),trader=ttiScoreForSymbol(topTrader?.cohort||[],hybridNormalizeSymbol(symbol),direction);
   if((direction==='LONG'&&!(stop<price))||(direction==='SHORT'&&!(stop>price)))return null;if((direction==='LONG'&&!(tp1>price&&tp2>tp1&&tp3>tp2))||(direction==='SHORT'&&!(tp1<price&&tp2<tp1&&tp3<tp2)))return null;const tier=['FAST','NORMAL','PRIME'].includes(e.tier)?e.tier:(String(e.trigger).includes('RETEST')?'PRIME':'NORMAL');const mult=tier==='PRIME'?CONFIG.HYBRID_ENTRY.tierPrimeAllocation:tier==='NORMAL'?CONFIG.HYBRID_ENTRY.tierNormalAllocation:CONFIG.HYBRID_ENTRY.tierFastAllocation;const allocation=CONFIG.HYBRID_RISK.capitalAllocation*mult;
   return{valid:true,symbol:hybridNormalizeSymbol(symbol),direction,trigger:e.trigger,tier,state:'ENTRY_READY',entry:price,entryPrice:price,stopLoss:Number(stop.toFixed(8)),tp1:Number(tp1.toFixed(8)),tp2:Number(tp2.toFixed(8)),tp3:Number(tp3.toFixed(8)),atr:atrValue,stopDistance:r,stopPercent:Number((r/price*100).toFixed(3)),entryDistanceAtr:Number(entryDistanceAtr.toFixed(3)),leverage:hybridLeverage({trigger:e.trigger,flow}),allocation,allocationPercent:Number((allocation*100).toFixed(2)),riskPerTradePercent:Number((CONFIG.RISK_PER_TRADE*100).toFixed(2)),zone,zoneType:e.trigger.includes('SUPPORT')?'SUPPORT':'RESISTANCE',evidence:[...new Set([...(e.evidence||[]),...hybridFlowEvidence(flow,direction)])],confirmationCount:Number(e.confirmationCount||0),entryTier:tier,flow,topTrader:trader,topTraderPolicy:'CONFIRMATION_ONLY_NO_BLOCK',volume:analysis.volume,candleTimestamp:Number(candlesTimestamp(analysis))||0,createdAt:Date.now()};
@@ -4526,7 +4399,7 @@ async function runFullScan(env, scanOptions = {}) {
   for(let i=0;i<ranked.length&&rows.length<limit;i++)pushDeepRow(ranked[(cursor+i)%ranked.length]);
   state.hybridScanCursor=(cursor+rows.length)%Math.max(1,ranked.length);
   console.log("[HYBRID][DEEP_PLAN]",{scanId,universe:markets.length,broad5mScanned:broad5m.size,deepPlanned:rows.length,uniqueDeepSymbols:rowSymbols.size,cursorBefore:cursor,cursorAfter:state.hybridScanCursor,hotSelected:hot.length,rotating:true});
-  const eventStats={supportZones:0,resistanceZones:0,flowEvents:0,volumeEvents:0,supportReactions:0,resistanceReactions:0,breakouts:0,waitingRetests:0,retestConfirmed:0,earlyImpulses:0,entryReady:0,earlyDebug:{attempted:0,rejected:0,elapsedPass:0,movePass:0,bodyPass:0,volumePass:0,flowPass:0,activity:0,momentumActivityPass:0,accelerationPass:0,extensionPass:0,zonePass:0,proximityPass:0,prebreakPass:0,scorePass:0,edgePass:0,qualified:0,setupRejected:0,lastRejections:[]}};
+  const eventStats={supportZones:0,resistanceZones:0,flowEvents:0,volumeEvents:0,supportReactions:0,resistanceReactions:0,breakouts:0,waitingRetests:0,retestConfirmed:0,earlyImpulses:0,entryReady:0,earlyDebug:{attempted:0,rejected:0,elapsedPass:0,movePass:0,bodyPass:0,volumePass:0,flowPass:0,activity:0,accelerationPass:0,extensionPass:0,zonePass:0,proximityPass:0,scorePass:0,edgePass:0,qualified:0,setupRejected:0,lastRejections:[]}};
   let eventCandidates=0;
   let deepAttempted=0,deepSucceeded=0,deepErrors=0;
   console.log("[HYBRID][DEEP_START]",{scanId,planned:rows.length,uniqueDeepSymbols:rowSymbols.size,universe:markets.length,broad5mScanned:broad5m.size});
@@ -8764,7 +8637,7 @@ return liveNormalizeSymbol(symbol)?.replace(/-PERP$/i, "") || null;
 }
 
 
-// V17.3.9 — GMX router allowance hardening + max-approval recovery + recovery telemetry.
+// V17.3.5 — GMX ERC20 allowance preflight / exact auto-approval.
 function allowanceNumber(value) {
   if (value===null || value===undefined || value==="") return null;
   if (typeof value==="bigint") return value;
@@ -8812,87 +8685,18 @@ async function fetchGmxRouterAllowance(sdk,account,symbol){
 async function waitForGmxRouterAllowance(sdk,account,symbol,required,attempts=30){
   let last=0n; for(let i=0;i<attempts;i++){last=(await fetchGmxRouterAllowance(sdk,account,symbol)).allowance;if(last>=required)return {ok:true,allowance:last,polls:i+1};if(i+1<attempts)await new Promise(r=>setTimeout(r,1000));} return {ok:false,allowance:last,polls:attempts};
 }
-async function ensureGmxCollateralAllowance(sdk,signer,account,symbol,requiredAmount,balances,options={}){
-  const forceRefresh=Boolean(options?.forceRefresh);
-  const required=allowanceNumber(requiredAmount);
-  if(required===null||required<=0n)throw new Error("GMX_ALLOWANCE_REQUIRED_AMOUNT_INVALID");
-
-  // GMX SDK v2 deliberately uses the symbolic spender "router" for the
-  // /allowances read endpoint, but executeErc20Approve()/buildErc20ApproveTxn()
-  // expect a real 20-byte address when a caller supplies `spender`. Passing the
-  // literal string "router" into executeErc20Approve therefore reaches viem and
-  // fails with: Address "router" is invalid.
-  //
-  // The official SDK exposes buildApproveTransaction(), which resolves GMX's
-  // configured Router for the selected chain while accepting the same symbolic
-  // "router" spender used by fetchAllowances(). We intentionally use that
-  // protocol-aware builder instead of hardcoding a deployment address: GMX notes
-  // that router/exchange-router deployments can change over time.
+async function ensureGmxCollateralAllowance(sdk,signer,account,symbol,requiredAmount,balances){
+  const required=allowanceNumber(requiredAmount); if(required===null||required<=0n)throw new Error("GMX_ALLOWANCE_REQUIRED_AMOUNT_INVALID");
   const before=await fetchGmxRouterAllowance(sdk,account,symbol);
-  const tokenAddress=await resolveGmxCollateralTokenAddress(sdk,symbol,balances);
-  if(!tokenAddress)throw new Error(`GMX_COLLATERAL_TOKEN_ADDRESS_UNAVAILABLE: token=${symbol}`);
-
-  const meta={
-    token:symbol,
-    tokenAddress,
-    spender:"router",
-    spenderResolution:"GMX_SDK_BUILD_APPROVE_TRANSACTION",
-    requiredAmount:required.toString(),
-    allowanceBefore:before.allowance.toString(),
-    approved:false,
-    approvalTxHash:null
-  };
-
-  if(before.allowance>=required && !forceRefresh)return {...meta,sufficient:true,allowanceAfter:before.allowance.toString(),polls:0};
-  if(forceRefresh){ meta.forceRefresh=true; meta.allowanceWasSufficient=before.allowance>=required; }
-
-  if(typeof sdk.buildApproveTransaction!=="function")
-    throw executionStageError("ERC20_APPROVAL",new Error("GMX SDK buildApproveTransaction unavailable"),meta);
-  if(!signer||typeof signer.sendTransaction!=="function")
-    throw executionStageError("ERC20_APPROVAL",new Error("GMX signer does not expose sendTransaction"),meta);
-
-  // V17.3.9: exact-amount approvals can still fail at the relay layer when
-  // GMX's actual ERC20 transfer amount includes protocol-side accounting/fees.
-  // On the recovery path, grant the configured GMX Router the standard uint256
-  // max allowance so the next request cannot exceed the approved amount.
-  // This does NOT transfer funds; it only changes ERC20 spending permission.
-  const approvalAmount = forceRefresh ? ((1n << 256n) - 1n) : required;
-  meta.approvalAmount = approvalAmount.toString();
-  meta.approvalMode = forceRefresh ? "MAX_UINT256_RECOVERY" : "EXACT_REQUIRED";
-
-  let approveTx;
-  try{
-    approveTx=await sdk.buildApproveTransaction({
-      tokenAddress,
-      spender:"router",
-      amount:approvalAmount
-    });
-    const txTo=approveTx?.to;
-    if(!/^0x[0-9a-fA-F]{40}$/.test(String(txTo||"")))
-      throw new Error(`GMX_APPROVAL_TX_TARGET_INVALID: ${String(txTo||"")}`);
-  }catch(error){
-    throw executionStageError("ERC20_APPROVAL_BUILD",error,meta);
-  }
-
-  let approvalResult;
-  try{
-    approvalResult=await signer.sendTransaction({
-      to:approveTx.to,
-      data:approveTx.data,
-      ...(approveTx.value!=null?{value:BigInt(approveTx.value)}:{})
-    });
-  }catch(error){
-    throw executionStageError("ERC20_APPROVAL",error,{...meta,approvalTxTarget:approveTx?.to||null});
-  }
-
-  const tx=typeof approvalResult==="string"
-    ? approvalResult
-    : (approvalResult?.hash||approvalResult?.transactionHash||approvalResult?.txHash||approvalResult?.transaction?.hash||null);
-
+  const tokenAddress=await resolveGmxCollateralTokenAddress(sdk,symbol,balances); if(!tokenAddress)throw new Error(`GMX_COLLATERAL_TOKEN_ADDRESS_UNAVAILABLE: token=${symbol}`);
+  const meta={token:symbol,tokenAddress,spender:"router",requiredAmount:required.toString(),allowanceBefore:before.allowance.toString(),approved:false,approvalTxHash:null};
+  if(before.allowance>=required)return {...meta,sufficient:true,allowanceAfter:before.allowance.toString(),polls:0};
+  if(typeof sdk.executeErc20Approve!=="function")throw executionStageError("ERC20_APPROVAL",new Error("SDK executeErc20Approve unavailable"),meta);
+  let approvalResult; try{approvalResult=await sdk.executeErc20Approve(signer,{tokenAddress,spender:"router",amount:required});}catch(error){throw executionStageError("ERC20_APPROVAL",error,meta);}
+  const tx=approvalResult?.hash||approvalResult?.transactionHash||approvalResult?.txHash||approvalResult?.transaction?.hash||null;
   const verified=await waitForGmxRouterAllowance(sdk,account,symbol,required,30);
-  if(!verified.ok)throw executionStageError("ERC20_APPROVAL_VERIFY",new Error(`Allowance verification failed: required=${required}, allowance=${verified.allowance}`),{...meta,approvalTxHash:tx,approvalTxTarget:approveTx?.to||null,allowanceAfter:verified.allowance.toString(),polls:verified.polls});
-
-  return {...meta,sufficient:true,approved:true,approvalTxHash:tx,approvalTxTarget:approveTx?.to||null,allowanceAfter:verified.allowance.toString(),polls:verified.polls};
+  if(!verified.ok)throw executionStageError("ERC20_APPROVAL_VERIFY",new Error(`Allowance verification failed: required=${required}, allowance=${verified.allowance}`),{...meta,approvalTxHash:tx,allowanceAfter:verified.allowance.toString(),polls:verified.polls});
+  return {...meta,sufficient:true,approved:true,approvalTxHash:tx,allowanceAfter:verified.allowance.toString(),polls:verified.polls};
 }
 
 // V17.3.6 — Cycle-start allowance warmup.
@@ -9252,9 +9056,6 @@ function formatTelegramExecutionFailure(signal, error, result=null) {
     result?.executionMeta?.allowanceBefore ? `🔐 Allowance Before: ${result.executionMeta.allowanceBefore}` : null,
     result?.executionMeta?.allowanceAfter ? `🔐 Allowance After: ${result.executionMeta.allowanceAfter}` : null,
     result?.executionMeta?.approvalTxHash ? `🧾 Approval Tx: ${result.executionMeta.approvalTxHash}` : null,
-    result?.recovery?.attempted ? `🔧 Allowance Recovery: attempted | Retry: ${telegramTextSafe(result.recovery.retryStatus || "unknown")}` : null,
-    result?.recovery?.repair?.approvalTxHash ? `🧾 Recovery Approval Tx: ${result.recovery.repair.approvalTxHash}` : null,
-    result?.recovery?.repair?.approvalMode ? `🛡️ Recovery Approval Mode: ${telegramTextSafe(result.recovery.repair.approvalMode)}` : null,
     `❌ Reason: ${reason}`,
     `🕐 ${new Date().toISOString()}`,
     `#${symbol} #GMX #ExecutionError`
@@ -9299,7 +9100,7 @@ ${icon2} EXECUTED #${i+1} — ${telegramTextSafe(x?.symbol || "UNKNOWN")}`,
     result?.allowancePreflight ? `🔐 Allowance preflight: ${result.allowancePreflight.ok ? "READY" : "ISSUE"} | Approved ${Number(result.allowancePreflight.approved?.length||0)} | Existing ${Number(result.allowancePreflight.sufficient?.length||0)} | ${Number(result.allowancePreflight.elapsedMs||0)}ms` : null,
     `🚀 Early impulses: ${Number(stats.earlyImpulses || 0)}`,
     `🧪 Early debug: A ${Number(stats.earlyDebug?.attempted || 0)} / Q ${Number(stats.earlyDebug?.qualified || 0)} / R ${Number(stats.earlyDebug?.rejected || 0)}`,
-    `🧩 Early gates: M ${Number(stats.earlyDebug?.movePass || 0)} | B ${Number(stats.earlyDebug?.bodyPass || 0)} | V ${Number(stats.earlyDebug?.volumePass || 0)} | F ${Number(stats.earlyDebug?.flowPass || 0)} | MA ${Number(stats.earlyDebug?.momentumActivityPass || 0)} | A ${Number(stats.earlyDebug?.accelerationPass || 0)} | Z ${Number(stats.earlyDebug?.zonePass || 0)} | P ${Number(stats.earlyDebug?.proximityPass || 0)} | PB ${Number(stats.earlyDebug?.prebreakPass || 0)} | S ${Number(stats.earlyDebug?.scorePass || 0)} | E ${Number(stats.earlyDebug?.edgePass || 0)}`,
+    `🧩 Early gates: M ${Number(stats.earlyDebug?.movePass || 0)} | B ${Number(stats.earlyDebug?.bodyPass || 0)} | V ${Number(stats.earlyDebug?.volumePass || 0)} | F ${Number(stats.earlyDebug?.flowPass || 0)} | A ${Number(stats.earlyDebug?.accelerationPass || 0)} | Z ${Number(stats.earlyDebug?.zonePass || 0)} | S ${Number(stats.earlyDebug?.scorePass || 0)} | E ${Number(stats.earlyDebug?.edgePass || 0)}`,
     `🚫 Early reject: Move ${Number(stats.earlyDebug?.MOVE || 0)} / Body ${Number(stats.earlyDebug?.BODY || 0)} / Activity ${Number(stats.earlyDebug?.ACTIVITY || 0)} / Accel ${Number(stats.earlyDebug?.ACCELERATION || 0)} / Ext ${Number(stats.earlyDebug?.EXTENSION || 0)} / Zone ${Number(stats.earlyDebug?.ZONE || 0)} / Pre ${Number(stats.earlyDebug?.PREBREAK || 0)} / Score ${Number(stats.earlyDebug?.SCORE || 0)} / Edge ${Number(stats.earlyDebug?.EDGE || 0)} / Setup ${Number(stats.earlyDebug?.setupRejected || 0)}`,
     `🎯 Entry ready: ${Number(result?.candidates || 0)}`,
     `🟢 Executed: ${executed}`,
@@ -9442,18 +9243,6 @@ function isCollateralAfterFeesMinimumError(error) {
   return m.includes("collateral after fees") && m.includes("minimum required to open the position");
 }
 
-function gmxMinimumViableCollateralUsd() {
-  const reportedMin = Number(CONFIG.GMX_MIN_COLLATERAL_AFTER_FEES_USD || 1);
-  const buffer = Number(CONFIG.GMX_MIN_COLLATERAL_BUFFER_USD || 0);
-  const configured = Number(CONFIG.GMX_MIN_VIABLE_COLLATERAL_USD || 0);
-  return Math.max(reportedMin + Math.max(0, buffer), configured, reportedMin);
-}
-
-function executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted}) {
-  const protocolMinAfterFees = Number(CONFIG.GMX_MIN_COLLATERAL_AFTER_FEES_USD || 1);
-  return {walletUsd:Number(walletUsd.toFixed(6)),allocationPercent:Number((allocation*100).toFixed(2)),requestedCollateralUsd:Number(requestedCollateralUsd.toFixed(6)),finalCollateralUsd:Number(finalCollateralUsd.toFixed(6)),adjustedCollateralUsd:adjusted?Number(finalCollateralUsd.toFixed(6)):null,protocolMinAfterFeesUsd:Number(protocolMinAfterFees.toFixed(6)),minimumViableCollateralUsd:Number(gmxMinimumViableCollateralUsd().toFixed(6)),marketMinCollateralUsd:Number((marketMinCollateralUsd||0).toFixed(6)),maxCollateralUsd:Number(maxCollateralUsd.toFixed(6)),notionalUsd:Number(notionalUsd.toFixed(6)),leverage:Number(leverage)};
-}
-
 async function readLiveWalletSnapshot(sdk, account) {
   try {
     const balances = await sdk.fetchWalletBalances({address: account});
@@ -9538,15 +9327,6 @@ async function verifyLiveEntrySettlement(sdk, account, sdkSymbol, direction, col
   return {verified:false,position:null,walletAfter,walletDelta:walletDeltaText(walletBefore,walletAfter,collateralSymbol)};
 }
 
-function isAllowanceRelayFailure(statusResult){
-  const r=statusResult?.response||{};
-  const msg=String(r?.error?.message||r?.error?.code||r?.cancellationReason||statusResult?.status||"").toLowerCase();
-  return msg.includes("allowance") || msg.includes("transfer amount exceeds allowance") || msg.includes("insufficient allowance");
-}
-async function forceRefreshGmxAllowance(sdk,signer,account,symbol,requiredAmount,balances){
-  return ensureGmxCollateralAllowance(sdk,signer,account,symbol,requiredAmount,balances,{forceRefresh:true});
-}
-
 async function executeLiveSignal(signal, env) {
 if (!executionEnabled(env)) return {executed:false,mode:"SIGNAL",reason:"Execution disabled"};
 const direction = String(signal?.direction || "").toUpperCase();
@@ -9601,21 +9381,12 @@ notionalUsd=Math.min(notionalUsd,CONFIG.MAX_POSITION_NOTIONAL_USD,capacityUsd>0?
 const maxCollateralUsd=Math.min(walletUsd*CONFIG.MAX_CAPITAL_ALLOCATION,CONFIG.MAX_POSITION_NOTIONAL_USD/Math.max(leverage,1));
 if (notionalUsd/Math.max(leverage,1)>maxCollateralUsd) notionalUsd=maxCollateralUsd*Math.max(leverage,1);
 let finalCollateralUsd=Math.min(maxCollateralUsd,Math.max(collateralUsd,notionalUsd/Math.max(leverage,1)));
-const requestedCollateralUsd=finalCollateralUsd;
 const marketMinPositionUsd=Number(market?.minPositionSizeUsd||0n)/1e30;
 const marketMinCollateralUsd=Number(market?.minCollateralUsd||0n)/1e30;
 if (marketMinPositionUsd>0 && notionalUsd<marketMinPositionUsd) throw new Error(`CORE_MARKET_MIN_POSITION_BLOCKED: marketMinimum=$${marketMinPositionUsd.toFixed(6)}, computed=$${notionalUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, stop=${(stopFraction*100).toFixed(2)}%, riskCap=$${executionRiskCapNotional.toFixed(6)}, allocationNotional=$${allocationNotional.toFixed(6)}, riskBasedNotional=$${riskBasedNotional.toFixed(6)}, capacity=$${capacityUsd.toFixed(6)}`);
 if (marketMinCollateralUsd>0) {
   if (walletUsd<marketMinCollateralUsd || maxCollateralUsd<marketMinCollateralUsd) throw new Error(`CORE_MARKET_MIN_COLLATERAL_BLOCKED: marketMinimum=$${marketMinCollateralUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, maxCollateral=$${maxCollateralUsd.toFixed(6)}, computedNotional=$${notionalUsd.toFixed(6)}`);
   finalCollateralUsd=Math.max(finalCollateralUsd,marketMinCollateralUsd);
-}
-// V17.3.8: GMX protocol-level minimum-after-fees viability guard.
-const minimumViableCollateralUsd=gmxMinimumViableCollateralUsd();
-if (finalCollateralUsd < minimumViableCollateralUsd) {
-  if (walletUsd < minimumViableCollateralUsd || maxCollateralUsd < minimumViableCollateralUsd) {
-    throw new Error(`EXECUTION_GMX_MIN_COLLATERAL_BLOCKED: requested=$${finalCollateralUsd.toFixed(6)}, minimumViable=$${minimumViableCollateralUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, maxCollateral=$${maxCollateralUsd.toFixed(6)}, allocation=${(allocation*100).toFixed(2)}%`);
-  }
-  finalCollateralUsd=minimumViableCollateralUsd;
 }
 const size=toBigIntDecimal(notionalUsd,30);
 const collateralAmount=toBigIntDecimal(finalCollateralUsd,6);
@@ -9634,30 +9405,20 @@ let usedCollateralUsd = finalCollateralUsd;
 try {
   prepared=await sdk.prepareOrder(buildOrderRequest(usedCollateralUsd));
 } catch(error) {
-  // V17.3.8: previous recovery could retry at the exact same allocation cap.
-  // Retry once at the actual protocol viability amount when the caps permit it.
-  if (isCollateralAfterFeesMinimumError(error)) {
-    const recoveryCollateralUsd=Math.min(maxCollateralUsd,Math.max(usedCollateralUsd,gmxMinimumViableCollateralUsd()));
-    if (recoveryCollateralUsd > usedCollateralUsd + 0.000001) {
-      usedCollateralUsd=recoveryCollateralUsd;
-      try {
-        prepared=await sdk.prepareOrder(buildOrderRequest(usedCollateralUsd));
-      } catch(retryError) {
-        throw executionStageError("PREPARE_ORDER", retryError, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:true}));
-      }
-    } else {
-      throw executionStageError("PREPARE_ORDER_MIN_COLLATERAL", error, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:false}));
+  const allocationCollateralCap = Math.min(walletUsd * allocation, walletUsd * CONFIG.MAX_CAPITAL_ALLOCATION);
+  const recoveryCollateralUsd = Math.max(usedCollateralUsd, allocationCollateralCap);
+  if (isCollateralAfterFeesMinimumError(error) && recoveryCollateralUsd > usedCollateralUsd + 0.000001) {
+    usedCollateralUsd = recoveryCollateralUsd;
+    try {
+      prepared=await sdk.prepareOrder(buildOrderRequest(usedCollateralUsd));
+    } catch(retryError) {
+      throw executionStageError("PREPARE_ORDER", retryError, {initialCollateralUsd:Number(finalCollateralUsd.toFixed(6)),recoveryCollateralUsd:Number(usedCollateralUsd.toFixed(6)),allocationPercent:Number((allocation*100).toFixed(2)),walletUsd:Number(walletUsd.toFixed(6)),notionalUsd:Number(notionalUsd.toFixed(6)),leverage});
     }
   } else {
-    throw executionStageError("PREPARE_ORDER", error, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:false}));
+    throw executionStageError("PREPARE_ORDER", error, {collateralUsd:Number(usedCollateralUsd.toFixed(6)),allocationPercent:Number((allocation*100).toFixed(2)),walletUsd:Number(walletUsd.toFixed(6)),notionalUsd:Number(notionalUsd.toFixed(6)),leverage});
   }
 }
-let allowanceInfo;
-try {
-  allowanceInfo=await ensureGmxCollateralAllowance(sdk,signer,account,collateral.symbol,toBigIntDecimal(usedCollateralUsd,6),balances);
-} catch(error) {
-  throw executionStageError("ALLOWANCE_PREFLIGHT", error, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:usedCollateralUsd>requestedCollateralUsd+0.000001}));
-}
+const allowanceInfo=await ensureGmxCollateralAllowance(sdk,signer,account,collateral.symbol,toBigIntDecimal(usedCollateralUsd,6),balances);
 let signature;
 try { signature=await sdk.signOrder(prepared,signer); }
 catch(error) { throw executionStageError("SIGN_ORDER", error, {requestId:prepared?.requestId||null}); }
@@ -9677,30 +9438,6 @@ await markLiveExecutionSubmitted(env, lock.key, signal, result);
 const orderStatusResult = await pollLiveOrderStatus(sdk, result?.requestId, 60000, 2000);
 const orderStatus = String(orderStatusResult?.status || result?.status || "unknown").toLowerCase();
 if (orderStatusResult?.available && orderStatusResult?.terminal && orderStatus !== "executed") {
-  if (orderStatus === "relay_failed" && isAllowanceRelayFailure(orderStatusResult)) {
-    let repairInfo=null;
-    try {
-      repairInfo=await forceRefreshGmxAllowance(sdk,signer,account,collateral.symbol,toBigIntDecimal(usedCollateralUsd,6),balances);
-      const retryPrepared=await sdk.prepareOrder(buildOrderRequest(usedCollateralUsd));
-      const retrySignature=await sdk.signOrder(retryPrepared,signer);
-      const retryResult=await sdk.submitOrder({mode:retryPrepared.mode,requestId:retryPrepared.requestId,signature:retrySignature,from:account,idempotencyKey:retryPrepared.idempotencyKey,eip712Data:{batchParams:retryPrepared.payload.batchParams,relayParams:retryPrepared.payload.relayParams}});
-      const retryStatusResult=await pollLiveOrderStatus(sdk,retryResult?.requestId,60000,2000);
-      const retryStatus=String(retryStatusResult?.status||retryResult?.status||"unknown").toLowerCase();
-      if(retryStatusResult?.available && retryStatusResult?.terminal && retryStatus === "executed") {
-        const verification=await verifyLiveEntrySettlement(sdk,account,sdkSymbol,orderDirection,collateral.symbol,walletBefore,5);
-        if(verification.verified){
-          const walletAfter=verification.walletAfter||await readLiveWalletSnapshot(sdk,account);
-          const walletDelta=Number.isFinite(Number(verification.walletDelta))?Number(verification.walletDelta):null;
-          const recovered={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:usedCollateralUsd,requestedCollateralUsd,minimumViableCollateralUsd,collateralAdjustedForGmxMinimum:usedCollateralUsd>requestedCollateralUsd+0.000001,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,allowance:{...allowanceInfo,relayRecovery:true,repair:repairInfo,retryRequestId:retryResult?.requestId||null},entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:retryResult?.requestId||null,status:retryStatus,positionVerified:true,walletBefore,walletAfter,walletDelta,settlementVerified:Boolean(verification.settled),executionKey:lock.key};
-          try { await sendTelegram(env,formatTelegramLiveEntry(recovered)); } catch(_) {}
-          return recovered;
-        }
-      }
-      orderStatusResult.recovery={attempted:true,repair:repairInfo,retryRequestId:retryResult?.requestId||null,retryStatus,retryStatusResponse:retryStatusResult?.response||null};
-    } catch(recoveryError) {
-      orderStatusResult.recovery={attempted:true,repair:repairInfo,recoveryError:safeError(recoveryError),recoveryStage:recoveryError?.executionStage||null};
-    }
-  }
   const walletAfterFailure = await readLiveWalletSnapshot(sdk, account);
   const tokenKey=String(collateral.symbol||"").toUpperCase();
   const beforeToken=Number(walletBefore?.[tokenKey]);
@@ -9711,7 +9448,7 @@ if (orderStatusResult?.available && orderStatusResult?.terminal && orderStatus !
     reason:`GMX_ORDER_${orderStatus.toUpperCase()}`,
     stage:"GMX_ORDER_STATUS", requestId:result?.requestId||null,
     status:orderStatus, statusResponse:orderStatusResult?.response||null,
-    statusError:orderStatusFailureReason(orderStatusResult), recovery:orderStatusResult?.recovery||null, positionVerified:false,
+    statusError:orderStatusFailureReason(orderStatusResult), positionVerified:false,
     walletBefore, walletAfter:walletAfterFailure, walletDelta:delta,
     collateralToken:collateral.symbol, collateralUsd:finalCollateralUsd, executionKey:lock.key
   };
@@ -9739,7 +9476,7 @@ if (!verification.verified) {
 }
 const walletAfter=verification.walletAfter || await readLiveWalletSnapshot(sdk, account);
 const walletDelta=Number.isFinite(Number(verification.walletDelta)) ? Number(verification.walletDelta) : null;
-const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,requestedCollateralUsd,minimumViableCollateralUsd,collateralAdjustedForGmxMinimum:finalCollateralUsd>requestedCollateralUsd+0.000001,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,allowance:allowanceInfo,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:true,walletBefore,walletAfter,walletDelta,settlementVerified:Boolean(verification.settled),executionKey:lock.key};
+const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,allowance:allowanceInfo,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:true,walletBefore,walletAfter,walletDelta,settlementVerified:Boolean(verification.settled),executionKey:lock.key};
 try { await sendTelegram(env, formatTelegramLiveEntry(entryNotice)); } catch(_) {}
 return entryNotice;
 } catch (error) {
