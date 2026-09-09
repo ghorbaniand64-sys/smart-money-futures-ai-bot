@@ -1,9 +1,9 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
-║  V17.3.7 — GMX EXECUTION VIABILITY + ALLOWANCE HARDENING                                          ║
+║  V17.3.8 — GMX ROUTER APPROVAL BUILDER FIX + EXECUTION VIABILITY                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.3.7-GMX-VIABILITY-ALLOWANCE-HARDENING                                   ║
+║  RELEASE: V17.3.8-GMX-ROUTER-APPROVAL-BUILDER-FIX                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -75,7 +75,7 @@ function normalizeSymbol(symbol){
 
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V17.3.7 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
+// Version: V17.3.8 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
 // Platform: GitHub Actions + Node.js
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -430,7 +430,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.3.7-GMX-VIABILITY-ALLOWANCE-HARDENING",
+VERSION: "V17.3.8-GMX-ROUTER-APPROVAL-BUILDER-FIX",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -8637,7 +8637,7 @@ return liveNormalizeSymbol(symbol)?.replace(/-PERP$/i, "") || null;
 }
 
 
-// V17.3.7 — GMX ERC20 allowance preflight + execution viability hardening.
+// V17.3.8 — GMX router-aware ERC20 allowance preflight + execution viability hardening.
 function allowanceNumber(value) {
   if (value===null || value===undefined || value==="") return null;
   if (typeof value==="bigint") return value;
@@ -8686,17 +8686,75 @@ async function waitForGmxRouterAllowance(sdk,account,symbol,required,attempts=30
   let last=0n; for(let i=0;i<attempts;i++){last=(await fetchGmxRouterAllowance(sdk,account,symbol)).allowance;if(last>=required)return {ok:true,allowance:last,polls:i+1};if(i+1<attempts)await new Promise(r=>setTimeout(r,1000));} return {ok:false,allowance:last,polls:attempts};
 }
 async function ensureGmxCollateralAllowance(sdk,signer,account,symbol,requiredAmount,balances){
-  const required=allowanceNumber(requiredAmount); if(required===null||required<=0n)throw new Error("GMX_ALLOWANCE_REQUIRED_AMOUNT_INVALID");
+  const required=allowanceNumber(requiredAmount);
+  if(required===null||required<=0n)throw new Error("GMX_ALLOWANCE_REQUIRED_AMOUNT_INVALID");
+
+  // GMX SDK v2 deliberately uses the symbolic spender "router" for the
+  // /allowances read endpoint, but executeErc20Approve()/buildErc20ApproveTxn()
+  // expect a real 20-byte address when a caller supplies `spender`. Passing the
+  // literal string "router" into executeErc20Approve therefore reaches viem and
+  // fails with: Address "router" is invalid.
+  //
+  // The official SDK exposes buildApproveTransaction(), which resolves GMX's
+  // configured Router for the selected chain while accepting the same symbolic
+  // "router" spender used by fetchAllowances(). We intentionally use that
+  // protocol-aware builder instead of hardcoding a deployment address: GMX notes
+  // that router/exchange-router deployments can change over time.
   const before=await fetchGmxRouterAllowance(sdk,account,symbol);
-  const tokenAddress=await resolveGmxCollateralTokenAddress(sdk,symbol,balances); if(!tokenAddress)throw new Error(`GMX_COLLATERAL_TOKEN_ADDRESS_UNAVAILABLE: token=${symbol}`);
-  const meta={token:symbol,tokenAddress,spender:"router",requiredAmount:required.toString(),allowanceBefore:before.allowance.toString(),approved:false,approvalTxHash:null};
+  const tokenAddress=await resolveGmxCollateralTokenAddress(sdk,symbol,balances);
+  if(!tokenAddress)throw new Error(`GMX_COLLATERAL_TOKEN_ADDRESS_UNAVAILABLE: token=${symbol}`);
+
+  const meta={
+    token:symbol,
+    tokenAddress,
+    spender:"router",
+    spenderResolution:"GMX_SDK_BUILD_APPROVE_TRANSACTION",
+    requiredAmount:required.toString(),
+    allowanceBefore:before.allowance.toString(),
+    approved:false,
+    approvalTxHash:null
+  };
+
   if(before.allowance>=required)return {...meta,sufficient:true,allowanceAfter:before.allowance.toString(),polls:0};
-  if(typeof sdk.executeErc20Approve!=="function")throw executionStageError("ERC20_APPROVAL",new Error("SDK executeErc20Approve unavailable"),meta);
-  let approvalResult; try{approvalResult=await sdk.executeErc20Approve(signer,{tokenAddress,spender:"router",amount:required});}catch(error){throw executionStageError("ERC20_APPROVAL",error,meta);}
-  const tx=approvalResult?.hash||approvalResult?.transactionHash||approvalResult?.txHash||approvalResult?.transaction?.hash||null;
+
+  if(typeof sdk.buildApproveTransaction!=="function")
+    throw executionStageError("ERC20_APPROVAL",new Error("GMX SDK buildApproveTransaction unavailable"),meta);
+  if(!signer||typeof signer.sendTransaction!=="function")
+    throw executionStageError("ERC20_APPROVAL",new Error("GMX signer does not expose sendTransaction"),meta);
+
+  let approveTx;
+  try{
+    approveTx=await sdk.buildApproveTransaction({
+      tokenAddress,
+      spender:"router",
+      amount:required
+    });
+    const txTo=approveTx?.to;
+    if(!/^0x[0-9a-fA-F]{40}$/.test(String(txTo||"")))
+      throw new Error(`GMX_APPROVAL_TX_TARGET_INVALID: ${String(txTo||"")}`);
+  }catch(error){
+    throw executionStageError("ERC20_APPROVAL_BUILD",error,meta);
+  }
+
+  let approvalResult;
+  try{
+    approvalResult=await signer.sendTransaction({
+      to:approveTx.to,
+      data:approveTx.data,
+      ...(approveTx.value!=null?{value:BigInt(approveTx.value)}:{})
+    });
+  }catch(error){
+    throw executionStageError("ERC20_APPROVAL",error,{...meta,approvalTxTarget:approveTx?.to||null});
+  }
+
+  const tx=typeof approvalResult==="string"
+    ? approvalResult
+    : (approvalResult?.hash||approvalResult?.transactionHash||approvalResult?.txHash||approvalResult?.transaction?.hash||null);
+
   const verified=await waitForGmxRouterAllowance(sdk,account,symbol,required,30);
-  if(!verified.ok)throw executionStageError("ERC20_APPROVAL_VERIFY",new Error(`Allowance verification failed: required=${required}, allowance=${verified.allowance}`),{...meta,approvalTxHash:tx,allowanceAfter:verified.allowance.toString(),polls:verified.polls});
-  return {...meta,sufficient:true,approved:true,approvalTxHash:tx,allowanceAfter:verified.allowance.toString(),polls:verified.polls};
+  if(!verified.ok)throw executionStageError("ERC20_APPROVAL_VERIFY",new Error(`Allowance verification failed: required=${required}, allowance=${verified.allowance}`),{...meta,approvalTxHash:tx,approvalTxTarget:approveTx?.to||null,allowanceAfter:verified.allowance.toString(),polls:verified.polls});
+
+  return {...meta,sufficient:true,approved:true,approvalTxHash:tx,approvalTxTarget:approveTx?.to||null,allowanceAfter:verified.allowance.toString(),polls:verified.polls};
 }
 
 // V17.3.6 — Cycle-start allowance warmup.
@@ -9401,7 +9459,7 @@ if (marketMinCollateralUsd>0) {
   if (walletUsd<marketMinCollateralUsd || maxCollateralUsd<marketMinCollateralUsd) throw new Error(`CORE_MARKET_MIN_COLLATERAL_BLOCKED: marketMinimum=$${marketMinCollateralUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, maxCollateral=$${maxCollateralUsd.toFixed(6)}, computedNotional=$${notionalUsd.toFixed(6)}`);
   finalCollateralUsd=Math.max(finalCollateralUsd,marketMinCollateralUsd);
 }
-// V17.3.7: GMX protocol-level minimum-after-fees viability guard.
+// V17.3.8: GMX protocol-level minimum-after-fees viability guard.
 const minimumViableCollateralUsd=gmxMinimumViableCollateralUsd();
 if (finalCollateralUsd < minimumViableCollateralUsd) {
   if (walletUsd < minimumViableCollateralUsd || maxCollateralUsd < minimumViableCollateralUsd) {
@@ -9426,7 +9484,7 @@ let usedCollateralUsd = finalCollateralUsd;
 try {
   prepared=await sdk.prepareOrder(buildOrderRequest(usedCollateralUsd));
 } catch(error) {
-  // V17.3.7: previous recovery could retry at the exact same allocation cap.
+  // V17.3.8: previous recovery could retry at the exact same allocation cap.
   // Retry once at the actual protocol viability amount when the caps permit it.
   if (isCollateralAfterFeesMinimumError(error)) {
     const recoveryCollateralUsd=Math.min(maxCollateralUsd,Math.max(usedCollateralUsd,gmxMinimumViableCollateralUsd()));
