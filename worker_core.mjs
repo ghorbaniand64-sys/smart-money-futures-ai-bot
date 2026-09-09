@@ -75,7 +75,7 @@ function normalizeSymbol(symbol){
 
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V17.3.8 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
+// Version: V17.3.9 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
 // Platform: GitHub Actions + Node.js
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -8764,7 +8764,7 @@ return liveNormalizeSymbol(symbol)?.replace(/-PERP$/i, "") || null;
 }
 
 
-// V17.3.8 — GMX router-aware ERC20 allowance preflight + execution viability hardening.
+// V17.3.9 — GMX router allowance hardening + max-approval recovery + recovery telemetry.
 function allowanceNumber(value) {
   if (value===null || value===undefined || value==="") return null;
   if (typeof value==="bigint") return value;
@@ -8851,12 +8851,21 @@ async function ensureGmxCollateralAllowance(sdk,signer,account,symbol,requiredAm
   if(!signer||typeof signer.sendTransaction!=="function")
     throw executionStageError("ERC20_APPROVAL",new Error("GMX signer does not expose sendTransaction"),meta);
 
+  // V17.3.9: exact-amount approvals can still fail at the relay layer when
+  // GMX's actual ERC20 transfer amount includes protocol-side accounting/fees.
+  // On the recovery path, grant the configured GMX Router the standard uint256
+  // max allowance so the next request cannot exceed the approved amount.
+  // This does NOT transfer funds; it only changes ERC20 spending permission.
+  const approvalAmount = forceRefresh ? ((1n << 256n) - 1n) : required;
+  meta.approvalAmount = approvalAmount.toString();
+  meta.approvalMode = forceRefresh ? "MAX_UINT256_RECOVERY" : "EXACT_REQUIRED";
+
   let approveTx;
   try{
     approveTx=await sdk.buildApproveTransaction({
       tokenAddress,
       spender:"router",
-      amount:required
+      amount:approvalAmount
     });
     const txTo=approveTx?.to;
     if(!/^0x[0-9a-fA-F]{40}$/.test(String(txTo||"")))
@@ -9243,6 +9252,9 @@ function formatTelegramExecutionFailure(signal, error, result=null) {
     result?.executionMeta?.allowanceBefore ? `🔐 Allowance Before: ${result.executionMeta.allowanceBefore}` : null,
     result?.executionMeta?.allowanceAfter ? `🔐 Allowance After: ${result.executionMeta.allowanceAfter}` : null,
     result?.executionMeta?.approvalTxHash ? `🧾 Approval Tx: ${result.executionMeta.approvalTxHash}` : null,
+    result?.recovery?.attempted ? `🔧 Allowance Recovery: attempted | Retry: ${telegramTextSafe(result.recovery.retryStatus || "unknown")}` : null,
+    result?.recovery?.repair?.approvalTxHash ? `🧾 Recovery Approval Tx: ${result.recovery.repair.approvalTxHash}` : null,
+    result?.recovery?.repair?.approvalMode ? `🛡️ Recovery Approval Mode: ${telegramTextSafe(result.recovery.repair.approvalMode)}` : null,
     `❌ Reason: ${reason}`,
     `🕐 ${new Date().toISOString()}`,
     `#${symbol} #GMX #ExecutionError`
@@ -9699,7 +9711,7 @@ if (orderStatusResult?.available && orderStatusResult?.terminal && orderStatus !
     reason:`GMX_ORDER_${orderStatus.toUpperCase()}`,
     stage:"GMX_ORDER_STATUS", requestId:result?.requestId||null,
     status:orderStatus, statusResponse:orderStatusResult?.response||null,
-    statusError:orderStatusFailureReason(orderStatusResult), positionVerified:false,
+    statusError:orderStatusFailureReason(orderStatusResult), recovery:orderStatusResult?.recovery||null, positionVerified:false,
     walletBefore, walletAfter:walletAfterFailure, walletDelta:delta,
     collateralToken:collateral.symbol, collateralUsd:finalCollateralUsd, executionKey:lock.key
   };
