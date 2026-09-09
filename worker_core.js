@@ -8948,7 +8948,9 @@ ${icon2} EXECUTED #${i+1} — ${telegramTextSafe(x?.symbol || "UNKNOWN")}`,
       `🎯 TP3: ${x?.tp3!=null ? formatPrice(x.tp3) : "N/A"}`,
       `📊 Allocation: ${allocation.toFixed(2)}% | ⚙️ Leverage: ${Number(x?.leverage || 1).toFixed(1)}x`,
       `📦 Notional: $${Number(x?.notionalUsd || 0).toFixed(2)} | 💵 Collateral: $${Number(x?.collateralUsd || 0).toFixed(2)}`,
-      x?.positionVerified ? "✅ Position verified" : "⚠️ Order submitted — position verification pending"
+      x?.walletBefore?.[String(x?.collateralToken||"").toUpperCase()]!=null ? `💰 Wallet ${x?.collateralToken||"?"}: $${Number(x.walletBefore[String(x.collateralToken||"").toUpperCase()]).toFixed(4)} → $${Number(x?.walletAfter?.[String(x?.collateralToken||"").toUpperCase()]||0).toFixed(4)}` : "💰 Wallet balance: N/A",
+      x?.walletDelta!=null ? `📉 Wallet Δ: $${Number(x.walletDelta).toFixed(6)}` : "📉 Wallet Δ: N/A",
+      x?.positionVerified ? (x?.settlementVerified ? "✅ Position verified + wallet settlement observed" : "✅ Position verified | settlement still settling") : "⚠️ Order submitted — position verification pending"
     ].join("\n");
   });
   return [
@@ -8976,6 +8978,27 @@ ${icon2} EXECUTED #${i+1} — ${telegramTextSafe(x?.symbol || "UNKNOWN")}`,
   ].join("\n");
 }
 
+function formatTelegramLiveExecutionPending(result) {
+  const direction=String(result?.direction||"UNKNOWN").toUpperCase();
+  const icon=direction==="LONG"?"🟡":"🟠";
+  const token=String(result?.collateralToken||"").toUpperCase();
+  const before=Number(result?.walletBefore?.[token]);
+  const after=Number(result?.walletAfter?.[token]);
+  return [
+    `${icon} GMX ORDER SUBMITTED — VERIFYING`,
+    "━━━━━━━━━━━━━━━━━━",
+    `🪙 ${result?.symbol||"UNKNOWN"}`,
+    `📌 Direction: ${direction}`,
+    `💵 Collateral: $${Number(result?.collateralUsd||0).toFixed(2)} ${token}`,
+    `💰 Wallet BEFORE: ${Number.isFinite(before)?`$${before.toFixed(4)}`:"N/A"}`,
+    `💰 Wallet AFTER: ${Number.isFinite(after)?`$${after.toFixed(4)}`:"N/A"}`,
+    `📉 Wallet Δ: ${result?.walletDelta!=null?`$${Number(result.walletDelta).toFixed(6)}`:"N/A"}`,
+    `🧾 Request ID: ${result?.requestId||"n/a"}`,
+    "⚠️ Order was submitted, but the GMX position could not yet be verified.",
+    "❌ This is NOT counted as Executed in the cycle report."
+  ].join("\n");
+}
+
 function formatTelegramLiveEntry(result) {
   const direction=String(result?.direction||"UNKNOWN").toUpperCase();
   const icon=direction==="LONG"?"🟢":"🔴";
@@ -8995,9 +9018,12 @@ function formatTelegramLiveEntry(result) {
     `⚙️ Leverage: ${Number(result?.leverage||1).toFixed(1)}x`,
     `📦 Notional: $${Number(result?.notionalUsd||0).toFixed(2)}`,
     `💵 Collateral: $${Number(result?.collateralUsd||0).toFixed(2)} ${result?.collateralToken||""}`,
+    `💰 Wallet BEFORE: ${Number(result?.walletBefore?.[String(result?.collateralToken||"").toUpperCase()]).toFixed(4)}`,
+    `💰 Wallet AFTER: ${Number(result?.walletAfter?.[String(result?.collateralToken||"").toUpperCase()]).toFixed(4)}`,
+    `📉 Wallet Δ: ${result?.walletDelta!=null?Number(result.walletDelta).toFixed(6):"N/A"}`,
     `🧾 Request ID: ${result?.requestId||"n/a"}`,
-    verified ? "✅ GMX POSITION VERIFIED" : "⚠️ GMX ORDER ACCEPTED — POSITION VERIFICATION PENDING",
-    "ℹ️ This message is sent only after the live order submission succeeds."
+    verified ? (result?.settlementVerified ? "✅ GMX POSITION VERIFIED + WALLET SETTLEMENT OBSERVED" : "✅ GMX POSITION VERIFIED | WALLET SETTLEMENT STILL SETTLING") : "⚠️ GMX ORDER ACCEPTED — POSITION VERIFICATION PENDING",
+    "ℹ️ Executed is counted only after the GMX position is verified."
   ].filter(Boolean).join("\n");
 }
 
@@ -9048,6 +9074,46 @@ function isCollateralAfterFeesMinimumError(error) {
   return m.includes("collateral after fees") && m.includes("minimum required to open the position");
 }
 
+async function readLiveWalletSnapshot(sdk, account) {
+  try {
+    const balances = await sdk.fetchWalletBalances({address: account});
+    const parsed = extractCollateralBalances(balances);
+    return {
+      USDC: Number(parsed?.USDC?.usd || 0),
+      USDT: Number(parsed?.USDT?.usd || 0),
+      raw: balances
+    };
+  } catch (error) {
+    return {USDC:null, USDT:null, raw:null, error:String(error?.message||error)};
+  }
+}
+
+function walletDeltaText(before, after, symbol) {
+  const b=Number(before?.[symbol]);
+  const a=Number(after?.[symbol]);
+  if (!Number.isFinite(b) || !Number.isFinite(a)) return "N/A";
+  return (a-b).toFixed(6);
+}
+
+async function verifyLiveEntrySettlement(sdk, account, sdkSymbol, direction, collateralSymbol, walletBefore, attempts=5) {
+  let positionVerification={verified:false,position:null};
+  let walletAfter=null;
+  for(let i=0;i<attempts;i++) {
+    positionVerification=await verifyLiveEntryPosition(sdk,account,sdkSymbol,direction,1);
+    walletAfter=await readLiveWalletSnapshot(sdk,account);
+    const walletDelta=walletDeltaText(walletBefore,walletAfter,collateralSymbol);
+    const deltaNum=Number(walletDelta);
+    if(positionVerification.verified && Number.isFinite(deltaNum)) {
+      // A GMX position is the authoritative execution signal. Wallet delta is
+      // telemetry only because settlement can be asynchronous through Express.
+      return {verified:true,position:positionVerification.position,walletAfter,settled:true,walletDelta:deltaNum};
+    }
+    if(positionVerification.verified) return {verified:true,position:positionVerification.position,walletAfter,settled:false,walletDelta:Number.isFinite(deltaNum)?deltaNum:null};
+    if(i+1<attempts) await new Promise(resolve=>setTimeout(resolve,1000));
+  }
+  return {verified:false,position:null,walletAfter,walletDelta:walletDeltaText(walletBefore,walletAfter,collateralSymbol)};
+}
+
 async function executeLiveSignal(signal, env) {
 if (!executionEnabled(env)) return {executed:false,mode:"SIGNAL",reason:"Execution disabled"};
 const direction = String(signal?.direction || "").toUpperCase();
@@ -9063,6 +9129,7 @@ const markets=await sdk.fetchMarkets();
 const balances=await sdk.fetchWalletBalances({address:account});
 const collateral=selectLiveCollateral(markets, signal.symbol, balances);
 if (!collateral) throw new Error("No usable USDC/USDT balance with a matching GMX collateral market was detected");
+const walletBefore = await readLiveWalletSnapshot(sdk, account);
 const market=collateral.market;
 const sdkSymbol=market.symbol;
 const orderDirection=signal.direction==="LONG"?"long":"short";
@@ -9149,8 +9216,15 @@ try {
 }
 finalCollateralUsd = usedCollateralUsd;
 await markLiveExecutionSubmitted(env, lock.key, signal, result);
-const verification=await verifyLiveEntryPosition(sdk,account,sdkSymbol,orderDirection,2);
-const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:verification.verified,executionKey:lock.key};
+const verification=await verifyLiveEntrySettlement(sdk,account,sdkSymbol,orderDirection,collateral.symbol,walletBefore,5);
+if (!verification.verified) {
+  const pending={executed:false,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,reason:"ORDER_SUBMITTED_BUT_POSITION_NOT_VERIFIED",stage:"POST_SUBMIT_VERIFY",requestId:result?.requestId||null,status:result?.status||null,positionVerified:false,walletBefore,walletAfter:verification.walletAfter,walletDelta:verification.walletDelta,collateralToken:collateral.symbol,collateralUsd:finalCollateralUsd,executionKey:lock.key};
+  try { await sendTelegram(env, formatTelegramLiveExecutionPending(pending)); } catch(_) {}
+  return pending;
+}
+const walletAfter=verification.walletAfter || await readLiveWalletSnapshot(sdk, account);
+const walletDelta=Number.isFinite(Number(verification.walletDelta)) ? Number(verification.walletDelta) : null;
+const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:true,walletBefore,walletAfter,walletDelta,settlementVerified:Boolean(verification.settled),executionKey:lock.key};
 try { await sendTelegram(env, formatTelegramLiveEntry(entryNotice)); } catch(_) {}
 return entryNotice;
 } catch (error) {
