@@ -430,7 +430,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.3.5-ALLOWANCE-REPAIR",
+VERSION: "V17.3.6-ALLOWANCE-PREFLIGHT",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -572,6 +572,13 @@ RADAR_HOT_MAX_WALLET_RISK: 0.015,
 EXECUTION_MIN_WALLET_RISK: 0.015,
 RADAR_LIVE_REVERSAL_CONFIRMATIONS: 1,
 RADAR_LIVE_LEDGER_TTL_SEC: 86400,
+// V17.3.6: warm the GMX Router allowance before market scanning. This is a
+// read-only check when allowance is already sufficient; an on-chain ERC20
+// approval is sent only when the current one-position collateral ceiling is
+// not covered. Approval never transfers collateral and never changes sizing.
+ALLOWANCE_PREFLIGHT_ENABLED: true,
+ALLOWANCE_PREFLIGHT_ALL_AVAILABLE_COLLATERALS: true,
+ALLOWANCE_PREFLIGHT_MAX_TOKENS: 2,
 // V14.0.5.5: live collateral may be USDC or USDT when the selected GMX perp market supports it.
 LIVE_COLLATERAL_PREFERENCE: ["USDC","USDT"],
 RADAR_SUBREQUEST_RESERVE: 0,
@@ -4457,7 +4464,7 @@ async function runFullScan(env, scanOptions = {}) {
   }
   try {
     const heartbeat = await sendTelegram(env, formatTelegramScanHeartbeat({
-      ...{status:signals.length?"ENTRY_READY":"WATCHING",scanned:markets.length,broad5mScanned:broad5m.size,deepScanned:deepSucceeded,deepPlanned:rows.length,eventCandidates,candidates:signals.length,eventStats,executionResults}
+      ...{status:signals.length?"ENTRY_READY":"WATCHING",scanned:markets.length,broad5mScanned:broad5m.size,deepScanned:deepSucceeded,deepPlanned:rows.length,eventCandidates,candidates:signals.length,eventStats,executionResults,allowancePreflight:scanOptions?.allowancePreflight||null}
     }, scanId));
     console.log("[TELEGRAM][CYCLE_REPORT]", {scanId, sent:Boolean(heartbeat?.ok), reason:heartbeat?.reason||null});
   } catch (tgError) {
@@ -5622,6 +5629,12 @@ if (executionEnabled(env)) {
   exits = await FUTURES_V6.updatePaperPositions(env);
 }
  
+let allowancePreflight = {enabled:false,attempted:false,ok:true,approved:[],sufficient:[],skipped:["NOT_RUN"],errors:[],elapsedMs:0};
+if (executionEnabled(env)) {
+  // V17.3.6: warm Router allowance BEFORE scanning so an approval tx, if needed,
+  // is paid/waited for outside the signal's latency-critical execution path.
+  allowancePreflight = await preflightGmxCollateralAllowances(env);
+}
 let scheduledOpenPositions = 0;
 try {
 const scheduledPositions = await FUTURES_V6.positions(env);
@@ -5643,7 +5656,8 @@ if (resourceGuardSnapshot.paused) {
   scan = await FUTURES_V6.scan(env, {
     additionalSubrequestReserve: scheduledPositionReserve,
     source: "cron",
-    scanId
+    scanId,
+    allowancePreflight
   });
 }
  
@@ -5671,6 +5685,7 @@ notified: scan?.diagnostics?.notified ?? 0,
 coreDirectional: { long: scan?.diagnostics?.longAnalyzed ?? 0, short: scan?.diagnostics?.shortAnalyzed ?? 0, noTrade: scan?.diagnostics?.noTradeAnalyzed ?? 0, valid: scan?.diagnostics?.validSignals ?? 0, watch: scan?.diagnostics?.watchSignals ?? 0 },
 execution: scan?.executionSummary || scan?.diagnostics?.executionSummary || (Array.isArray(scan?.executionResults) ? {attempted:scan.executionResults.length,executed:scan.executionResults.filter(x=>x?.executed).length,failed:scan.executionResults.filter(x=>x && x.executed===false && (x.error||x.reason)).length} : null),
 executionResults: Array.isArray(scan?.executionResults) ? scan.executionResults.slice(0,3).map(x => ({symbol:x?.symbol || null,executed:Boolean(x?.executed),reason:x?.reason || null,error:x?.error || null})) : [],
+allowancePreflight,
 radar: { coverage: scan?.radarCoverageMarkets ?? scan?.diagnostics?.radarLane?.coverageMarkets ?? 0, directional: scan?.radarDirectionalMarkets ?? scan?.diagnostics?.radarLane?.directionalMarkets ?? 0, long: scan?.radarLongMarkets ?? scan?.diagnostics?.radarLane?.longMarkets ?? 0, short: scan?.radarShortMarkets ?? scan?.diagnostics?.radarLane?.shortMarkets ?? 0, hot: scan?.radarHotCandidates ?? scan?.diagnostics?.radarLane?.hotCandidateCount ?? 0, watch: scan?.radarWatchCandidates ?? scan?.diagnostics?.radarLane?.watchCandidates ?? 0, trace: scan?.diagnostics?.radarLane?.trace || null },
 telegram: scan?.diagnostics?.telegram || null,
 radarLive: scan?.radarLiveResult ? {executed:Boolean(scan.radarLiveResult.executed),symbol:scan.radarLiveResult.symbol || null,reason:scan.radarLiveResult.reason || null,error:scan.radarLiveResult.error || null} : null,
@@ -8684,6 +8699,58 @@ async function ensureGmxCollateralAllowance(sdk,signer,account,symbol,requiredAm
   return {...meta,sufficient:true,approved:true,approvalTxHash:tx,allowanceAfter:verified.allowance.toString(),polls:verified.polls};
 }
 
+// V17.3.6 — Cycle-start allowance warmup.
+// Runs before the expensive market scan so an approval transaction, when
+// genuinely needed, does not occur in the critical entry-execution path.
+// The approval target is capped at one position's maximum collateral (20%
+// of the currently available wallet collateral), so this does NOT loosen any
+// portfolio/risk limit. When allowance is already sufficient, this function
+// performs only RPC/API reads and consumes no gas.
+async function preflightGmxCollateralAllowances(env){
+  const started=Date.now();
+  const base={enabled:CONFIG.ALLOWANCE_PREFLIGHT_ENABLED!==false,attempted:false,ok:true,approved:[],sufficient:[],skipped:[],errors:[],elapsedMs:0};
+  if(CONFIG.ALLOWANCE_PREFLIGHT_ENABLED===false || !executionEnabled(env)){
+    base.skipped.push(executionEnabled(env)?"DISABLED_BY_CONFIG":"EXECUTION_DISABLED");
+    base.elapsedMs=Date.now()-started;
+    return base;
+  }
+  try{
+    const {sdk,signer,account}=await getLiveContext(env);
+    const balances=await sdk.fetchWalletBalances({address:account});
+    const collateralBalances=extractCollateralBalances(balances);
+    const walletUsd=Object.values(collateralBalances).reduce((sum,b)=>sum+Number(b?.usd||0),0);
+    if(!(walletUsd>0)){
+      base.skipped.push("NO_USDC_USDT_BALANCE");
+      base.elapsedMs=Date.now()-started;
+      return base;
+    }
+    const symbols=CONFIG.ALLOWANCE_PREFLIGHT_ALL_AVAILABLE_COLLATERALS!==false
+      ? ["USDC","USDT"].filter(sym=>collateralBalances[sym]?.usd>0).slice(0,Math.max(1,Number(CONFIG.ALLOWANCE_PREFLIGHT_MAX_TOKENS||2)))
+      : [collateralBalances.USDC?.usd>0?"USDC":collateralBalances.USDT?.usd>0?"USDT":null].filter(Boolean);
+    base.attempted=true;
+    for(const symbol of symbols){
+      const tokenUsd=Number(collateralBalances[symbol]?.usd||0);
+      // Never approve more than the actual token balance or the 20% per-position cap.
+      const targetUsd=Math.min(tokenUsd,walletUsd*Number(CONFIG.MAX_CAPITAL_ALLOCATION||0.20));
+      if(!(targetUsd>0)){base.skipped.push(`${symbol}:NO_TARGET`);continue;}
+      try{
+        const info=await ensureGmxCollateralAllowance(sdk,signer,account,symbol,toBigIntDecimal(targetUsd,6),balances);
+        if(info?.approved)base.approved.push({token:symbol,requiredUsd:Number(targetUsd.toFixed(6)),txHash:info.approvalTxHash||null,allowanceAfter:info.allowanceAfter||null,polls:info.polls||0});
+        else base.sufficient.push({token:symbol,requiredUsd:Number(targetUsd.toFixed(6)),allowanceAfter:info?.allowanceAfter||null});
+      }catch(error){
+        base.ok=false;
+        base.errors.push({token:symbol,stage:error?.executionStage||"ALLOWANCE_PREFLIGHT",error:safeError(error),meta:error?.executionMeta||null});
+      }
+    }
+  }catch(error){
+    base.ok=false;
+    base.errors.push({stage:error?.executionStage||"ALLOWANCE_PREFLIGHT_INIT",error:safeError(error),meta:error?.executionMeta||null});
+  }
+  base.elapsedMs=Date.now()-started;
+  console.log("[ALLOWANCE][PREFLIGHT]",base);
+  return base;
+}
+
 function findSdkMarket(markets, symbol) {
 const wanted = liveNormalizeSymbol(symbol);
 return markets.find(m => {
@@ -9030,6 +9097,7 @@ ${icon2} EXECUTED #${i+1} — ${telegramTextSafe(x?.symbol || "UNKNOWN")}`,
     `🔎 Broad 5M: ${Number(result?.broad5mScanned || 0)}`,
     `🧠 Deep: ${Number(result?.deepScanned || result?.deepPlanned || 0)}`,
     `⚡ Event candidates: ${Number(result?.eventCandidates || 0)}`,
+    result?.allowancePreflight ? `🔐 Allowance preflight: ${result.allowancePreflight.ok ? "READY" : "ISSUE"} | Approved ${Number(result.allowancePreflight.approved?.length||0)} | Existing ${Number(result.allowancePreflight.sufficient?.length||0)} | ${Number(result.allowancePreflight.elapsedMs||0)}ms` : null,
     `🚀 Early impulses: ${Number(stats.earlyImpulses || 0)}`,
     `🧪 Early debug: A ${Number(stats.earlyDebug?.attempted || 0)} / Q ${Number(stats.earlyDebug?.qualified || 0)} / R ${Number(stats.earlyDebug?.rejected || 0)}`,
     `🧩 Early gates: M ${Number(stats.earlyDebug?.movePass || 0)} | B ${Number(stats.earlyDebug?.bodyPass || 0)} | V ${Number(stats.earlyDebug?.volumePass || 0)} | F ${Number(stats.earlyDebug?.flowPass || 0)} | A ${Number(stats.earlyDebug?.accelerationPass || 0)} | Z ${Number(stats.earlyDebug?.zonePass || 0)} | S ${Number(stats.earlyDebug?.scorePass || 0)} | E ${Number(stats.earlyDebug?.edgePass || 0)}`,
