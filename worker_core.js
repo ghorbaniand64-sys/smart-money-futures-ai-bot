@@ -1,3 +1,4 @@
+// V17.2.4 LIVE DIAGNOSTICS + SELECTION REPAIR
 // V17.1.6 SDK SAFE LOADER
 // CommonJS resolution is intentional: GMX SDK 1.8.2 may expose a broken
 // ESM subpath in GitHub Actions while the package is resolvable via require().
@@ -404,7 +405,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.2.3-TELEGRAM-EXECUTION-DIAGNOSTICS",
+VERSION: "V17.2.4-LIVE-SELECTION-TELEGRAM-REPAIR",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -660,6 +661,20 @@ HYBRID_RISK: {
 }
 }
 
+// V17.2.4: module-scope Telegram text sanitizer. Keep diagnostics and
+// execution-failure notifications independent from any legacy local scope.
+function telegramTextSafe(value, fallback = "N/A") {
+  let s = value === null || value === undefined || value === "" ? fallback : String(value);
+  for (let i = 0; i < 2; i++) {
+    if (!/[ÃÂâðØÙ]/.test(s)) break;
+    try {
+      const repaired = decodeURIComponent(escape(s));
+      if (repaired === s) break;
+      s = repaired;
+    } catch (_) { break; }
+  }
+  return s.replace(/[\r\n]+/g, " ").trim();
+}
 
 // ================================================================
 // V17 HYBRID MARKET EVENT ENGINE
@@ -3956,42 +3971,51 @@ function v15610RadarGateReasons(candidate) {
   if (timingScore < Number(CONFIG.RADAR_TIMING_MIN_ENTRY_SCORE || 45)) reasons.push(`ENTRY_TIMING_SCORE_BELOW_${CONFIG.RADAR_TIMING_MIN_ENTRY_SCORE || 45}`);
   return reasons;
 }
-function selectPrioritySignals(signals, positions) {
-const ranked = [...signals]
-.filter(s => s?.executionEligible && s?.tradePlan?.valid)
-.sort((a,b) => (a?.signalTier==='EVENT_SEQUENCE' && b?.signalTier==='EVENT_SEQUENCE') ? hybridEventPriority(b)-hybridEventPriority(a) : a?.signalTier==='EVENT_SEQUENCE' ? -1 : b?.signalTier==='EVENT_SEQUENCE' ? 1 : signalPriorityScore(b)-signalPriorityScore(a));
- 
-const selected = [];
-let totalAllocation = 0;
-let totalRisk = 0;
- 
-for (const signal of ranked) {
-if (selected.length >= CONFIG.MAX_POSITIONS) break;
- 
-const conflict = exposureConflict(signal, [...positions, ...selected.map(s => ({
-symbol: s.symbol
-}))]);
-if (conflict.conflict) continue;
- 
-const allocation = Number(
-signal.tradePlan?.allocation ?? allocationFromScore(signal.score)
-);
-const risk = Number(CONFIG.RISK_PER_TRADE);
- 
-if (totalAllocation + allocation > CONFIG.MAX_TOTAL_CAPITAL_ALLOCATION + 1e-9) continue;
-if (totalRisk + risk > CONFIG.MAX_TOTAL_RISK + 1e-9) continue;
- 
-selected.push(signal);
-totalAllocation += allocation;
-totalRisk += risk;
-}
- 
-return {
-selected,
-totalAllocation,
-totalRisk,
-ranked
-};
+function selectPrioritySignals(signals, positions, options = {}) {
+  const liveMode = options?.liveMode === true;
+  const positionSet = liveMode ? [] : (Array.isArray(positions) ? positions : []);
+  const ranked = [...(Array.isArray(signals) ? signals : [])]
+    .filter(s => s?.executionEligible && s?.tradePlan?.valid)
+    .sort((a,b) => (a?.signalTier==='EVENT_SEQUENCE' && b?.signalTier==='EVENT_SEQUENCE')
+      ? hybridEventPriority(b)-hybridEventPriority(a)
+      : a?.signalTier==='EVENT_SEQUENCE' ? -1
+      : b?.signalTier==='EVENT_SEQUENCE' ? 1
+      : signalPriorityScore(b)-signalPriorityScore(a));
+
+  const selected = [];
+  const rejected = [];
+  let totalAllocation = 0;
+  let totalRisk = 0;
+
+  for (const signal of ranked) {
+    if (selected.length >= CONFIG.MAX_POSITIONS) {
+      rejected.push({symbol:signal.symbol, reason:"MAX_POSITIONS_SELECTION"});
+      continue;
+    }
+
+    const conflict = exposureConflict(signal, [...positionSet, ...selected.map(s => ({symbol:s.symbol}))]);
+    if (conflict.conflict) {
+      rejected.push({symbol:signal.symbol, reason:conflict.reason});
+      continue;
+    }
+
+    const allocation = Number(signal.tradePlan?.allocation ?? allocationFromScore(signal.score));
+    const risk = Number(CONFIG.RISK_PER_TRADE);
+    if (totalAllocation + allocation > CONFIG.MAX_TOTAL_CAPITAL_ALLOCATION + 1e-9) {
+      rejected.push({symbol:signal.symbol, reason:"TOTAL_ALLOCATION_CAP"});
+      continue;
+    }
+    if (totalRisk + risk > CONFIG.MAX_TOTAL_RISK + 1e-9) {
+      rejected.push({symbol:signal.symbol, reason:"TOTAL_RISK_CAP"});
+      continue;
+    }
+
+    selected.push(signal);
+    totalAllocation += allocation;
+    totalRisk += risk;
+  }
+
+  return {selected,totalAllocation,totalRisk,ranked,rejected};
 }
  
  
@@ -4295,7 +4319,10 @@ async function runFullScan(env, scanOptions = {}) {
   // Entry selection remains event-based, but execution MUST still pass portfolio/risk limits.
   // Top Trader is positive confirmation only; it never creates an entry.
   const openPositions = await loadPositions(env);
-  const selectedEvents = selectPrioritySignals(signals, openPositions).selected;
+  const liveMode = executionEnabled(env);
+  const selectionBasePositions = liveMode ? [] : openPositions;
+  const selection = selectPrioritySignals(signals, selectionBasePositions, {liveMode});
+  const selectedEvents = selection.selected;
   selectedEvents.sort((a,b)=>hybridEventPriority(b)-hybridEventPriority(a));
   for(const signal of selectedEvents){
     const key=signal.id;
@@ -4334,11 +4361,12 @@ async function runFullScan(env, scanOptions = {}) {
   } catch (tgError) {
     console.error("[TELEGRAM][CYCLE_REPORT_ERROR]", {scanId,error:safeError(tgError)});
   }
-  state.lastScan={at:Date.now(),durationMs:Date.now()-started,candidates:signals.length,selected:selectedEvents.length,executionRejected:Math.max(0,signals.length-selectedEvents.length),executed:executionResults.filter(x=>x?.executed).length};
-  state.lastDiagnostics={version:CONFIG.VERSION,engine:"STRUCTURE_EVENT_SEQUENCE_NO_ENTRY_SCORE",markets:markets.length,broad5mScanned:broad5m.size,deepScanned:rows.length,eventCandidates,entries:signals.length,executed:executionResults.filter(x=>x?.executed).length,flowAvailable:Boolean(flowData?.available),topTraderAvailable:Boolean(traders?.available),eventStats,errors};
+  console.log("[HYBRID][SELECTION]",{scanId,liveMode,candidates:signals.length,eligible:selection.ranked.length,selected:selectedEvents.length,rejected:selection.rejected});
+  state.lastScan={at:Date.now(),durationMs:Date.now()-started,candidates:signals.length,selected:selectedEvents.length,executionRejected:Math.max(0,signals.length-selectedEvents.length),executed:executionResults.filter(x=>x?.executed).length,selectionRejected:selection.rejected};
+  state.lastDiagnostics={version:CONFIG.VERSION,engine:"STRUCTURE_EVENT_SEQUENCE_NO_ENTRY_SCORE",markets:markets.length,broad5mScanned:broad5m.size,deepScanned:rows.length,eventCandidates,entries:signals.length,executed:executionResults.filter(x=>x?.executed).length,flowAvailable:Boolean(flowData?.available),topTraderAvailable:Boolean(traders?.available),eventStats,errors,selection:{liveMode,eligible:selection.ranked.length,selected:selectedEvents.length,rejected:selection.rejected}};
   try{await saveState(env,state);}catch(e){errors.push({scope:"state",error:safeError(e)});
   }
-  return{ok:true,status:signals.length?"ENTRY_READY":"WATCHING",scanned:markets.length,requested:markets.length,broad5mScanned:broad5m.size,deepPlanned:rows.length,deepAttempted,deepSucceeded,deepErrors,deepScanned:deepSucceeded,eventCandidates,candidates:signals.length,signals,executionResults,errors,eventStats,diagnostics:state.lastDiagnostics,timestamp:Date.now()};
+  return{ok:true,status:signals.length?"ENTRY_READY":"WATCHING",scanned:markets.length,requested:markets.length,broad5mScanned:broad5m.size,deepPlanned:rows.length,deepAttempted,deepSucceeded,deepErrors,deepScanned:deepSucceeded,eventCandidates,candidates:signals.length,signals,executionResults,errors,eventStats,selection:{liveMode,eligible:selection.ranked.length,selected:selectedEvents.length,rejected:selection.rejected},diagnostics:state.lastDiagnostics,timestamp:Date.now()};
 }
 
 async function riskGuard(env, state) {
@@ -4574,7 +4602,7 @@ if (n >= 1) return n.toLocaleString("en-US", { maximumFractionDigits: 4 });
 return n.toLocaleString("en-US", { maximumFractionDigits: 8 });
 }
  
-function tgText(value, fallback = "N/A") {
+function legacyTelegramTextUnused(value, fallback = "N/A") {
 let s = value === null || value === undefined || value === "" ? fallback : String(value);
 // V15.6.6: defensive repair for persisted/dynamic UTF-8 mojibake.
 for(let i=0;i<2;i++){
@@ -4607,8 +4635,8 @@ const direction = String(signal?.direction || "").toUpperCase();
 const icon = direction === "LONG" ? "🟢" : direction === "SHORT" ? "🔴" : "⚪";
 const p = signal?.tradePlan || {};
 const t = signal?.trend || {};
-const tier = tgText(signal?.signalTier || signal?.status, "SIGNAL");
-const symbol = tgText(signal?.symbol, "UNKNOWN");
+const tier = telegramTextSafe(signal?.signalTier || signal?.status, "SIGNAL");
+const symbol = telegramTextSafe(signal?.symbol, "UNKNOWN");
 const score = tgNumber(signal?.score, 1, "0.0");
 const confidence = tgNumber(signal?.confidence, 0, "0");
 const edge = tgNumber(signal?.edge, 1, "0.0");
@@ -4635,13 +4663,13 @@ radarType ? `${radarType}  •  Radar: ${radarScore}/100` : "",
 `TP3   : ${tgPrice(p?.tp3)}`,
 "",
 "📈 TREND",
-`4H  : ${tgText(t?.macro4h)}`,
-`1H  : ${tgText(t?.trend1h)}`,
-`15M : ${tgText(t?.entry15m)}`,
-`5M  : ${tgText(t?.fast5m)}`,
+`4H  : ${telegramTextSafe(t?.macro4h)}`,
+`1H  : ${telegramTextSafe(t?.trend1h)}`,
+`15M : ${telegramTextSafe(t?.entry15m)}`,
+`5M  : ${telegramTextSafe(t?.fast5m)}`,
 "",
-`⚙️ Leverage: ${tgText(p?.leverage ?? CONFIG.DEFAULT_LEVERAGE, CONFIG.DEFAULT_LEVERAGE) }x`,
-`🛡️ Risk/Trade: ${tgText(p?.riskPerTradePercent ?? (CONFIG.RISK_PER_TRADE * 100).toFixed(2), (CONFIG.RISK_PER_TRADE * 100).toFixed(2))}%`,
+`⚙️ Leverage: ${telegramTextSafe(p?.leverage ?? CONFIG.DEFAULT_LEVERAGE, CONFIG.DEFAULT_LEVERAGE) }x`,
+`🛡️ Risk/Trade: ${telegramTextSafe(p?.riskPerTradePercent ?? (CONFIG.RISK_PER_TRADE * 100).toFixed(2), (CONFIG.RISK_PER_TRADE * 100).toFixed(2))}%`,
 `🤖 ${signal?.executionEligible ? "EXECUTION-ELIGIBLE" : "SIGNAL-ONLY"}`,
 "",
 "ℹ️ این پیام فقط اطلاع‌رسانی است؛ برای ورود نیازی به تأیید تلگرام نیست.",
@@ -4655,10 +4683,10 @@ function formatTelegramStatus(result) {
 return [
 "⚠️ GMX FUTURES SCAN",
 "━━━━━━━━━━━━━━━━━━",
-`Status   : ${tgText(result?.status, "UNKNOWN")}`,
-`Scanned  : ${tgText(result?.scanned, "0")}`,
-`Signals  : ${tgText(result?.candidates, "0")}`,
-result?.reason ? `Reason   : ${tgText(result.reason)}` : "",
+`Status   : ${telegramTextSafe(result?.status, "UNKNOWN")}`,
+`Scanned  : ${telegramTextSafe(result?.scanned, "0")}`,
+`Signals  : ${telegramTextSafe(result?.candidates, "0")}`,
+result?.reason ? `Reason   : ${telegramTextSafe(result.reason)}` : "",
 "ℹ️ Telegram is notification-only and does not control the bot."
 ].filter(Boolean).join("\n");
 }
@@ -5530,8 +5558,8 @@ cronMatchesRecommended: cron === CONFIG.CRON_RECOMMENDED,
 scanStatus: scan?.status || null,
 scanOk: scan?.ok ?? null,
 scanned: scan?.scanned ?? null,
-signals: scan?.signalsDetected ?? scan?.topSignals?.length ?? 0,
-notificationEligible: scan?.notificationEligible ?? scan?.diagnostics?.notificationEligible ?? 0,
+signals: scan?.candidates ?? scan?.signals?.length ?? scan?.signalsDetected ?? scan?.topSignals?.length ?? 0,
+notificationEligible: scan?.notificationEligible ?? scan?.diagnostics?.notificationEligible ?? scan?.candidates ?? 0,
 eventCandidates: scan?.eventCandidates ?? scan?.diagnostics?.eventCandidates ?? 0,
   broad5mScanned: scan?.broad5mScanned ?? scan?.diagnostics?.broad5mScanned ?? 0,
   deepScanned: scan?.deepScanned ?? scan?.diagnostics?.deepScanned ?? 0,
@@ -5539,7 +5567,7 @@ eventCandidates: scan?.eventCandidates ?? scan?.diagnostics?.eventCandidates ?? 
 signalsDeduped: scan?.signalsDeduped ?? scan?.diagnostics?.signalsDeduped ?? 0,
 notified: scan?.diagnostics?.notified ?? 0,
 coreDirectional: { long: scan?.diagnostics?.longAnalyzed ?? 0, short: scan?.diagnostics?.shortAnalyzed ?? 0, noTrade: scan?.diagnostics?.noTradeAnalyzed ?? 0, valid: scan?.diagnostics?.validSignals ?? 0, watch: scan?.diagnostics?.watchSignals ?? 0 },
-execution: scan?.executionSummary || scan?.diagnostics?.executionSummary || null,
+execution: scan?.executionSummary || scan?.diagnostics?.executionSummary || (Array.isArray(scan?.executionResults) ? {attempted:scan.executionResults.length,executed:scan.executionResults.filter(x=>x?.executed).length,failed:scan.executionResults.filter(x=>x && x.executed===false && (x.error||x.reason)).length} : null),
 executionResults: Array.isArray(scan?.executionResults) ? scan.executionResults.slice(0,3).map(x => ({symbol:x?.symbol || null,executed:Boolean(x?.executed),reason:x?.reason || null,error:x?.error || null})) : [],
 radar: { coverage: scan?.radarCoverageMarkets ?? scan?.diagnostics?.radarLane?.coverageMarkets ?? 0, directional: scan?.radarDirectionalMarkets ?? scan?.diagnostics?.radarLane?.directionalMarkets ?? 0, long: scan?.radarLongMarkets ?? scan?.diagnostics?.radarLane?.longMarkets ?? 0, short: scan?.radarShortMarkets ?? scan?.diagnostics?.radarLane?.shortMarkets ?? 0, hot: scan?.radarHotCandidates ?? scan?.diagnostics?.radarLane?.hotCandidateCount ?? 0, watch: scan?.radarWatchCandidates ?? scan?.diagnostics?.radarLane?.watchCandidates ?? 0, trace: scan?.diagnostics?.radarLane?.trace || null },
 telegram: scan?.diagnostics?.telegram || null,
@@ -8768,10 +8796,10 @@ return { executed:true, mode:"LIVE", lane:"RADAR", account, symbol, direction:pl
 
 
 function formatTelegramExecutionFailure(signal, error, result=null) {
-  const symbol = tgText(signal?.symbol || result?.symbol || "UNKNOWN");
+  const symbol = telegramTextSafe(signal?.symbol || result?.symbol || "UNKNOWN");
   const direction = String(signal?.direction || result?.direction || "UNKNOWN").toUpperCase();
-  const reason = tgText(result?.reason || result?.error || error || "UNKNOWN_EXECUTION_ERROR");
-  const tier = tgText(signal?.signalTier || signal?.hybridSetup?.tier || "EVENT");
+  const reason = telegramTextSafe(result?.reason || result?.error || error || "UNKNOWN_EXECUTION_ERROR");
+  const tier = telegramTextSafe(signal?.signalTier || signal?.hybridSetup?.tier || "EVENT");
   return [
     "🔴 LIVE EXECUTION FAILED",
     "━━━━━━━━━━━━━━━━━━",
@@ -8805,7 +8833,7 @@ function formatTelegramScanHeartbeat(result, scanId) {
     `📍 Reactions: S ${Number(stats.supportReactions || 0)} / R ${Number(stats.resistanceReactions || 0)}`,
     `💥 Breakouts: ${Number(stats.breakouts || 0)}`,
     `🔁 Retests: ${Number(stats.retestConfirmed || 0)}`,
-    `🆔 Scan: ${tgText(scanId, "n/a")}`,
+    `🆔 Scan: ${telegramTextSafe(scanId, "n/a")}`,
     `🕐 ${new Date().toISOString()}`,
     "ℹ️ این گزارش برای تشخیص مسیر Scan → Selection → Execution ارسال می‌شود."
   ].join("\n");
