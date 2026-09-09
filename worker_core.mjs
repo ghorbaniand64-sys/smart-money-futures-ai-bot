@@ -75,7 +75,7 @@ function normalizeSymbol(symbol){
 
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V17.3.9 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
+// Version: V17.3.19 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
 // Platform: GitHub Actions + Node.js
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -87,6 +87,12 @@ function normalizeSymbol(symbol){
 // ================================
 function safeError(error) {
 return error?.message || String(error || "Unknown error");
+}
+
+// V17.3.19: JSON-safe serializer for SDK responses that may contain native BigInt values.
+// This is only for persistence/logging boundaries. GMX requests continue using native BigInt.
+function jsonStringifySafe(value, space = undefined) {
+return JSON.stringify(value, (_key, v) => typeof v === "bigint" ? v.toString() : v, space);
 }
 
 // V15.6.7 FIX: Radar price-integrity helpers are module-scope so the
@@ -6420,7 +6426,7 @@ await env.BOT_STATE.put(
  
 "audit",
  
-JSON.stringify(
+jsonStringifySafe(
 logs.slice(-100)
 )
  
@@ -10246,7 +10252,13 @@ return {executed:false,mode:"LIVE",reason:"Signal is not execution-eligible",sig
 }
 try {
 const result=await executeLiveSignal(signal,env);
-await auditLog(env,{type:"LIVE_EXECUTION",signalId:signal.id,result});
+try {
+  await auditLog(env,{type:"LIVE_EXECUTION",signalId:signal.id,result});
+} catch(auditError) {
+  // Audit persistence must never turn a successful GMX execution into a
+  // reported execution failure.
+  console.error("[AUDIT][LIVE_EXECUTION_LOG_ERROR]", {error:safeError(auditError)});
+}
 return {...result,signal};
 } catch(error) {
 await auditLog(env,{type:"LIVE_EXECUTION_ERROR",signalId:signal?.id,error:safeError(error)});
