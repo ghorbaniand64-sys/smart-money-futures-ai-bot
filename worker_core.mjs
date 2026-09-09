@@ -8812,7 +8812,8 @@ async function fetchGmxRouterAllowance(sdk,account,symbol){
 async function waitForGmxRouterAllowance(sdk,account,symbol,required,attempts=30){
   let last=0n; for(let i=0;i<attempts;i++){last=(await fetchGmxRouterAllowance(sdk,account,symbol)).allowance;if(last>=required)return {ok:true,allowance:last,polls:i+1};if(i+1<attempts)await new Promise(r=>setTimeout(r,1000));} return {ok:false,allowance:last,polls:attempts};
 }
-async function ensureGmxCollateralAllowance(sdk,signer,account,symbol,requiredAmount,balances){
+async function ensureGmxCollateralAllowance(sdk,signer,account,symbol,requiredAmount,balances,options={}){
+  const forceRefresh=Boolean(options?.forceRefresh);
   const required=allowanceNumber(requiredAmount);
   if(required===null||required<=0n)throw new Error("GMX_ALLOWANCE_REQUIRED_AMOUNT_INVALID");
 
@@ -8842,7 +8843,8 @@ async function ensureGmxCollateralAllowance(sdk,signer,account,symbol,requiredAm
     approvalTxHash:null
   };
 
-  if(before.allowance>=required)return {...meta,sufficient:true,allowanceAfter:before.allowance.toString(),polls:0};
+  if(before.allowance>=required && !forceRefresh)return {...meta,sufficient:true,allowanceAfter:before.allowance.toString(),polls:0};
+  if(forceRefresh){ meta.forceRefresh=true; meta.allowanceWasSufficient=before.allowance>=required; }
 
   if(typeof sdk.buildApproveTransaction!=="function")
     throw executionStageError("ERC20_APPROVAL",new Error("GMX SDK buildApproveTransaction unavailable"),meta);
@@ -9524,6 +9526,15 @@ async function verifyLiveEntrySettlement(sdk, account, sdkSymbol, direction, col
   return {verified:false,position:null,walletAfter,walletDelta:walletDeltaText(walletBefore,walletAfter,collateralSymbol)};
 }
 
+function isAllowanceRelayFailure(statusResult){
+  const r=statusResult?.response||{};
+  const msg=String(r?.error?.message||r?.error?.code||r?.cancellationReason||statusResult?.status||"").toLowerCase();
+  return msg.includes("allowance") || msg.includes("transfer amount exceeds allowance") || msg.includes("insufficient allowance");
+}
+async function forceRefreshGmxAllowance(sdk,signer,account,symbol,requiredAmount,balances){
+  return ensureGmxCollateralAllowance(sdk,signer,account,symbol,requiredAmount,balances,{forceRefresh:true});
+}
+
 async function executeLiveSignal(signal, env) {
 if (!executionEnabled(env)) return {executed:false,mode:"SIGNAL",reason:"Execution disabled"};
 const direction = String(signal?.direction || "").toUpperCase();
@@ -9654,6 +9665,30 @@ await markLiveExecutionSubmitted(env, lock.key, signal, result);
 const orderStatusResult = await pollLiveOrderStatus(sdk, result?.requestId, 60000, 2000);
 const orderStatus = String(orderStatusResult?.status || result?.status || "unknown").toLowerCase();
 if (orderStatusResult?.available && orderStatusResult?.terminal && orderStatus !== "executed") {
+  if (orderStatus === "relay_failed" && isAllowanceRelayFailure(orderStatusResult)) {
+    let repairInfo=null;
+    try {
+      repairInfo=await forceRefreshGmxAllowance(sdk,signer,account,collateral.symbol,toBigIntDecimal(usedCollateralUsd,6),balances);
+      const retryPrepared=await sdk.prepareOrder(buildOrderRequest(usedCollateralUsd));
+      const retrySignature=await sdk.signOrder(retryPrepared,signer);
+      const retryResult=await sdk.submitOrder({mode:retryPrepared.mode,requestId:retryPrepared.requestId,signature:retrySignature,from:account,idempotencyKey:retryPrepared.idempotencyKey,eip712Data:{batchParams:retryPrepared.payload.batchParams,relayParams:retryPrepared.payload.relayParams}});
+      const retryStatusResult=await pollLiveOrderStatus(sdk,retryResult?.requestId,60000,2000);
+      const retryStatus=String(retryStatusResult?.status||retryResult?.status||"unknown").toLowerCase();
+      if(retryStatusResult?.available && retryStatusResult?.terminal && retryStatus === "executed") {
+        const verification=await verifyLiveEntrySettlement(sdk,account,sdkSymbol,orderDirection,collateral.symbol,walletBefore,5);
+        if(verification.verified){
+          const walletAfter=verification.walletAfter||await readLiveWalletSnapshot(sdk,account);
+          const walletDelta=Number.isFinite(Number(verification.walletDelta))?Number(verification.walletDelta):null;
+          const recovered={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:usedCollateralUsd,requestedCollateralUsd,minimumViableCollateralUsd,collateralAdjustedForGmxMinimum:usedCollateralUsd>requestedCollateralUsd+0.000001,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,allowance:{...allowanceInfo,relayRecovery:true,repair:repairInfo,retryRequestId:retryResult?.requestId||null},entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:retryResult?.requestId||null,status:retryStatus,positionVerified:true,walletBefore,walletAfter,walletDelta,settlementVerified:Boolean(verification.settled),executionKey:lock.key};
+          try { await sendTelegram(env,formatTelegramLiveEntry(recovered)); } catch(_) {}
+          return recovered;
+        }
+      }
+      orderStatusResult.recovery={attempted:true,repair:repairInfo,retryRequestId:retryResult?.requestId||null,retryStatus,retryStatusResponse:retryStatusResult?.response||null};
+    } catch(recoveryError) {
+      orderStatusResult.recovery={attempted:true,repair:repairInfo,recoveryError:safeError(recoveryError),recoveryStage:recoveryError?.executionStage||null};
+    }
+  }
   const walletAfterFailure = await readLiveWalletSnapshot(sdk, account);
   const tokenKey=String(collateral.symbol||"").toUpperCase();
   const beforeToken=Number(walletBefore?.[tokenKey]);

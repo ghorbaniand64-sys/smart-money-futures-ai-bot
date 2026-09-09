@@ -1,0 +1,13 @@
+GMX BOT VIP RELEASE
+
+1) Fixed GitHub runner import to worker_core.mjs.
+2) V17.4.0 VIP allowance recovery:
+   - Detects terminal GMX relay failures caused by ERC20 allowance.
+   - Forces a fresh GMX router approval using buildApproveTransaction().
+   - Verifies the allowance through the GMX SDK.
+   - Re-prepares, re-signs and re-submits the exact order once.
+   - Counts execution only after GMX reports executed AND the position is verified.
+3) Existing risk, sizing, TP/SL and position limits are preserved.
+4) No synthetic minimum order was introduced.
+
+IMPORTANT: This is live-trading code. Test with a small collateral amount first.
