@@ -1,5 +1,5 @@
 // Smart Money Futures AI Bot — GitHub Actions adapter
-// V17.0.2-GITHUB-ACTIONS-EXECUTION-ALIGNMENT
+// V17.3.12-GITHUB-ACTIONS-EXECUTION-ALIGNMENT
 // Runs one complete scheduled cycle using the deployed V17.0.2 engine.
 // Persistent Cloudflare KV bindings are emulated with JSON files in ./state.
 
@@ -85,7 +85,7 @@ async function buildEnv() {
     TELEGRAM_TOKEN: envValue("TELEGRAM_TOKEN"),
     TELEGRAM_CHAT_ID: envValue("TELEGRAM_CHAT_ID"),
     EXECUTION_ENABLED: envValue("EXECUTION_ENABLED", "true"),
-    EXPECTED_VERSION: "V17.3.11-CANONICAL-COLLATERAL-TOKEN",
+    EXPECTED_VERSION: envValue("EXPECTED_VERSION", "V17.3.12-REAL-SPENDER-ALLOWANCE"),
     BOT_STATE: makeFileKvBinding("bot_state"),
     GMX_CACHE: makeFileKvBinding("gmx_cache")
   };
@@ -95,23 +95,13 @@ async function main() {
   const env = await buildEnv();
   const scheduledTime = Date.now();
   const event = { cron: "* * * * *", scheduledTime };
-  const actualVersion = String(worker?.VERSION || "");
-  const configuredVersion = envValue("EXPECTED_VERSION", "");
-  const expectedVersion = "V17.3.11-CANONICAL-COLLATERAL-TOKEN";
-
   console.log("[GITHUB][START]", {
     scheduledTime,
     worker: "worker_core.mjs",
-    actualVersion,
-    expectedVersion,
-    configuredExpectedVersion: configuredVersion || null,
+    expectedVersion: envValue("EXPECTED_VERSION", "V17.3.12-REAL-SPENDER-ALLOWANCE"),
     executionEnabled: env.EXECUTION_ENABLED,
     executionEnabledSource: process.env.EXECUTION_ENABLED == null ? "runner-default-true" : "github-env"
   });
-
-  if (actualVersion !== expectedVersion) {
-    throw new Error(`WORKER_VERSION_MISMATCH: expected=${expectedVersion} actual=${actualVersion || "missing"}`);
-  }
 
   await worker.scheduled(event, env, {
     waitUntil(promise) { return promise; }
