@@ -75,7 +75,7 @@ function normalizeSymbol(symbol){
 
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V17.3.20 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
+// Version: V17.3.21 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
 // Platform: GitHub Actions + Node.js
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -477,7 +477,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.3.20-GMX-BIGINT-SERIALIZATION-BRIDGE",
+VERSION: "V17.3.21-GMX-BIGINT-SERIALIZATION-BRIDGE-RUNNER-FIX",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
