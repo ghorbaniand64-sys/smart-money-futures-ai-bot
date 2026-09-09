@@ -1,7 +1,7 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
-║  V17.3.10 — ON-CHAIN ALLOWANCE HARDENING + EARLY ENTRY ENGINE UNLOCK                                          ║
+║  V17.3.14 — BALANCE RESOLUTION + ON-CHAIN COLLATERAL GUARD                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  RELEASE: V17.3.10-ONCHAIN-ALLOWANCE-HARDENING                                   ║
 ║                                                                              ║
@@ -430,7 +430,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.3.13-REAL-SPENDER-EXECUTION-GUARD",
+VERSION: "V17.3.14-BALANCE-RESOLUTION-ONCHAIN-GUARD",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -8799,7 +8799,8 @@ function allowanceEntryForToken(raw, tokenSymbol) {
   }; return visit(raw);
 }
 const GMX_ARBITRUM_CANONICAL_COLLATERAL = Object.freeze({
-  USDC: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+  USDC: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+  USDT: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
 });
 
 function tokenAddressFromObject(value, tokenSymbol) {
@@ -9005,10 +9006,51 @@ async function ensureGmxCollateralAllowance(sdk,signer,account,symbol,requiredAm
 // of the currently available wallet collateral), so this does NOT loosen any
 // portfolio/risk limit. When allowance is already sufficient, this function
 // performs only RPC/API reads and consumes no gas.
+async function readGmxOnchainTokenBalance(rpcUrl,tokenAddress,owner,decimals=6){
+  if(!rpcUrl||!tokenAddress||!owner) return {ok:false,balance:0,raw:0n};
+  const data="0x70a08231"+gmxPadAddress(owner);
+  const raw=await gmxRpcCall(rpcUrl,"eth_call",[{to:tokenAddress,data},"latest"]);
+  if(typeof raw!=="string"||!/^0x[0-9a-fA-F]+$/.test(raw)) throw new Error(`ERC20_BALANCE_CALL_INVALID: ${String(raw)}`);
+  const value=BigInt(raw);
+  return {ok:true,balance:Number(value)/(10**decimals),raw:value};
+}
+
+async function resolveLiveCollateralBalances(sdk,account,balances,rpcUrl){
+  const parsed=extractCollateralBalances(balances);
+  const result={USDC:parsed.USDC,USDT:parsed.USDT};
+  const source=[];
+  if(parsed.USDC?.usd>0) source.push("SDK_USDC");
+  if(parsed.USDT?.usd>0) source.push("SDK_USDT");
+  if(rpcUrl){
+    for(const symbol of ["USDC","USDT"]){
+      const address=GMX_ARBITRUM_CANONICAL_COLLATERAL[symbol];
+      try{
+        const chain=await readGmxOnchainTokenBalance(rpcUrl,address,account,6);
+        if(chain.ok){
+          const chainUsd=Number(chain.balance);
+          if(chainUsd>0){
+            result[symbol]={symbol,usd:chainUsd,balance:chainUsd,decimals:6,address,source:"ONCHAIN"};
+            source.push(`ONCHAIN_${symbol}`);
+          } else if(result[symbol] && Number(result[symbol].usd||0)>0){
+            // On-chain is authoritative: do not trade against a stale API balance.
+            result[symbol]=null;
+            source.push(`ONCHAIN_${symbol}_ZERO`);
+          }
+        }
+      }catch(error){
+        source.push(`ONCHAIN_${symbol}_ERROR`);
+        console.warn("[BALANCE][ONCHAIN_READ_ERROR]",{symbol,error:safeError(error)});
+      }
+    }
+  }
+  return {balances:result,source:[...new Set(source)],walletUsd:Object.values(result).reduce((sum,b)=>sum+Number(b?.usd||0),0)};
+}
+
 async function preflightGmxCollateralAllowances(env){
   const started=Date.now();
-  const base={enabled:CONFIG.ALLOWANCE_PREFLIGHT_ENABLED!==false,attempted:false,ok:true,approved:[],sufficient:[],skipped:[],errors:[],elapsedMs:0,mode:executionEnabled(env)?"LIVE":"PAPER"};
+  const base={enabled:CONFIG.ALLOWANCE_PREFLIGHT_ENABLED!==false,attempted:false,ok:true,approved:[],sufficient:[],skipped:[],errors:[],elapsedMs:0,mode:executionEnabled(env)?"LIVE":"PAPER",walletUsd:0,balanceSource:[]};
   if(CONFIG.ALLOWANCE_PREFLIGHT_ENABLED===false || !executionEnabled(env)){
+    base.ok=false;
     base.skipped.push(executionEnabled(env)?"DISABLED_BY_CONFIG":"EXECUTION_DISABLED");
     base.elapsedMs=Date.now()-started;
     return base;
@@ -9016,10 +9058,15 @@ async function preflightGmxCollateralAllowances(env){
   try{
     const {sdk,signer,account}=await getLiveContext(env);
     const balances=await sdk.fetchWalletBalances({address:account});
-    const collateralBalances=extractCollateralBalances(balances);
-    const walletUsd=Object.values(collateralBalances).reduce((sum,b)=>sum+Number(b?.usd||0),0);
+    const resolved=await resolveLiveCollateralBalances(sdk,account,balances,env.ARBITRUM_RPC);
+    const collateralBalances=resolved.balances;
+    const walletUsd=Number(resolved.walletUsd||0);
+    base.walletUsd=Number(walletUsd.toFixed(6));
+    base.balanceSource=resolved.source;
+    console.log("[BALANCE][PREFLIGHT]",{walletUsd:base.walletUsd,source:base.balanceSource,USDC:collateralBalances.USDC?.usd||0,USDT:collateralBalances.USDT?.usd||0});
     if(!(walletUsd>0)){
-      base.skipped.push("NO_USDC_USDT_BALANCE");
+      base.ok=false;
+      base.skipped.push("NO_USDC_USDT_BALANCE_ONCHAIN_OR_API");
       base.elapsedMs=Date.now()-started;
       return base;
     }
@@ -9030,9 +9077,8 @@ async function preflightGmxCollateralAllowances(env){
     if(!symbols.length){ base.ok=false; base.skipped.push("NO_ELIGIBLE_COLLATERAL_SYMBOL"); }
     for(const symbol of symbols){
       const tokenUsd=Number(collateralBalances[symbol]?.usd||0);
-      // Never approve more than the actual token balance or the 20% per-position cap.
       const targetUsd=Math.min(tokenUsd,walletUsd*Number(CONFIG.MAX_CAPITAL_ALLOCATION||0.20));
-      if(!(targetUsd>0)){base.skipped.push(`${symbol}:NO_TARGET`);continue;}
+      if(!(targetUsd>0)){base.ok=false;base.skipped.push(`${symbol}:NO_TARGET`);continue;}
       try{
         const info=await ensureGmxCollateralAllowance(sdk,signer,account,symbol,toBigIntDecimal(targetUsd,6),balances,{rpcUrl:env.ARBITRUM_RPC});
         if(info?.approved)base.approved.push({token:symbol,tokenAddress:info?.tokenAddress||null,requiredUsd:Number(targetUsd.toFixed(6)),txHash:info.approvalTxHash||null,allowanceAfter:info.allowanceAfter||null,polls:info.polls||0});
@@ -9051,6 +9097,7 @@ async function preflightGmxCollateralAllowances(env){
   return base;
 }
 
+
 function findSdkMarket(markets, symbol) {
 const wanted = liveNormalizeSymbol(symbol);
 return markets.find(m => {
@@ -9062,28 +9109,70 @@ return base === wanted || indexName === wanted;
 }) || null;
 }
  
+function walletBalanceEntries(balances) {
+  const out=[];
+  const seen=new Set();
+  const visit=(value,keyHint="",depth=0)=>{
+    if(value==null || depth>7) return;
+    if(Array.isArray(value)){ for(const item of value) visit(item,"",depth+1); return; }
+    if(typeof value!=="object") return;
+    const symbolHint=String(value?.tokenSymbol||value?.symbol||value?.token?.symbol||value?.asset?.symbol||keyHint||"").toUpperCase();
+    const hasBalance=["balance","amount","balanceRaw","rawBalance","tokenBalance","balanceFormatted","balanceHuman","uiAmount","amountFormatted","usdValue","balanceUsd","balanceUSD"].some(k=>value?.[k]!=null);
+    const hasTokenIdentity=Boolean(symbolHint || value?.address || value?.tokenAddress || value?.contractAddress || value?.token?.address);
+    if(hasBalance && hasTokenIdentity){
+      const marker=`${symbolHint}|${String(value?.address||value?.tokenAddress||value?.contractAddress||value?.token?.address||"").toLowerCase()}|${String(value?.balance??value?.amount??value?.balanceRaw??value?.rawBalance??"")}`;
+      if(!seen.has(marker)){ seen.add(marker); out.push({value,keyHint}); }
+    }
+    for(const [k,v] of Object.entries(value)){
+      const ku=String(k).toUpperCase();
+      if(v && typeof v==="object") visit(v, ku, depth+1);
+    }
+  };
+  visit(balances);
+  return out;
+}
+
+function tokenNumericBalance(entry) {
+  const b=entry?.value||{};
+  const decimalsRaw=Number(b?.decimals ?? b?.token?.decimals ?? 6);
+  const decimals=Number.isFinite(decimalsRaw)&&decimalsRaw>=0&&decimalsRaw<=36?decimalsRaw:6;
+  const explicitUsd=Number(b?.balanceUsd ?? b?.balanceUSD ?? b?.usdValue ?? b?.valueUsd ?? b?.token?.usdValue ?? 0);
+  const humanCandidates=[b?.balanceFormatted,b?.balanceHuman,b?.uiAmount,b?.amountFormatted,b?.displayBalance,b?.token?.balanceFormatted];
+  let human=humanCandidates.map(Number).find(n=>Number.isFinite(n)&&n>0);
+  if(!(human>0)){
+    const rawValue=b?.balanceRaw ?? b?.rawBalance ?? b?.tokenBalance ?? b?.amountRaw;
+    if(rawValue!=null){ const n=Number(rawValue); if(Number.isFinite(n)&&n>0) human=n/(10**decimals); }
+  }
+  if(!(human>0)){
+    const rawValue=b?.balance ?? b?.amount ?? b?.value;
+    const n=Number(rawValue);
+    if(Number.isFinite(n)&&n>0){
+      // GMX /balances/wallet returns `balance` in token base units.
+      human=n/(10**decimals);
+    }
+  }
+  return {usd:explicitUsd>0?explicitUsd:human>0?human:0,balance:human>0?human:0,decimals};
+}
+
 function extractCollateralBalances(balances) {
-const arr=Array.isArray(balances)?balances:Array.isArray(balances?.balances)?balances.balances:Object.values(balances||{});
-const result={USDC:null,USDT:null};
-for (const b of arr) {
-const rawSymbol=String(b?.tokenSymbol||b?.symbol||b?.token?.symbol||"").toUpperCase();
-const address=String(b?.address||b?.tokenAddress||b?.contractAddress||b?.token?.address||b?.token?.tokenAddress||"");
-const symbol=rawSymbol==="USDC.E" ? "USDC" : rawSymbol;
-if (symbol!=="USDC" && symbol!=="USDT") continue;
-// V17.3.11: a wallet can expose multiple assets under the USDC/USDC.e
-// naming family. Only the canonical GMX Arbitrum USDC contract is eligible.
-if(symbol==="USDC" && address && address.toLowerCase()!==GMX_ARBITRUM_CANONICAL_COLLATERAL.USDC.toLowerCase()) continue;
-if(symbol==="USDC" && rawSymbol==="USDC.E" && address && address.toLowerCase()!==GMX_ARBITRUM_CANONICAL_COLLATERAL.USDC.toLowerCase()) continue;
-let usd=Number(b?.balanceUsd??b?.balanceUSD??b?.usdValue??0);
-const raw=Number(b?.balance??b?.amount??0);
-const decimals=Number(b?.decimals??6);
-if (!(usd>0) && raw>0) usd=raw/10**decimals;
-if (usd>0) {
-  result[symbol]={symbol,usd,balance:raw,decimals,address:address||GMX_ARBITRUM_CANONICAL_COLLATERAL[symbol]||null};
+  const result={USDC:null,USDT:null};
+  for(const entry of walletBalanceEntries(balances)){
+    const b=entry.value||{};
+    const rawSymbol=String(b?.tokenSymbol||b?.symbol||b?.token?.symbol||b?.asset?.symbol||entry?.keyHint||"").toUpperCase();
+    const symbol=rawSymbol.replace(/[^A-Z0-9.]/g,"")==="USDC.E"?"USDC":rawSymbol.replace(/[^A-Z0-9]/g,"");
+    if(symbol!=="USDC"&&symbol!=="USDT") continue;
+    const address=String(b?.address||b?.tokenAddress||b?.contractAddress||b?.token?.address||b?.token?.tokenAddress||"");
+    // USDC is eligible only at the current canonical GMX Arbitrum address.
+    if(symbol==="USDC"&&address&&address.toLowerCase()!==GMX_ARBITRUM_CANONICAL_COLLATERAL.USDC.toLowerCase()) continue;
+    const parsed=tokenNumericBalance(entry);
+    if(!(parsed.usd>0)) continue;
+    const candidate={symbol,usd:parsed.usd,balance:parsed.balance,decimals:parsed.decimals,address:address||GMX_ARBITRUM_CANONICAL_COLLATERAL[symbol]||null,source:"GMX_API"};
+    // Prefer the largest positive balance when multiple wrapper entries exist.
+    if(!result[symbol] || candidate.usd>Number(result[symbol].usd||0)) result[symbol]=candidate;
+  }
+  return result;
 }
-}
-return result;
-}
+
 
 function extractUsdcUsd(balances) {
 return Number(extractCollateralBalances(balances)?.USDC?.usd || 0);
@@ -9271,9 +9360,10 @@ const same = corePositions.some(pos => liveBaseAsset(liveNormalizeSymbol(String(
 if (same) return { executed:false, mode:"LIVE", lane:"RADAR", reason:"Symbol already occupied by live portfolio" };
 }
 const balances = await sdk.fetchWalletBalances({ address: account });
-const collateral = selectLiveCollateral(markets, requestedSymbol, balances);
+const resolvedBalances = await resolveLiveCollateralBalances(sdk, account, balances, env.ARBITRUM_RPC);
+const collateral = selectLiveCollateral(markets, requestedSymbol, resolvedBalances.balances);
 if (!collateral) {
-  throw new Error("No usable USDC/USDT balance with a matching GMX collateral market was detected for Radar");
+  throw new Error(`No usable USDC/USDT balance with a matching GMX collateral market was detected for Radar | walletUsd=${Number(resolvedBalances.walletUsd||0).toFixed(6)} | source=${resolvedBalances.source.join("+")||"NONE"}`);
 }
 const market = collateral.market;
 const capacity = await sdk.getTradingCapacity({ symbol: market.symbol, direction: plan.direction === "LONG" ? "long" : "short" });
@@ -9405,7 +9495,7 @@ ${icon2} EXECUTED #${i+1} — ${telegramTextSafe(x?.symbol || "UNKNOWN")}`,
     `🔎 Broad 5M: ${Number(result?.broad5mScanned || 0)}`,
     `🧠 Deep: ${Number(result?.deepScanned || result?.deepPlanned || 0)}`,
     `⚡ Event candidates: ${Number(result?.eventCandidates || 0)}`,
-    result?.allowancePreflight ? `🔐 Allowance preflight: ${result.allowancePreflight.attempted ? (result.allowancePreflight.ok ? "READY" : "ISSUE") : "NOT_RUN"} | Mode ${telegramTextSafe(result.allowancePreflight.mode||"?")} | Approved ${Number(result.allowancePreflight.approved?.length||0)} | Existing ${Number(result.allowancePreflight.sufficient?.length||0)} | Errors ${Number(result.allowancePreflight.errors?.length||0)} | Skip ${telegramTextSafe((result.allowancePreflight.skipped||[]).join(",")||"-")} | ${Number(result.allowancePreflight.elapsedMs||0)}ms` : null,
+    result?.allowancePreflight ? `🔐 Allowance preflight: ${result.allowancePreflight.attempted ? (result.allowancePreflight.ok ? "READY" : "ISSUE") : "NOT_RUN"} | Mode ${telegramTextSafe(result.allowancePreflight.mode||"?")} | Wallet $${Number(result.allowancePreflight.walletUsd||0).toFixed(2)} | Src ${telegramTextSafe((result.allowancePreflight.balanceSource||[]).join("+")||"-")} | Approved ${Number(result.allowancePreflight.approved?.length||0)} | Existing ${Number(result.allowancePreflight.sufficient?.length||0)} | Errors ${Number(result.allowancePreflight.errors?.length||0)} | Skip ${telegramTextSafe((result.allowancePreflight.skipped||[]).join(",")||"-")} | ${Number(result.allowancePreflight.elapsedMs||0)}ms` : null,
     `🚀 Early impulses: ${Number(stats.earlyImpulses || 0)}`,
     `🧪 Early debug: A ${Number(stats.earlyDebug?.attempted || 0)} / Q ${Number(stats.earlyDebug?.qualified || 0)} / R ${Number(stats.earlyDebug?.rejected || 0)}`,
     `🧩 Early gates: M ${Number(stats.earlyDebug?.movePass || 0)} | B ${Number(stats.earlyDebug?.bodyPass || 0)} | V ${Number(stats.earlyDebug?.volumePass || 0)} | F ${Number(stats.earlyDebug?.flowPass || 0)} | MA ${Number(stats.earlyDebug?.momentumActivityPass || 0)} | A ${Number(stats.earlyDebug?.accelerationPass || 0)} | Z ${Number(stats.earlyDebug?.zonePass || 0)} | P ${Number(stats.earlyDebug?.proximityPass || 0)} | PB ${Number(stats.earlyDebug?.prebreakPass || 0)} | S ${Number(stats.earlyDebug?.scorePass || 0)} | E ${Number(stats.earlyDebug?.edgePass || 0)}`,
@@ -9670,8 +9760,9 @@ const totalLivePositions = Array.isArray(positions) ? positions.filter(p => Numb
 if (totalLivePositions>=CONFIG.MAX_POSITIONS) throw new Error(`MAX_TOTAL_LIVE_POSITIONS_REACHED: ${totalLivePositions}/${CONFIG.MAX_POSITIONS}`);
 const markets=await sdk.fetchMarkets();
 const balances=await sdk.fetchWalletBalances({address:account});
-const collateral=selectLiveCollateral(markets, signal.symbol, balances);
-if (!collateral) throw new Error("No usable USDC/USDT balance with a matching GMX collateral market was detected");
+const resolvedBalances=await resolveLiveCollateralBalances(sdk,account,balances,env.ARBITRUM_RPC);
+const collateral=selectLiveCollateral(markets, signal.symbol, resolvedBalances.balances);
+if (!collateral) throw new Error(`No usable USDC/USDT balance with a matching GMX collateral market was detected | walletUsd=${Number(resolvedBalances.walletUsd||0).toFixed(6)} | source=${resolvedBalances.source.join("+")||"NONE"}`);
 const walletBefore = await readLiveWalletSnapshot(sdk, account);
 const market=collateral.market;
 const sdkSymbol=market.symbol;
