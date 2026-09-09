@@ -85,7 +85,7 @@ async function buildEnv() {
     TELEGRAM_TOKEN: envValue("TELEGRAM_TOKEN"),
     TELEGRAM_CHAT_ID: envValue("TELEGRAM_CHAT_ID"),
     EXECUTION_ENABLED: envValue("EXECUTION_ENABLED", "true"),
-    EXPECTED_VERSION: envValue("EXPECTED_VERSION", "V17.3.9-EARLY-ENTRY-ENGINE-UNLOCK"),
+    EXPECTED_VERSION: "V17.3.10-ONCHAIN-ALLOWANCE-HARDENING",
     BOT_STATE: makeFileKvBinding("bot_state"),
     GMX_CACHE: makeFileKvBinding("gmx_cache")
   };
@@ -95,13 +95,23 @@ async function main() {
   const env = await buildEnv();
   const scheduledTime = Date.now();
   const event = { cron: "* * * * *", scheduledTime };
+  const actualVersion = String(worker?.VERSION || "");
+  const configuredVersion = envValue("EXPECTED_VERSION", "");
+  const expectedVersion = "V17.3.10-ONCHAIN-ALLOWANCE-HARDENING";
+
   console.log("[GITHUB][START]", {
     scheduledTime,
     worker: "worker_core.mjs",
-    expectedVersion: envValue("EXPECTED_VERSION", "V17.3.9-EARLY-ENTRY-ENGINE-UNLOCK"),
+    actualVersion,
+    expectedVersion,
+    configuredExpectedVersion: configuredVersion || null,
     executionEnabled: env.EXECUTION_ENABLED,
     executionEnabledSource: process.env.EXECUTION_ENABLED == null ? "runner-default-true" : "github-env"
   });
+
+  if (actualVersion !== expectedVersion) {
+    throw new Error(`WORKER_VERSION_MISMATCH: expected=${expectedVersion} actual=${actualVersion || "missing"}`);
+  }
 
   await worker.scheduled(event, env, {
     waitUntil(promise) { return promise; }
