@@ -1,3 +1,45 @@
+/*
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  GMX SMART MONEY FUTURES AI BOT                                             ║
+║  V17.3 — EARLY IMPULSE / EXECUTION / TELEGRAM REPAIR                        ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  RELEASE: V17.3-EARLY-IMPULSE-EXECUTION                                    ║
+║                                                                              ║
+║  CORE FEATURES                                                               ║
+║  • Dynamic GMX market universe / broad + rotating deep scan                 ║
+║  • Smart Money / flow / volume / structure analysis                         ║
+║  • Hybrid closed-candle structure confirmation                              ║
+║  • EARLY IMPULSE layer for earlier pre-breakout entries                     ║
+║  • Anti-chase / exhaustion protection retained                               ║
+║  • Dynamic candidate prioritization using momentum acceleration              ║
+║  • Entry / SL / TP1 / TP2 / TP3 trade-plan telemetry                        ║
+║  • Live GMX execution diagnostics with prepare/sign/submit stage reporting  ║
+║  • Telegram notifications for Event Sequence / Entry Ready / failures       ║
+║                                                                              ║
+║  CAPITAL & RISK RULES                                                        ║
+║  • Maximum allocation per position: 20% of wallet                           ║
+║  • Maximum simultaneous live positions: 3                                   ║
+║  • Maximum total capital engaged: 60% of wallet                              ║
+║  • Core + Radar share the same global 3-position / 60%-capital limits       ║
+║  • Execution recovery never bypasses the configured allocation cap           ║
+║                                                                              ║
+║  EARLY IMPULSE DEFAULTS                                                       ║
+║  • Minimum move: 0.12%                                                      ║
+║  • Minimum body ratio: 0.35                                                 ║
+║  • Minimum volume ratio: 1.35                                               ║
+║  • Minimum flow imbalance: 0.07                                             ║
+║  • Minimum acceleration: 0.04%                                              ║
+║  • Maximum entry distance: 1.15 ATR                                         ║
+║  • Maximum extension: 1.25 ATR                                              ║
+║  • Minimum score: 62 / minimum edge: 6                                      ║
+║                                                                              ║
+║  SAFETY                                                                       ║
+║  • This build does not intentionally remove anti-chase protections.         ║
+║  • GMX minimum-collateral errors remain blocked if the 20% wallet cap       ║
+║    cannot satisfy the exchange requirement.                                 ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+*/
+
 // V17.2.4 LIVE DIAGNOSTICS + SELECTION REPAIR
 // V17.1.6 SDK SAFE LOADER
 // CommonJS resolution is intentional: GMX SDK 1.8.2 may expose a broken
@@ -405,7 +447,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.2.4-LIVE-SELECTION-TELEGRAM-REPAIR",
+VERSION: "V17.3-EARLY-IMPULSE-EXECUTION",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -417,7 +459,7 @@ MAX_POSITIONS: 3,
 CAPITAL_PER_TRADE: 0.05,
 MIN_CAPITAL_ALLOCATION: 0.05,
 MAX_CAPITAL_ALLOCATION: 0.20,
-MAX_TOTAL_CAPITAL_ALLOCATION: 0.30,
+MAX_TOTAL_CAPITAL_ALLOCATION: 0.60,
 RISK_PER_TRADE: 0.01,
 MAX_TOTAL_RISK: 0.03,
 DEFAULT_LEVERAGE: 5,
@@ -434,7 +476,7 @@ ALLOCATION_TIERS: [
 { minScore: 82, allocation: 0.075 },
 { minScore: 88, allocation: 0.10 },
 { minScore: 93, allocation: 0.125 },
-{ minScore: 97, allocation: 0.15 }
+{ minScore: 97, allocation: 0.20 }
 ],
 MIN_SCORE: 88,
 // Canonical V6.2 signal tiers.
@@ -652,10 +694,22 @@ HYBRID_ENTRY: {
   priorMovePct: 0.20, minZoneQuality: 2, maxEntryDistanceAtr: 1.05,
   maxRetestDistanceAtr: 0.70,
   tierFastAllocation: 0.45, tierNormalAllocation: 0.75, tierPrimeAllocation: 1.00,
-  allowNeutralActivity: true
+  allowNeutralActivity: true,
+  // V17.3: detect the live 5m impulse before candle close.
+  earlyEnabled: true,
+  earlyMinMovePct: 0.12,
+  earlyMinBodyRatio: 0.35,
+  earlyMinVolumeRatio: 1.35,
+  earlyMinFlowImbalance: 0.07,
+  earlyMinAccelerationPct: 0.04,
+  earlyMaxEntryDistanceAtr: 1.15,
+  earlyMaxExtensionAtr: 1.25,
+  earlyMinScore: 62,
+  earlyMinEdge: 6,
+  earlyMinElapsedMs: 20 * 1000
 },
 HYBRID_RISK: {
-  capitalAllocation: 0.05, minLeverage: 3, defaultLeverage: 5, maxLeverage: 10,
+  capitalAllocation: 0.20, minLeverage: 3, defaultLeverage: 5, maxLeverage: 10,
   stopAtrBuffer: 0.25, tp1R: 1.0, tp2R: 2.0, tp3R: 3.0,
   maxNotionalUsd: 5000, maxExecutionRisk: 0.015
 }
@@ -711,6 +765,51 @@ function hybridReactionResistance(c,level,flow,vol,atrValue){const m=hybridCandl
 function hybridBreakout(c,level,direction,flow,vol,atrValue){const m=hybridCandleMetrics(c),buffer=atrValue*CONFIG.HYBRID_SR.breakoutBufferAtr,above=c.close>level.high+buffer,below=c.close<level.low-buffer,a=hybridFlowAligned(flow,direction),volumeOk=vol.volumeAvailable?vol.volumeRatio>=CONFIG.HYBRID_ENTRY.minBreakoutVolumeRatio:vol.rangeRatio>=1.15,flowOk=a>=CONFIG.HYBRID_ENTRY.minBreakoutFlowImbalance,bodyOk=m.bodyRatio>=CONFIG.HYBRID_ENTRY.breakoutMinBodyRatio,broken=direction==='LONG'?above&&m.bullish:below&&m.bearish;return{broken:broken&&bodyOk,above,below,bodyOk,volumeOk,flowOk,aligned:a};}
 function hybridRetest(c,level,direction,flow,vol,atrValue){const tol=atrValue*CONFIG.HYBRID_SR.retestToleranceAtr,m=hybridCandleMetrics(c),touched=direction==='LONG'?c.low<=level.high+tol&&c.low>=level.low-tol:c.high>=level.low-tol&&c.high<=level.high+tol,holds=direction==='LONG'?c.close>level.high:c.close<level.low,rejection=direction==='LONG'?(m.bullish&&m.lowerWick>=0.15):(m.bearish&&m.upperWick>=0.15),a=hybridFlowAligned(flow,direction),activity=vol.volumeSurge||vol.rangeExpansion||a>=CONFIG.HYBRID_ENTRY.minReactionFlowImbalance||CONFIG.HYBRID_ENTRY.allowNeutralActivity;return{touched,holds,rejection,activity,aligned:a,confirmed:touched&&holds&&rejection&&activity&&m.bodyRatio>=CONFIG.HYBRID_ENTRY.retestMinBodyRatio};}
 function hybridZoneId(z){return z?`${Number(z.center).toFixed(6)}:${Number(z.low).toFixed(6)}:${Number(z.high).toFixed(6)}`:'';}
+function hybridEarlyImpulse(symbol,candles,flow){
+  if(CONFIG.HYBRID_ENTRY?.earlyEnabled===false)return null;
+  const raw=Array.isArray(candles?.["5m"])?candles["5m"]:[];
+  if(raw.length<25)return null;
+  const closed=hybridClosedCandles(raw,"5m");
+  const current=raw.at(-1);
+  if(!current||closed.length<20)return null;
+  const now=Date.now(),ts=hybridTsMs(current.timestamp);
+  if(ts>0&&now-ts<0)return null;
+  if(ts>0&&now-ts<Number(CONFIG.HYBRID_ENTRY.earlyMinElapsedMs||20000))return null;
+  const price=Number(current.close||0),open=Number(current.open||price);
+  if(!(price>0&&open>0))return null;
+  const atr=Number(hybridAtr(closed,14))||price*0.005;
+  if(!(atr>0))return null;
+  const m=hybridCandleMetrics(current);
+  const prev1=Number(closed.at(-1)?.close||0),prev2=Number(closed.at(-2)?.close||0),prev3=Number(closed.at(-3)?.close||0);
+  const movePct=(price-open)/open*100;
+  const prevMove1=prev2>0&&prev1>0?(prev1-prev2)/prev2*100:0;
+  const prevMove2=prev3>0&&prev2>0?(prev2-prev3)/prev3*100:0;
+  const acceleration=movePct-prevMove1;
+  const accelTrend=acceleration-prevMove1+prevMove2;
+  const extension=Math.abs(price-open)/atr;
+  const vol=hybridVolumeContext(raw);
+  const alignedLong=hybridFlowAligned(flow,"LONG"),alignedShort=hybridFlowAligned(flow,"SHORT");
+  const directionalMove=Math.abs(movePct);
+  const dir=movePct>0?"LONG":movePct<0?"SHORT":null;
+  if(!dir||directionalMove<Number(CONFIG.HYBRID_ENTRY.earlyMinMovePct||0.12))return null;
+  const aligned=dir==="LONG"?alignedLong:alignedShort;
+  const volumeOk=vol.volumeAvailable?Number(vol.volumeRatio)>=Number(CONFIG.HYBRID_ENTRY.earlyMinVolumeRatio||1.35):Number(vol.rangeRatio)>=1.20;
+  const flowOk=aligned>=Number(CONFIG.HYBRID_ENTRY.earlyMinFlowImbalance||0.07);
+  const bodyOk=m.bodyRatio>=Number(CONFIG.HYBRID_ENTRY.earlyMinBodyRatio||0.35);
+  const accelOk=(dir==="LONG"?acceleration:-acceleration)>=Number(CONFIG.HYBRID_ENTRY.earlyMinAccelerationPct||0.04);
+  if(!bodyOk||(!volumeOk&&!flowOk)||!accelOk)return null;
+  if(extension>Number(CONFIG.HYBRID_ENTRY.earlyMaxExtensionAtr||1.25))return null;
+  const zones=hybridBuildZones({"5m":closed,"15m":[],"1h":[],"4h":[]},price,atr);
+  const zone=dir==="LONG"?hybridNearestZone(zones.resistance,price,Number(CONFIG.HYBRID_ENTRY.earlyMaxEntryDistanceAtr||1.15),atr,"R"):hybridNearestZone(zones.support,price,Number(CONFIG.HYBRID_ENTRY.earlyMaxEntryDistanceAtr||1.15),atr,"S");
+  if(!zone)return null;
+  const distance=Math.abs(price-Number(zone.center))/atr;
+  const nearBreak=dir==="LONG"?price>=Number(zone.low)-atr*0.20:price<=Number(zone.high)+atr*0.20;
+  if(!nearBreak||distance>Number(CONFIG.HYBRID_ENTRY.earlyMaxEntryDistanceAtr||1.15))return null;
+  const score=Math.min(100,40+Math.min(20,directionalMove*20)+Math.min(15,Math.max(0,Math.abs(acceleration))*35)+Math.min(15,Math.max(0,Number(vol.volumeRatio)-1)*8)+Math.min(10,Math.max(0,aligned)*20));
+  const edge=(volumeOk?3:0)+(flowOk?4:0)+(accelOk?3:0)+(m.bodyRatio>=0.55?2:0)+(extension<=0.75?2:0);
+  if(score<Number(CONFIG.HYBRID_ENTRY.earlyMinScore||62)||edge<Number(CONFIG.HYBRID_ENTRY.earlyMinEdge||6))return null;
+  return {direction:dir,trigger:dir==="LONG"?"EARLY_IMPULSE_BREAKOUT_LONG":"EARLY_IMPULSE_BREAKOUT_SHORT",zone,evidence:["LIVE_5M_IMPULSE","ACCELERATION",...(volumeOk?["VOLUME_BURST"]:[]),...(flowOk?["FLOW_CONFIRMATION"]:[]),...(nearBreak?["PRE_BREAKOUT_PROXIMITY"]:[])],atr,price,volume:vol,flow,entryDistanceAtr:distance,tier:score>=82?"PRIME":score>=72?"NORMAL":"FAST",confirmationCount:Number(volumeOk)+Number(flowOk)+Number(accelOk),early:true,earlyScore:Number(score.toFixed(1)),edge:Number(edge.toFixed(1)),movePct:Number(movePct.toFixed(4)),accelerationPct:Number(acceleration.toFixed(4)),extensionAtr:Number(extension.toFixed(3)),candleTimestamp:ts};
+}
 function hybridClassifyStructure(symbol,candles,price,flow,previousState={}){
   const c5=hybridClosedCandles(candles['5m']||[],'5m'),c15=hybridClosedCandles(candles['15m']||[],'15m'),c1h=hybridClosedCandles(candles['1h']||[],'1h'),c4h=hybridClosedCandles(candles['4h']||[],'4h'),current=c5.at(-1);if(!current)return{state:'NO_DATA',direction:'NONE',entries:[],zones:{support:[],resistance:[]}};
   const atr5=Number(hybridAtr(c5,14))||price*0.005,zones=hybridBuildZones({'5m':c5,'15m':c15,'1h':c1h,'4h':c4h},price,atr5),vol=hybridVolumeContext(c5),entries=[],watched=[],priorC5=c5.slice(0,-1),preMove5=hybridPercentChange(priorC5,5),support=hybridNearestZone(zones.support,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'S'),resistance=hybridNearestZone(zones.resistance,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'R');
@@ -4079,7 +4178,8 @@ state.radarTelegramEvents[key] = { tier: score >= Number(CONFIG.PUMP_RADAR_HOT_S
 
 function notificationEligible(signal) {
 if (!signal || signal.direction === "NO_TRADE") return false;
-if (["VALID", "STRONG"].includes(signal.signalTier)) return true;
+if (["VALID", "STRONG", "EVENT_SEQUENCE"].includes(signal.signalTier)) return true;
+if (String(signal?.status || "").toUpperCase() === "EVENT_ENTRY_READY") return true;
 return CONFIG.NOTIFY_WATCH && signal.signalTier === "WATCH";
 }
  
@@ -4257,7 +4357,7 @@ async function runFullScan(env, scanOptions = {}) {
           const range=Math.max(0,Number(last.high||0)-Number(last.low||0));
           const avgVol=c5.slice(-20).reduce((a,c)=>a+Number(c.volume||0),0)/Math.max(1,Math.min(20,c5.length));
           const vol=Number(last.volume||0);
-          broad5m.set(s,{candles:c5,price:close,move5m:prevClose>0?(close-prevClose)/prevClose:0,range,body,volumeRatio:avgVol>0?vol/avgVol:0});
+          const prev2Close=Number(c5.at(-3)?.close||prevClose); const currentMovePct=close>0&&Number(last.open||0)>0?(close-Number(last.open))/Number(last.open)*100:0; const prevBarMovePct=prevClose>0&&prev2Close>0?(prevClose-prev2Close)/prev2Close*100:0; const accelerationPct=currentMovePct-prevBarMovePct; broad5m.set(s,{candles:c5,price:close,move5m:prevClose>0?(close-prevClose)/prevClose:0,range,body,volumeRatio:avgVol>0?vol/avgVol:0,currentMovePct,accelerationPct});
           return true;
         }catch(e){ errors.push({symbol:s,scope:"broad-5m",error:safeError(e)}); return false; }
       }));
@@ -4268,12 +4368,15 @@ async function runFullScan(env, scanOptions = {}) {
     const s=normalizeSymbol(m.symbol),f=flowData.bySymbol?.[s]||null,b=broad5m.get(s)||{};
     const abs=Math.abs(Number(f?.imbalance||0));
     const quick=Math.min(4,Math.abs(Number(b.move5m||0))*100)+(Number(b.volumeRatio||0)>=2?2:Number(b.volumeRatio||0)>=1.4?1:0);
-    return{m,s,f,b,priority:(f?.explosiveFlow?5:f?.flowSurge?4:0)+(abs>=0.30?2:abs>=0.15?1:0)+(Number(f?.largeTradeCount||0)>0?1:0)+quick};
+    const currentMove=Math.abs(Number(b.currentMovePct||0));
+    const accel=Math.abs(Number(b.accelerationPct||0));
+    const earlyBoost=currentMove>=Number(CONFIG.HYBRID_ENTRY.earlyMinMovePct||0.12)&&accel>=Number(CONFIG.HYBRID_ENTRY.earlyMinAccelerationPct||0.04)?6:currentMove>=Number(CONFIG.HYBRID_ENTRY.earlyMinMovePct||0.12)?2:0;
+    return{m,s,f,b,priority:(f?.explosiveFlow?5:f?.flowSurge?4:0)+(abs>=0.30?2:abs>=0.15?1:0)+(Number(f?.largeTradeCount||0)>0?1:0)+quick+earlyBoost,earlyBoost};
   }).sort((a,b)=>b.priority-a.priority);
   // Deep structure remains intentionally bounded, but it rotates across the COMPLETE universe.
   // The broad pass above is what gives every altcoin continuous observation coverage.
   const limit=Math.min(Number(CONFIG.HYBRID_DEEP_SCAN_LIMIT||CONFIG.DEEP_SCAN_LIMIT||18),Math.max(1,ranked.length));
-  const cursor=Math.abs(Number(state.hybridScanCursor||0))%Math.max(1,ranked.length),rows=[];const hot=ranked.filter(x=>x.priority>=4).slice(0,Math.min(6,limit));
+  const cursor=Math.abs(Number(state.hybridScanCursor||0))%Math.max(1,ranked.length),rows=[];const hot=ranked.filter(x=>x.priority>=4).sort((a,b)=>(Number(b.earlyBoost||0)-Number(a.earlyBoost||0))||(b.priority-a.priority)).slice(0,Math.min(8,limit));
   // Retest states get first-class rotation priority so a valid breakout is not lost
   // simply because its symbol moved out of the top-flow slice on the next cycle.
   const pendingSymbols=new Set(Object.entries(state.hybridStructureStates||{}).filter(([,v])=>v?.pendingRetest).map(([k])=>normalizeSymbol(k)));
@@ -4290,7 +4393,7 @@ async function runFullScan(env, scanOptions = {}) {
   for(let i=0;i<ranked.length&&rows.length<limit;i++)pushDeepRow(ranked[(cursor+i)%ranked.length]);
   state.hybridScanCursor=(cursor+rows.length)%Math.max(1,ranked.length);
   console.log("[HYBRID][DEEP_PLAN]",{scanId,universe:markets.length,broad5mScanned:broad5m.size,deepPlanned:rows.length,uniqueDeepSymbols:rowSymbols.size,cursorBefore:cursor,cursorAfter:state.hybridScanCursor,hotSelected:hot.length,rotating:true});
-  const eventStats={supportZones:0,resistanceZones:0,flowEvents:0,volumeEvents:0,supportReactions:0,resistanceReactions:0,breakouts:0,waitingRetests:0,retestConfirmed:0,entryReady:0};
+  const eventStats={supportZones:0,resistanceZones:0,flowEvents:0,volumeEvents:0,supportReactions:0,resistanceReactions:0,breakouts:0,waitingRetests:0,retestConfirmed:0,earlyImpulses:0,entryReady:0};
   let eventCandidates=0;
   let deepAttempted=0,deepSucceeded=0,deepErrors=0;
   console.log("[HYBRID][DEEP_START]",{scanId,planned:rows.length,uniqueDeepSymbols:rowSymbols.size,universe:markets.length,broad5mScanned:broad5m.size});
@@ -4310,7 +4413,7 @@ async function runFullScan(env, scanOptions = {}) {
       if(!state.hybridStructureStates)state.hybridStructureStates={};state.hybridStructureStates[row.s]=analysis.nextState||prev;
       const ef=analysis.eventFlags||{};eventStats.supportZones+=ef.supportZone?1:0;eventStats.resistanceZones+=ef.resistanceZone?1:0;eventStats.flowEvents+=(flow.flowSurge||flow.explosiveFlow)?1:0;eventStats.volumeEvents+=(analysis.volume?.volumeSurge||analysis.volume?.rangeExpansion||analysis.volume?.volumeExplosive)?1:0;eventStats.supportReactions+=ef.supportReaction?1:0;eventStats.resistanceReactions+=ef.resistanceReaction?1:0;eventStats.breakouts+=ef.breakout?1:0;eventStats.waitingRetests+=ef.waitingRetest?1:0;eventStats.retestConfirmed+=ef.retestConfirmed?1:0;
       if(ef.supportReaction||ef.resistanceReaction||ef.breakout||ef.waitingRetest||ef.retestConfirmed)eventCandidates++;
-      const setup=hybridBuildSetup(row.s,analysis,flow,traders);if(setup){eventStats.entryReady++;signals.push({id:crypto.randomUUID(),symbol:setup.symbol,market:pairSymbol(setup.symbol),direction:setup.direction,status:"EVENT_ENTRY_READY",score:0,confidence:0,price:setup.entryPrice,tradePlan:{valid:true,entry:setup.entryPrice,stopLoss:setup.stopLoss,tp1:setup.tp1,tp2:setup.tp2,tp3:setup.tp3,leverage:setup.leverage,allocation:setup.allocation,allocationPercent:Number((setup.allocation*100).toFixed(2))},trend:{},components:{structureEvent:setup.trigger,volume:analysis.volume,flow:flow},diagnostics:setup.evidence,signalTier:"EVENT_SEQUENCE",executionEligible:true,edge:0,riskScore:0,entryQuality:{overextended:false},topTraderIntelligence:setup.topTrader,hybridSetup:setup,generatedAt:Date.now()});}
+      let setup=hybridBuildSetup(row.s,analysis,flow,traders); let setupMode="STRUCTURE"; if(!setup&&CONFIG.HYBRID_ENTRY.earlyEnabled!==false){ const early=hybridEarlyImpulse(row.s,{"5m":c5},flow); if(early){ const earlyAnalysis={...analysis,price:early.price,atr:early.atr,zones:analysis.zones,entries:[early],volume:early.volume}; setup=hybridBuildSetup(row.s,earlyAnalysis,flow,traders); if(setup){setup.trigger=early.trigger;setup.tier=early.tier;setup.early=true;setup.earlyScore=early.earlyScore;setup.edge=early.edge;setup.evidence=[...(setup.evidence||[]),...(early.evidence||[])];setupMode="EARLY_IMPULSE";eventStats.earlyImpulses=(eventStats.earlyImpulses||0)+1;}} } if(setup){eventStats.entryReady++;signals.push({id:crypto.randomUUID(),symbol:setup.symbol,market:pairSymbol(setup.symbol),direction:setup.direction,status:"EVENT_ENTRY_READY",score:Number(setup.earlyScore||0),confidence:Number(setup.earlyScore||0),price:setup.entryPrice,tradePlan:{valid:true,entry:setup.entryPrice,stopLoss:setup.stopLoss,tp1:setup.tp1,tp2:setup.tp2,tp3:setup.tp3,leverage:setup.leverage,allocation:setup.allocation,allocationPercent:Number((setup.allocation*100).toFixed(2))},trend:{},components:{structureEvent:setup.trigger,volume:analysis.volume,flow:flow},diagnostics:setup.evidence,signalTier:"EVENT_SEQUENCE",executionEligible:true,edge:Number(setup.edge||0),riskScore:0,entryQuality:{overextended:false},topTraderIntelligence:setup.topTrader,hybridSetup:{...setup,mode:setupMode},generatedAt:Date.now()});}
       deepSucceeded++;
       console.log("[HYBRID][STRUCTURE]",{symbol:row.s,state:analysis.state,direction:analysis.direction,move5:analysis.move5,flow:flow.imbalance,flowSurge:Boolean(flow.flowSurge||flow.explosiveFlow),volume:analysis.volume?.volumeRatio,range:analysis.volume?.rangeRatio,support:analysis.zones?.support?.[0]?.center||null,resistance:analysis.zones?.resistance?.[0]?.center||null,events:analysis.eventFlags||{}});
     }catch(e){deepErrors++;const detail=safeError(e);errors.push({symbol:row.s,scope:"deep-structure",stage:deepStage,error:detail});console.error("[HYBRID][DEEP_ERROR]",{symbol:row.s,stage:deepStage,error:detail});}
@@ -4342,7 +4445,7 @@ async function runFullScan(env, scanOptions = {}) {
       }
     }catch(e){
       const detail=safeError(e);
-      const failure={executed:false,mode:"LIVE",symbol:signal.symbol,direction:signal.direction,error:detail};
+      const failure={executed:false,mode:"LIVE",symbol:signal.symbol,direction:signal.direction,error:detail,stage:e?.executionStage||null};
       executionResults.push(failure);
       errors.push({symbol:signal.symbol,error:detail});
       try {
@@ -8728,6 +8831,8 @@ if (ledger[key]?.status === "OPEN") return { executed:false, mode:"LIVE", lane:"
 
 const corePositions = await sdk.fetchPositionsInfo({ address: account });
 if (Array.isArray(corePositions)) {
+const totalLivePositions = corePositions.filter(pos => Number(pos?.sizeInUsd || pos?.size || 0) > 0).length;
+if (totalLivePositions >= CONFIG.MAX_POSITIONS) return { executed:false, mode:"LIVE", lane:"RADAR", reason:`MAX_TOTAL_LIVE_POSITIONS_REACHED: ${totalLivePositions}/${CONFIG.MAX_POSITIONS}` };
 const same = corePositions.some(pos => liveBaseAsset(liveNormalizeSymbol(String(pos?.indexName || pos?.symbol || ""))) === liveBaseAsset(symbol));
 if (same) return { executed:false, mode:"LIVE", lane:"RADAR", reason:"Symbol already occupied by live portfolio" };
 }
@@ -8800,12 +8905,22 @@ function formatTelegramExecutionFailure(signal, error, result=null) {
   const direction = String(signal?.direction || result?.direction || "UNKNOWN").toUpperCase();
   const reason = telegramTextSafe(result?.reason || result?.error || error || "UNKNOWN_EXECUTION_ERROR");
   const tier = telegramTextSafe(signal?.signalTier || signal?.hybridSetup?.tier || "EVENT");
+  const p=signal?.tradePlan||{};
+  const stage=telegramTextSafe(result?.stage || error?.executionStage || "PRE-EXECUTION");
   return [
     "🔴 LIVE EXECUTION FAILED",
     "━━━━━━━━━━━━━━━━━━",
     `🪙 ${symbol}`,
     `📌 Direction: ${direction}`,
     `🏷️ Tier: ${tier}`,
+    `💰 Entry: ${p.entry!=null?formatPrice(p.entry):"N/A"}`,
+    `🛑 Stop Loss: ${p.stopLoss!=null?formatPrice(p.stopLoss):"N/A"}`,
+    `🎯 TP1: ${p.tp1!=null?formatPrice(p.tp1):"N/A"}`,
+    `🎯 TP2: ${p.tp2!=null?formatPrice(p.tp2):"N/A"}`,
+    `🎯 TP3: ${p.tp3!=null?formatPrice(p.tp3):"N/A"}`,
+    `📊 Allocation: ${Number(p.allocationPercent!=null?p.allocationPercent:Number(p.allocation||0)*100).toFixed(2)}%`,
+    `⚙️ Leverage: ${Number(p.leverage||1).toFixed(1)}x`,
+    `🔧 Stage: ${stage}`,
     `❌ Reason: ${reason}`,
     `🕐 ${new Date().toISOString()}`,
     `#${symbol} #GMX #ExecutionError`
@@ -8827,6 +8942,7 @@ function formatTelegramScanHeartbeat(result, scanId) {
     `🔎 Broad 5M: ${Number(result?.broad5mScanned || 0)}`,
     `🧠 Deep: ${Number(result?.deepScanned || result?.deepPlanned || 0)}`,
     `⚡ Event candidates: ${Number(result?.eventCandidates || 0)}`,
+    `🚀 Early impulses: ${Number(stats.earlyImpulses || 0)}`,
     `🎯 Entry ready: ${Number(result?.candidates || 0)}`,
     `🟢 Executed: ${executed}`,
     `🔴 Execution failures: ${failures}`,
@@ -8852,6 +8968,9 @@ function formatTelegramLiveEntry(result) {
     `💰 Entry: ${result?.entryPrice!=null?formatPrice(result.entryPrice):"N/A"}`,
     `🛑 Stop Loss: ${result?.stopLoss!=null?formatPrice(result.stopLoss):"N/A"}`,
     `🎯 TP1: ${result?.tp1!=null?formatPrice(result.tp1):"N/A"}`,
+    `🎯 TP2: ${result?.tp2!=null?formatPrice(result.tp2):"N/A"}`,
+    `🎯 TP3: ${result?.tp3!=null?formatPrice(result.tp3):"N/A"}`,
+    `📊 Allocation: ${Number(result?.allocationPercent||0).toFixed(2)}%`,
     `⚙️ Leverage: ${Number(result?.leverage||1).toFixed(1)}x`,
     `📦 Notional: $${Number(result?.notionalUsd||0).toFixed(2)}`,
     `💵 Collateral: $${Number(result?.collateralUsd||0).toFixed(2)} ${result?.collateralToken||""}`,
@@ -8894,6 +9013,20 @@ function calculatePositionSize(balance, entry, stopLoss) {
   return Number.isFinite(notional) && notional > 0 ? notional : 0;
 }
 
+function executionStageError(stage, error, meta = {}) {
+  const message = safeError(error);
+  const e = new Error(`EXECUTION_${stage}_FAILED: ${message}`);
+  e.executionStage = stage;
+  e.causeMessage = message;
+  e.executionMeta = meta;
+  return e;
+}
+
+function isCollateralAfterFeesMinimumError(error) {
+  const m = safeError(error).toLowerCase();
+  return m.includes("collateral after fees") && m.includes("minimum required to open the position");
+}
+
 async function executeLiveSignal(signal, env) {
 if (!executionEnabled(env)) return {executed:false,mode:"SIGNAL",reason:"Execution disabled"};
 const direction = String(signal?.direction || "").toUpperCase();
@@ -8903,10 +9036,8 @@ if (!signal?.tradePlan?.valid || !["LONG","SHORT"].includes(direction)) return {
 
 const {sdk,signer,account}=await getLiveContext(env);
 const positions=await sdk.fetchPositionsInfo({address:account});
-const radarLedger = await loadRadarLiveLedger(env);
-const radarOpenCount = Object.values(radarLedger).filter(v => v && v.status === "OPEN").length;
-const coreLiveCount = Math.max(0, Array.isArray(positions) ? positions.length - radarOpenCount : 0);
-if (coreLiveCount>=CONFIG.MAX_POSITIONS) throw new Error("Maximum Core live positions reached");
+const totalLivePositions = Array.isArray(positions) ? positions.filter(p => Number(p?.sizeInUsd || p?.size || 0) > 0).length : 0;
+if (totalLivePositions>=CONFIG.MAX_POSITIONS) throw new Error(`MAX_TOTAL_LIVE_POSITIONS_REACHED: ${totalLivePositions}/${CONFIG.MAX_POSITIONS}`);
 const markets=await sdk.fetchMarkets();
 const balances=await sdk.fetchWalletBalances({address:account});
 const collateral=selectLiveCollateral(markets, signal.symbol, balances);
@@ -8917,6 +9048,13 @@ const orderDirection=signal.direction==="LONG"?"long":"short";
 const capacity=await sdk.getTradingCapacity({symbol:sdkSymbol,direction:orderDirection});
 const capacityUsd=Number(capacity?.availableLiquidity||0n)/1e30;
 const walletUsd=collateral.usd;
+const existingCollateralUsd=Array.isArray(positions)?positions.reduce((sum,p)=>{
+  const direct=[p?.collateralUsd,p?.collateralValueUsd,p?.collateralAmountUsd,p?.initialCollateralUsd].map(Number).find(n=>Number.isFinite(n)&&n>0);
+  if(direct)return sum+direct;
+  const size=Number(p?.sizeInUsd||0),lev=Number(p?.leverage||0);
+  return sum+(size>0&&lev>0?size/lev:0);
+},0):0;
+if(walletUsd>0&&existingCollateralUsd>=walletUsd*CONFIG.MAX_TOTAL_CAPITAL_ALLOCATION-1e-9) throw new Error(`MAX_TOTAL_CAPITAL_ALLOCATION_REACHED: estimatedCollateral=$${existingCollateralUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, cap=${(CONFIG.MAX_TOTAL_CAPITAL_ALLOCATION*100).toFixed(2)}%`);
 const leverage=Number(signal.tradePlan.leverage||CONFIG.DEFAULT_LEVERAGE);
 if (!Number.isFinite(leverage)||leverage<=0||leverage>CONFIG.MAX_LEVERAGE) throw new Error(`Invalid leverage: ${leverage}`);
 const allocation=Number(signal.tradePlan.allocation??allocationFromScore(signal.score));
@@ -8960,12 +9098,38 @@ try {
 const size1=toBigIntDecimal(notionalUsd*0.40,30);
 const size2=toBigIntDecimal(notionalUsd*0.30,30);
 const size3=toBigIntDecimal(notionalUsd*0.30,30);
-const prepared=await sdk.prepareOrder({kind:"increase",symbol:sdkSymbol,direction:orderDirection,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:collateralAmount,token:collateral.symbol},mode:"express",from:account,tpsl:[{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp1,30),size:size1},{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp2,30),size:size2},{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp3,30),size:size3},{type:"stop-loss",triggerPrice:sl,size}]});
-const signature=await sdk.signOrder(prepared,signer);
-const result=await sdk.submitOrder({mode:prepared.mode,requestId:prepared.requestId,signature,from:account,idempotencyKey:prepared.idempotencyKey,eip712Data:{batchParams:prepared.payload.batchParams,relayParams:prepared.payload.relayParams}});
+const buildOrderRequest = (collateralUsdForOrder) => ({kind:"increase",symbol:sdkSymbol,direction:orderDirection,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:toBigIntDecimal(collateralUsdForOrder,6),token:collateral.symbol},mode:"express",from:account,tpsl:[{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp1,30),size:size1},{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp2,30),size:size2},{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp3,30),size:size3},{type:"stop-loss",triggerPrice:sl,size}]});
+let prepared;
+let usedCollateralUsd = finalCollateralUsd;
+try {
+  prepared=await sdk.prepareOrder(buildOrderRequest(usedCollateralUsd));
+} catch(error) {
+  const allocationCollateralCap = Math.min(walletUsd * allocation, walletUsd * CONFIG.MAX_CAPITAL_ALLOCATION);
+  const recoveryCollateralUsd = Math.max(usedCollateralUsd, allocationCollateralCap);
+  if (isCollateralAfterFeesMinimumError(error) && recoveryCollateralUsd > usedCollateralUsd + 0.000001) {
+    usedCollateralUsd = recoveryCollateralUsd;
+    try {
+      prepared=await sdk.prepareOrder(buildOrderRequest(usedCollateralUsd));
+    } catch(retryError) {
+      throw executionStageError("PREPARE_ORDER", retryError, {initialCollateralUsd:Number(finalCollateralUsd.toFixed(6)),recoveryCollateralUsd:Number(usedCollateralUsd.toFixed(6)),allocationPercent:Number((allocation*100).toFixed(2)),walletUsd:Number(walletUsd.toFixed(6)),notionalUsd:Number(notionalUsd.toFixed(6)),leverage});
+    }
+  } else {
+    throw executionStageError("PREPARE_ORDER", error, {collateralUsd:Number(usedCollateralUsd.toFixed(6)),allocationPercent:Number((allocation*100).toFixed(2)),walletUsd:Number(walletUsd.toFixed(6)),notionalUsd:Number(notionalUsd.toFixed(6)),leverage});
+  }
+}
+let signature;
+try { signature=await sdk.signOrder(prepared,signer); }
+catch(error) { throw executionStageError("SIGN_ORDER", error, {requestId:prepared?.requestId||null}); }
+let result;
+try {
+  result=await sdk.submitOrder({mode:prepared.mode,requestId:prepared.requestId,signature,from:account,idempotencyKey:prepared.idempotencyKey,eip712Data:{batchParams:prepared.payload.batchParams,relayParams:prepared.payload.relayParams}});
+} catch(error) {
+  throw executionStageError("SUBMIT_ORDER", error, {requestId:prepared?.requestId||null});
+}
+finalCollateralUsd = usedCollateralUsd;
 await markLiveExecutionSubmitted(env, lock.key, signal, result);
 const verification=await verifyLiveEntryPosition(sdk,account,sdkSymbol,orderDirection,2);
-const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:verification.verified,executionKey:lock.key};
+const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:verification.verified,executionKey:lock.key};
 try { await sendTelegram(env, formatTelegramLiveEntry(entryNotice)); } catch(_) {}
 return entryNotice;
 } catch (error) {
