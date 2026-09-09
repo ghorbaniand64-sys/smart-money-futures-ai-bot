@@ -1,9 +1,9 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
-║  V17.3.1 — EARLY IMPULSE TELEMETRY                                          ║
+║  V17.3.7 — GMX EXECUTION VIABILITY + ALLOWANCE HARDENING                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.3.5-ALLOWANCE-REPAIR                                   ║
+║  RELEASE: V17.3.7-GMX-VIABILITY-ALLOWANCE-HARDENING                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -75,7 +75,7 @@ function normalizeSymbol(symbol){
 
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V17.3.1 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
+// Version: V17.3.7 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
 // Platform: GitHub Actions + Node.js
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -430,7 +430,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.3.6-ALLOWANCE-PREFLIGHT",
+VERSION: "V17.3.7-GMX-VIABILITY-ALLOWANCE-HARDENING",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -8637,7 +8637,7 @@ return liveNormalizeSymbol(symbol)?.replace(/-PERP$/i, "") || null;
 }
 
 
-// V17.3.5 — GMX ERC20 allowance preflight / exact auto-approval.
+// V17.3.7 — GMX ERC20 allowance preflight + execution viability hardening.
 function allowanceNumber(value) {
   if (value===null || value===undefined || value==="") return null;
   if (typeof value==="bigint") return value;
@@ -9243,6 +9243,18 @@ function isCollateralAfterFeesMinimumError(error) {
   return m.includes("collateral after fees") && m.includes("minimum required to open the position");
 }
 
+function gmxMinimumViableCollateralUsd() {
+  const reportedMin = Number(CONFIG.GMX_MIN_COLLATERAL_AFTER_FEES_USD || 1);
+  const buffer = Number(CONFIG.GMX_MIN_COLLATERAL_BUFFER_USD || 0);
+  const configured = Number(CONFIG.GMX_MIN_VIABLE_COLLATERAL_USD || 0);
+  return Math.max(reportedMin + Math.max(0, buffer), configured, reportedMin);
+}
+
+function executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted}) {
+  const protocolMinAfterFees = Number(CONFIG.GMX_MIN_COLLATERAL_AFTER_FEES_USD || 1);
+  return {walletUsd:Number(walletUsd.toFixed(6)),allocationPercent:Number((allocation*100).toFixed(2)),requestedCollateralUsd:Number(requestedCollateralUsd.toFixed(6)),finalCollateralUsd:Number(finalCollateralUsd.toFixed(6)),adjustedCollateralUsd:adjusted?Number(finalCollateralUsd.toFixed(6)):null,protocolMinAfterFeesUsd:Number(protocolMinAfterFees.toFixed(6)),minimumViableCollateralUsd:Number(gmxMinimumViableCollateralUsd().toFixed(6)),marketMinCollateralUsd:Number((marketMinCollateralUsd||0).toFixed(6)),maxCollateralUsd:Number(maxCollateralUsd.toFixed(6)),notionalUsd:Number(notionalUsd.toFixed(6)),leverage:Number(leverage)};
+}
+
 async function readLiveWalletSnapshot(sdk, account) {
   try {
     const balances = await sdk.fetchWalletBalances({address: account});
@@ -9381,12 +9393,21 @@ notionalUsd=Math.min(notionalUsd,CONFIG.MAX_POSITION_NOTIONAL_USD,capacityUsd>0?
 const maxCollateralUsd=Math.min(walletUsd*CONFIG.MAX_CAPITAL_ALLOCATION,CONFIG.MAX_POSITION_NOTIONAL_USD/Math.max(leverage,1));
 if (notionalUsd/Math.max(leverage,1)>maxCollateralUsd) notionalUsd=maxCollateralUsd*Math.max(leverage,1);
 let finalCollateralUsd=Math.min(maxCollateralUsd,Math.max(collateralUsd,notionalUsd/Math.max(leverage,1)));
+const requestedCollateralUsd=finalCollateralUsd;
 const marketMinPositionUsd=Number(market?.minPositionSizeUsd||0n)/1e30;
 const marketMinCollateralUsd=Number(market?.minCollateralUsd||0n)/1e30;
 if (marketMinPositionUsd>0 && notionalUsd<marketMinPositionUsd) throw new Error(`CORE_MARKET_MIN_POSITION_BLOCKED: marketMinimum=$${marketMinPositionUsd.toFixed(6)}, computed=$${notionalUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, stop=${(stopFraction*100).toFixed(2)}%, riskCap=$${executionRiskCapNotional.toFixed(6)}, allocationNotional=$${allocationNotional.toFixed(6)}, riskBasedNotional=$${riskBasedNotional.toFixed(6)}, capacity=$${capacityUsd.toFixed(6)}`);
 if (marketMinCollateralUsd>0) {
   if (walletUsd<marketMinCollateralUsd || maxCollateralUsd<marketMinCollateralUsd) throw new Error(`CORE_MARKET_MIN_COLLATERAL_BLOCKED: marketMinimum=$${marketMinCollateralUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, maxCollateral=$${maxCollateralUsd.toFixed(6)}, computedNotional=$${notionalUsd.toFixed(6)}`);
   finalCollateralUsd=Math.max(finalCollateralUsd,marketMinCollateralUsd);
+}
+// V17.3.7: GMX protocol-level minimum-after-fees viability guard.
+const minimumViableCollateralUsd=gmxMinimumViableCollateralUsd();
+if (finalCollateralUsd < minimumViableCollateralUsd) {
+  if (walletUsd < minimumViableCollateralUsd || maxCollateralUsd < minimumViableCollateralUsd) {
+    throw new Error(`EXECUTION_GMX_MIN_COLLATERAL_BLOCKED: requested=$${finalCollateralUsd.toFixed(6)}, minimumViable=$${minimumViableCollateralUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, maxCollateral=$${maxCollateralUsd.toFixed(6)}, allocation=${(allocation*100).toFixed(2)}%`);
+  }
+  finalCollateralUsd=minimumViableCollateralUsd;
 }
 const size=toBigIntDecimal(notionalUsd,30);
 const collateralAmount=toBigIntDecimal(finalCollateralUsd,6);
@@ -9405,20 +9426,30 @@ let usedCollateralUsd = finalCollateralUsd;
 try {
   prepared=await sdk.prepareOrder(buildOrderRequest(usedCollateralUsd));
 } catch(error) {
-  const allocationCollateralCap = Math.min(walletUsd * allocation, walletUsd * CONFIG.MAX_CAPITAL_ALLOCATION);
-  const recoveryCollateralUsd = Math.max(usedCollateralUsd, allocationCollateralCap);
-  if (isCollateralAfterFeesMinimumError(error) && recoveryCollateralUsd > usedCollateralUsd + 0.000001) {
-    usedCollateralUsd = recoveryCollateralUsd;
-    try {
-      prepared=await sdk.prepareOrder(buildOrderRequest(usedCollateralUsd));
-    } catch(retryError) {
-      throw executionStageError("PREPARE_ORDER", retryError, {initialCollateralUsd:Number(finalCollateralUsd.toFixed(6)),recoveryCollateralUsd:Number(usedCollateralUsd.toFixed(6)),allocationPercent:Number((allocation*100).toFixed(2)),walletUsd:Number(walletUsd.toFixed(6)),notionalUsd:Number(notionalUsd.toFixed(6)),leverage});
+  // V17.3.7: previous recovery could retry at the exact same allocation cap.
+  // Retry once at the actual protocol viability amount when the caps permit it.
+  if (isCollateralAfterFeesMinimumError(error)) {
+    const recoveryCollateralUsd=Math.min(maxCollateralUsd,Math.max(usedCollateralUsd,gmxMinimumViableCollateralUsd()));
+    if (recoveryCollateralUsd > usedCollateralUsd + 0.000001) {
+      usedCollateralUsd=recoveryCollateralUsd;
+      try {
+        prepared=await sdk.prepareOrder(buildOrderRequest(usedCollateralUsd));
+      } catch(retryError) {
+        throw executionStageError("PREPARE_ORDER", retryError, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:true}));
+      }
+    } else {
+      throw executionStageError("PREPARE_ORDER_MIN_COLLATERAL", error, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:false}));
     }
   } else {
-    throw executionStageError("PREPARE_ORDER", error, {collateralUsd:Number(usedCollateralUsd.toFixed(6)),allocationPercent:Number((allocation*100).toFixed(2)),walletUsd:Number(walletUsd.toFixed(6)),notionalUsd:Number(notionalUsd.toFixed(6)),leverage});
+    throw executionStageError("PREPARE_ORDER", error, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:false}));
   }
 }
-const allowanceInfo=await ensureGmxCollateralAllowance(sdk,signer,account,collateral.symbol,toBigIntDecimal(usedCollateralUsd,6),balances);
+let allowanceInfo;
+try {
+  allowanceInfo=await ensureGmxCollateralAllowance(sdk,signer,account,collateral.symbol,toBigIntDecimal(usedCollateralUsd,6),balances);
+} catch(error) {
+  throw executionStageError("ALLOWANCE_PREFLIGHT", error, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:usedCollateralUsd>requestedCollateralUsd+0.000001}));
+}
 let signature;
 try { signature=await sdk.signOrder(prepared,signer); }
 catch(error) { throw executionStageError("SIGN_ORDER", error, {requestId:prepared?.requestId||null}); }
@@ -9476,7 +9507,7 @@ if (!verification.verified) {
 }
 const walletAfter=verification.walletAfter || await readLiveWalletSnapshot(sdk, account);
 const walletDelta=Number.isFinite(Number(verification.walletDelta)) ? Number(verification.walletDelta) : null;
-const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,allowance:allowanceInfo,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:true,walletBefore,walletAfter,walletDelta,settlementVerified:Boolean(verification.settled),executionKey:lock.key};
+const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,requestedCollateralUsd,minimumViableCollateralUsd,collateralAdjustedForGmxMinimum:finalCollateralUsd>requestedCollateralUsd+0.000001,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,allowance:allowanceInfo,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:true,walletBefore,walletAfter,walletDelta,settlementVerified:Boolean(verification.settled),executionKey:lock.key};
 try { await sendTelegram(env, formatTelegramLiveEntry(entryNotice)); } catch(_) {}
 return entryNotice;
 } catch (error) {
