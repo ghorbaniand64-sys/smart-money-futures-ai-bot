@@ -1,7 +1,7 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
-║  V17.3.14 — BALANCE RESOLUTION + ON-CHAIN COLLATERAL GUARD                                          ║
+║  V17.3.23 — GMX DIRECT EXPRESS HTTP SUBMIT FIX                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  RELEASE: V17.3.10-ONCHAIN-ALLOWANCE-HARDENING                                   ║
 ║                                                                              ║
@@ -23,6 +23,7 @@
 ║  • Core + Radar share the same global position/capital limits.              ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 */
+// V17.3.23 LIVE EXECUTION REPAIR — BYPASS SDK JSON SERIALIZATION BUG
 // V17.2.4 LIVE DIAGNOSTICS + SELECTION REPAIR
 // V17.1.6 SDK SAFE LOADER
 // CommonJS resolution is intentional: GMX SDK 1.8.2 may expose a broken
@@ -9797,14 +9798,48 @@ async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
       bigintPaths: bigintAudit.slice(0, 40),
       exactJsonProbe,
     });
-    submitted = await sdk.submitOrder({
+    // V17.3.23: the SDK's public submitOrder() path is itself the failing
+    // serialization boundary in the deployed runtime. GMX documents the
+    // underlying POST /orders/txns/submit endpoint and the exact submit body.
+    // Bypass only that SDK HTTP wrapper; keep prepare/sign on the SDK and send
+    // the already-signed intent through native fetch after an exact JSON clone.
+    const directSubmitRequest = {
       mode: prepared.mode,
       requestId: prepared.requestId,
       signature,
       from: request.from,
       idempotencyKey: prepared.idempotencyKey,
       eip712Data: exactEip712Data,
+    };
+    const directSubmitJson = JSON.stringify(cloneGmxJsonExact(directSubmitRequest, "$.submit"));
+    const submitBase = String(CONFIG.DATA_CENTER_PRIMARY_API || "https://arbitrum.gmxapi.io/v1").replace(/\/$/, "");
+    const submitUrl = `${submitBase}/orders/txns/submit`;
+    console.log("[GMX][DIRECT_SUBMIT_HTTP]", {
+      requestId: prepared?.requestId || null,
+      url: submitUrl,
+      bodyBytes: Buffer.byteLength(directSubmitJson, "utf8"),
+      bigintCount: bigintAudit.length,
+      exactJsonProbe,
     });
+    const submitResponse = await fetch(submitUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json", "accept": "application/json" },
+      body: directSubmitJson,
+    });
+    const submitTraceId = submitResponse?.headers?.get?.("x-trace-id") || null;
+    const submitText = await submitResponse.text();
+    let submitBody = null;
+    try { submitBody = submitText ? JSON.parse(submitText) : null; } catch (_) { submitBody = { raw: submitText }; }
+    if (!submitResponse.ok) {
+      const apiMessage = submitBody?.error?.message || submitBody?.message || submitBody?.error || submitText || `HTTP ${submitResponse.status}`;
+      const err = new Error(`GMX submit HTTP ${submitResponse.status}: ${String(apiMessage)}`);
+      err.httpStatus = submitResponse.status;
+      err.traceId = submitTraceId;
+      err.responseBody = submitBody;
+      throw err;
+    }
+    submitted = submitBody || {};
+    if (submitTraceId && !submitted.traceId) submitted.traceId = submitTraceId;
   } catch (error) {
     throw executionStageError("EXPRESS_SUBMIT", error, {
       ...meta,
@@ -9830,7 +9865,7 @@ async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
       payloadType: prepared?.payloadType || null,
       requestId: prepared?.requestId || null,
       submitStatus: submitted?.status || null,
-      bigintJsonBridge: "EXACT_DECIMAL_STRING_CLONE",
+      bigintJsonBridge: "DIRECT_HTTP_EXACT_DECIMAL_JSON",
       traceId: prepared?.traceId || submitted?.traceId || null,
     },
   };
