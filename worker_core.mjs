@@ -430,7 +430,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.3.17-EXPRESS-STAGE-DIAGNOSTIC",
+VERSION: "V17.3.18-EXPRESS-STAGE-PASSTHROUGH",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -9700,7 +9700,7 @@ function summarizeExpressValue(value, depth = 0) {
   return String(value);
 }
 
-// V17.3.17: diagnostic three-stage Express flow. Keep native BigInt values
+// V17.3.18: diagnostic three-stage Express flow with stage passthrough. Keep native BigInt values
 // untouched for GMX, but isolate prepare/sign/submit so a serialization
 // failure identifies the exact boundary instead of collapsing into one
 // EXECUTE_EXPRESS_ORDER error.
@@ -9976,7 +9976,7 @@ try {
   throw executionStageError("ALLOWANCE_PREFLIGHT", error, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:usedCollateralUsd>requestedCollateralUsd+0.000001}));
 }
 
-// V17.3.17: use the documented three-stage Express flow explicitly so the
+// V17.3.18: use the documented three-stage Express flow explicitly so the
 // exact BigInt/serialization boundary is visible. Native BigInt values are
 // preserved; no Number conversion or unprotected fallback is introduced.
 let result;
@@ -9996,6 +9996,10 @@ try {
       throw executionStageError("EXECUTE_EXPRESS_ORDER_MIN_COLLATERAL", error, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:false}));
     }
   } else {
+    // Preserve the innermost diagnostic stage. Do not wrap EXPRESS_PREPARE,
+    // EXPRESS_SIGN, or EXPRESS_SUBMIT again, otherwise the outer execution
+    // result loses the exact boundary that failed.
+    if (error?.executionStage) throw error;
     throw executionStageError("EXECUTE_EXPRESS_ORDER", error, {symbol:sdkSymbol,direction:orderDirection,requestHasTpsl:true});
   }
 }
