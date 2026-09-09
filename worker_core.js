@@ -404,7 +404,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.2.1-ADAPTIVE-TIERED-EVENT-ENTRY",
+VERSION: "V17.2.2-RUNNER-SCAN-DEDUPE",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -4198,6 +4198,7 @@ async function fetchRadarLivePrices(){
 }
 
 async function runFullScan(env, scanOptions = {}) {
+  const scanId = String(scanOptions?.scanId || `scan-${Date.now()}-${Math.random().toString(36).slice(2,8)}`);
   const state=await loadState(env);
   if(!state.running)return{ok:true,status:"PAUSED",signals:[]};
   resetDailyLossIfNeeded(state);
@@ -4252,19 +4253,27 @@ async function runFullScan(env, scanOptions = {}) {
   // Retest states get first-class rotation priority so a valid breakout is not lost
   // simply because its symbol moved out of the top-flow slice on the next cycle.
   const pendingSymbols=new Set(Object.entries(state.hybridStructureStates||{}).filter(([,v])=>v?.pendingRetest).map(([k])=>normalizeSymbol(k)));
-  for(const x of ranked)if(pendingSymbols.has(x.s)&&rows.length<limit&&!rows.includes(x))rows.push(x);
-  for(const x of hot)if(!rows.includes(x)&&rows.length<limit)rows.push(x);
-  for(let i=0;i<ranked.length&&rows.length<limit;i++){const x=ranked[(cursor+i)%ranked.length];if(!rows.includes(x))rows.push(x);}
+  const rowSymbols=new Set();
+  const pushDeepRow=(x)=>{
+    const symbol=normalizeSymbol(x?.s);
+    if(!symbol || rowSymbols.has(symbol) || rows.length>=limit) return false;
+    rowSymbols.add(symbol);
+    rows.push(x);
+    return true;
+  };
+  for(const x of ranked)if(pendingSymbols.has(x.s))pushDeepRow(x);
+  for(const x of hot)pushDeepRow(x);
+  for(let i=0;i<ranked.length&&rows.length<limit;i++)pushDeepRow(ranked[(cursor+i)%ranked.length]);
   state.hybridScanCursor=(cursor+rows.length)%Math.max(1,ranked.length);
-  console.log("[HYBRID][DEEP_PLAN]",{universe:markets.length,broad5mScanned:broad5m.size,deepPlanned:rows.length,cursorBefore:cursor,cursorAfter:state.hybridScanCursor,hotSelected:hot.length,rotating:true});
+  console.log("[HYBRID][DEEP_PLAN]",{scanId,universe:markets.length,broad5mScanned:broad5m.size,deepPlanned:rows.length,uniqueDeepSymbols:rowSymbols.size,cursorBefore:cursor,cursorAfter:state.hybridScanCursor,hotSelected:hot.length,rotating:true});
   const eventStats={supportZones:0,resistanceZones:0,flowEvents:0,volumeEvents:0,supportReactions:0,resistanceReactions:0,breakouts:0,waitingRetests:0,retestConfirmed:0,entryReady:0};
   let eventCandidates=0;
   let deepAttempted=0,deepSucceeded=0,deepErrors=0;
-  console.log("[HYBRID][DEEP_START]",{planned:rows.length,universe:markets.length,broad5mScanned:broad5m.size});
+  console.log("[HYBRID][DEEP_START]",{scanId,planned:rows.length,uniqueDeepSymbols:rowSymbols.size,universe:markets.length,broad5mScanned:broad5m.size});
   for(const row of rows){
     deepAttempted++;
     let deepStage="START";
-    console.log("[HYBRID][DEEP_ROW]",{symbol:row.s,priority:row.priority,stage:deepStage});
+    console.log("[HYBRID][DEEP_ROW]",{scanId,symbol:row.s,priority:row.priority,stage:deepStage});
     try{
       deepStage="5M";
       const c5=broad5m.get(row.s)?.candles || await fetchCandlesScan(row.s,"5m",CONFIG.CANDLE_LIMIT["5m"]);
@@ -4282,7 +4291,7 @@ async function runFullScan(env, scanOptions = {}) {
       console.log("[HYBRID][STRUCTURE]",{symbol:row.s,state:analysis.state,direction:analysis.direction,move5:analysis.move5,flow:flow.imbalance,flowSurge:Boolean(flow.flowSurge||flow.explosiveFlow),volume:analysis.volume?.volumeRatio,range:analysis.volume?.rangeRatio,support:analysis.zones?.support?.[0]?.center||null,resistance:analysis.zones?.resistance?.[0]?.center||null,events:analysis.eventFlags||{}});
     }catch(e){deepErrors++;const detail=safeError(e);errors.push({symbol:row.s,scope:"deep-structure",stage:deepStage,error:detail});console.error("[HYBRID][DEEP_ERROR]",{symbol:row.s,stage:deepStage,error:detail});}
   }
-  console.log("[HYBRID][DEEP_DONE]",{attempted:deepAttempted,succeeded:deepSucceeded,errors:deepErrors,planned:rows.length,eventCandidates});
+  console.log("[HYBRID][DEEP_DONE]",{scanId,attempted:deepAttempted,succeeded:deepSucceeded,errors:deepErrors,planned:rows.length,uniqueDeepSymbols:rowSymbols.size,eventCandidates});
   // Entry selection remains event-based, but execution MUST still pass portfolio/risk limits.
   // Top Trader is positive confirmation only; it never creates an entry.
   const openPositions = await loadPositions(env);
@@ -5427,6 +5436,7 @@ execution: "HOLD"
 }
  
 export default {
+VERSION: CONFIG.VERSION,
  
  
  
@@ -5434,11 +5444,12 @@ async scheduled(event, env, ctx) {
 await loadGmxSdkSafe();
 const cron = event?.cron || "unknown";
 const scheduledTime = event?.scheduledTime ?? null;
+const scanId = String(event?.scanId || `scheduled-${scheduledTime || Date.now()}-${Math.random().toString(36).slice(2,8)}`);
  
 const task = (async () => {
 const restoreResourceFetch = resourceUsageInstallFetchTracker();
 try {
-console.log("[SCHEDULED][START]", { cron, scheduledTime, recommendedCron: CONFIG.CRON_RECOMMENDED, cronMatchesRecommended: cron === CONFIG.CRON_RECOMMENDED });
+console.log("[SCHEDULED][START]", { scanId, cron, scheduledTime, recommendedCron: CONFIG.CRON_RECOMMENDED, cronMatchesRecommended: cron === CONFIG.CRON_RECOMMENDED });
 console.log("[EXECUTION][RUNTIME]", {mode:executionEnabled(env)?"LIVE":"PAPER",sdkLoaded:Boolean(GmxApiSdk && PrivateKeySigner && getViemChain),sdkLoadError:GMX_SDK_LOAD_ERROR || null});
  
 let exits = [];
@@ -5473,7 +5484,8 @@ if (resourceGuardSnapshot.paused) {
 } else {
   scan = await FUTURES_V6.scan(env, {
     additionalSubrequestReserve: scheduledPositionReserve,
-    source: "cron"
+    source: "cron",
+    scanId
   });
 }
  
@@ -5482,6 +5494,7 @@ const resourceRuntime = resourceUsageRuntimeSnapshot(scheduledTime);
 const resourceCommitted = resourceUsageCommit(resourceState, resourceRuntime, Date.now());
 try { await saveState(env, resourceState); } catch (resourceSaveError) { console.error("[RESOURCE][STATE_SAVE_ERROR]", { error: safeError(resourceSaveError) }); }
 console.log("[SCHEDULED][DONE]", {
+scanId,
 cron,
 scheduledTime,
 recommendedCron: CONFIG.CRON_RECOMMENDED,
@@ -5512,6 +5525,7 @@ resourceGuard: resourceCommitted ? resourceUsageSummary(resourceState) : null
 try {
 await auditLog(env, {
 type: "SCHEDULED_CYCLE",
+scanId,
 cron,
 scheduledTime,
 exits,
@@ -5525,6 +5539,7 @@ error: safeError(auditError)
 }
  } catch (error) {
 console.error("[SCHEDULED][ERROR]", {
+scanId,
 cron,
 scheduledTime,
 error: safeError(error),
@@ -5537,6 +5552,7 @@ try { restoreResourceFetch(); } catch (_) {}
 try {
 await auditLog(env, {
 type: "SCHEDULED_CYCLE_ERROR",
+scanId,
 cron,
 scheduledTime,
 error: safeError(error)

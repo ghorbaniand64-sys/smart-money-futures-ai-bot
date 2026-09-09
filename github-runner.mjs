@@ -1,6 +1,6 @@
 // Smart Money Futures AI Bot — GitHub Actions adapter
-// V17.0.2-GITHUB-ACTIONS-EXECUTION-ALIGNMENT
-// Runs one complete scheduled cycle using the deployed V17.0.2 engine.
+// V17.2.2-GITHUB-RUNNER-SCAN-DEDUPE
+// Runs one complete scheduled cycle using the deployed V17.2.2 engine.
 // Persistent Cloudflare KV bindings are emulated with JSON files in ./state.
 
 import fs from "node:fs/promises";
@@ -90,14 +90,23 @@ async function buildEnv() {
   };
 }
 
+let runnerInFlight = null;
+
 async function main() {
+  if (runnerInFlight) {
+    console.warn("[GITHUB][SKIP_DUPLICATE_INVOCATION]", { reason: "runner_cycle_already_in_flight" });
+    return;
+  }
+  runnerInFlight = (async () => {
   const env = await buildEnv();
   const scheduledTime = Date.now();
-  const event = { cron: "* * * * *", scheduledTime };
+  const scanId = `github-${scheduledTime}-${process.pid}-${Math.random().toString(36).slice(2,8)}`;
+  const event = { cron: "* * * * *", scheduledTime, scanId };
   console.log("[GITHUB][START]", {
+    scanId,
     scheduledTime,
     worker: "worker_core.js",
-    expectedVersion: "V17.1.1-HYBRID-DYNAMIC-TP1-STOP",
+    expectedVersion: worker?.VERSION || "UNKNOWN",
     executionEnabled: env.EXECUTION_ENABLED,
     executionEnabledSource: process.env.EXECUTION_ENABLED == null ? "runner-default-true" : "github-env"
   });
@@ -106,10 +115,16 @@ async function main() {
     waitUntil(promise) { return promise; }
   });
 
-  console.log("[GITHUB][DONE]", { scheduledTime });
+    console.log("[GITHUB][DONE]", { scanId, scheduledTime });
+  })();
+  try {
+    await runnerInFlight;
+  } finally {
+    runnerInFlight = null;
+  }
 }
 
 main().catch((error) => {
-  console.error("[GITHUB][FATAL]", error?.stack || error?.message || String(error));
+  console.error("[GITHUB][FATAL]", { scanId: typeof scanId !== "undefined" ? scanId : null, error: error?.stack || error?.message || String(error) });
   process.exitCode = 1;
 });
