@@ -1,6 +1,6 @@
 // Smart Money Futures AI Bot — GitHub Actions adapter
-// V17.3.23-GMX-DIRECT-EXPRESS-HTTP-SUBMIT
-// Runs one complete scheduled cycle using the V17.3.23 engine.
+// V17.3.24-GMX-EXECUTION-STAGE-ISOLATION
+// Runs one complete scheduled cycle using the V17.3.24 engine.
 // Persistent Cloudflare KV bindings are emulated with JSON files in ./state.
 
 import fs from "node:fs/promises";
@@ -97,7 +97,7 @@ async function main() {
   console.log("[GITHUB][START]", {
     scheduledTime,
     worker: "worker_core.mjs",
-    expectedVersion: "V17.3.23-GMX-DIRECT-EXPRESS-HTTP-SUBMIT",
+    expectedVersion: "V17.3.24-GMX-EXECUTION-STAGE-ISOLATION",
     executionEnabled: env.EXECUTION_ENABLED,
     executionEnabledSource: process.env.EXECUTION_ENABLED == null ? "runner-default-true" : "github-env"
   });

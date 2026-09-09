@@ -1,9 +1,9 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
-║  V17.3.23 — GMX DIRECT EXPRESS HTTP SUBMIT FIX                                          ║
+║  V17.3.24 — GMX EXECUTION STAGE ISOLATION + BIGINT BRIDGE                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.3.10-ONCHAIN-ALLOWANCE-HARDENING                                   ║
+║  RELEASE: V17.3.24-GMX-EXECUTION-STAGE-ISOLATION                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -106,6 +106,20 @@ return JSON.stringify(value, (_key, v) => typeof v === "bigint" ? v.toString() :
 // receive native BigInt. The Express HTTP boundary gets an exact recursive clone
 // where every BigInt becomes its base-10 string representation. This preserves all
 // 30-decimal / 6-decimal precision and avoids the SDK v1.8.2 JSON.stringify failure.
+function withGmxBigIntJsonBridge(fn) {
+  const proto = BigInt.prototype;
+  const hadOwn = Object.prototype.hasOwnProperty.call(proto, "toJSON");
+  const previous = proto.toJSON;
+  Object.defineProperty(proto, "toJSON", {
+    configurable: true, enumerable: false, writable: true,
+    value: function () { return this.toString(); }
+  });
+  return Promise.resolve().then(fn).finally(() => {
+    if (hadOwn) Object.defineProperty(proto, "toJSON", { configurable:true, enumerable:false, writable:true, value:previous });
+    else { try { delete proto.toJSON; } catch (_) {} }
+  });
+}
+
 function cloneGmxJsonExact(value, path = "$", audit = null) {
   if (typeof value === "bigint") {
     if (audit) audit.push({ path, type: "bigint", digits: value.toString().length });
@@ -9761,7 +9775,14 @@ function summarizeExpressValue(value, depth = 0) {
 async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
   let prepared;
   try {
-    prepared = await sdk.prepareOrder(request);
+    console.log("[GMX][EXEC_STAGE] PREPARE_START", {
+      symbol: meta?.symbol || null, direction: meta?.direction || null,
+      requestBigIntCount: gmxBigIntAudit(request, "$.request").length
+    });
+    prepared = await withGmxBigIntJsonBridge(() => sdk.prepareOrder(request));
+    console.log("[GMX][EXEC_STAGE] PREPARE_OK", {
+      requestId: prepared?.requestId || null, payloadType: prepared?.payloadType || null
+    });
   } catch (error) {
     throw executionStageError("EXPRESS_PREPARE", error, {
       ...meta,
@@ -9771,7 +9792,12 @@ async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
 
   let signature;
   try {
-    signature = await sdk.signOrder(prepared, signer);
+    console.log("[GMX][EXEC_STAGE] SIGN_START", { requestId: prepared?.requestId || null });
+    signature = await withGmxBigIntJsonBridge(() => sdk.signOrder(prepared, signer));
+    console.log("[GMX][EXEC_STAGE] SIGN_OK", {
+      requestId: prepared?.requestId || null,
+      signatureType: typeof signature
+    });
   } catch (error) {
     throw executionStageError("EXPRESS_SIGN", error, {
       ...meta,
@@ -9811,7 +9837,11 @@ async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
       idempotencyKey: prepared.idempotencyKey,
       eip712Data: exactEip712Data,
     };
-    const directSubmitJson = JSON.stringify(cloneGmxJsonExact(directSubmitRequest, "$.submit"));
+    const directSubmitClone = cloneGmxJsonExact(directSubmitRequest, "$.submit");
+    const directSubmitJson = JSON.stringify(directSubmitClone);
+    console.log("[GMX][EXEC_STAGE] DIRECT_JSON_OK", {
+      requestId: prepared?.requestId || null, bodyBytes: Buffer.byteLength(directSubmitJson, "utf8")
+    });
     const submitBase = String(CONFIG.DATA_CENTER_PRIMARY_API || "https://arbitrum.gmxapi.io/v1").replace(/\/$/, "");
     const submitUrl = `${submitBase}/orders/txns/submit`;
     console.log("[GMX][DIRECT_SUBMIT_HTTP]", {
@@ -9841,6 +9871,10 @@ async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
     submitted = submitBody || {};
     if (submitTraceId && !submitted.traceId) submitted.traceId = submitTraceId;
   } catch (error) {
+    console.error("[GMX][EXEC_STAGE] SUBMIT_FAILED", {
+      requestId: prepared?.requestId || null, error: safeError(error),
+      errorName: error?.name || null, httpStatus: error?.httpStatus || null, traceId: error?.traceId || null
+    });
     throw executionStageError("EXPRESS_SUBMIT", error, {
       ...meta,
       requestId: prepared?.requestId || null,
@@ -10085,8 +10119,8 @@ try {
 // preserved; no Number conversion or unprotected fallback is introduced.
 let result;
 try {
-  if (typeof sdk?.prepareOrder !== "function" || typeof sdk?.signOrder !== "function" || typeof sdk?.submitOrder !== "function") {
-    throw new Error("GMX SDK manual Express order methods are unavailable");
+  if (typeof sdk?.prepareOrder !== "function" || typeof sdk?.signOrder !== "function") {
+    throw new Error("GMX SDK manual Express prepare/sign methods are unavailable");
   }
   result=await executeExpressOrderDiagnostic(sdk,buildOrderRequest(usedCollateralUsd),signer,{symbol:sdkSymbol,direction:orderDirection,requestHasTpsl:true});
 } catch(error) {
