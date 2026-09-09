@@ -1,11 +1,11 @@
 // Smart Money Futures AI Bot — GitHub Actions adapter
-// V17.3.12-GITHUB-ACTIONS-EXECUTION-ALIGNMENT
+// V17.0.2-GITHUB-ACTIONS-EXECUTION-ALIGNMENT
 // Runs one complete scheduled cycle using the deployed V17.0.2 engine.
 // Persistent Cloudflare KV bindings are emulated with JSON files in ./state.
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import worker from "./worker_core.mjs";
+import worker from "./worker_core.js";
 
 const ROOT = process.cwd();
 const STATE_DIR = path.join(ROOT, "state");
@@ -85,7 +85,6 @@ async function buildEnv() {
     TELEGRAM_TOKEN: envValue("TELEGRAM_TOKEN"),
     TELEGRAM_CHAT_ID: envValue("TELEGRAM_CHAT_ID"),
     EXECUTION_ENABLED: envValue("EXECUTION_ENABLED", "true"),
-    EXPECTED_VERSION: envValue("EXPECTED_VERSION", "V17.3.19-AUDIT-BIGINT-SAFE"),
     BOT_STATE: makeFileKvBinding("bot_state"),
     GMX_CACHE: makeFileKvBinding("gmx_cache")
   };
@@ -97,8 +96,8 @@ async function main() {
   const event = { cron: "* * * * *", scheduledTime };
   console.log("[GITHUB][START]", {
     scheduledTime,
-    worker: "worker_core.mjs",
-    expectedVersion: envValue("EXPECTED_VERSION", "V17.3.19-AUDIT-BIGINT-SAFE"),
+    worker: "worker_core.js",
+    expectedVersion: "V17.3.20-GMX-BIGINT-SERIALIZATION-BRIDGE",
     executionEnabled: env.EXECUTION_ENABLED,
     executionEnabledSource: process.env.EXECUTION_ENABLED == null ? "runner-default-true" : "github-env"
   });
