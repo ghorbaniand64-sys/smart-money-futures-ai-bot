@@ -430,7 +430,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.3.16-EXPRESS-BIGINT-FLOW",
+VERSION: "V17.3.17-EXPRESS-STAGE-DIAGNOSTIC",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -9686,6 +9686,87 @@ function executionStageError(stage, error, meta = {}) {
   return e;
 }
 
+function summarizeExpressValue(value, depth = 0) {
+  if (depth > 4) return "[MAX_DEPTH]";
+  if (typeof value === "bigint") return {type:"bigint",digits:value.toString().length,tail:value.toString().slice(-12)};
+  if (value === null || value === undefined) return value ?? null;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  if (Array.isArray(value)) return value.slice(0,12).map(v=>summarizeExpressValue(v,depth+1));
+  if (typeof value === "object") {
+    const out={};
+    for (const [k,v] of Object.entries(value).slice(0,80)) out[k]=summarizeExpressValue(v,depth+1);
+    return out;
+  }
+  return String(value);
+}
+
+// V17.3.17: diagnostic three-stage Express flow. Keep native BigInt values
+// untouched for GMX, but isolate prepare/sign/submit so a serialization
+// failure identifies the exact boundary instead of collapsing into one
+// EXECUTE_EXPRESS_ORDER error.
+async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
+  let prepared;
+  try {
+    prepared = await sdk.prepareOrder(request);
+  } catch (error) {
+    throw executionStageError("EXPRESS_PREPARE", error, {
+      ...meta,
+      request: summarizeExpressValue(request),
+    });
+  }
+
+  let signature;
+  try {
+    signature = await sdk.signOrder(prepared, signer);
+  } catch (error) {
+    throw executionStageError("EXPRESS_SIGN", error, {
+      ...meta,
+      requestId: prepared?.requestId || null,
+      payloadType: prepared?.payloadType || null,
+      payload: summarizeExpressValue(prepared?.payload),
+    });
+  }
+
+  let submitted;
+  try {
+    submitted = await sdk.submitOrder({
+      mode: prepared.mode,
+      requestId: prepared.requestId,
+      signature,
+      from: request.from,
+      idempotencyKey: prepared.idempotencyKey,
+      eip712Data: {
+        batchParams: prepared?.payload?.batchParams,
+        relayParams: prepared?.payload?.relayParams,
+      },
+    });
+  } catch (error) {
+    throw executionStageError("EXPRESS_SUBMIT", error, {
+      ...meta,
+      requestId: prepared?.requestId || null,
+      idempotencyKey: prepared?.idempotencyKey || null,
+      payloadType: prepared?.payloadType || null,
+      batchParams: summarizeExpressValue(prepared?.payload?.batchParams),
+      relayParams: summarizeExpressValue(prepared?.payload?.relayParams),
+    });
+  }
+
+  return {
+    ...submitted,
+    requestId: submitted?.requestId || prepared?.requestId || null,
+    diagnostic: {
+      flow: "prepare->sign->submit",
+      prepareOk: true,
+      signOk: true,
+      submitOk: true,
+      payloadType: prepared?.payloadType || null,
+      requestId: prepared?.requestId || null,
+      submitStatus: submitted?.status || null,
+      traceId: prepared?.traceId || submitted?.traceId || null,
+    },
+  };
+}
+
 function isCollateralAfterFeesMinimumError(error) {
   const m = safeError(error).toLowerCase();
   return m.includes("collateral after fees") && m.includes("minimum required to open the position");
@@ -9895,20 +9976,22 @@ try {
   throw executionStageError("ALLOWANCE_PREFLIGHT", error, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:usedCollateralUsd>requestedCollateralUsd+0.000001}));
 }
 
-// V17.3.16: GMX documents executeExpressOrder() as the supported
-// prepare -> sign -> submit path. Keep native BigInt request fields and let
-// the SDK own the serialization/transport boundary.
+// V17.3.17: use the documented three-stage Express flow explicitly so the
+// exact BigInt/serialization boundary is visible. Native BigInt values are
+// preserved; no Number conversion or unprotected fallback is introduced.
 let result;
 try {
-  if (typeof sdk?.executeExpressOrder !== "function") throw new Error("GMX SDK executeExpressOrder() is unavailable");
-  result=await sdk.executeExpressOrder(buildOrderRequest(usedCollateralUsd),signer);
+  if (typeof sdk?.prepareOrder !== "function" || typeof sdk?.signOrder !== "function" || typeof sdk?.submitOrder !== "function") {
+    throw new Error("GMX SDK manual Express order methods are unavailable");
+  }
+  result=await executeExpressOrderDiagnostic(sdk,buildOrderRequest(usedCollateralUsd),signer,{symbol:sdkSymbol,direction:orderDirection,requestHasTpsl:true});
 } catch(error) {
   if (isCollateralAfterFeesMinimumError(error)) {
     const recoveryCollateralUsd=Math.min(maxCollateralUsd,Math.max(usedCollateralUsd,gmxMinimumViableCollateralUsd()));
     if (recoveryCollateralUsd > usedCollateralUsd + 0.000001) {
       usedCollateralUsd=recoveryCollateralUsd;
-      try { result=await sdk.executeExpressOrder(buildOrderRequest(usedCollateralUsd),signer); }
-      catch(retryError) { throw executionStageError("EXECUTE_EXPRESS_ORDER_MIN_COLLATERAL", retryError, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:true})); }
+      try { result=await executeExpressOrderDiagnostic(sdk,buildOrderRequest(usedCollateralUsd),signer,{symbol:sdkSymbol,direction:orderDirection,requestHasTpsl:true,retry:"MIN_COLLATERAL"}); }
+      catch(retryError) { throw executionStageError("EXECUTE_EXPRESS_ORDER_MIN_COLLATERAL", retryError, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:true,retryStage:retryError?.executionStage||null})); }
     } else {
       throw executionStageError("EXECUTE_EXPRESS_ORDER_MIN_COLLATERAL", error, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:false}));
     }
@@ -9930,7 +10013,7 @@ if (orderStatusResult?.available && orderStatusResult?.terminal && orderStatus !
     let repairInfo=null;
     try {
       repairInfo=await forceRefreshGmxAllowance(sdk,signer,account,collateral.symbol,toBigIntDecimal(usedCollateralUsd,6),balances,env.ARBITRUM_RPC);
-      const retryResult=await sdk.executeExpressOrder(buildOrderRequest(usedCollateralUsd),signer);
+      const retryResult=await executeExpressOrderDiagnostic(sdk,buildOrderRequest(usedCollateralUsd),signer,{symbol:sdkSymbol,direction:orderDirection,requestHasTpsl:true,retry:"ALLOWANCE_REPAIR"});
       const retryStatusResult=await pollLiveOrderStatus(sdk,retryResult?.requestId,60000,2000);
       const retryStatus=String(retryStatusResult?.status||retryResult?.status||"unknown").toLowerCase();
       if(retryStatusResult?.available && retryStatusResult?.terminal && retryStatus === "executed") {
