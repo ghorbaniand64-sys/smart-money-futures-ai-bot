@@ -75,7 +75,7 @@ function normalizeSymbol(symbol){
 
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V17.3.21 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
+// Version: V17.3.22 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
 // Platform: GitHub Actions + Node.js
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -89,50 +89,56 @@ function safeError(error) {
 return error?.message || String(error || "Unknown error");
 }
 
-// V17.3.20: JSON-safe serializer for SDK responses that may contain native BigInt values.
+// V17.3.22: JSON-safe serializer for SDK responses that may contain native BigInt values.
 // This is only for persistence/logging boundaries. GMX requests continue using native BigInt.
 function jsonStringifySafe(value, space = undefined) {
 return JSON.stringify(value, (_key, v) => typeof v === "bigint" ? v.toString() : v, space);
 }
 
-// V17.3.20: GMX SDK v2 Express submit crosses an HTTP/JSON boundary.
+// V17.3.22: GMX SDK v2 Express submit crosses an HTTP/JSON boundary.
 // Native BigInt is required by prepare/sign, but JSON.stringify cannot encode
 // BigInt and V8 throws: "Do not know how to serialize a BigInt".
 // Keep BigInt native everywhere, and scope a non-invasive toJSON bridge only
 // around SDK submit calls so the SDK can serialize 30-decimal/6-decimal values
 // as exact decimal strings without Number precision loss.
-function withGmxBigIntJsonBridge(fn) {
-  const proto = BigInt.prototype;
-  const hadOwn = Object.prototype.hasOwnProperty.call(proto, "toJSON");
-  const previous = proto.toJSON;
-  if (!hadOwn || typeof previous !== "function") {
-    Object.defineProperty(proto, "toJSON", {
-      configurable: true,
-      enumerable: false,
-      writable: true,
-      value: function () { return this.toString(); }
-    });
+// V17.3.22: Do NOT monkey-patch BigInt.prototype. GMX prepare/sign continue to
+// receive native BigInt. The Express HTTP boundary gets an exact recursive clone
+// where every BigInt becomes its base-10 string representation. This preserves all
+// 30-decimal / 6-decimal precision and avoids the SDK v1.8.2 JSON.stringify failure.
+function cloneGmxJsonExact(value, path = "$", audit = null) {
+  if (typeof value === "bigint") {
+    if (audit) audit.push({ path, type: "bigint", digits: value.toString().length });
+    return value.toString();
   }
-  return Promise.resolve().then(fn).finally(() => {
-    if (hadOwn) {
-      Object.defineProperty(proto, "toJSON", {
-        configurable: true,
-        enumerable: false,
-        writable: true,
-        value: previous
-      });
-    } else {
-      try { delete proto.toJSON; } catch (_) {}
-    }
-  });
+  if (value === null || value === undefined) return value;
+  if (typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map((v, i) => cloneGmxJsonExact(v, `${path}[${i}]`, audit));
+  const out = {};
+  for (const [key, v] of Object.entries(value)) {
+    out[key] = cloneGmxJsonExact(v, `${path}.${key}`, audit);
+  }
+  return out;
 }
 
-function assertGmxBigIntJsonBridge() {
+function gmxBigIntAudit(value, root = "$") {
+  const audit = [];
+  cloneGmxJsonExact(value, root, audit);
+  return audit;
+}
+
+function assertGmxExactJson(value) {
   try {
-    const probe = JSON.stringify({ value: 123456789012345678901234567890n });
-    return typeof probe === "string" && probe.includes("123456789012345678901234567890");
-  } catch (_) {
-    return false;
+    const audit = [];
+    const cloned = cloneGmxJsonExact(value, "$", audit);
+    const json = JSON.stringify(cloned);
+    return {
+      ok: typeof json === "string",
+      bigintCount: audit.length,
+      bigintPaths: audit.slice(0, 80),
+      jsonBytes: Buffer.byteLength(json || "", "utf8")
+    };
+  } catch (error) {
+    return { ok: false, bigintCount: 0, bigintPaths: [], jsonBytes: 0, error: safeError(error) };
   }
 }
 
@@ -477,7 +483,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.3.21-GMX-BIGINT-SERIALIZATION-BRIDGE-RUNNER-FIX",
+VERSION: "V17.3.22-GMX-EXPRESS-EXACT-SERIALIZATION",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -9747,7 +9753,7 @@ function summarizeExpressValue(value, depth = 0) {
   return String(value);
 }
 
-// V17.3.20: diagnostic three-stage Express flow with stage passthrough. Keep native BigInt values
+// V17.3.22: diagnostic three-stage Express flow with stage passthrough. Keep native BigInt values
 // untouched for GMX, but isolate prepare/sign/submit so a serialization
 // failure identifies the exact boundary instead of collapsing into one
 // EXECUTE_EXPRESS_ORDER error.
@@ -9776,23 +9782,29 @@ async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
 
   let submitted;
   try {
+    const rawEip712Data = {
+      batchParams: prepared?.payload?.batchParams,
+      relayParams: prepared?.payload?.relayParams,
+    };
+    const bigintAudit = gmxBigIntAudit(rawEip712Data, "$.eip712Data");
+    const exactEip712Data = cloneGmxJsonExact(rawEip712Data, "$.eip712Data");
+    const exactJsonProbe = assertGmxExactJson(rawEip712Data);
     console.log("[GMX][EXPRESS_SUBMIT_PREP]", {
       requestId: prepared?.requestId || null,
       payloadType: prepared?.payloadType || null,
-      bigintJsonBridge: "SCOPED_TOJSON",
-      bigintJsonProbe: assertGmxBigIntJsonBridge(),
+      bigintJsonBridge: "EXACT_DECIMAL_STRING_CLONE",
+      bigintCount: bigintAudit.length,
+      bigintPaths: bigintAudit.slice(0, 40),
+      exactJsonProbe,
     });
-    submitted = await withGmxBigIntJsonBridge(() => sdk.submitOrder({
+    submitted = await sdk.submitOrder({
       mode: prepared.mode,
       requestId: prepared.requestId,
       signature,
       from: request.from,
       idempotencyKey: prepared.idempotencyKey,
-      eip712Data: {
-        batchParams: prepared?.payload?.batchParams,
-        relayParams: prepared?.payload?.relayParams,
-      },
-    }));
+      eip712Data: exactEip712Data,
+    });
   } catch (error) {
     throw executionStageError("EXPRESS_SUBMIT", error, {
       ...meta,
@@ -9801,8 +9813,9 @@ async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
       payloadType: prepared?.payloadType || null,
       batchParams: summarizeExpressValue(prepared?.payload?.batchParams),
       relayParams: summarizeExpressValue(prepared?.payload?.relayParams),
-      bigintJsonBridge: "SCOPED_TOJSON",
-      bigintJsonProbe: assertGmxBigIntJsonBridge(),
+      bigintJsonBridge: "EXACT_DECIMAL_STRING_CLONE",
+      bigintAudit: gmxBigIntAudit({ batchParams: prepared?.payload?.batchParams, relayParams: prepared?.payload?.relayParams }, "$.eip712Data"),
+      exactJsonProbe: assertGmxExactJson({ batchParams: prepared?.payload?.batchParams, relayParams: prepared?.payload?.relayParams }),
     });
   }
 
@@ -9817,7 +9830,7 @@ async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
       payloadType: prepared?.payloadType || null,
       requestId: prepared?.requestId || null,
       submitStatus: submitted?.status || null,
-      bigintJsonBridge: "SCOPED_TOJSON",
+      bigintJsonBridge: "EXACT_DECIMAL_STRING_CLONE",
       traceId: prepared?.traceId || submitted?.traceId || null,
     },
   };
@@ -10032,7 +10045,7 @@ try {
   throw executionStageError("ALLOWANCE_PREFLIGHT", error, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:usedCollateralUsd>requestedCollateralUsd+0.000001}));
 }
 
-// V17.3.20: use the documented three-stage Express flow explicitly so the
+// V17.3.22: use the documented three-stage Express flow explicitly so the
 // exact BigInt/serialization boundary is visible. Native BigInt values are
 // preserved; no Number conversion or unprotected fallback is introduced.
 let result;
