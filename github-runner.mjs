@@ -5,7 +5,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import worker from "./worker_core.js";
+import worker from "./worker_core.mjs";
 
 const ROOT = process.cwd();
 const STATE_DIR = path.join(ROOT, "state");
@@ -97,7 +97,7 @@ async function main() {
   const event = { cron: "* * * * *", scheduledTime };
   console.log("[GITHUB][START]", {
     scheduledTime,
-    worker: "worker_core.js",
+    worker: "worker_core.mjs",
     expectedVersion: envValue("EXPECTED_VERSION", "V17.3.9-EARLY-ENTRY-ENGINE-UNLOCK"),
     executionEnabled: env.EXECUTION_ENABLED,
     executionEnabledSource: process.env.EXECUTION_ENABLED == null ? "runner-default-true" : "github-env"
