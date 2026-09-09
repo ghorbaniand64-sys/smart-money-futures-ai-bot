@@ -75,7 +75,7 @@ function normalizeSymbol(symbol){
 
 // ======================================================
 // Smart Money Futures AI Bot
-// Version: V17.3.19 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
+// Version: V17.3.20 / Phase 6 Automatic Execution + Trend Bridge + Radar + Live Entry/Exit Telegram + Resource Guard + Multi-Source Smart Money + Independent Radar + Scope Repair + Market-Aware Minimum Sizing + No Arbitrary Order Floor + Top Trader Intelligence Shadow/Confluence
 // Platform: GitHub Actions + Node.js
 // Network: Arbitrum Ready
 // Execution: LIVE ARMED; ENV EXECUTION_ENABLED=false remains an explicit emergency OFF switch
@@ -89,7 +89,7 @@ function safeError(error) {
 return error?.message || String(error || "Unknown error");
 }
 
-// V17.3.19: JSON-safe serializer for SDK responses that may contain native BigInt values.
+// V17.3.20: JSON-safe serializer for SDK responses that may contain native BigInt values.
 // This is only for persistence/logging boundaries. GMX requests continue using native BigInt.
 function jsonStringifySafe(value, space = undefined) {
 return JSON.stringify(value, (_key, v) => typeof v === "bigint" ? v.toString() : v, space);
@@ -2120,7 +2120,7 @@ async function loadState(env) {
 
 async function saveState(env, state) {
   if (!env.BOT_STATE) return false;
-  await env.BOT_STATE.put("engine_state", JSON.stringify(state));
+  await env.BOT_STATE.put("engine_state", jsonStringifySafe(state));
   return true;
 }
 
@@ -2151,7 +2151,7 @@ const FUTURES_V6 = (() => {
 // ======================================================
  
 function json(data, status = 200) {
-return new Response(JSON.stringify(data, null, 2), {
+return new Response(jsonStringifySafe(data, null, 2), {
 status,
 headers: {
 "content-type": "application/json; charset=utf-8",
@@ -2266,7 +2266,7 @@ throw new Error("ARBITRUM_RPC is not configured");
 const response = await fetchTimeout(env.ARBITRUM_RPC, {
 method: "POST",
 headers: { "content-type": "application/json" },
-body: JSON.stringify({
+body: jsonStringifySafe({
 jsonrpc: "2.0",
 id: Date.now(),
 method,
@@ -4692,7 +4692,7 @@ if (!env.BOT_STATE) return false;
  
 await env.BOT_STATE.put(
 "engine_state",
-JSON.stringify(state)
+jsonStringifySafe(state)
 );
  
 return true;
@@ -4714,7 +4714,7 @@ if (!env.BOT_STATE) return false;
  
 await env.BOT_STATE.put(
 "positions",
-JSON.stringify(positions)
+jsonStringifySafe(positions)
 );
  
 return true;
@@ -4734,7 +4734,7 @@ if (!env.BOT_STATE) return false;
  
 await env.BOT_STATE.put(
 `market:${normalizeSymbol(symbol)}`,
-JSON.stringify({
+jsonStringifySafe({
 market,
 savedAt: Date.now()
 }),
@@ -6173,7 +6173,7 @@ if(env.GMX_CACHE){
 try{
 await env.GMX_CACHE.put(
 GMX_CACHE_KEY,
-JSON.stringify({
+jsonStringifySafe({
 expiresAt:now + GMX_CACHE_TTL,
 data
 })
@@ -6276,7 +6276,7 @@ function jsonResponse(data,status=200){
  
 return new Response(
  
-JSON.stringify(
+jsonStringifySafe(
 data,
 null,
 2
@@ -6360,7 +6360,7 @@ await env.BOT_STATE.put(
  
 "positions",
  
-JSON.stringify(
+jsonStringifySafe(
 positions
 )
  
@@ -8847,7 +8847,7 @@ async function fetchGmxRouterAllowance(sdk,account,symbol){
 // from Arbitrum before deciding that approval is sufficient.
 async function gmxRpcCall(rpcUrl,method,params=[]){
   if(!rpcUrl) throw new Error("ARBITRUM_RPC_REQUIRED_FOR_ALLOWANCE_VERIFY");
-  const response=await fetch(rpcUrl,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:Date.now(),method,params})});
+  const response=await fetch(rpcUrl,{method:"POST",headers:{"content-type":"application/json"},body:jsonStringifySafe({jsonrpc:"2.0",id:Date.now(),method,params})});
   if(!response.ok) throw new Error(`ARBITRUM_RPC_HTTP_${response.status}`);
   const body=await response.json();
   if(body?.error) throw new Error(`ARBITRUM_RPC_${body.error.code||"ERROR"}: ${body.error.message||"unknown"}`);
@@ -9227,7 +9227,7 @@ function marketHasTokenAddress(market,address) {
 
 function marketCollateralSymbols(market) {
   const out=new Set();
-  const raw=JSON.stringify(market||{}).toUpperCase();
+  const raw=jsonStringifySafe(market||{}).toUpperCase();
   if(raw.includes("USDC")) out.add("USDC");
   if(raw.includes("USDT")) out.add("USDT");
   // V17.3.15: GMX market metadata can expose collateral as token addresses
@@ -9292,7 +9292,7 @@ if (existing && (existing.status === "submitted" || (existing.status === "inflig
 INFLIGHT.delete(key);
 return { acquired:false, reason:"Duplicate live execution blocked", key, existing };
 }
-await env.BOT_STATE.put(`live_exec:${key}`, JSON.stringify({status:"inflight",at:Date.now(),symbol:signal?.symbol,direction:signal?.direction}), { expirationTtl: 600 });
+await env.BOT_STATE.put(`live_exec:${key}`, jsonStringifySafe({status:"inflight",at:Date.now(),symbol:signal?.symbol,direction:signal?.direction}), { expirationTtl: 600 });
 }
 return { acquired:true, key };
 } catch (error) {
@@ -9305,7 +9305,7 @@ function releaseLiveExecutionLock(key) { if (key) INFLIGHT.delete(key); }
 
 async function markLiveExecutionSubmitted(env, key, signal, result) {
   if (!env?.BOT_STATE || !key) return;
-  await env.BOT_STATE.put(`live_exec:${key}`, JSON.stringify({
+  await env.BOT_STATE.put(`live_exec:${key}`, jsonStringifySafe({
     status:"submitted", at:Date.now(), symbol:signal?.symbol, direction:signal?.direction, requestId:result?.requestId || null
   }), { expirationTtl: 86400 });
 }
@@ -9328,7 +9328,7 @@ return data && typeof data === "object" ? data : {};
 
 async function saveRadarLiveLedger(env, ledger) {
 if (!env.BOT_STATE) return;
-await env.BOT_STATE.put("radar_live_ledger", JSON.stringify(ledger || {}), { expirationTtl: CONFIG.RADAR_LIVE_LEDGER_TTL_SEC });
+await env.BOT_STATE.put("radar_live_ledger", jsonStringifySafe(ledger || {}), { expirationTtl: CONFIG.RADAR_LIVE_LEDGER_TTL_SEC });
 }
 
 function v156BuildRadarLiveTradePlan(candidate) {
@@ -9418,7 +9418,7 @@ const resolvedBalances = await resolveLiveCollateralBalances(sdk, account, balan
 const collateral = selectLiveCollateral(markets, requestedSymbol, resolvedBalances.balances);
 if (!collateral) {
   const candidates=(markets||[]).filter(m=>!m?.isSpotOnly && marketMatchesRequestedSymbol(m,liveNormalizeSymbol(requestedSymbol))).slice(0,5).map(m=>({symbol:m?.symbol||m?.name||"?",collateral:[...marketCollateralSymbols(m)]}));
-  throw new Error(`No usable USDC/USDT balance with a matching GMX collateral market was detected for Radar | walletUsd=${Number(resolvedBalances.walletUsd||0).toFixed(6)} | source=${resolvedBalances.source.join("+")||"NONE"} | market=${liveNormalizeSymbol(requestedSymbol)} | candidates=${JSON.stringify(candidates)}`);
+  throw new Error(`No usable USDC/USDT balance with a matching GMX collateral market was detected for Radar | walletUsd=${Number(resolvedBalances.walletUsd||0).toFixed(6)} | source=${resolvedBalances.source.join("+")||"NONE"} | market=${liveNormalizeSymbol(requestedSymbol)} | candidates=${jsonStringifySafe(candidates)}`);
 }
 const market = collateral.market;
 const capacity = await sdk.getTradingCapacity({ symbol: market.symbol, direction: plan.direction === "LONG" ? "long" : "short" });
@@ -9710,6 +9710,7 @@ function summarizeExpressValue(value, depth = 0) {
 // untouched for GMX, but isolate prepare/sign/submit so a serialization
 // failure identifies the exact boundary instead of collapsing into one
 // EXECUTE_EXPRESS_ORDER error.
+// V17.3.20: forensic execution boundary. All bot-side JSON serialization uses BigInt-safe serialization.
 async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
   let prepared;
   try {
@@ -9903,7 +9904,7 @@ try { resolvedBalances=await resolveLiveCollateralBalances(sdk,account,balances,
 const collateral=selectLiveCollateral(markets, signal.symbol, resolvedBalances.balances);
 if (!collateral) {
   const candidates=(markets||[]).filter(m=>!m?.isSpotOnly && marketMatchesRequestedSymbol(m,liveNormalizeSymbol(signal.symbol))).slice(0,5).map(m=>({symbol:m?.symbol||m?.name||"?",collateral:[...marketCollateralSymbols(m)]}));
-  throw new Error(`No usable USDC/USDT balance with a matching GMX collateral market was detected | walletUsd=${Number(resolvedBalances.walletUsd||0).toFixed(6)} | source=${resolvedBalances.source.join("+")||"NONE"} | market=${liveNormalizeSymbol(signal.symbol)} | candidates=${JSON.stringify(candidates)}`);
+  throw new Error(`No usable USDC/USDT balance with a matching GMX collateral market was detected | walletUsd=${Number(resolvedBalances.walletUsd||0).toFixed(6)} | source=${resolvedBalances.source.join("+")||"NONE"} | market=${liveNormalizeSymbol(signal.symbol)} | candidates=${jsonStringifySafe(candidates)}`);
 }
 let walletBefore;
 try { walletBefore=await readLiveWalletSnapshot(sdk, account); } catch(error) { throw executionStageError("READ_WALLET_SNAPSHOT", error); }
@@ -10572,7 +10573,7 @@ method: "POST",
 headers: {
 "content-type": "application/json"
 },
-body: JSON.stringify({
+body: jsonStringifySafe({
 jsonrpc: "2.0",
 id: 1,
 method: "eth_chainId",
@@ -10705,7 +10706,7 @@ try {
 const response = await fetch(url,{
 method:"POST",
 headers:{"content-type":"application/json; charset=UTF-8"},
-body:JSON.stringify({chat_id:env.TELEGRAM_CHAT_ID,text:String(message||"")})
+body:jsonStringifySafe({chat_id:env.TELEGRAM_CHAT_ID,text:String(message||"")})
 });
 const body = await response.text();
 if(!response.ok){
@@ -10768,7 +10769,7 @@ return "BOT RESUMED";
 case "/status":
  
  
-return JSON.stringify(
+return jsonStringifySafe(
 BOT_STATE
 );
  
