@@ -430,7 +430,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.3.14-BALANCE-RESOLUTION-ONCHAIN-GUARD",
+VERSION: "V17.3.15-COLLATERAL-MARKET-MATCHING",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -9178,46 +9178,94 @@ function extractUsdcUsd(balances) {
 return Number(extractCollateralBalances(balances)?.USDC?.usd || 0);
 }
 
+// V17.3.15 — unified collateral resolution: match GMX markets by symbols OR token addresses.
+function marketTextCandidates(market) {
+  const out=[];
+  const seen=new Set();
+  const visit=(value,keyHint="",depth=0)=>{
+    if(value==null || depth>7) return;
+    if(typeof value === "string" || typeof value === "number") {
+      const text=String(value);
+      if(text && text.length<=160) {
+        const key=String(keyHint||"").toLowerCase();
+        if(key.includes("symbol") || key.includes("name") || key.includes("token") || key.includes("collateral") || key.includes("index") || key.includes("market")) out.push(text);
+      }
+      return;
+    }
+    if(Array.isArray(value)) { for(const item of value) visit(item,keyHint,depth+1); return; }
+    if(typeof value !== "object") return;
+    for(const [k,v] of Object.entries(value)) visit(v,k,depth+1);
+  };
+  visit(market);
+  for(const x of [market?.symbol,market?.name,market?.indexName,market?.indexTokenSymbol,market?.longTokenSymbol,market?.shortTokenSymbol,market?.collateralTokenSymbols]) if(x!=null) out.push(String(x));
+  return [...new Set(out)];
+}
+
+function marketHasTokenAddress(market,address) {
+  const wanted=String(address||"").toLowerCase();
+  if(!/^0x[0-9a-f]{40}$/.test(wanted)) return false;
+  let found=false;
+  const visit=(value,depth=0)=>{
+    if(found || value==null || depth>8) return;
+    if(typeof value === "string") {
+      if(value.toLowerCase()===wanted) found=true;
+      return;
+    }
+    if(Array.isArray(value)) { for(const item of value) visit(item,depth+1); return; }
+    if(typeof value !== "object") return;
+    for(const v of Object.values(value)) visit(v,depth+1);
+  };
+  visit(market);
+  return found;
+}
+
 function marketCollateralSymbols(market) {
-const raw=JSON.stringify({
-symbol:market?.symbol,
-name:market?.name,
-longToken:market?.longToken,
-shortToken:market?.shortToken,
-longTokenSymbol:market?.longTokenSymbol,
-shortTokenSymbol:market?.shortTokenSymbol,
-collateralTokens:market?.collateralTokens,
-collateralTokenSymbols:market?.collateralTokenSymbols
-}).toUpperCase();
-const out=new Set();
-if (raw.includes("USDC")) out.add("USDC");
-if (raw.includes("USDT")) out.add("USDT");
-return out;
+  const out=new Set();
+  const raw=JSON.stringify(market||{}).toUpperCase();
+  if(raw.includes("USDC")) out.add("USDC");
+  if(raw.includes("USDT")) out.add("USDT");
+  // V17.3.15: GMX market metadata can expose collateral as token addresses
+  // rather than human-readable symbols. Address matching is authoritative for
+  // the two collateral tokens we support on Arbitrum.
+  if(marketHasTokenAddress(market,GMX_ARBITRUM_CANONICAL_COLLATERAL.USDC)) out.add("USDC");
+  if(marketHasTokenAddress(market,GMX_ARBITRUM_CANONICAL_COLLATERAL.USDT)) out.add("USDT");
+  return out;
+}
+
+function marketMatchesRequestedSymbol(market,wanted) {
+  const targets=[market?.symbol,market?.name,market?.indexName,market?.indexTokenSymbol,market?.ticker,market?.marketSymbol].filter(Boolean).map(String);
+  for(const raw of targets) {
+    const normalized=liveNormalizeSymbol(raw);
+    if(normalized===wanted) return true;
+    const pieces=raw.split(/[\/:[\](),|_-]+/).map(x=>liveNormalizeSymbol(x)).filter(Boolean);
+    if(pieces.includes(wanted)) return true;
+    if(liveNormalizeSymbol(raw.split("/")[0].split("[")[0])===wanted) return true;
+  }
+  return false;
 }
 
 function findSdkMarketWithCollateral(markets, symbol, collateralSymbol) {
-const wanted=liveNormalizeSymbol(symbol);
-const collateral=String(collateralSymbol||"").toUpperCase();
-const matches=(markets||[]).filter(m=>{
-if (m?.isSpotOnly) return false;
-const raw=String(m?.symbol||m?.name||"");
-const base=liveNormalizeSymbol(raw.split("/")[0]);
-const indexName=liveNormalizeSymbol(raw.split("/")[0].split("[")[0]);
-return base===wanted || indexName===wanted;
-});
-return matches.find(m=>marketCollateralSymbols(m).has(collateral))
-  || (matches.length===1 && marketCollateralSymbols(matches[0]).size===0 ? matches[0] : null);
+  const wanted=liveNormalizeSymbol(symbol);
+  const collateral=String(collateralSymbol||"").toUpperCase();
+  const matches=(markets||[]).filter(m=>!m?.isSpotOnly && marketMatchesRequestedSymbol(m,wanted));
+  const exact=matches.find(m=>marketCollateralSymbols(m).has(collateral));
+  if(exact) return exact;
+  // If the SDK returned exactly one non-spot market for the requested index and
+  // omitted token metadata entirely, preserve the previous safe single-market fallback.
+  return matches.length===1 && marketCollateralSymbols(matches[0]).size===0 ? matches[0] : null;
 }
 
 function selectLiveCollateral(markets, symbol, balances) {
-const available=extractCollateralBalances(balances);
-for (const preferred of ["USDC","USDT"]) {
-const bal=available[preferred];
-if (!(bal?.usd>0)) continue;
-const market=findSdkMarketWithCollateral(markets,symbol,preferred);
-if (market) return {symbol:preferred,usd:bal.usd,balance:bal.balance,decimals:bal.decimals,market};
-}
-return null;
+  const available=extractCollateralBalances(balances);
+  const diagnostics=[];
+  for (const preferred of ["USDC","USDT"]) {
+    const bal=available[preferred];
+    if (!(bal?.usd>0)) continue;
+    const market=findSdkMarketWithCollateral(markets,symbol,preferred);
+    if (market) return {symbol:preferred,usd:bal.usd,balance:bal.balance,decimals:bal.decimals,address:bal.address||GMX_ARBITRUM_CANONICAL_COLLATERAL[preferred],market};
+    diagnostics.push(`${preferred}:NO_MARKET_COLLATERAL_MATCH`);
+  }
+  return null;
 }
  
 function liveExecutionKey(signal) {
@@ -9363,7 +9411,8 @@ const balances = await sdk.fetchWalletBalances({ address: account });
 const resolvedBalances = await resolveLiveCollateralBalances(sdk, account, balances, env.ARBITRUM_RPC);
 const collateral = selectLiveCollateral(markets, requestedSymbol, resolvedBalances.balances);
 if (!collateral) {
-  throw new Error(`No usable USDC/USDT balance with a matching GMX collateral market was detected for Radar | walletUsd=${Number(resolvedBalances.walletUsd||0).toFixed(6)} | source=${resolvedBalances.source.join("+")||"NONE"}`);
+  const candidates=(markets||[]).filter(m=>!m?.isSpotOnly && marketMatchesRequestedSymbol(m,liveNormalizeSymbol(requestedSymbol))).slice(0,5).map(m=>({symbol:m?.symbol||m?.name||"?",collateral:[...marketCollateralSymbols(m)]}));
+  throw new Error(`No usable USDC/USDT balance with a matching GMX collateral market was detected for Radar | walletUsd=${Number(resolvedBalances.walletUsd||0).toFixed(6)} | source=${resolvedBalances.source.join("+")||"NONE"} | market=${liveNormalizeSymbol(requestedSymbol)} | candidates=${JSON.stringify(candidates)}`);
 }
 const market = collateral.market;
 const capacity = await sdk.getTradingCapacity({ symbol: market.symbol, direction: plan.direction === "LONG" ? "long" : "short" });
@@ -9762,7 +9811,10 @@ const markets=await sdk.fetchMarkets();
 const balances=await sdk.fetchWalletBalances({address:account});
 const resolvedBalances=await resolveLiveCollateralBalances(sdk,account,balances,env.ARBITRUM_RPC);
 const collateral=selectLiveCollateral(markets, signal.symbol, resolvedBalances.balances);
-if (!collateral) throw new Error(`No usable USDC/USDT balance with a matching GMX collateral market was detected | walletUsd=${Number(resolvedBalances.walletUsd||0).toFixed(6)} | source=${resolvedBalances.source.join("+")||"NONE"}`);
+if (!collateral) {
+  const candidates=(markets||[]).filter(m=>!m?.isSpotOnly && marketMatchesRequestedSymbol(m,liveNormalizeSymbol(signal.symbol))).slice(0,5).map(m=>({symbol:m?.symbol||m?.name||"?",collateral:[...marketCollateralSymbols(m)]}));
+  throw new Error(`No usable USDC/USDT balance with a matching GMX collateral market was detected | walletUsd=${Number(resolvedBalances.walletUsd||0).toFixed(6)} | source=${resolvedBalances.source.join("+")||"NONE"} | market=${liveNormalizeSymbol(signal.symbol)} | candidates=${JSON.stringify(candidates)}`);
+}
 const walletBefore = await readLiveWalletSnapshot(sdk, account);
 const market=collateral.market;
 const sdkSymbol=market.symbol;
