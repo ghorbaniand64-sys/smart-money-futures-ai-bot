@@ -1,5 +1,5 @@
 // Smart Money Futures AI Bot — GitHub Actions adapter
-// V17.5.0-GITHUB-ACTIONS-CANONICAL-EXECUTION
+// V17.5.2-GITHUB-ACTIONS-CANONICAL-EXECUTION
 // Imports the canonical root worker_core.mjs and fails fast on stale deployments.
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -7,7 +7,7 @@ import worker, { BOT_VERSION, BOT_BUILD } from "./worker_core.mjs";
 
 const ROOT = process.cwd();
 const STATE_DIR = path.join(ROOT, "state");
-const EXPECTED_WORKER_VERSION = "V17.5.0-GMX-CANONICAL-EXECUTION";
+const EXPECTED_WORKER_VERSION = "V17.5.2-GMX-BIGINT-SAFE-MARKET-RESOLVER";
 
 async function ensureStateFiles() {
   await fs.mkdir(STATE_DIR, { recursive: true });
@@ -86,14 +86,14 @@ async function main() {
   console.log("[GITHUB][START]", {
     scheduledTime,
     worker: "worker_core.mjs",
-    expectedVersion: EXPECTED_WORKER_VERSION,
+    expectedVersion: env.EXPECTED_VERSION,
     actualWorkerVersion: actualVersion,
     build: BOT_BUILD || "UNKNOWN",
     executionEnabled: env.EXECUTION_ENABLED,
     executionEnabledSource: process.env.EXECUTION_ENABLED == null ? "runner-default-true" : "github-env"
   });
-  if (actualVersion !== EXPECTED_WORKER_VERSION) {
-    throw new Error(`WORKER_VERSION_MISMATCH: expected=${EXPECTED_WORKER_VERSION} actual=${actualVersion}`);
+  if (actualVersion !== env.EXPECTED_VERSION) {
+    throw new Error(`WORKER_VERSION_MISMATCH: expected=${env.EXPECTED_VERSION} actual=${actualVersion}`);
   }
   if (typeof worker.scheduled !== "function") throw new Error("WORKER_SCHEDULED_EXPORT_MISSING");
   await worker.scheduled({ cron: "* * * * *", scheduledTime }, env, {
