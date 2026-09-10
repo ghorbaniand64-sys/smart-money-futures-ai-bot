@@ -1,9 +1,9 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
-║  V17.3.24 — GMX EXECUTION STAGE ISOLATION + BIGINT BRIDGE                                          ║
+║  V17.3.25 — RUNTIME IDENTITY + TELEGRAM FORMATTER HARDENING + GMX STAGE DIAGNOSTICS                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.3.24-GMX-EXECUTION-STAGE-ISOLATION                                   ║
+║  RELEASE: V17.3.25-RUNTIME-IDENTITY-TELEGRAM-HARDENING                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -23,6 +23,26 @@
 ║  • Core + Radar share the same global position/capital limits.              ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 */
+
+// V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
+// from the imported worker module so stale/wrong-file deployments are immediately visible.
+export const BOT_VERSION = "V17.3.25-RUNTIME-IDENTITY-TELEGRAM-HARDENING";
+export const BOT_BUILD = "V17.3.25";
+
+// V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
+// Telegram diagnostics must never hide the real GMX execution error.
+function safeFormatPrice(value) {
+  try {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "N/A";
+    if (n >= 1000) return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+    if (n >= 1) return n.toLocaleString("en-US", { maximumFractionDigits: 4 });
+    return n.toLocaleString("en-US", { maximumFractionDigits: 8 });
+  } catch (_) {
+    return "N/A";
+  }
+}
+
 // V17.3.23 LIVE EXECUTION REPAIR — BYPASS SDK JSON SERIALIZATION BUG
 // V17.2.4 LIVE DIAGNOSTICS + SELECTION REPAIR
 // V17.1.6 SDK SAFE LOADER
@@ -4403,8 +4423,8 @@ const lines = [
 "━━━━━━━━━━━━━━━━━━",
 `📌 ${action?.symbol || "UNKNOWN"} • ${action?.direction || "UNKNOWN"}`,
 isRadar ? `🧭 Lane: RADAR / Paper simulation` : "",
-`📥 Entry: ${action?.entryPrice != null ? formatPrice(action.entryPrice) : "N/A"}`,
-`📤 Exit: ${action?.exitPrice != null ? formatPrice(action.exitPrice) : (action?.price != null ? formatPrice(action.price) : "N/A")}`,
+`📥 Entry: ${action?.entryPrice != null ? safeFormatPrice(action.entryPrice) : "N/A"}`,
+`📤 Exit: ${action?.exitPrice != null ? safeFormatPrice(action.exitPrice) : (action?.price != null ? safeFormatPrice(action.price) : "N/A")}`,
 action?.leverage != null ? `⚙️ Leverage: ${Number(action.leverage).toFixed(0)}x` : "",
 action?.notionalUsd != null ? `📦 Notional: $${Number(action.notionalUsd).toFixed(2)}` : "",
 `📉 PnL: ${hasPnl ? `${pnlUsd >= 0 ? "+" : ""}$${pnlUsd.toFixed(2)} (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%)` : "NOT CALCULATED — PRICE DATA INVALID"}`,
@@ -4909,15 +4929,9 @@ allowed: ["pause", "resume", "status"]
 // TELEGRAM
 // ======================================================
  
-function formatPrice(value) {
-if (!Number.isFinite(Number(value))) return "N/A";
- 
-const n = Number(value);
- 
-if (n >= 1000) return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
-if (n >= 1) return n.toLocaleString("en-US", { maximumFractionDigits: 4 });
-return n.toLocaleString("en-US", { maximumFractionDigits: 8 });
-}
+function formatPrice(value) { return safeFormatPrice(value); }
+
+console.log("[RUNTIME][WORKER_IDENTITY]", { version: BOT_VERSION, build: BOT_BUILD, module: "worker_core.mjs", formatter: "safeFormatPrice" });
  
 function legacyTelegramTextUnused(value, fallback = "N/A") {
 let s = value === null || value === undefined || value === "" ? fallback : String(value);
@@ -5175,7 +5189,7 @@ return [
 `⚡ Edge: ${Number(position?.radarEdge || 0).toFixed(1)}`,
 "",
 "📥 HYPOTHETICAL ENTRY",
-`💰 Entry: ${formatPrice(position?.entryPrice)}`,
+`💰 Entry: ${safeFormatPrice(position?.entryPrice)}`,
 `⚙️ Leverage: ${leverage}x`,
 `💼 Allocation: ${allocationPct.toFixed(2)}%`,
 `💵 Margin Used: $${margin.toFixed(2)}`,
@@ -5183,10 +5197,10 @@ return [
 `🛡️ Risk/Trade: ${riskPct.toFixed(2)}%`,
 "",
 "🎯 TRADE PLAN",
-`🛑 Initial SL: ${formatPrice(position?.initialStopPrice)}`,
-`🎯 TP1: ${formatPrice(position?.tp1)}`,
-`🎯 TP2: ${formatPrice(position?.tp2)}`,
-`🎯 TP3: ${formatPrice(position?.tp3)}`,
+`🛑 Initial SL: ${safeFormatPrice(position?.initialStopPrice)}`,
+`🎯 TP1: ${safeFormatPrice(position?.tp1)}`,
+`🎯 TP2: ${safeFormatPrice(position?.tp2)}`,
+`🎯 TP3: ${safeFormatPrice(position?.tp3)}`,
 "",
 "📊 RESULT TRACKING",
 "🟢 PnL starts at $0.00 / 0.00%",
@@ -9555,11 +9569,11 @@ function formatTelegramExecutionFailure(signal, error, result=null) {
     `🪙 ${symbol}`,
     `📌 Direction: ${direction}`,
     `🏷️ Tier: ${tier}`,
-    `💰 Entry: ${p.entry!=null?formatPrice(p.entry):"N/A"}`,
-    `🛑 Stop Loss: ${p.stopLoss!=null?formatPrice(p.stopLoss):"N/A"}`,
-    `🎯 TP1: ${p.tp1!=null?formatPrice(p.tp1):"N/A"}`,
-    `🎯 TP2: ${p.tp2!=null?formatPrice(p.tp2):"N/A"}`,
-    `🎯 TP3: ${p.tp3!=null?formatPrice(p.tp3):"N/A"}`,
+    `💰 Entry: ${p.entry!=null?safeFormatPrice(p.entry):"N/A"}`,
+    `🛑 Stop Loss: ${p.stopLoss!=null?safeFormatPrice(p.stopLoss):"N/A"}`,
+    `🎯 TP1: ${p.tp1!=null?safeFormatPrice(p.tp1):"N/A"}`,
+    `🎯 TP2: ${p.tp2!=null?safeFormatPrice(p.tp2):"N/A"}`,
+    `🎯 TP3: ${p.tp3!=null?safeFormatPrice(p.tp3):"N/A"}`,
     `📊 Allocation: ${Number(p.allocationPercent!=null?p.allocationPercent:Number(p.allocation||0)*100).toFixed(2)}%`,
     `⚙️ Leverage: ${Number(p.leverage||1).toFixed(1)}x`,
     `🔧 Stage: ${stage}`,
@@ -9592,11 +9606,11 @@ function formatTelegramScanHeartbeat(result, scanId) {
       `
 ${icon2} EXECUTED #${i+1} — ${telegramTextSafe(x?.symbol || "UNKNOWN")}`,
       `📌 Direction: ${dir}`,
-      `💰 Entry: ${x?.entryPrice!=null ? formatPrice(x.entryPrice) : "N/A"}`,
-      `🛑 SL: ${x?.stopLoss!=null ? formatPrice(x.stopLoss) : "N/A"}`,
-      `🎯 TP1: ${x?.tp1!=null ? formatPrice(x.tp1) : "N/A"}`,
-      `🎯 TP2: ${x?.tp2!=null ? formatPrice(x.tp2) : "N/A"}`,
-      `🎯 TP3: ${x?.tp3!=null ? formatPrice(x.tp3) : "N/A"}`,
+      `💰 Entry: ${x?.entryPrice!=null ? safeFormatPrice(x.entryPrice) : "N/A"}`,
+      `🛑 SL: ${x?.stopLoss!=null ? safeFormatPrice(x.stopLoss) : "N/A"}`,
+      `🎯 TP1: ${x?.tp1!=null ? safeFormatPrice(x.tp1) : "N/A"}`,
+      `🎯 TP2: ${x?.tp2!=null ? safeFormatPrice(x.tp2) : "N/A"}`,
+      `🎯 TP3: ${x?.tp3!=null ? safeFormatPrice(x.tp3) : "N/A"}`,
       `📊 Allocation: ${allocation.toFixed(2)}% | ⚙️ Leverage: ${Number(x?.leverage || 1).toFixed(1)}x`,
       `📦 Notional: $${Number(x?.notionalUsd || 0).toFixed(2)} | 💵 Collateral: $${Number(x?.collateralUsd || 0).toFixed(2)}`,
       x?.walletBefore?.[String(x?.collateralToken||"").toUpperCase()]!=null ? `💰 Wallet ${x?.collateralToken||"?"}: $${Number(x.walletBefore[String(x.collateralToken||"").toUpperCase()]).toFixed(4)} → $${Number(x?.walletAfter?.[String(x?.collateralToken||"").toUpperCase()]||0).toFixed(4)}` : "💰 Wallet balance: N/A",
@@ -9694,11 +9708,11 @@ function formatTelegramLiveEntry(result) {
     `🪙 ${result?.symbol||"UNKNOWN"}`,
     `🔥 Score: ${Number(result?.score||0).toFixed(1)}/100`,
     `⚡ Confidence: ${Number(result?.confidence||0).toFixed(0)}%`,
-    `💰 Entry: ${result?.entryPrice!=null?formatPrice(result.entryPrice):"N/A"}`,
-    `🛑 Stop Loss: ${result?.stopLoss!=null?formatPrice(result.stopLoss):"N/A"}`,
-    `🎯 TP1: ${result?.tp1!=null?formatPrice(result.tp1):"N/A"}`,
-    `🎯 TP2: ${result?.tp2!=null?formatPrice(result.tp2):"N/A"}`,
-    `🎯 TP3: ${result?.tp3!=null?formatPrice(result.tp3):"N/A"}`,
+    `💰 Entry: ${result?.entryPrice!=null?safeFormatPrice(result.entryPrice):"N/A"}`,
+    `🛑 Stop Loss: ${result?.stopLoss!=null?safeFormatPrice(result.stopLoss):"N/A"}`,
+    `🎯 TP1: ${result?.tp1!=null?safeFormatPrice(result.tp1):"N/A"}`,
+    `🎯 TP2: ${result?.tp2!=null?safeFormatPrice(result.tp2):"N/A"}`,
+    `🎯 TP3: ${result?.tp3!=null?safeFormatPrice(result.tp3):"N/A"}`,
     `📊 Allocation: ${Number(result?.allocationPercent||0).toFixed(2)}%`,
     `⚙️ Leverage: ${Number(result?.leverage||1).toFixed(1)}x`,
     `📦 Notional: $${Number(result?.notionalUsd||0).toFixed(2)}`,

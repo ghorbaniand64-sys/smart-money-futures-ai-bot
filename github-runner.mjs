@@ -5,9 +5,10 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import worker from "./worker_core.mjs";
+import worker, { BOT_VERSION, BOT_BUILD } from "./worker_core.mjs";
 
 const ROOT = process.cwd();
+const WORKER_PATH = path.join(ROOT, "worker_core.mjs");
 const STATE_DIR = path.join(ROOT, "state");
 
 async function ensureStateFiles() {
@@ -91,13 +92,22 @@ async function buildEnv() {
 }
 
 async function main() {
+  let workerSha256 = null;
+  try {
+    const crypto = await import("node:crypto");
+    const bytes = await fs.readFile(WORKER_PATH);
+    workerSha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+  } catch (_) {}
   const env = await buildEnv();
   const scheduledTime = Date.now();
   const event = { cron: "* * * * *", scheduledTime };
   console.log("[GITHUB][START]", {
     scheduledTime,
     worker: "worker_core.mjs",
-    expectedVersion: "V17.3.24-GMX-EXECUTION-STAGE-ISOLATION",
+    expectedVersion: "V17.3.25-RUNTIME-IDENTITY-TELEGRAM-HARDENING",
+    importedWorkerVersion: BOT_VERSION,
+    importedWorkerBuild: BOT_BUILD,
+    workerSha256,
     executionEnabled: env.EXECUTION_ENABLED,
     executionEnabledSource: process.env.EXECUTION_ENABLED == null ? "runner-default-true" : "github-env"
   });
