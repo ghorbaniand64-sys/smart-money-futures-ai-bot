@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.5.3-GMX-LIVE-WALLET-SNAPSHOT-FIX";
-export const BOT_BUILD = "V17.5.3";
+export const BOT_VERSION = "V17.5.4-GMX-STABLECOIN-BALANCE-FIX";
+export const BOT_BUILD = "V17.5.4";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -9051,14 +9051,11 @@ async function resolveLiveCollateralBalances(sdk,account,balances,rpcUrl){
         const chain=await readGmxOnchainTokenBalance(rpcUrl,address,account,6);
         if(chain.ok){
           const chainUsd=Number(chain.balance);
-          if(chainUsd>0){
-            result[symbol]={symbol,usd:chainUsd,balance:chainUsd,decimals:6,address,source:"ONCHAIN"};
-            source.push(`ONCHAIN_${symbol}`);
-          } else if(result[symbol] && Number(result[symbol].usd||0)>0){
-            // On-chain is authoritative: do not trade against a stale API balance.
-            result[symbol]=null;
-            source.push(`ONCHAIN_${symbol}_ZERO`);
-          }
+          // On-chain is authoritative for execution sizing, including zero.
+          result[symbol]=chainUsd>0
+            ? {symbol,usd:chainUsd,balance:chainUsd,decimals:6,address,source:"ONCHAIN"}
+            : null;
+          source.push(`ONCHAIN_${symbol}${chainUsd>0?"":"_ZERO"}`);
         }
       }catch(error){
         source.push(`ONCHAIN_${symbol}_ERROR`);
@@ -9137,7 +9134,12 @@ function extractCollateralBalances(balances) {
     if(symbol==="USDC"&&address&&address.toLowerCase()!==GMX_ARBITRUM_CANONICAL_COLLATERAL.USDC.toLowerCase()) continue;
     const parsed=tokenNumericBalance(entry);
     if(!(parsed.usd>0)) continue;
-    const candidate={symbol,usd:parsed.usd,balance:parsed.balance,decimals:parsed.decimals,address:address||GMX_ARBITRUM_CANONICAL_COLLATERAL[symbol]||null,source:"GMX_API"};
+    // V17.5.4: USDC/USDT are USD-denominated collateral tokens. Some SDK/API
+    // wrappers expose balanceUsd/valueUsd in a different scale or stale form.
+    // For execution sizing, the human token balance is the authoritative USD
+    // quantity; on-chain RPC (when available) supersedes this API value below.
+    const stableUsd=Number(parsed.balance||0);
+    const candidate={symbol,usd:stableUsd,balance:stableUsd,decimals:parsed.decimals,address:address||GMX_ARBITRUM_CANONICAL_COLLATERAL[symbol]||null,source:"GMX_API_STABLECOIN_BALANCE"};
     // Prefer the largest positive balance when multiple wrapper entries exist.
     if(!result[symbol] || candidate.usd>Number(result[symbol].usd||0)) result[symbol]=candidate;
   }
@@ -9984,7 +9986,7 @@ let finalCollateralUsd=Math.min(maxCollateralUsd,Math.max(collateralUsd,notional
 const requestedCollateralUsd=finalCollateralUsd;
 const marketMinPositionUsd=Number(market?.minPositionSizeUsd||0n)/1e30;
 const marketMinCollateralUsd=Number(market?.minCollateralUsd||0n)/1e30;
-if (marketMinPositionUsd>0 && notionalUsd<marketMinPositionUsd) throw new Error(`CORE_MARKET_MIN_POSITION_BLOCKED: marketMinimum=$${marketMinPositionUsd.toFixed(6)}, computed=$${notionalUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, stop=${(stopFraction*100).toFixed(2)}%, allocationNotional=$${allocationNotional.toFixed(6)}, riskBasedNotional=$${riskBasedNotional.toFixed(6)}, capacity=$${capacityUsd.toFixed(6)}`);
+if (marketMinPositionUsd>0 && notionalUsd<marketMinPositionUsd) throw new Error(`CORE_MARKET_MIN_POSITION_BLOCKED: marketMinimum=$${marketMinPositionUsd.toFixed(6)}, computed=$${notionalUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, stop=${(stopFraction*100).toFixed(2)}%, allocationNotional=$${allocationNotional.toFixed(6)}, riskBasedNotional=$${riskBasedNotional.toFixed(6)}, capacity=$${capacityUsd.toFixed(6)}, collateral=${collateral.symbol}, balanceSource=${collateral.source||"UNKNOWN"}`);
 if (marketMinCollateralUsd>0) {
   if (walletUsd<marketMinCollateralUsd || maxCollateralUsd<marketMinCollateralUsd) throw new Error(`CORE_MARKET_MIN_COLLATERAL_BLOCKED: marketMinimum=$${marketMinCollateralUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, maxCollateral=$${maxCollateralUsd.toFixed(6)}, computedNotional=$${notionalUsd.toFixed(6)}`);
   finalCollateralUsd=Math.max(finalCollateralUsd,marketMinCollateralUsd);
