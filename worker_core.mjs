@@ -174,13 +174,33 @@ async function fetchAllTickers(sdk){
   try{const t=await sdk.fetchMarketsTickers();return Array.isArray(t)?t:[];}catch(e){console.warn("[MARKETS][TICKERS_FAIL]",safeError(e));return [];}
 }
 
-async function fetchCandles(symbol,tf){
-  const q={tokenSymbol:normalizeSymbol(symbol),period:tf,limit:CONFIG.CANDLE_LIMIT};
+async function fetchCandles(sdk,symbol,tf){
   const errors=[];
+  // Primary path: current GMX SDK v2 OHLCV API. This avoids relying on the
+  // legacy oracle candle transport for the main scan. GMX exposes this as
+  // GmxApiSdk.fetchOhlcv({ symbol, timeframe, limit }).
+  if(typeof sdk?.fetchOhlcv==="function") {
+    try {
+      const pair=`${normalizeSymbol(symbol)}/USD`;
+      const raw=await sdk.fetchOhlcv({symbol:pair,timeframe:tf,limit:CONFIG.CANDLE_LIMIT});
+      const c=normalizeCandles(raw);
+      if(c.length){console.log("[CANDLES][SDK_OHLCV]",{symbol:normalizeSymbol(symbol),tf,count:c.length});return c;}
+      errors.push("SDK_EMPTY");
+    } catch(e){errors.push(`SDK:${safeError(e)}`);}
+  } else errors.push("SDK_FETCH_OHLCV_UNAVAILABLE");
+
+  // Fallback: documented GMX Oracle candles endpoint.
+  const q={tokenSymbol:normalizeSymbol(symbol),period:tf,limit:CONFIG.CANDLE_LIMIT};
   for(const base of CONFIG.ORACLE_PEERS){
-    try { const u=new URL(`${base}/prices/candles`); for(const [k,v] of Object.entries(q))u.searchParams.set(k,String(v)); const c=normalizeCandles(await fetchJson(u.toString(),{headers:{accept:"application/json"}})); if(c.length)return c; errors.push("EMPTY"); } catch(e){errors.push(safeError(e));}
+    try {
+      const u=new URL(`${base}/prices/candles`);
+      for(const [k,v] of Object.entries(q))u.searchParams.set(k,String(v));
+      const c=normalizeCandles(await fetchJson(u.toString(),{headers:{accept:"application/json"}}));
+      if(c.length){console.log("[CANDLES][ORACLE_FALLBACK]",{symbol:normalizeSymbol(symbol),tf,count:c.length,base});return c;}
+      errors.push(`${base}:EMPTY`);
+    } catch(e){errors.push(`${base}:${safeError(e)}`);}
   }
-  throw new Error(`No candles: ${symbol} ${tf} | ${errors.join(" | ")}`);
+  throw new Error(`No candles: ${normalizeSymbol(symbol)} ${tf} | ${errors.join(" | ")}`);
 }
 
 function tradeRows(payload){
@@ -775,7 +795,7 @@ async function monitorOpenPositions(env){
         const better=dir==='LONG'?newStop>slTrigger:newStop<slTrigger;
         if(better){const edited=await editStopOrder(sdk,signer,account,orderKey(sl),newStop);protectedCount++;console.log('[EXIT][TP1_PROTECT]',{symbol,direction:dir,price,tpHit:hit.trigger,oldStop:slTrigger,newStop,status:edited.status});}
       }
-      const sm=smartMoneyForSymbol(flow,symbol,dir),fast=fastIndicators(await fetchCandles(symbol,'5m').catch(()=>[]));
+      const sm=smartMoneyForSymbol(flow,symbol,dir),fast=fastIndicators(await fetchCandles(sdk,symbol,'5m').catch(()=>[]));
       const severeOutflow=Number(sm.aligned||0)<=-0.18&&Number(sm.suspiciousWalletCount||0)>0;
       const reversal=dir==='LONG'?(fast.bearish&&fast.rsi<45&&fast.macd<0):(fast.bullish&&fast.rsi>55&&fast.macd>0);
       if(severeOutflow&&reversal){
@@ -809,8 +829,8 @@ async function runScan(env){
     const batch=universe.slice(i,i+CONFIG.BROAD_5M_BATCH);
     await Promise.all(batch.map(async row=>{
       try{
-        const c5=await fetchCandles(row.symbol,"5m");eventStats.data5mReady++;
-        let c15=[];try{c15=await fetchCandles(row.symbol,"15m");eventStats.data15mReady++;}catch(e){optional15mFailed++;eventStats.data15mFailed++;console.warn("[HYBRID][15M_OPTIONAL_FAIL]",{symbol:row.symbol,error:safeError(e)});}
+        const c5=await fetchCandles(sdk,row.symbol,"5m");eventStats.data5mReady++;
+        let c15=[];try{c15=await fetchCandles(sdk,row.symbol,"15m");eventStats.data15mReady++;}catch(e){optional15mFailed++;eventStats.data15mFailed++;console.warn("[HYBRID][15M_OPTIONAL_FAIL]",{symbol:row.symbol,error:safeError(e)});}
         const price=num(c5.at(-1)?.close,row.price);const flow=smartFlow;const prev=stateCache.hybrid[row.symbol]||{};
         const analysis=hybridClassifyStructure(row.symbol,{"5m":c5,"15m":c15},price,flow,prev);analysis.price=price;analysis.candleTimestamp=c5.at(-1)?.timestamp||0;stateCache.hybrid[row.symbol]=analysis.nextState||prev;deepOk++;
         const ef=analysis.eventFlags||{};for(const [src,dst] of Object.entries({supportZone:"supportZones",resistanceZone:"resistanceZones",supportReaction:"supportReactions",resistanceReaction:"resistanceReactions",breakout:"breakouts",waitingRetest:"waitingRetests",retestConfirmed:"retestConfirmed"})){if(ef[src])eventStats[dst]++;}if(ef.supportReaction||ef.resistanceReaction||ef.breakout||ef.waitingRetest||ef.retestConfirmed)eventCandidates++;
