@@ -1,6 +1,6 @@
 /*
  GMX SMART MONEY FUTURES AI BOT — CLEAN CORE
- V18.2.0-SMART-MONEY-FAST-SR
+ V18.2.1-SMART-MONEY-TELEGRAM-DIAGNOSTICS
 
  Purpose:
  - Preserve the Hybrid structure/event signal core.
@@ -15,8 +15,8 @@ import { createRequire } from "node:module";
 import crypto from "node:crypto";
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V18.2.0-SMART-MONEY-FAST-SR";
-export const BOT_BUILD = "V18.2.0";
+export const BOT_VERSION = "V18.2.1-SMART-MONEY-TELEGRAM-DIAGNOSTICS";
+export const BOT_BUILD = "V18.2.1";
 
 let GmxApiSdk = null;
 let PrivateKeySigner = null;
@@ -97,7 +97,7 @@ const CONFIG = {
     rejectionWickRatio:0.30,rejectionCloseRatio:0.60,sweepDepthAtr:0.15,breakoutBufferAtr:0.10,retestToleranceAtr:0.22
   },
   HYBRID_VOLUME: { expansionStrong:1.25, expansionExplosive:1.90, rangeExpansionStrong:1.20, rangeExpansionExplosive:1.60 },
-  SMART_MONEY: { enabled:true, lookbackMs:5*60*1000, limit:750, largeNotionalUsd:5000, whaleNotionalUsd:25000, concentrationCap:0.55, minDirectionalImbalance:0.08, suspiciousRepeatCount:2 },
+  SMART_MONEY: { enabled:true, lookbackMs:5*60*1000, limit:300, largeNotionalUsd:5000, whaleNotionalUsd:25000, concentrationCap:0.55, minDirectionalImbalance:0.08, suspiciousRepeatCount:2 },
   FAST_INDICATORS: { emaFast:9, emaSlow:21, rsiPeriod:14, macdFast:12, macdSlow:26, macdSignal:9, rocBars:3 },
   HYBRID_ENTRY: {
     minEvidence:1,requireFlowOrVolume:false,minReactionVolumeRatio:1.05,minReactionFlowImbalance:0.06,
@@ -147,10 +147,33 @@ function normalizeCandles(payload){
   const raw=Array.isArray(payload)?payload:(payload?.candles||payload?.data||payload?.ohlcv||[]);
   return raw.map(c=>Array.isArray(c)?{timestamp:num(c[0]),open:num(c[1]),high:num(c[2]),low:num(c[3]),close:num(c[4]),volume:num(c[5])}:{timestamp:num(c?.timestamp),open:num(c?.open),high:num(c?.high),low:num(c?.low),close:num(c?.close),volume:num(c?.volume??c?.vol??c?.volumeUsd)}).filter(c=>c.timestamp>0&&[c.open,c.high,c.low,c.close].every(Number.isFinite)).sort((a,b)=>a.timestamp-b.timestamp);
 }
-async function fetchMarkets(){
-  const r=await peerJson(CONFIG.API_PEERS,"/markets/info");
-  return rows(r.data).filter(m=>m?.isListed!==false&&m?.isActive!==false);
+async function fetchMarkets(sdk){
+  try{
+    if(sdk?.fetchMarkets){
+      const data=await sdk.fetchMarkets();
+      if(Array.isArray(data)&&data.length){
+        console.log("[MARKETS][SDK_CATALOG]",{count:data.length});
+        return data.filter(m=>m?.isSpotOnly!==true&&m?.isListed!==false&&m?.isActive!==false);
+      }
+    }
+  }catch(e){console.warn("[MARKETS][SDK_CATALOG_FAIL]",safeError(e));}
+  try{
+    const r=await peerJson(CONFIG.API_PEERS,"/markets");
+    const data=rows(r.data).filter(m=>m?.isSpotOnly!==true&&m?.isListed!==false&&m?.isActive!==false);
+    console.log("[MARKETS][HTTP_CATALOG_FALLBACK]",{count:data.length});
+    return data;
+  }catch(e){
+    console.error("[MARKETS][DISCOVERY_FAIL]",safeError(e));
+    return [];
+  }
 }
+function tickerSymbol(t){return normalizeSymbol(t?.indexName||t?.indexTokenSymbol||t?.symbol||t?.name||t?.marketSymbol||"");}
+function tickerPrice(t){return normalizeGmxUsd(t?.markPrice??t?.maxPrice??t?.minPrice??t?.indexPrice??t?.price);}
+async function fetchAllTickers(sdk){
+  if(typeof sdk?.fetchMarketsTickers!=="function")return [];
+  try{const t=await sdk.fetchMarketsTickers();return Array.isArray(t)?t:[];}catch(e){console.warn("[MARKETS][TICKERS_FAIL]",safeError(e));return [];}
+}
+
 async function fetchCandles(symbol,tf){
   const q={tokenSymbol:normalizeSymbol(symbol),period:tf,limit:CONFIG.CANDLE_LIMIT};
   const errors=[];
@@ -169,7 +192,7 @@ function tradeSymbol(t){return normalizeSymbol(t?.symbol||t?.indexTokenSymbol||t
 function tradeAccount(t){return String(t?.account||t?.user||t?.wallet||t?.address||t?.trader||"").toLowerCase();}
 function tradeTimestamp(t){return num(t?.timestamp??t?.updatedAt??t?.blockTimestamp??t?.createdAt)*((num(t?.timestamp??t?.updatedAt??t?.blockTimestamp??t?.createdAt)<1e12)?1000:1);}
 function tradeNotional(t){
-  for(const v of [t?.sizeDeltaUsd,t?.sizeUsd,t?.notionalUsd,t?.positionSizeUsd,t?.size,t?.collateralUsd]){const n=num(v);if(n>0){if(n>1e18)return n/1e30;return n;}}
+  for(const v of [t?.sizeDeltaUsd,t?.sizeUsd,t?.notionalUsd,t?.positionSizeUsd,t?.size,t?.collateralUsd]){const n=normalizeGmxUsd(v);if(n>0)return n;}
   return 0;
 }
 function tradeDirection(t){
@@ -587,6 +610,22 @@ function buildPlan(symbol,analysis){
   const tier=e.tier||"NORMAL",mult=tier==="PRIME"?1:tier==="FAST"?.45:.75,allocation=CONFIG.HYBRID_RISK.capitalAllocation*mult;
   return {valid:true,entry:price,stopLoss:stop,tp1,tp2,tp3,atr:a,stopDistance:r,stopPercent:r/price*100,leverage:Math.max(CONFIG.HYBRID_RISK.minLeverage,Math.min(CONFIG.HYBRID_RISK.maxLeverage, e.trigger?.includes("RETEST")?7:5)),allocation,allocationPercent:allocation*100};
 }
+async function verifyLiveEntryPosition(sdk,account,symbol,direction){
+  if(typeof sdk?.fetchPositionsInfo!=="function")return {verified:false,position:null};
+  try{
+    const positions=await sdk.fetchPositionsInfo({address:account});
+    const wanted=normalizeSymbol(symbol), wantLong=String(direction).toUpperCase()==="LONG";
+    const found=(Array.isArray(positions)?positions:[]).find(p=>normalizeSymbol(p?.indexName||p?.indexTokenSymbol||p?.symbol||p?.marketSymbol||"")===wanted&&Boolean(p?.isLong)===wantLong&&positionSizeUsd(p)>0);
+    return {verified:Boolean(found),position:found||null};
+  }catch(e){return {verified:false,position:null,error:safeError(e)};}
+}
+function balanceSummary(bal){
+  if(!bal)return null;
+  const rows=balanceRows(bal?.raw);const out={USDC:0,USDT:0,total:num(bal?.walletUsd)};
+  for(const r of rows){const k=normalizeSymbol(r.symbol);if(k==="USDC"||k==="USDT")out[k]+=num(r.usd);}
+  return out;
+}
+
 async function executeLiveSignal(signal,env,allowancePreflight){
   const stage=async(name,fn)=>{try{return await fn();}catch(e){e.executionStage=name;throw e;}};
   if(!executionEnabled(env))return {executed:false,mode:"SIGNAL",reason:"EXECUTION_DISABLED"};
@@ -620,26 +659,60 @@ async function executeLiveSignal(signal,env,allowancePreflight){
   if(pre.ok===false)throw new Error(pre.reason||"INSUFFICIENT_GMX_ALLOWANCE");
   const req=executionRequest(signal,collateral.market,account,collateral.symbol,notionalUsd,collateralUsd);
   const submitted=await stage("GMX_PREPARE_SIGN_SUBMIT",()=>prepareSignDirectSubmit(sdk,signer,req));
-  return {executed:true,mode:"LIVE",account,symbol:signal.symbol,direction:signal.direction,collateralToken:collateral.symbol,walletUsd:bal.walletUsd,collateralUsd,notionalUsd,leverage,allocation,allocationPercent:allocation*100,requestId:submitted.requestId,status:submitted.status,entryPrice:entry,stopLoss:stop,tp1:signal.tradePlan.tp1,tp2:signal.tradePlan.tp2,tp3:signal.tradePlan.tp3,positionVerified:false};
+  await new Promise(r=>setTimeout(r,900));
+  const after=await liveBalanceUsd(sdk,account).catch(()=>null);
+  const verification=await verifyLiveEntryPosition(sdk,account,signal.symbol,signal.direction);
+  const beforeSummary=balanceSummary(bal), afterSummary=balanceSummary(after);
+  return {executed:true,mode:"LIVE",account,symbol:signal.symbol,direction:signal.direction,score:signal.score,confidence:signal.confidence,longScore:signal.longScore,shortScore:signal.shortScore,trigger:signal.hybridSetup?.trigger,collateralToken:collateral.symbol,walletUsd:bal.walletUsd,walletBefore:beforeSummary,walletAfter:afterSummary,walletDelta:afterSummary?Number((afterSummary.total-beforeSummary.total).toFixed(6)):null,collateralUsd,notionalUsd,leverage,allocation,allocationPercent:allocation*100,requestId:submitted.requestId,status:submitted.status,entryPrice:entry,stopLoss:stop,tp1:signal.tradePlan.tp1,tp2:signal.tradePlan.tp2,tp3:signal.tradePlan.tp3,positionVerified:verification.verified,verificationError:verification.error||null};
 }
+function fmtPrice(v){
+  const n=num(v);if(!(n>0))return "N/A";
+  if(n>=1000)return n.toFixed(2);if(n>=1)return n.toFixed(4);if(n>=0.01)return n.toFixed(6);if(n>=0.0001)return n.toFixed(8);return n.toPrecision(8);
+}
+function fmtUsd(v){return Number.isFinite(num(v))?`$${num(v).toFixed(4)}`:"N/A";}
 function signalTelegram(signal){
+  const dir=String(signal?.direction||"UNKNOWN").toUpperCase(), icon=dir==="LONG"?"🟢":"🔴", s=signal?.hybridSetup||{};
   return [
-    `🟢 SIGNAL READY`,
-    `🪙 ${telegramTextSafe(signal.symbol)}`,
-    `📌 ${telegramTextSafe(signal.direction)}`,
-    `⭐ Score: ${num(signal.score).toFixed(1)} | Long: ${num(signal.longScore).toFixed(1)} | Short: ${num(signal.shortScore).toFixed(1)}`,
-    `💵 Entry: ${num(signal.tradePlan.entry).toFixed(8)}`,
-    `🛑 SL: ${num(signal.tradePlan.stopLoss).toFixed(8)}`,
-    `🎯 TP1: ${num(signal.tradePlan.tp1).toFixed(8)} | TP2: ${num(signal.tradePlan.tp2).toFixed(8)} | TP3: ${num(signal.tradePlan.tp3).toFixed(8)}`,
-    `🔎 ${telegramTextSafe(signal.hybridSetup?.trigger)}`
+    `${icon} ENTRY READY — ${dir}`,"━━━━━━━━━━━━━━━━━━",
+    `🪙 ${telegramTextSafe(signal?.symbol)}`,
+    `🔥 Score: ${num(signal?.score).toFixed(1)}/100`,
+    `🟢 Long: ${num(signal?.longScore).toFixed(1)} | 🔴 Short: ${num(signal?.shortScore).toFixed(1)}`,
+    `⚡ Confidence: ${num(signal?.confidence).toFixed(1)}%`,
+    `🎯 Trigger: ${telegramTextSafe(s.trigger)}`,
+    `💵 Entry: ${fmtPrice(signal?.tradePlan?.entry)}`,
+    `🛑 Stop Loss: ${fmtPrice(signal?.tradePlan?.stopLoss)} (${num(signal?.hybridSetup?.stopPercent).toFixed(2)}%)`,
+    `🎯 TP1: ${fmtPrice(signal?.tradePlan?.tp1)}  •  40%`,
+    `🎯 TP2: ${fmtPrice(signal?.tradePlan?.tp2)}  •  30%`,
+    `🎯 TP3: ${fmtPrice(signal?.tradePlan?.tp3)}  •  30%`,
+    `📐 Zone: ${telegramTextSafe(s.zoneType)} | Quality: ${num(s.zone?.quality).toFixed(1)}`,
+    `📏 Entry distance: ${num(s.entryDistanceAtr).toFixed(2)} ATR`,
+    `💧 Smart Money: ${num(s.flow?.imbalance).toFixed(3)} | Large: ${num(s.flow?.largeTradeCount)} | Suspicious: ${num(s.flow?.suspiciousWalletCount)}`,
+    `⚡ RSI: ${num(s.fastIndicators?.rsi).toFixed(1)} | ROC: ${num(s.fastIndicators?.rocPct).toFixed(2)}% | Range: ${num(s.fastIndicators?.rangeRatio).toFixed(2)}x`,
+    `💼 Allocation: ${num(signal?.tradePlan?.allocationPercent).toFixed(2)}% | Leverage: ${num(signal?.tradePlan?.leverage).toFixed(1)}x`,
+    `🧠 Evidence: ${telegramTextSafe((signal?.diagnostics||[]).slice(0,6).join(", "))}`
   ].join("\n");
 }
 function executionTelegram(signal,result,error){
-  if(error)return [`🔴 LIVE EXECUTION FAILED`,`🪙 ${telegramTextSafe(signal?.symbol)}`,`📌 Direction: ${telegramTextSafe(signal?.direction)}`,`🔧 Stage: ${telegramTextSafe(error.executionStage||"EXECUTION")}`,`❌ Reason: ${telegramTextSafe(safeError(error))}`].join("\n");
-  return [`🟢 LIVE EXECUTION SUBMITTED`,`🪙 ${telegramTextSafe(result?.symbol)}`,`📌 Direction: ${telegramTextSafe(result?.direction)}`,`💰 Wallet: $${num(result?.walletUsd).toFixed(4)}`,`📦 Notional: $${num(result?.notionalUsd).toFixed(4)}`,`🔑 Request: ${telegramTextSafe(result?.requestId)}`,`📡 Status: ${telegramTextSafe(result?.status)}`].join("\n");
+  const dir=String(result?.direction||signal?.direction||"UNKNOWN").toUpperCase(), icon=dir==="LONG"?"🟢":"🔴";
+  if(error){
+    const ctx=error?.executionContext||{};
+    return [`❌ LIVE ENTRY FAILED — ${dir}`,"━━━━━━━━━━━━━━━━━━",`🪙 ${telegramTextSafe(signal?.symbol)}`,`📊 Score: ${num(signal?.score).toFixed(1)} | Long: ${num(signal?.longScore).toFixed(1)} | Short: ${num(signal?.shortScore).toFixed(1)}`,`💰 Wallet BEFORE: ${ctx.walletBeforeUsd!=null?fmtUsd(ctx.walletBeforeUsd):"N/A"}`,`🔧 Failed stage: ${telegramTextSafe(error?.executionStage||"EXECUTION")}`,`🚫 Exact reason: ${telegramTextSafe(safeError(error))}`,`🛡️ Entry sent: NO`,`ℹ️ No position was counted as executed.`].join("\n");
+  }
+  const wb=result?.walletBefore||{},wa=result?.walletAfter||{};
+  return [`${icon} LIVE ENTRY — ${dir}`,"━━━━━━━━━━━━━━━━━━",`🪙 ${telegramTextSafe(result?.symbol)}`,`🔥 Score: ${num(result?.score).toFixed(1)} | Confidence: ${num(result?.confidence).toFixed(1)}%`,`💵 Entry: ${fmtPrice(result?.entryPrice)}`,`🛑 Stop Loss: ${fmtPrice(result?.stopLoss)}`,`🎯 TP1: ${fmtPrice(result?.tp1)}  • 40%`,`🎯 TP2: ${fmtPrice(result?.tp2)}  • 30%`,`🎯 TP3: ${fmtPrice(result?.tp3)}  • 30%`,`📦 Notional: ${fmtUsd(result?.notionalUsd)} | Collateral: ${fmtUsd(result?.collateralUsd)} ${telegramTextSafe(result?.collateralToken)}`,`⚙️ Leverage: ${num(result?.leverage).toFixed(1)}x | Allocation: ${num(result?.allocationPercent).toFixed(2)}%`,`💰 Wallet BEFORE: ${fmtUsd(wb.total)}`,`💰 Wallet AFTER: ${wa?fmtUsd(wa.total):"PENDING"}`,`📉 Wallet Δ: ${result?.walletDelta!=null?fmtUsd(result.walletDelta):"PENDING"}`,`🧾 Request ID: ${telegramTextSafe(result?.requestId)}`,result?.positionVerified?"✅ GMX POSITION VERIFIED":"🟡 ORDER SUBMITTED — POSITION VERIFICATION PENDING"].join("\n");
+}
+function blockedTelegram(signal,reason){
+  const dir=String(signal?.direction||"UNKNOWN").toUpperCase();
+  return [`🟠 NO ENTRY — ${telegramTextSafe(signal?.symbol)} ${dir}`,"━━━━━━━━━━━━━━━━━━",`⭐ Score: ${num(signal?.score).toFixed(1)} | Long: ${num(signal?.longScore).toFixed(1)} | Short: ${num(signal?.shortScore).toFixed(1)}`,`🚫 Reason: ${telegramTextSafe(reason)}`,`📍 Trigger: ${telegramTextSafe(signal?.hybridSetup?.trigger)}`,`💵 Entry: ${fmtPrice(signal?.tradePlan?.entry)}`,`🛑 SL: ${fmtPrice(signal?.tradePlan?.stopLoss)}`,`🎯 TP1/2/3: ${fmtPrice(signal?.tradePlan?.tp1)} / ${fmtPrice(signal?.tradePlan?.tp2)} / ${fmtPrice(signal?.tradePlan?.tp3)}`].join("\n");
 }
 function cycleTelegram(result){
-  return [`🤖 GMX BOT — CYCLE REPORT`,`Status: ${telegramTextSafe(result.status)}`,`Universe: ${num(result.scanned)}`,`5m analyzed: ${num(result.deepScanned)}`,`Signals: ${num(result.signals)}`,`Entry ready: ${num(result.entryReady)}`,`Executed: ${num(result.executed)}`,`Failures: ${num(result.failures)}`,`🛡️ Per position cap: 20% | Total cap: 60% | Max positions: 3`].join("\n");
+  const reasons=[];
+  if(!num(result?.scanned))reasons.push("NO_MARKETS_DISCOVERED");
+  if(num(result?.scanned)&&!num(result?.deepScanned))reasons.push(`NO_5M_DATA_READY (${num(result?.eventStats?.data5mFailed)} failed)`);
+  if(!num(result?.signals)&&num(result?.deepScanned))reasons.push("NO_VALID_ENTRY_SETUP_AFTER_5M_SR_FAST_ANALYSIS");
+  if(num(result?.signals)&&!num(result?.executed)&&num(result?.failures))reasons.push("LIVE_EXECUTION_FAILED — SEE FAILURE MESSAGE ABOVE");
+  if(num(result?.signals)&&num(result?.executed))reasons.push("TRADE EXECUTED/SUBMITTED");
+  return [`🤖 GMX BOT — CYCLE REPORT`,`━━━━━━━━━━━━━━━━━━`,`📡 Status: ${telegramTextSafe(result?.status)}`,`🌐 Markets: ${num(result?.scanned)} | 5m analyzed: ${num(result?.deepScanned)}`,`🎯 Entry-ready: ${num(result?.entryReady)} | Executed: ${num(result?.executed)} | Failed: ${num(result?.failures)}`,`🧠 Smart Money: ${result?.smartMoney?.available?"LIVE":"UNAVAILABLE"} | Large: ${num(result?.smartMoney?.largeTrades)} | Suspicious: ${num(result?.smartMoney?.suspiciousWallets)}`,`📊 5m OK: ${num(result?.eventStats?.data5mReady)} | 5m Failed: ${num(result?.eventStats?.data5mFailed)} | 15m Optional Failed: ${num(result?.optional15mFailed)}`,`🛡️ Position cap: 20% | Total cap: 60% | Max positions: 3`,`📝 Result: ${telegramTextSafe(reasons.join(" | ")||"WATCHING")}`].join("\n");
 }
 async function sendTelegram(env,message){
   if(!CONFIG.TELEGRAM_ENABLED||!env.TELEGRAM_TOKEN||!env.TELEGRAM_CHAT_ID)return {ok:false,reason:"TELEGRAM_NOT_CONFIGURED"};
@@ -723,8 +796,11 @@ async function runScan(env){
   const scanId=`scheduled-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;const started=Date.now();
   if(!loadSdk())throw new Error("GMX_SDK_UNAVAILABLE");
   const sdk=new GmxApiSdk({chainId:CONFIG.CHAIN_ID});
-  const markets=await fetchMarkets();
-  const universe=markets.map(m=>({m,symbol:marketSymbol(m),price:marketPrice(m)})).filter(x=>x.symbol&&x.price>0);
+  const markets=await fetchMarkets(sdk);
+  const tickers=await fetchAllTickers(sdk);
+  const tickerBy={};for(const t of tickers){const sym=tickerSymbol(t);if(sym)tickerBy[sym]=tickerPrice(t);}
+  const universe=markets.map(m=>{const symbol=marketSymbol(m);return {m,symbol,price:tickerBy[symbol]||marketPrice(m)};}).filter(x=>x.symbol&&x.price>0);
+  console.log("[MARKETS][UNIVERSE]",{catalog:markets.length,tickers:tickers.length,universe:universe.length});
   const smartFlow=await fetchSmartMoneyFlow(sdk);
   const signals=[];let deepOk=0,deep5mFailed=0,optional15mFailed=0,eventCandidates=0;
   const eventStats={supportZones:0,resistanceZones:0,supportReactions:0,resistanceReactions:0,breakouts:0,waitingRetests:0,retestConfirmed:0,earlyImpulses:0,entryReady:0,data5mReady:0,data5mFailed:0,data15mReady:0,data15mFailed:0,smartMoneySymbols:Object.keys(smartFlow.bySymbol||{}).length,suspiciousWallets:smartFlow.suspiciousWalletCount||0};
@@ -747,7 +823,9 @@ async function runScan(env){
     }));
   }
   signals.sort((a,b)=>hybridEventPriority(b)-hybridEventPriority(a));const selected=signals.slice(0,1),executionResults=[];
-  for(const signal of selected){try{const {sdk:liveSdk,account}=await liveContext(env);const bal=await liveBalanceUsd(liveSdk,account);const marketsSdk=await liveSdk.fetchMarkets();const collateral=chooseCollateral(marketsSdk,signal.symbol,bal.raw);let pf={ok:false};if(collateral){try{pf=await allowanceOk(liveSdk,account,collateral.symbol,toBigIntDecimal(Math.max(0.000001,bal.walletUsd*num(signal.tradePlan.allocation,.2)),6));}catch(e){pf={ok:false,reason:safeError(e)}}}const result=await executeLiveSignal(signal,env,pf);executionResults.push(result);await sendTelegram(env,executionTelegram(signal,result,null));}catch(e){executionResults.push({executed:false,symbol:signal.symbol,direction:signal.direction,error:safeError(e)});await sendTelegram(env,executionTelegram(signal,null,e));console.error("[TELEGRAM][EXECUTION_FAILURE]",{scanId,symbol:signal.symbol,reason:safeError(e)});}}
+  if(signals.length) await sendTelegram(env,signalTelegram(selected[0]));
+  for(const signal of signals.slice(1,6)) await sendTelegram(env,blockedTelegram(signal,"MAX_ENTRY_SLOT_PER_CYCLE — lower priority than selected opportunity"));
+  for(const signal of selected){let preTradeWallet=null;try{const {sdk:liveSdk,account}=await liveContext(env);const bal=await liveBalanceUsd(liveSdk,account);preTradeWallet=bal.walletUsd;const marketsSdk=await liveSdk.fetchMarkets();const collateral=chooseCollateral(marketsSdk,signal.symbol,bal.raw);let pf={ok:false};if(collateral){try{pf=await allowanceOk(liveSdk,account,collateral.symbol,toBigIntDecimal(Math.max(0.000001,bal.walletUsd*num(signal.tradePlan.allocation,.2)),6));}catch(e){pf={ok:false,reason:safeError(e)}}}if(pf.ok===false){const err=new Error(pf.reason||"ALLOWANCE_PREFLIGHT_FAILED");err.executionStage="ALLOWANCE_PREFLIGHT";err.executionContext={walletBeforeUsd:preTradeWallet};throw err;}const result=await executeLiveSignal(signal,env,pf);executionResults.push(result);await sendTelegram(env,executionTelegram(signal,result,null));}catch(e){e.executionContext={...(e.executionContext||{}),walletBeforeUsd:preTradeWallet};executionResults.push({executed:false,symbol:signal.symbol,direction:signal.direction,error:safeError(e)});await sendTelegram(env,executionTelegram(signal,null,e));console.error("[TELEGRAM][EXECUTION_FAILURE]",{scanId,symbol:signal.symbol,reason:safeError(e)});}}
   const out={ok:true,status:signals.length?"ENTRY_READY":"WATCHING",scanId,scanned:universe.length,deepScanned:deepOk,signals:signals.length,entryReady:signals.length,executed:executionResults.filter(x=>x.executed).length,failures:executionResults.filter(x=>!x.executed).length,eventCandidates,eventStats,smartMoney:{available:smartFlow.available,symbols:Object.keys(smartFlow.bySymbol||{}).length,largeTrades:smartFlow.largeTradeCount,suspiciousWallets:smartFlow.suspiciousWalletCount,concentration:smartFlow.walletConcentration},optional15mFailed,durationMs:Date.now()-started};
   await sendTelegram(env,cycleTelegram(out));console.log("[HYBRID][SELECTION]",{scanId,candidates:signals.length,eligible:signals.length,selected:selected.length});console.log("[SCHEDULED][DONE]",out);return out;
 }
