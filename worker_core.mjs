@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.4.1-GMX-CANONICAL-EXECUTION";
-export const BOT_BUILD = "V17.4.1";
+export const BOT_VERSION = "V17.4.2-GMX-SDK-BIGINT-SUBMIT-FALLBACK";
+export const BOT_BUILD = "V17.4.2";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -50,6 +50,11 @@ function safeFormatPrice(value) {
 // ESM subpath in GitHub Actions while the package is resolvable via require().
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
+
+let serializeBigIntsInObject = null;
+try {
+  serializeBigIntsInObject = require("@gmx-io/sdk/utils/numbers")?.serializeBigIntsInObject || null;
+} catch (_) {}
 
 let GmxApiSdk = null;
 let PrivateKeySigner = null;
@@ -9767,11 +9772,11 @@ async function executeGmxOrder(sdk, request, signer, meta = {}) {
     collateralAmountType: typeof request?.collateralToPay?.amount,
   });
   try {
-    // Canonical GMX SDK flow: native BigInt enters prepareOrder unchanged.
     prepared = await sdk.prepareOrder(request);
     console.log("[GMX][EXEC_STAGE] PREPARE_OK", {
       requestId: prepared?.requestId || null,
       payloadType: prepared?.payloadType || null,
+      traceId: prepared?.traceId || null,
     });
   } catch (error) {
     throw executionStageError("PREPARE", error, {
@@ -9797,39 +9802,135 @@ async function executeGmxOrder(sdk, request, signer, meta = {}) {
     });
   }
 
+  const submitRequest = {
+    mode: prepared.mode,
+    requestId: prepared.requestId,
+    signature,
+    from: request.from,
+    idempotencyKey: prepared.idempotencyKey,
+    eip712Data: {
+      batchParams: prepared?.payload?.batchParams,
+      relayParams: prepared?.payload?.relayParams,
+    },
+  };
+
+  console.log("[GMX][EXEC_STAGE] SUBMIT_START", {
+    requestId: prepared?.requestId || null,
+    payloadType: prepared?.payloadType || null,
+    idempotencyKey: prepared?.idempotencyKey || null,
+    serializerAvailable: Boolean(serializeBigIntsInObject),
+  });
+
+  // V17.4.2: SDK 1.8.2 can reach submitOrder() with native BigInts in the
+  // generated EIP-712 transport object and throw before the HTTP request is
+  // made. Keep the official SDK path first. If and only if that exact local
+  // JSON serialization failure occurs, fall back to the documented GMX API
+  // submit endpoint using GMX's own BigInt serializer. This preserves the
+  // prepare -> sign flow and does not sign a different payload.
   let submitted;
   try {
-    // Do not stringify/clone/transform the GMX payload here. submitOrder is
-    // the official SDK transport boundary and receives exactly the fields
-    // produced by prepareOrder + signOrder.
-    const submitRequest = {
-      mode: prepared.mode,
-      requestId: prepared.requestId,
-      signature,
-      from: request.from,
-      idempotencyKey: prepared.idempotencyKey,
-      eip712Data: {
-        batchParams: prepared?.payload?.batchParams,
-        relayParams: prepared?.payload?.relayParams,
-      },
-    };
-    console.log("[GMX][EXEC_STAGE] SUBMIT_START", {
-      requestId: prepared?.requestId || null,
-      payloadType: prepared?.payloadType || null,
-      idempotencyKey: prepared?.idempotencyKey || null,
-    });
     submitted = await sdk.submitOrder(submitRequest);
     console.log("[GMX][EXEC_STAGE] SUBMIT_OK", {
       requestId: submitted?.requestId || prepared?.requestId || null,
       status: submitted?.status || null,
+      traceId: submitted?.traceId || prepared?.traceId || null,
+      transport: "SDK",
     });
   } catch (error) {
-    throw executionStageError("SUBMIT", error, {
-      ...meta,
+    const message = String(error?.message || error || "");
+    const bigintSerializationFailure = /serialize a BigInt|BigInt.*serializ|Do not know how to serialize a BigInt/i.test(message);
+    if (!bigintSerializationFailure) {
+      throw executionStageError("SUBMIT", error, {
+        ...meta,
+        requestId: prepared?.requestId || null,
+        idempotencyKey: prepared?.idempotencyKey || null,
+        payloadType: prepared?.payloadType || null,
+        response: summarizeExpressValue(error?.response),
+      });
+    }
+
+    if (typeof fetch !== "function") {
+      throw executionStageError("SUBMIT", new Error("GMX_DIRECT_SUBMIT_FETCH_UNAVAILABLE"), {
+        ...meta,
+        requestId: prepared?.requestId || null,
+        sdkError: message,
+      });
+    }
+    if (!serializeBigIntsInObject) {
+      throw executionStageError("SUBMIT", new Error("GMX_BIGINT_SERIALIZER_UNAVAILABLE"), {
+        ...meta,
+        requestId: prepared?.requestId || null,
+        sdkError: message,
+      });
+    }
+
+    console.log("[GMX][SUBMIT_FALLBACK]", {
+      reason: "SDK_SUBMIT_BIGINT_SERIALIZATION",
       requestId: prepared?.requestId || null,
-      idempotencyKey: prepared?.idempotencyKey || null,
-      payloadType: prepared?.payloadType || null,
-      response: summarizeExpressValue(error?.response),
+      api: "https://arbitrum.gmxapi.io/v1/orders/txns/submit",
+    });
+
+    const serializedEip712Data = serializeBigIntsInObject(submitRequest.eip712Data);
+    const directBody = {
+      mode: submitRequest.mode,
+      requestId: submitRequest.requestId,
+      signature: submitRequest.signature,
+      from: submitRequest.from,
+      idempotencyKey: submitRequest.idempotencyKey,
+      eip712Data: serializedEip712Data,
+    };
+
+    let response;
+    let responseText = "";
+    try {
+      response = await fetch("https://arbitrum.gmxapi.io/v1/orders/txns/submit", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "accept": "application/json",
+        },
+        body: JSON.stringify(directBody),
+      });
+      responseText = await response.text();
+    } catch (fetchError) {
+      throw executionStageError("SUBMIT", fetchError, {
+        ...meta,
+        requestId: prepared?.requestId || null,
+        transport: "GMX_API_DIRECT",
+      });
+    }
+
+    let parsed = null;
+    if (responseText) {
+      try { parsed = JSON.parse(responseText); } catch (_) { parsed = null; }
+    }
+
+    console.log("[GMX][SUBMIT_FALLBACK_RESPONSE]", {
+      requestId: parsed?.requestId || prepared?.requestId || null,
+      status: parsed?.status || null,
+      httpStatus: response?.status || null,
+      ok: Boolean(response?.ok),
+      traceId: parsed?.traceId || null,
+      errorCode: parsed?.error?.code || null,
+    });
+
+    if (!response?.ok) {
+      const apiMessage = parsed?.error?.message || responseText || `GMX_API_SUBMIT_HTTP_${response?.status || "UNKNOWN"}`;
+      throw executionStageError("SUBMIT", new Error(apiMessage), {
+        ...meta,
+        requestId: prepared?.requestId || null,
+        transport: "GMX_API_DIRECT",
+        httpStatus: response?.status || null,
+        apiResponse: summarizeExpressValue(parsed),
+      });
+    }
+
+    submitted = parsed || {};
+    console.log("[GMX][EXEC_STAGE] SUBMIT_OK", {
+      requestId: submitted?.requestId || prepared?.requestId || null,
+      status: submitted?.status || null,
+      traceId: submitted?.traceId || prepared?.traceId || null,
+      transport: "GMX_API_DIRECT_BIGINT_SERIALIZED",
     });
   }
 
@@ -9841,6 +9942,7 @@ async function executeGmxOrder(sdk, request, signer, meta = {}) {
       prepareOk: true,
       signOk: true,
       submitOk: true,
+      submitTransport: submitted?.status ? (submitted?.transport || "SDK_OR_DIRECT") : "UNKNOWN",
       payloadType: prepared?.payloadType || null,
       requestId: prepared?.requestId || null,
       submitStatus: submitted?.status || null,
