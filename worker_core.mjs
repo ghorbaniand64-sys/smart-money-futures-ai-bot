@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.5.10-GMX-COLLATERAL-RESOLVER-HARDENED";
-export const BOT_BUILD = "V17.5.10";
+export const BOT_VERSION = "V17.5.11-GMX-USD-FIXED-POINT-CAPITAL-GUARD";
+export const BOT_BUILD = "V17.5.11";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -109,6 +109,18 @@ function normalizeSymbol(symbol){
 // ================================
 function safeError(error) {
 return error?.message || String(error || "Unknown error");
+}
+
+// V17.5.11: GMX USD fields can arrive as 30-decimal fixed-point values.
+// Normalize only USD-denominated position fields at the human-USD boundary.
+function gmxUsdHumanNumber(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  let n;
+  try { n = Number(value); } catch (_) { return 0; }
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  // GMX protocol USD fixed-point values are scaled by 1e30.
+  // Ordinary human USD values are far below this threshold.
+  return n >= 1e12 ? n / 1e30 : n;
 }
 
 // V17.3.22: JSON-safe serializer for SDK responses that may contain native BigInt values.
@@ -10080,7 +10092,7 @@ let sdk,signer,account;
 try { ({sdk,signer,account}=await getLiveContext(env)); } catch(error) { throw executionStageError("LIVE_CONTEXT", error); }
 let positions;
 try { positions=await sdk.fetchPositionsInfo({address:account}); } catch(error) { throw executionStageError("FETCH_POSITIONS", error); }
-const totalLivePositions = Array.isArray(positions) ? positions.filter(p => Number(p?.sizeInUsd || p?.size || 0) > 0).length : 0;
+const totalLivePositions = Array.isArray(positions) ? positions.filter(p => gmxUsdHumanNumber(p?.sizeInUsd || p?.size) > 0).length : 0;
 if (totalLivePositions>=CONFIG.MAX_POSITIONS) throw new Error(`MAX_TOTAL_LIVE_POSITIONS_REACHED: ${totalLivePositions}/${CONFIG.MAX_POSITIONS}`);
 let markets, balances, resolvedBalances;
 try { markets=await sdk.fetchMarkets(); } catch(error) { throw executionStageError("FETCH_MARKETS", error); }
@@ -10101,9 +10113,12 @@ try { capacity=await sdk.getTradingCapacity({symbol:sdkSymbol,direction:orderDir
 const capacityUsd=Number(capacity?.availableLiquidity||0n)/1e30;
 const walletUsd=collateral.usd;
 const existingCollateralUsd=Array.isArray(positions)?positions.reduce((sum,p)=>{
-  const direct=[p?.collateralUsd,p?.collateralValueUsd,p?.collateralAmountUsd,p?.initialCollateralUsd].map(Number).find(n=>Number.isFinite(n)&&n>0);
-  if(direct)return sum+direct;
-  const size=Number(p?.sizeInUsd||0),lev=Number(p?.leverage||0);
+  const directKey=["collateralUsd","collateralValueUsd","collateralAmountUsd","initialCollateralUsd"].find(key=>gmxUsdHumanNumber(p?.[key])>0);
+  if(directKey){
+    const direct=gmxUsdHumanNumber(p?.[directKey]);
+    return sum+direct;
+  }
+  const size=gmxUsdHumanNumber(p?.sizeInUsd),lev=Number(p?.leverage||0);
   return sum+(size>0&&lev>0?size/lev:0);
 },0):0;
 if(walletUsd>0&&existingCollateralUsd>=walletUsd*CONFIG.MAX_TOTAL_CAPITAL_ALLOCATION-1e-9) throw new Error(`MAX_TOTAL_CAPITAL_ALLOCATION_REACHED: estimatedCollateral=$${existingCollateralUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, cap=${(CONFIG.MAX_TOTAL_CAPITAL_ALLOCATION*100).toFixed(2)}%`);
