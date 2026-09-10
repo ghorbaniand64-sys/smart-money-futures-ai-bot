@@ -1,9 +1,9 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
-║  V17.4.2 — GMX SDK BIGINT SUBMIT FALLBACK + PREPARE/SIGN/SUBMIT                                          ║
+║  V17.4.3 — GMX SDK BIGINT TRANSPORT FIX + PREPARE/SIGN/SUBMIT                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.4.2-GMX-SDK-BIGINT-SUBMIT-FALLBACK                                   ║
+║  RELEASE: V17.4.3-GMX-SDK-BIGINT-TRANSPORT-FIX                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.4.2-GMX-SDK-BIGINT-SUBMIT-FALLBACK";
-export const BOT_BUILD = "V17.4.2";
+export const BOT_VERSION = "V17.4.3-GMX-SDK-BIGINT-TRANSPORT-FIX";
+export const BOT_BUILD = "V17.4.3";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -9818,7 +9818,46 @@ async function executeGmxOrder(sdk, request, signer, meta = {}) {
       payloadType: prepared?.payloadType || null,
       idempotencyKey: prepared?.idempotencyKey || null,
     });
-    submitted = await sdk.submitOrder(submitRequest);
+    try {
+      submitted = await sdk.submitOrder(submitRequest);
+    } catch (error) {
+      const message = String(error?.message || error || "");
+      const bigintSerializationFailure = /Do not know how to serialize a BigInt|serialize a BigInt|BigInt.*serializ/i.test(message);
+      if (!bigintSerializationFailure) throw error;
+
+      // V17.4.3: the prepared/signature flow is already valid. The failure is
+      // at the SDK HTTP JSON boundary, where some SDK 1.8.x builds attempt
+      // JSON.stringify() on eip712Data containing native BigInt values.
+      // GMX's submit endpoint receives the signed EIP-712 payload as JSON;
+      // convert only the transport copy to decimal strings and retry the
+      // official SDK submitOrder() method. prepareOrder/signOrder remain native.
+      const stringifyBigIntsForTransport = (value) => {
+        if (typeof value === "bigint") return value.toString();
+        if (Array.isArray(value)) return value.map(stringifyBigIntsForTransport);
+        if (value && typeof value === "object") {
+          const out = {};
+          for (const [key, child] of Object.entries(value)) {
+            out[key] = stringifyBigIntsForTransport(child);
+          }
+          return out;
+        }
+        return value;
+      };
+      const sanitizedSubmitRequest = {
+        ...submitRequest,
+        eip712Data: stringifyBigIntsForTransport(submitRequest.eip712Data),
+      };
+      console.log("[GMX][SUBMIT_BIGINT_RETRY]", {
+        requestId: prepared?.requestId || null,
+        reason: "SDK_JSON_BIGINT_SERIALIZATION",
+        eip712BigIntSanitized: true,
+      });
+      submitted = await sdk.submitOrder(sanitizedSubmitRequest);
+      console.log("[GMX][SUBMIT_BIGINT_RETRY_OK]", {
+        requestId: submitted?.requestId || prepared?.requestId || null,
+        status: submitted?.status || null,
+      });
+    }
     console.log("[GMX][EXEC_STAGE] SUBMIT_OK", {
       requestId: submitted?.requestId || prepared?.requestId || null,
       status: submitted?.status || null,
