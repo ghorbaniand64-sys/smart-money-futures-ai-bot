@@ -1,9 +1,9 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
-║  V17.3.27 — GMX EXECUTION PATH + OFFICIAL BIGINT SERIALIZATION HARDENING                                          ║
+║  V17.4.0 — CANONICAL GMX EXECUTION + PREPARE/SIGN/SUBMIT                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.3.27-GMX-EXECUTION-PATH-OFFICIAL-BIGINT                                   ║
+║  RELEASE: V17.4.0-GMX-CANONICAL-EXECUTION                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.3.27-GMX-EXECUTION-PATH-OFFICIAL-BIGINT";
-export const BOT_BUILD = "V17.3.27";
+export const BOT_VERSION = "V17.4.0-GMX-CANONICAL-EXECUTION";
+export const BOT_BUILD = "V17.4.0";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -43,18 +43,13 @@ function safeFormatPrice(value) {
   }
 }
 
-// V17.3.23 LIVE EXECUTION REPAIR — BYPASS SDK JSON SERIALIZATION BUG
+// V17.4.0 LIVE EXECUTION — OFFICIAL GMX SDK TRANSPORT
 // V17.2.4 LIVE DIAGNOSTICS + SELECTION REPAIR
 // V17.1.6 SDK SAFE LOADER
 // CommonJS resolution is intentional: GMX SDK 1.8.2 may expose a broken
 // ESM subpath in GitHub Actions while the package is resolvable via require().
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-
-// GMX official JSON serializer must live at module scope.
-// V17.3.26 accidentally loaded it inside loadGmxSdkSafe(), making the
-// execution submit path depend on an out-of-scope binding.
-const { serializeBigIntsInObject } = require("@gmx-io/sdk/utils/numbers");
 
 let GmxApiSdk = null;
 let PrivateKeySigner = null;
@@ -119,59 +114,6 @@ return error?.message || String(error || "Unknown error");
 // This is only for persistence/logging boundaries. GMX requests continue using native BigInt.
 function jsonStringifySafe(value, space = undefined) {
 return JSON.stringify(value, (_key, v) => typeof v === "bigint" ? v.toString() : v, space);
-}
-
-// V17.3.22: GMX SDK v2 Express submit crosses an HTTP/JSON boundary.
-// Native BigInt is required by prepare/sign, but JSON.stringify cannot encode
-// BigInt and V8 throws: "Do not know how to serialize a BigInt".
-// Keep BigInt native everywhere, and scope a non-invasive toJSON bridge only
-// around SDK submit calls so the SDK can serialize 30-decimal/6-decimal values
-// as exact decimal strings without Number precision loss.
-// V17.3.22: Do NOT monkey-patch BigInt.prototype. GMX prepare/sign continue to
-// receive native BigInt. The Express HTTP boundary gets an exact recursive clone
-// where every BigInt becomes its base-10 string representation. This preserves all
-// 30-decimal / 6-decimal precision and avoids the SDK v1.8.2 JSON.stringify failure.
-function withGmxBigIntJsonBridge(fn) {
-  // V17.3.26: kept as a compatibility wrapper only. Never monkey-patch
-  // BigInt.prototype: GMX SDK v2 prepare/sign require native BigInt values.
-  return Promise.resolve().then(fn);
-}
-
-function cloneGmxJsonExact(value, path = "$", audit = null) {
-  if (typeof value === "bigint") {
-    if (audit) audit.push({ path, type: "bigint", digits: value.toString().length });
-    return value.toString();
-  }
-  if (value === null || value === undefined) return value;
-  if (typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map((v, i) => cloneGmxJsonExact(v, `${path}[${i}]`, audit));
-  const out = {};
-  for (const [key, v] of Object.entries(value)) {
-    out[key] = cloneGmxJsonExact(v, `${path}.${key}`, audit);
-  }
-  return out;
-}
-
-function gmxBigIntAudit(value, root = "$") {
-  const audit = [];
-  cloneGmxJsonExact(value, root, audit);
-  return audit;
-}
-
-function assertGmxExactJson(value) {
-  try {
-    const audit = [];
-    const cloned = cloneGmxJsonExact(value, "$", audit);
-    const json = JSON.stringify(cloned);
-    return {
-      ok: typeof json === "string",
-      bigintCount: audit.length,
-      bigintPaths: audit.slice(0, 80),
-      jsonBytes: Buffer.byteLength(json || "", "utf8")
-    };
-  } catch (error) {
-    return { ok: false, bigintCount: 0, bigintPaths: [], jsonBytes: 0, error: safeError(error) };
-  }
 }
 
 // V15.6.7 FIX: Radar price-integrity helpers are module-scope so the
@@ -8838,9 +8780,26 @@ return LIVE_CONTEXT;
 }
  
 function toBigIntDecimal(value, decimals) {
-const s = Number(value).toFixed(Math.min(decimals,8));
-const [whole,frac=""] = s.split(".");
-return BigInt(whole)*10n**BigInt(decimals)+BigInt((frac+"0".repeat(decimals)).slice(0,decimals)||"0");
+  const d = Number(decimals);
+  if (!Number.isInteger(d) || d < 0 || d > 80) throw new Error(`Invalid decimals: ${decimals}`);
+  if (typeof value === "bigint") return value;
+  let s = String(value ?? "").trim().replace(/,/g, "");
+  if (!s) throw new Error("Decimal value is empty");
+  if (/e/i.test(s)) {
+    const n = Number(s);
+    if (!Number.isFinite(n)) throw new Error(`Invalid decimal value: ${value}`);
+    s = n.toLocaleString("en-US", {useGrouping:false, maximumFractionDigits:d});
+  }
+  const negative = s.startsWith("-");
+  if (negative) s = s.slice(1);
+  if (!/^\d+(?:\.\d+)?$/.test(s)) throw new Error(`Invalid decimal value: ${value}`);
+  const [whole, frac=""] = s.split(".");
+  if (frac.length > d && /[1-9]/.test(frac.slice(d))) {
+    throw new Error(`Decimal precision exceeds ${d}: ${value}`);
+  }
+  const digits = `${whole}${(frac + "0".repeat(d)).slice(0,d)}`.replace(/^0+(?=\d)/, "") || "0";
+  const out = BigInt(digits);
+  return negative ? -out : out;
 }
  
 function liveNormalizeSymbol(symbol) {
@@ -9541,11 +9500,11 @@ const signalLike = { symbol, direction: plan.direction, signalTier: "RADAR", tra
 const lock = await acquireLiveExecutionLock(env, signalLike);
 if (!lock.acquired) return { executed:false, mode:"LIVE", lane:"RADAR", reason:lock.reason, executionKey:lock.key };
 try {
-const result = await sdk.executeExpressOrder({
-kind:"increase", symbol:market.symbol, direction:plan.direction === "LONG" ? "long" : "short", orderType:"market",
-size, collateralToken:collateral.symbol, collateralToPay:{amount:collateralAmount,token:collateral.symbol}, mode:"express", from:account,
-tpsl:[{type:"take-profit",triggerPrice:tp,size},{type:"stop-loss",triggerPrice:sl,size}]
-}, signer);
+const result = await executeGmxOrder(sdk, {
+  kind:"increase", symbol:market.symbol, direction:plan.direction === "LONG" ? "long" : "short", orderType:"market",
+  size, collateralToken:collateral.symbol, collateralToPay:{amount:collateralAmount,token:collateral.symbol}, mode:"express", from:account,
+  tpsl:[{type:"take-profit",triggerPrice:tp,size},{type:"stop-loss",triggerPrice:sl,size}]
+}, signer, {symbol:market.symbol, direction:plan.direction, lane:"RADAR"});
 ledger[key] = { status:"OPEN", lane:"RADAR", symbol, direction:plan.direction, radarScore:plan.score, radarEdge:Number(candidate?.pumpRadar?.edge || 0), entryPrice:plan.entry, initialStopPrice:plan.stopLoss, tp1:plan.tp1, tp2:plan.tp2, tp3:plan.tp3, leverage, notionalUsd, collateralToken:collateral.symbol, openedAt:Date.now(), requestId:result?.requestId || null };
 await saveRadarLiveLedger(env, ledger);
 return { executed:true, mode:"LIVE", lane:"RADAR", account, symbol, direction:plan.direction, radarScore:plan.score, radarEdge:Number(candidate?.pumpRadar?.edge || 0), leverage, walletUsd, collateralUsd, collateralToken:collateral.symbol, notionalUsd, riskBasedNotional, hotSizing:isHotRadar, marketMinPositionUsd, marketMinCollateralUsd, allowance:allowanceInfo, requestId:result?.requestId || null, executionKey:lock.key };
@@ -9783,19 +9742,25 @@ function summarizeExpressValue(value, depth = 0) {
 // untouched for GMX, but isolate prepare/sign/submit so a serialization
 // failure identifies the exact boundary instead of collapsing into one
 // EXECUTE_EXPRESS_ORDER error.
-async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
+async function executeGmxOrder(sdk, request, signer, meta = {}) {
   let prepared;
+  console.log("[GMX][EXEC_STAGE] PREPARE_START", {
+    symbol: meta?.symbol || request?.symbol || null,
+    direction: meta?.direction || request?.direction || null,
+    kind: request?.kind || null,
+    orderType: request?.orderType || null,
+    sizeType: typeof request?.size,
+    collateralAmountType: typeof request?.collateralToPay?.amount,
+  });
   try {
-    console.log("[GMX][EXEC_STAGE] PREPARE_START", {
-      symbol: meta?.symbol || null, direction: meta?.direction || null,
-      requestBigIntCount: gmxBigIntAudit(request, "$.request").length
-    });
-    prepared = await withGmxBigIntJsonBridge(() => sdk.prepareOrder(request));
+    // Canonical GMX SDK flow: native BigInt enters prepareOrder unchanged.
+    prepared = await sdk.prepareOrder(request);
     console.log("[GMX][EXEC_STAGE] PREPARE_OK", {
-      requestId: prepared?.requestId || null, payloadType: prepared?.payloadType || null
+      requestId: prepared?.requestId || null,
+      payloadType: prepared?.payloadType || null,
     });
   } catch (error) {
-    throw executionStageError("EXPRESS_PREPARE", error, {
+    throw executionStageError("PREPARE", error, {
       ...meta,
       request: summarizeExpressValue(request),
     });
@@ -9804,13 +9769,13 @@ async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
   let signature;
   try {
     console.log("[GMX][EXEC_STAGE] SIGN_START", { requestId: prepared?.requestId || null });
-    signature = await withGmxBigIntJsonBridge(() => sdk.signOrder(prepared, signer));
+    signature = await sdk.signOrder(prepared, signer);
     console.log("[GMX][EXEC_STAGE] SIGN_OK", {
       requestId: prepared?.requestId || null,
-      signatureType: typeof signature
+      signatureType: typeof signature,
     });
   } catch (error) {
-    throw executionStageError("EXPRESS_SIGN", error, {
+    throw executionStageError("SIGN", error, {
       ...meta,
       requestId: prepared?.requestId || null,
       payloadType: prepared?.payloadType || null,
@@ -9820,87 +9785,37 @@ async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
 
   let submitted;
   try {
-    const rawEip712Data = {
-      batchParams: prepared?.payload?.batchParams,
-      relayParams: prepared?.payload?.relayParams,
-    };
-    const bigintAudit = gmxBigIntAudit(rawEip712Data, "$.eip712Data");
-    // V17.3.26: use the serializer shipped by GMX SDK for the HTTP boundary.
-    // It converts bigint values to the SDK's JSON-safe {type:"bigint",value:"..."}
-    // envelope instead of lossy Number conversion or ad-hoc decimal strings.
-    const exactEip712Data = serializeBigIntsInObject(rawEip712Data);
-    const exactJsonProbe = assertGmxExactJson(rawEip712Data);
-    console.log("[GMX][EXPRESS_SUBMIT_PREP]", {
-      requestId: prepared?.requestId || null,
-      payloadType: prepared?.payloadType || null,
-      bigintJsonBridge: "GMX_OFFICIAL_SERIALIZE_BIGINTS",
-      bigintCount: bigintAudit.length,
-      bigintPaths: bigintAudit.slice(0, 40),
-      exactJsonProbe,
-    });
-    // V17.3.23: the SDK's public submitOrder() path is itself the failing
-    // serialization boundary in the deployed runtime. GMX documents the
-    // underlying POST /orders/txns/submit endpoint and the exact submit body.
-    // Bypass only that SDK HTTP wrapper; keep prepare/sign on the SDK and send
-    // the already-signed intent through native fetch after an exact JSON clone.
-    const directSubmitRequest = {
+    // Do not stringify/clone/transform the GMX payload here. submitOrder is
+    // the official SDK transport boundary and receives exactly the fields
+    // produced by prepareOrder + signOrder.
+    const submitRequest = {
       mode: prepared.mode,
       requestId: prepared.requestId,
       signature,
       from: request.from,
       idempotencyKey: prepared.idempotencyKey,
-      eip712Data: exactEip712Data,
+      eip712Data: {
+        batchParams: prepared?.payload?.batchParams,
+        relayParams: prepared?.payload?.relayParams,
+      },
     };
-    const directSubmitClone = serializeBigIntsInObject(directSubmitRequest);
-    const directSubmitJson = JSON.stringify(directSubmitClone);
-    // Final hard assertion: the exact body sent over HTTP must contain no native BigInt.
-    if (/\bBigInt\b/.test(directSubmitJson)) throw new Error("GMX_BIGINT_LEAK_IN_SUBMIT_JSON");
-    console.log("[GMX][EXEC_STAGE] DIRECT_JSON_OK", {
-      requestId: prepared?.requestId || null, bodyBytes: Buffer.byteLength(directSubmitJson, "utf8")
-    });
-    const submitBase = String(CONFIG.DATA_CENTER_PRIMARY_API || "https://arbitrum.gmxapi.io/v1").replace(/\/$/, "");
-    const submitUrl = `${submitBase}/orders/txns/submit`;
-    console.log("[GMX][DIRECT_SUBMIT_HTTP]", {
+    console.log("[GMX][EXEC_STAGE] SUBMIT_START", {
       requestId: prepared?.requestId || null,
-      url: submitUrl,
-      bodyBytes: Buffer.byteLength(directSubmitJson, "utf8"),
-      bigintCount: bigintAudit.length,
-      exactJsonProbe,
+      payloadType: prepared?.payloadType || null,
+      idempotencyKey: prepared?.idempotencyKey || null,
     });
-    const submitResponse = await fetch(submitUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json", "accept": "application/json" },
-      body: directSubmitJson,
+    submitted = await sdk.submitOrder(submitRequest);
+    console.log("[GMX][EXEC_STAGE] SUBMIT_OK", {
+      requestId: submitted?.requestId || prepared?.requestId || null,
+      status: submitted?.status || null,
     });
-    const submitTraceId = submitResponse?.headers?.get?.("x-trace-id") || null;
-    const submitText = await submitResponse.text();
-    let submitBody = null;
-    try { submitBody = submitText ? JSON.parse(submitText) : null; } catch (_) { submitBody = { raw: submitText }; }
-    if (!submitResponse.ok) {
-      const apiMessage = submitBody?.error?.message || submitBody?.message || submitBody?.error || submitText || `HTTP ${submitResponse.status}`;
-      const err = new Error(`GMX submit HTTP ${submitResponse.status}: ${String(apiMessage)}`);
-      err.httpStatus = submitResponse.status;
-      err.traceId = submitTraceId;
-      err.responseBody = submitBody;
-      throw err;
-    }
-    submitted = submitBody || {};
-    if (submitTraceId && !submitted.traceId) submitted.traceId = submitTraceId;
   } catch (error) {
-    console.error("[GMX][EXEC_STAGE] SUBMIT_FAILED", {
-      requestId: prepared?.requestId || null, error: safeError(error),
-      errorName: error?.name || null, httpStatus: error?.httpStatus || null, traceId: error?.traceId || null
-    });
-    throw executionStageError("EXPRESS_SUBMIT", error, {
+    throw executionStageError("SUBMIT", error, {
       ...meta,
       requestId: prepared?.requestId || null,
       idempotencyKey: prepared?.idempotencyKey || null,
       payloadType: prepared?.payloadType || null,
-      batchParams: summarizeExpressValue(prepared?.payload?.batchParams),
-      relayParams: summarizeExpressValue(prepared?.payload?.relayParams),
-      bigintJsonBridge: "GMX_OFFICIAL_SERIALIZE_BIGINTS",
-      bigintAudit: gmxBigIntAudit({ batchParams: prepared?.payload?.batchParams, relayParams: prepared?.payload?.relayParams }, "$.eip712Data"),
-      exactJsonProbe: assertGmxExactJson({ batchParams: prepared?.payload?.batchParams, relayParams: prepared?.payload?.relayParams }),
+      response: summarizeExpressValue(error?.response),
     });
   }
 
@@ -9915,120 +9830,9 @@ async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
       payloadType: prepared?.payloadType || null,
       requestId: prepared?.requestId || null,
       submitStatus: submitted?.status || null,
-      bigintJsonBridge: "GMX_OFFICIAL_SERIALIZE_BIGINTS",
-      traceId: prepared?.traceId || submitted?.traceId || null,
+      traceId: submitted?.traceId || prepared?.traceId || null,
     },
   };
-}
-
-function isCollateralAfterFeesMinimumError(error) {
-  const m = safeError(error).toLowerCase();
-  return m.includes("collateral after fees") && m.includes("minimum required to open the position");
-}
-
-function gmxMinimumViableCollateralUsd() {
-  const reportedMin = Number(CONFIG.GMX_MIN_COLLATERAL_AFTER_FEES_USD || 1);
-  const buffer = Number(CONFIG.GMX_MIN_COLLATERAL_BUFFER_USD || 0);
-  const configured = Number(CONFIG.GMX_MIN_VIABLE_COLLATERAL_USD || 0);
-  return Math.max(reportedMin + Math.max(0, buffer), configured, reportedMin);
-}
-
-function executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted}) {
-  const protocolMinAfterFees = Number(CONFIG.GMX_MIN_COLLATERAL_AFTER_FEES_USD || 1);
-  return {walletUsd:Number(walletUsd.toFixed(6)),allocationPercent:Number((allocation*100).toFixed(2)),requestedCollateralUsd:Number(requestedCollateralUsd.toFixed(6)),finalCollateralUsd:Number(finalCollateralUsd.toFixed(6)),adjustedCollateralUsd:adjusted?Number(finalCollateralUsd.toFixed(6)):null,protocolMinAfterFeesUsd:Number(protocolMinAfterFees.toFixed(6)),minimumViableCollateralUsd:Number(gmxMinimumViableCollateralUsd().toFixed(6)),marketMinCollateralUsd:Number((marketMinCollateralUsd||0).toFixed(6)),maxCollateralUsd:Number(maxCollateralUsd.toFixed(6)),notionalUsd:Number(notionalUsd.toFixed(6)),leverage:Number(leverage)};
-}
-
-async function readLiveWalletSnapshot(sdk, account) {
-  try {
-    const balances = await sdk.fetchWalletBalances({address: account});
-    const parsed = extractCollateralBalances(balances);
-    return {
-      USDC: Number(parsed?.USDC?.usd || 0),
-      USDT: Number(parsed?.USDT?.usd || 0),
-      raw: balances
-    };
-  } catch (error) {
-    return {USDC:null, USDT:null, raw:null, error:String(error?.message||error)};
-  }
-}
-
-function walletDeltaText(before, after, symbol) {
-  const b=Number(before?.[symbol]);
-  const a=Number(after?.[symbol]);
-  if (!Number.isFinite(b) || !Number.isFinite(a)) return "N/A";
-  return (a-b).toFixed(6);
-}
-
-async function pollLiveOrderStatus(sdk, requestId, timeoutMs=60000, intervalMs=2000) {
-  if (!requestId) return {available:false, status:null, error:{code:"MISSING_REQUEST_ID", message:"GMX submit response did not contain requestId"}};
-  if (typeof sdk?.fetchOrderStatus !== "function") {
-    return {available:false, status:null, error:{code:"FETCH_ORDER_STATUS_UNAVAILABLE", message:"GMX SDK does not expose fetchOrderStatus()"}};
-  }
-  const terminal = new Set(["executed","cancelled","relay_failed","relay_reverted"]);
-  const started = Date.now();
-  let last = null;
-  let polls = 0;
-  while (Date.now() - started <= timeoutMs) {
-    try {
-      last = await sdk.fetchOrderStatus({requestId});
-      polls++;
-      const status = String(last?.status || "unknown").toLowerCase();
-      if (terminal.has(status)) {
-        return {available:true, terminal:true, status, response:last, polls, elapsedMs:Date.now()-started};
-      }
-    } catch (error) {
-      last = {status:"status_unavailable", error:{code:"FETCH_ORDER_STATUS_ERROR", message:String(error?.message||error)}};
-      polls++;
-    }
-    if (Date.now() - started >= timeoutMs) break;
-    await new Promise(resolve => setTimeout(resolve, intervalMs));
-  }
-  return {
-    available:true,
-    terminal:false,
-    status:String(last?.status || "unknown").toLowerCase(),
-    response:last,
-    polls,
-    elapsedMs:Date.now()-started,
-    timedOut:true
-  };
-}
-
-function orderStatusFailureReason(statusResult) {
-  const r=statusResult?.response || {};
-  const err=r?.error;
-  return String(
-    err?.message || err?.code || r?.cancellationReason ||
-    statusResult?.status || "GMX_ORDER_STATUS_UNKNOWN"
-  );
-}
-
-async function verifyLiveEntrySettlement(sdk, account, sdkSymbol, direction, collateralSymbol, walletBefore, attempts=5) {
-  let positionVerification={verified:false,position:null};
-  let walletAfter=null;
-  for(let i=0;i<attempts;i++) {
-    positionVerification=await verifyLiveEntryPosition(sdk,account,sdkSymbol,direction,1);
-    walletAfter=await readLiveWalletSnapshot(sdk,account);
-    const walletDelta=walletDeltaText(walletBefore,walletAfter,collateralSymbol);
-    const deltaNum=Number(walletDelta);
-    if(positionVerification.verified && Number.isFinite(deltaNum)) {
-      // A GMX position is the authoritative execution signal. Wallet delta is
-      // telemetry only because settlement can be asynchronous through Express.
-      return {verified:true,position:positionVerification.position,walletAfter,settled:true,walletDelta:deltaNum};
-    }
-    if(positionVerification.verified) return {verified:true,position:positionVerification.position,walletAfter,settled:false,walletDelta:Number.isFinite(deltaNum)?deltaNum:null};
-    if(i+1<attempts) await new Promise(resolve=>setTimeout(resolve,1000));
-  }
-  return {verified:false,position:null,walletAfter,walletDelta:walletDeltaText(walletBefore,walletAfter,collateralSymbol)};
-}
-
-function isAllowanceRelayFailure(statusResult){
-  const r=statusResult?.response||{};
-  const msg=String(r?.error?.message||r?.error?.code||r?.cancellationReason||statusResult?.status||"").toLowerCase();
-  return msg.includes("allowance") || msg.includes("transfer amount exceeds allowance") || msg.includes("insufficient allowance");
-}
-async function forceRefreshGmxAllowance(sdk,signer,account,symbol,requiredAmount,balances,rpcUrl){
-  return ensureGmxCollateralAllowance(sdk,signer,account,symbol,requiredAmount,balances,{forceRefresh:true,rpcUrl});
 }
 
 async function executeLiveSignal(signal, env) {
@@ -10138,13 +9942,13 @@ try {
   if (typeof sdk?.prepareOrder !== "function" || typeof sdk?.signOrder !== "function") {
     throw new Error("GMX SDK manual Express prepare/sign methods are unavailable");
   }
-  result=await executeExpressOrderDiagnostic(sdk,buildOrderRequest(usedCollateralUsd),signer,{symbol:sdkSymbol,direction:orderDirection,requestHasTpsl:true});
+  result=await executeGmxOrder(sdk,buildOrderRequest(usedCollateralUsd),signer,{symbol:sdkSymbol,direction:orderDirection,requestHasTpsl:true});
 } catch(error) {
   if (isCollateralAfterFeesMinimumError(error)) {
     const recoveryCollateralUsd=Math.min(maxCollateralUsd,Math.max(usedCollateralUsd,gmxMinimumViableCollateralUsd()));
     if (recoveryCollateralUsd > usedCollateralUsd + 0.000001) {
       usedCollateralUsd=recoveryCollateralUsd;
-      try { result=await executeExpressOrderDiagnostic(sdk,buildOrderRequest(usedCollateralUsd),signer,{symbol:sdkSymbol,direction:orderDirection,requestHasTpsl:true,retry:"MIN_COLLATERAL"}); }
+      try { result=await executeGmxOrder(sdk,buildOrderRequest(usedCollateralUsd),signer,{symbol:sdkSymbol,direction:orderDirection,requestHasTpsl:true,retry:"MIN_COLLATERAL"}); }
       catch(retryError) { throw executionStageError("EXECUTE_EXPRESS_ORDER_MIN_COLLATERAL", retryError, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:true,retryStage:retryError?.executionStage||null})); }
     } else {
       throw executionStageError("EXECUTE_EXPRESS_ORDER_MIN_COLLATERAL", error, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:false}));
@@ -10171,7 +9975,7 @@ if (orderStatusResult?.available && orderStatusResult?.terminal && orderStatus !
     let repairInfo=null;
     try {
       repairInfo=await forceRefreshGmxAllowance(sdk,signer,account,collateral.symbol,toBigIntDecimal(usedCollateralUsd,6),balances,env.ARBITRUM_RPC);
-      const retryResult=await executeExpressOrderDiagnostic(sdk,buildOrderRequest(usedCollateralUsd),signer,{symbol:sdkSymbol,direction:orderDirection,requestHasTpsl:true,retry:"ALLOWANCE_REPAIR"});
+      const retryResult=await executeGmxOrder(sdk,buildOrderRequest(usedCollateralUsd),signer,{symbol:sdkSymbol,direction:orderDirection,requestHasTpsl:true,retry:"ALLOWANCE_REPAIR"});
       const retryStatusResult=await pollLiveOrderStatus(sdk,retryResult?.requestId,60000,2000);
       const retryStatus=String(retryStatusResult?.status||retryResult?.status||"unknown").toLowerCase();
       if(retryStatusResult?.available && retryStatusResult?.terminal && retryStatus === "executed") {
@@ -10310,7 +10114,7 @@ if (radarMeta) {
     if (marketSdk && size > 0n) {
       const positionCollateral = String(position?.collateralToken || position?.collateralSymbol || position?.receiveToken || "USDC").toUpperCase();
 const exitCollateral = positionCollateral === "USDT" ? "USDT" : "USDC";
-const result = await sdk.executeExpressOrder({kind:"decrease",symbol:marketSdk.symbol,direction:isLong?"long":"short",orderType:"market",size,collateralToken:exitCollateral,receiveToken:exitCollateral,mode:"express",from:account},signer);
+const result = await executeGmxOrder(sdk, {kind:"decrease",symbol:marketSdk.symbol,direction:isLong?"long":"short",orderType:"market",size,collateralToken:exitCollateral,receiveToken:exitCollateral,mode:"express",from:account},signer,{symbol:marketSdk.symbol,direction:isLong?"LONG":"SHORT",lane:"RADAR",action:"REVERSAL_CLOSE"});
       radarLedger[radarKey] = {...radarMeta,status:"CLOSED",closedAt:Date.now(),closeRequestId:result?.requestId || null,closeReason:reversal.reason};
       await saveRadarLiveLedger(env, radarLedger);
       const actionRecord = {symbol,direction:side,lane:"RADAR",action:"RADAR_REVERSAL_FULL",reason:reversal.reason,closePercent:100,pnlPercent:entryPrice>0&&currentPrice>0?(isLong?(currentPrice-entryPrice)/entryPrice:(entryPrice-currentPrice)/entryPrice)*100:0,pnlUsd:null,entryPrice,exitPrice:currentPrice,leverage:Number(position?.leverage||radarMeta?.leverage||1),notionalUsd:Number(position?.sizeInUsd||radarMeta?.notionalUsd||0),radarScore:reversal.radarScore,radarDirection:reversal.radarDirection,requestId:result?.requestId||null};
@@ -10339,18 +10143,18 @@ const closePercent = Math.max(0, Math.min(100, Number(plan.closePercent || 0)));
 const closeSizeUsd = closePercent >= 100 ? sizeUsd : sizeUsd * closePercent / 100;
 if (!(closeSizeUsd > 0)) continue;
  
-const size = BigInt(Math.floor(closeSizeUsd));
-const result = await sdk.executeExpressOrder({
-kind: "decrease",
-symbol: marketSdk.symbol,
-direction: isLong ? "long" : "short",
-orderType: "market",
-size,
-collateralToken: positionCollateral || "USDC",
-receiveToken: positionCollateral || "USDC",
-mode: "express",
-from: account
-}, signer);
+const size = toBigIntDecimal(closeSizeUsd, 30);
+const result = await executeGmxOrder(sdk, {
+  kind: "decrease",
+  symbol: marketSdk.symbol,
+  direction: isLong ? "long" : "short",
+  orderType: "market",
+  size,
+  collateralToken: positionCollateral || "USDC",
+  receiveToken: positionCollateral || "USDC",
+  mode: "express",
+  from: account
+}, signer, {symbol:marketSdk.symbol,direction:isLong?"LONG":"SHORT",lane:"CORE_EXIT",action});
  
 const pnlPercent = entryPrice > 0 && currentPrice > 0
 ? (isLong ? (currentPrice - entryPrice) / entryPrice : (entryPrice - currentPrice) / entryPrice) * 100
