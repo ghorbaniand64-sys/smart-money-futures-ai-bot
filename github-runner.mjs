@@ -1,15 +1,14 @@
 // Smart Money Futures AI Bot — GitHub Actions adapter
-// V17.3.24-GMX-EXECUTION-STAGE-ISOLATION
-// Runs one complete scheduled cycle using the V17.3.24 engine.
-// Persistent Cloudflare KV bindings are emulated with JSON files in ./state.
-
+// V17.3.27-GITHUB-ACTIONS-EXECUTION-ALIGNMENT
+// IMPORTANT: this runner intentionally imports the root worker_core.mjs.
+// It never falls back to the obsolete worker_core.js / V17.3.9 path.
 import fs from "node:fs/promises";
 import path from "node:path";
-import worker, { BOT_VERSION, BOT_BUILD } from "./worker_core.mjs";
+import * as worker from "./worker_core.mjs";
 
 const ROOT = process.cwd();
-const WORKER_PATH = path.join(ROOT, "worker_core.mjs");
 const STATE_DIR = path.join(ROOT, "state");
+const EXPECTED_WORKER_VERSION = "V17.3.27-GMX-EXECUTION-PATH-OFFICIAL-BIGINT";
 
 async function ensureStateFiles() {
   await fs.mkdir(STATE_DIR, { recursive: true });
@@ -26,9 +25,7 @@ async function readStore(namespace) {
     const raw = await fs.readFile(file, "utf8");
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === "object" ? parsed : {};
-  } catch (_) {
-    return {};
-  }
+  } catch (_) { return {}; }
 }
 
 async function writeStore(namespace, store) {
@@ -51,9 +48,7 @@ function makeFileKvBinding(namespace) {
       }
       const value = entry.value;
       if (type === "json") {
-        if (typeof value === "string") {
-          try { return JSON.parse(value); } catch (_) { return null; }
-        }
+        if (typeof value === "string") { try { return JSON.parse(value); } catch (_) { return null; } }
         return value ?? null;
       }
       return value ?? null;
@@ -61,22 +56,15 @@ function makeFileKvBinding(namespace) {
     async put(key, value, options = {}) {
       const store = await readStore(namespace);
       let stored = value;
-      if (typeof value === "string") {
-        try { stored = JSON.parse(value); } catch (_) {}
-      }
+      if (typeof value === "string") { try { stored = JSON.parse(value); } catch (_) {} }
       const ttl = Number(options?.expirationTtl || 0);
-      store[String(key)] = {
-        value: stored,
-        expiresAt: ttl > 0 ? Date.now() + ttl * 1000 : null
-      };
+      store[String(key)] = { value: stored, expiresAt: ttl > 0 ? Date.now() + ttl * 1000 : null };
       await writeStore(namespace, store);
     }
   };
 }
 
-function envValue(name, fallback = "") {
-  return process.env[name] ?? fallback;
-}
+function envValue(name, fallback = "") { return process.env[name] ?? fallback; }
 
 async function buildEnv() {
   await ensureStateFiles();
@@ -86,37 +74,37 @@ async function buildEnv() {
     TELEGRAM_TOKEN: envValue("TELEGRAM_TOKEN"),
     TELEGRAM_CHAT_ID: envValue("TELEGRAM_CHAT_ID"),
     EXECUTION_ENABLED: envValue("EXECUTION_ENABLED", "true"),
+    EXPECTED_VERSION: envValue("EXPECTED_VERSION", EXPECTED_WORKER_VERSION),
     BOT_STATE: makeFileKvBinding("bot_state"),
     GMX_CACHE: makeFileKvBinding("gmx_cache")
   };
 }
 
 async function main() {
-  let workerSha256 = null;
-  try {
-    const crypto = await import("node:crypto");
-    const bytes = await fs.readFile(WORKER_PATH);
-    workerSha256 = crypto.createHash("sha256").update(bytes).digest("hex");
-  } catch (_) {}
   const env = await buildEnv();
   const scheduledTime = Date.now();
-  const event = { cron: "* * * * *", scheduledTime };
+  const actualVersion = worker?.BOT_VERSION || "UNKNOWN";
   console.log("[GITHUB][START]", {
     scheduledTime,
     worker: "worker_core.mjs",
-    expectedVersion: "V17.3.25-RUNTIME-IDENTITY-TELEGRAM-HARDENING",
-    importedWorkerVersion: BOT_VERSION,
-    importedWorkerBuild: BOT_BUILD,
-    workerSha256,
+    expectedVersion: EXPECTED_WORKER_VERSION,
+    actualWorkerVersion: actualVersion,
+    build: worker?.BOT_BUILD || "UNKNOWN",
     executionEnabled: env.EXECUTION_ENABLED,
     executionEnabledSource: process.env.EXECUTION_ENABLED == null ? "runner-default-true" : "github-env"
   });
 
-  await worker.scheduled(event, env, {
+  if (actualVersion !== EXPECTED_WORKER_VERSION) {
+    throw new Error(`WORKER_VERSION_MISMATCH: expected=${EXPECTED_WORKER_VERSION} actual=${actualVersion}`);
+  }
+
+  if (typeof worker.scheduled !== "function") throw new Error("WORKER_SCHEDULED_EXPORT_MISSING");
+
+  await worker.scheduled({ cron: "* * * * *", scheduledTime }, env, {
     waitUntil(promise) { return promise; }
   });
 
-  console.log("[GITHUB][DONE]", { scheduledTime });
+  console.log("[GITHUB][DONE]", { scheduledTime, worker: "worker_core.mjs", version: actualVersion });
 }
 
 main().catch((error) => {

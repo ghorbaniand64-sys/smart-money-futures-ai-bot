@@ -1,9 +1,9 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
-║  V17.3.26 — GMX OFFICIAL BIGINT SERIALIZATION HARDENING                                          ║
+║  V17.3.27 — GMX EXECUTION PATH + OFFICIAL BIGINT SERIALIZATION HARDENING                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.3.26-GMX-OFFICIAL-BIGINT-SERIALIZATION                                   ║
+║  RELEASE: V17.3.27-GMX-EXECUTION-PATH-OFFICIAL-BIGINT                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.3.26-GMX-OFFICIAL-BIGINT-SERIALIZATION";
-export const BOT_BUILD = "V17.3.26";
+export const BOT_VERSION = "V17.3.27-GMX-EXECUTION-PATH-OFFICIAL-BIGINT";
+export const BOT_BUILD = "V17.3.27";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -51,6 +51,11 @@ function safeFormatPrice(value) {
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
+// GMX official JSON serializer must live at module scope.
+// V17.3.26 accidentally loaded it inside loadGmxSdkSafe(), making the
+// execution submit path depend on an out-of-scope binding.
+const { serializeBigIntsInObject } = require("@gmx-io/sdk/utils/numbers");
+
 let GmxApiSdk = null;
 let PrivateKeySigner = null;
 let getViemChain = null;
@@ -60,7 +65,6 @@ async function loadGmxSdkSafe(){
   if(GmxApiSdk && PrivateKeySigner && getViemChain) return true;
   try {
     const sdk = require("@gmx-io/sdk/v2");
-const { serializeBigIntsInObject } = require("@gmx-io/sdk/utils/numbers");
     const chains = require("@gmx-io/sdk/configs/chains");
     GmxApiSdk = sdk?.GmxApiSdk || null;
     PrivateKeySigner = sdk?.PrivateKeySigner || null;
@@ -9829,7 +9833,7 @@ async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
     console.log("[GMX][EXPRESS_SUBMIT_PREP]", {
       requestId: prepared?.requestId || null,
       payloadType: prepared?.payloadType || null,
-      bigintJsonBridge: "EXACT_DECIMAL_STRING_CLONE",
+      bigintJsonBridge: "GMX_OFFICIAL_SERIALIZE_BIGINTS",
       bigintCount: bigintAudit.length,
       bigintPaths: bigintAudit.slice(0, 40),
       exactJsonProbe,
@@ -9849,6 +9853,8 @@ async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
     };
     const directSubmitClone = serializeBigIntsInObject(directSubmitRequest);
     const directSubmitJson = JSON.stringify(directSubmitClone);
+    // Final hard assertion: the exact body sent over HTTP must contain no native BigInt.
+    if (/\bBigInt\b/.test(directSubmitJson)) throw new Error("GMX_BIGINT_LEAK_IN_SUBMIT_JSON");
     console.log("[GMX][EXEC_STAGE] DIRECT_JSON_OK", {
       requestId: prepared?.requestId || null, bodyBytes: Buffer.byteLength(directSubmitJson, "utf8")
     });
@@ -9892,7 +9898,7 @@ async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
       payloadType: prepared?.payloadType || null,
       batchParams: summarizeExpressValue(prepared?.payload?.batchParams),
       relayParams: summarizeExpressValue(prepared?.payload?.relayParams),
-      bigintJsonBridge: "EXACT_DECIMAL_STRING_CLONE",
+      bigintJsonBridge: "GMX_OFFICIAL_SERIALIZE_BIGINTS",
       bigintAudit: gmxBigIntAudit({ batchParams: prepared?.payload?.batchParams, relayParams: prepared?.payload?.relayParams }, "$.eip712Data"),
       exactJsonProbe: assertGmxExactJson({ batchParams: prepared?.payload?.batchParams, relayParams: prepared?.payload?.relayParams }),
     });
@@ -9909,7 +9915,7 @@ async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
       payloadType: prepared?.payloadType || null,
       requestId: prepared?.requestId || null,
       submitStatus: submitted?.status || null,
-      bigintJsonBridge: "DIRECT_HTTP_EXACT_DECIMAL_JSON",
+      bigintJsonBridge: "GMX_OFFICIAL_SERIALIZE_BIGINTS",
       traceId: prepared?.traceId || submitted?.traceId || null,
     },
   };
