@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.5.6-GMX-ORDER-STATUS-REASON-FIX";
-export const BOT_BUILD = "V17.5.6";
+export const BOT_VERSION = "V17.5.7-GMX-RELAY-DIAGNOSTICS-FIX";
+export const BOT_BUILD = "V17.5.7";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -9690,6 +9690,12 @@ function formatTelegramLiveExecutionStatus(result) {
     response?.createdTxnHash ? `🧾 Created Tx: ${response.createdTxnHash}` : null,
     response?.executionTxnHash ? `⚡ Execution Tx: ${response.executionTxnHash}` : null,
     response?.taskId ? `🤖 Task ID: ${response.taskId}` : null,
+    response?.traceId ? `🧬 Trace ID: ${response.traceId}` : null,
+    response?.error?.code ? `🧩 Error Code: ${telegramTextSafe(response.error.code)}` : null,
+    response?.error?.message ? `📝 Error Message: ${telegramTextSafe(response.error.message)}` : null,
+    response?.reason ? `🔎 Relay Reason: ${telegramTextSafe(response.reason)}` : null,
+    response?.revertReason ? `↩️ Revert Reason: ${telegramTextSafe(response.revertReason)}` : null,
+    response?.revertData ? `🧱 Revert Data: ${telegramTextSafe(String(response.revertData).slice(0,180))}` : null,
     `❌ GMX Reason: ${telegramTextSafe(err)}`,
     terminal ? "🟢 GMX relay reports EXECUTED — verifying on-chain position next." : "❌ No confirmed execution; this is NOT counted as Executed."
   ].filter(Boolean).join("\n");
@@ -9863,13 +9869,32 @@ function orderStatusFailureReason(orderStatusResult) {
     response?.cancellationReason,
     response?.reason,
     response?.errorMessage,
+    response?.revertReason,
+    response?.revertData,
     typeof error === "string" ? error : error?.message,
     error?.reason,
+    error?.message,
     error?.code,
     orderStatusResult?.error,
   ];
   const found = candidates.find(v => v !== undefined && v !== null && String(v).trim() !== "");
-  return found ? String(found) : "n/a";
+  if (found) return typeof found === "object" ? jsonStringifySafe(found) : String(found);
+  return "n/a";
+}
+
+function orderStatusDiagnostic(orderStatusResult) {
+  const response = orderStatusResult?.response || {};
+  const error = response?.error;
+  return {
+    code: error?.code || response?.errorCode || response?.code || null,
+    message: error?.message || response?.errorMessage || response?.message || null,
+    reason: response?.reason || response?.failureReason || response?.cancellationReason || response?.revertReason || null,
+    traceId: response?.traceId || response?.traceID || null,
+    taskId: response?.taskId || null,
+    txHash: response?.txHash || null,
+    executionTxnHash: response?.executionTxnHash || null,
+    revertData: response?.revertData || null,
+  };
 }
 
 async function pollLiveOrderStatus(sdk, requestId, timeoutMs = 60000, intervalMs = 2000) {
@@ -10096,7 +10121,8 @@ if (orderStatusResult?.available && orderStatusResult?.terminal && orderStatus !
     reason:`GMX_ORDER_${orderStatus.toUpperCase()}`,
     stage:"GMX_ORDER_STATUS", requestId:result?.requestId||null,
     status:orderStatus, statusResponse:orderStatusResult?.response||null,
-    statusError:orderStatusFailureReason(orderStatusResult), recovery:orderStatusResult?.recovery||null, positionVerified:false,
+    statusError:orderStatusFailureReason(orderStatusResult), statusDiagnostic:orderStatusDiagnostic(orderStatusResult),
+    submitResponse:result||null, recovery:orderStatusResult?.recovery||null, positionVerified:false,
     walletBefore, walletAfter:walletAfterFailure, walletDelta:delta,
     collateralToken:collateral.symbol, collateralUsd:finalCollateralUsd, executionKey:lock.key
   };
