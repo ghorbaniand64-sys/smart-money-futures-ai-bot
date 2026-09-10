@@ -7,7 +7,7 @@ import worker, { BOT_VERSION, BOT_BUILD } from "./worker_core.mjs";
 
 const ROOT = process.cwd();
 const STATE_DIR = path.join(ROOT, "state");
-const EXPECTED_WORKER_VERSION = "V17.5.5-GMX-STABLECOIN-BALANCE-FIX-ROBUST";
+const EXPECTED_WORKER_VERSION = "V17.5.6-GMX-ORDER-STATUS-REASON-FIX";
 
 async function ensureStateFiles() {
   await fs.mkdir(STATE_DIR, { recursive: true });

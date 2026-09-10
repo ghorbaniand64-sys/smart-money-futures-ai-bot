@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.5.5-GMX-STABLECOIN-BALANCE-FIX-ROBUST";
-export const BOT_BUILD = "V17.5.4";
+export const BOT_VERSION = "V17.5.6-GMX-ORDER-STATUS-REASON-FIX";
+export const BOT_BUILD = "V17.5.6";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -9852,6 +9852,24 @@ async function readLiveWalletSnapshot(sdk, account) {
     USDT: Number(parsed?.USDT?.usd || 0),
     walletUsd: Number(parsed?.USDC?.usd || 0) + Number(parsed?.USDT?.usd || 0),
   };
+}
+
+function orderStatusFailureReason(orderStatusResult) {
+  const response = orderStatusResult?.response || {};
+  const error = response?.error;
+  const candidates = [
+    response?.statusError,
+    response?.failureReason,
+    response?.cancellationReason,
+    response?.reason,
+    response?.errorMessage,
+    typeof error === "string" ? error : error?.message,
+    error?.reason,
+    error?.code,
+    orderStatusResult?.error,
+  ];
+  const found = candidates.find(v => v !== undefined && v !== null && String(v).trim() !== "");
+  return found ? String(found) : "n/a";
 }
 
 async function pollLiveOrderStatus(sdk, requestId, timeoutMs = 60000, intervalMs = 2000) {
