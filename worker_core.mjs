@@ -9238,6 +9238,92 @@ function selectLiveCollateral(markets, symbol, balances) {
   }
   return null;
 }
+
+// V17.5.1 EXECUTION MARKET RESOLVER
+// The scanner may discover a newly listed / synthetic market from the GMX
+// Oracle/API catalog before the SDK market-label cache exposes the same symbol.
+// Never manufacture a market label. Resolve the canonical GMX market address
+// from SDK market-info/config, then ask fetchMarketsTickers({addresses}) for the
+// exact order symbol accepted by SDK v2 prepareOrder().
+function marketFieldTextCandidates(value) {
+  const out=[];
+  const visit=(v,keyHint="",depth=0)=>{
+    if(v==null || depth>8) return;
+    if(typeof v==="string" || typeof v==="number") {
+      const k=String(keyHint||"").toLowerCase();
+      if(k.includes("symbol")||k.includes("name")||k.includes("index")||k.includes("market")||k.includes("token")) out.push(String(v));
+      return;
+    }
+    if(Array.isArray(v)){for(const x of v)visit(x,keyHint,depth+1);return;}
+    if(typeof v!=="object")return;
+    for(const [k,x] of Object.entries(v))visit(x,k,depth+1);
+  };
+  visit(value);
+  return [...new Set(out)];
+}
+
+function marketAddressCandidates(value) {
+  const out=[];
+  const visit=(v,keyHint="",depth=0)=>{
+    if(v==null || depth>8) return;
+    if(typeof v==="string") {
+      const k=String(keyHint||"").toLowerCase();
+      if((k.includes("market")||k.includes("address")) && /^0x[0-9a-fA-F]{40}$/.test(v)) out.push(v);
+      return;
+    }
+    if(Array.isArray(v)){for(const x of v)visit(x,keyHint,depth+1);return;}
+    if(typeof v!=="object")return;
+    for(const [k,x] of Object.entries(v))visit(x,k,depth+1);
+  };
+  visit(value);
+  return [...new Set(out.map(x=>x.toLowerCase()))];
+}
+
+function marketIndexMatches(market,wanted) {
+  if(!market || !wanted) return false;
+  if(marketMatchesRequestedSymbol(market,wanted)) return true;
+  return marketFieldTextCandidates(market).some(v=>liveNormalizeSymbol(v)===wanted || String(v).toUpperCase().split(/[\/:[\](),|_-]+/).some(x=>liveNormalizeSymbol(x)===wanted));
+}
+
+async function resolveLiveCollateralForSignal(sdk, markets, symbol, balances) {
+  const direct=selectLiveCollateral(markets,symbol,balances);
+  if(direct) return {...direct,resolution:"SDK_MARKETS"};
+
+  const available=extractCollateralBalances(balances);
+  const wanted=liveNormalizeSymbol(symbol);
+  if(!wanted) return null;
+
+  let infos=[];
+  let configs=[];
+  try { if(typeof sdk.fetchMarketsInfo==="function") infos=await sdk.fetchMarketsInfo(); } catch(e) { console.warn("[EXECUTION][MARKET_INFO_FALLBACK]",safeError(e)); }
+  try { if(typeof sdk.fetchMarketsConfig==="function") configs=await sdk.fetchMarketsConfig(); } catch(e) { console.warn("[EXECUTION][MARKET_CONFIG_FALLBACK]",safeError(e)); }
+
+  const rows=[...(Array.isArray(infos)?infos:[]),...(Array.isArray(configs)?configs:[])];
+  const row=rows.find(m=>marketIndexMatches(m,wanted));
+  if(!row) return null;
+
+  const addresses=[...new Set([...marketAddressCandidates(row), ...marketAddressCandidates(row?.market)])];
+  for(const preferred of ["USDC","USDT"]) {
+    const bal=available[preferred];
+    if(!(bal?.usd>0)) continue;
+    const collateralAddress=GMX_ARBITRUM_CANONICAL_COLLATERAL[preferred].toLowerCase();
+    const collateralMatch=marketHasTokenAddress(row,collateralAddress);
+    if(!collateralMatch) continue;
+
+    let exact=addresses.map(a=>(markets||[]).find(m=>String(m?.marketTokenAddress||m?.marketAddress||m?.address||"").toLowerCase()===a)).find(Boolean)||null;
+    if(!exact && addresses.length && typeof sdk.fetchMarketsTickers==="function") {
+      try {
+        const tickers=await sdk.fetchMarketsTickers({addresses:[addresses[0]]});
+        const t=Array.isArray(tickers)?tickers[0]:null;
+        if(t?.symbol) exact={...row,...t,marketTokenAddress:t.marketTokenAddress||addresses[0]};
+      } catch(e) { console.warn("[EXECUTION][MARKET_TICKER_RESOLVE]",safeError(e)); }
+    }
+    if(exact && !exact.isSpotOnly) {
+      return {symbol:preferred,usd:bal.usd,balance:bal.balance,decimals:bal.decimals,address:bal.address||GMX_ARBITRUM_CANONICAL_COLLATERAL[preferred],market:exact,resolution:"SDK_MARKETS_INFO_ADDRESS"};
+    }
+  }
+  return null;
+}
  
 function liveExecutionKey(signal) {
 const entry = Number(signal?.tradePlan?.entry ?? signal?.price ?? 0);
@@ -9380,10 +9466,10 @@ if (same) return { executed:false, mode:"LIVE", lane:"RADAR", reason:"Symbol alr
 }
 const balances = await sdk.fetchWalletBalances({ address: account });
 const resolvedBalances = await resolveLiveCollateralBalances(sdk, account, balances, env.ARBITRUM_RPC);
-const collateral = selectLiveCollateral(markets, requestedSymbol, resolvedBalances.balances);
+const collateral = await resolveLiveCollateralForSignal(sdk,markets,requestedSymbol,resolvedBalances.balances);
 if (!collateral) {
-  const candidates=(markets||[]).filter(m=>!m?.isSpotOnly && marketMatchesRequestedSymbol(m,liveNormalizeSymbol(requestedSymbol))).slice(0,5).map(m=>({symbol:m?.symbol||m?.name||"?",collateral:[...marketCollateralSymbols(m)]}));
-  throw new Error(`No usable USDC/USDT balance with a matching GMX collateral market was detected for Radar | walletUsd=${Number(resolvedBalances.walletUsd||0).toFixed(6)} | source=${resolvedBalances.source.join("+")||"NONE"} | market=${liveNormalizeSymbol(requestedSymbol)} | candidates=${JSON.stringify(candidates)}`);
+  const candidates=(markets||[]).filter(m=>!m?.isSpotOnly && (marketMatchesRequestedSymbol(m,liveNormalizeSymbol(requestedSymbol)) || marketIndexMatches(m,liveNormalizeSymbol(requestedSymbol)))).slice(0,8).map(m=>({symbol:m?.symbol||m?.name||"?",marketTokenAddress:m?.marketTokenAddress||m?.marketAddress||m?.address||null,collateral:[...marketCollateralSymbols(m)]}));
+  throw new Error(`No usable USDC/USDT balance with a matching GMX collateral market was detected for Radar | walletUsd=${Number(resolvedBalances.walletUsd||0).toFixed(6)} | source=${resolvedBalances.source.join("+")||"NONE"} | market=${liveNormalizeSymbol(requestedSymbol)} | sdkMarkets=${Array.isArray(markets)?markets.length:0} | candidates=${JSON.stringify(candidates)}`);
 }
 const market = collateral.market;
 const capacity = await sdk.getTradingCapacity({ symbol: market.symbol, direction: plan.direction === "LONG" ? "long" : "short" });
@@ -9723,10 +9809,10 @@ let markets, balances, resolvedBalances;
 try { markets=await sdk.fetchMarkets(); } catch(error) { throw executionStageError("FETCH_MARKETS", error); }
 try { balances=await sdk.fetchWalletBalances({address:account}); } catch(error) { throw executionStageError("FETCH_WALLET_BALANCES", error); }
 try { resolvedBalances=await resolveLiveCollateralBalances(sdk,account,balances,env.ARBITRUM_RPC); } catch(error) { throw executionStageError("RESOLVE_COLLATERAL", error); }
-const collateral=selectLiveCollateral(markets, signal.symbol, resolvedBalances.balances);
+const collateral=await resolveLiveCollateralForSignal(sdk,markets,signal.symbol,resolvedBalances.balances);
 if (!collateral) {
-  const candidates=(markets||[]).filter(m=>!m?.isSpotOnly && marketMatchesRequestedSymbol(m,liveNormalizeSymbol(signal.symbol))).slice(0,5).map(m=>({symbol:m?.symbol||m?.name||"?",collateral:[...marketCollateralSymbols(m)]}));
-  throw new Error(`No usable USDC/USDT balance with a matching GMX collateral market was detected | walletUsd=${Number(resolvedBalances.walletUsd||0).toFixed(6)} | source=${resolvedBalances.source.join("+")||"NONE"} | market=${liveNormalizeSymbol(signal.symbol)} | candidates=${JSON.stringify(candidates)}`);
+  const candidates=(markets||[]).filter(m=>!m?.isSpotOnly && (marketMatchesRequestedSymbol(m,liveNormalizeSymbol(signal.symbol)) || marketIndexMatches(m,liveNormalizeSymbol(signal.symbol)))).slice(0,8).map(m=>({symbol:m?.symbol||m?.name||"?",marketTokenAddress:m?.marketTokenAddress||m?.marketAddress||m?.address||null,collateral:[...marketCollateralSymbols(m)]}));
+  throw new Error(`No usable USDC/USDT balance with a matching GMX collateral market was detected | walletUsd=${Number(resolvedBalances.walletUsd||0).toFixed(6)} | source=${resolvedBalances.source.join("+")||"NONE"} | market=${liveNormalizeSymbol(signal.symbol)} | sdkMarkets=${Array.isArray(markets)?markets.length:0} | candidates=${JSON.stringify(candidates)}`);
 }
 let walletBefore;
 try { walletBefore=await readLiveWalletSnapshot(sdk, account); } catch(error) { throw executionStageError("READ_WALLET_SNAPSHOT", error); }
