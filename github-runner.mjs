@@ -4,7 +4,7 @@
 // It never falls back to the obsolete worker_core.js / V17.3.9 path.
 import fs from "node:fs/promises";
 import path from "node:path";
-import * as worker from "./worker_core.mjs";
+import worker, { BOT_VERSION, BOT_BUILD } from "./worker_core.mjs";
 
 const ROOT = process.cwd();
 const STATE_DIR = path.join(ROOT, "state");
@@ -83,13 +83,13 @@ async function buildEnv() {
 async function main() {
   const env = await buildEnv();
   const scheduledTime = Date.now();
-  const actualVersion = worker?.BOT_VERSION || "UNKNOWN";
+  const actualVersion = BOT_VERSION || "UNKNOWN";
   console.log("[GITHUB][START]", {
     scheduledTime,
     worker: "worker_core.mjs",
     expectedVersion: EXPECTED_WORKER_VERSION,
     actualWorkerVersion: actualVersion,
-    build: worker?.BOT_BUILD || "UNKNOWN",
+    build: BOT_BUILD || "UNKNOWN",
     executionEnabled: env.EXECUTION_ENABLED,
     executionEnabledSource: process.env.EXECUTION_ENABLED == null ? "runner-default-true" : "github-env"
   });
