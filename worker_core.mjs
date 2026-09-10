@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.5.0-GMX-CANONICAL-EXECUTION";
-export const BOT_BUILD = "V17.5.0";
+export const BOT_VERSION = "V17.5.2-GMX-BIGINT-SAFE-MARKET-RESOLVER";
+export const BOT_BUILD = "V17.5.2";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -9192,7 +9192,9 @@ function marketHasTokenAddress(market,address) {
 
 function marketCollateralSymbols(market) {
   const out=new Set();
-  const raw=JSON.stringify(market||{}).toUpperCase();
+  // V17.5.2: GMX SDK market metadata may contain native BigInt fields.
+  // Never JSON.stringify() SDK market objects directly.
+  const raw=jsonStringifySafe(market||{}).toUpperCase();
   if(raw.includes("USDC")) out.add("USDC");
   if(raw.includes("USDT")) out.add("USDT");
   // V17.3.15: GMX market metadata can expose collateral as token addresses
