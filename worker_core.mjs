@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.5.11-GMX-USD-FIXED-POINT-CAPITAL-GUARD";
-export const BOT_BUILD = "V17.5.11";
+export const BOT_VERSION = "V17.5.12-GMX-ALLOWANCE-MAX-HARDENED";
+export const BOT_BUILD = "V17.5.12";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -8983,14 +8983,15 @@ async function ensureGmxCollateralAllowance(sdk,signer,account,symbol,requiredAm
   if(!signer||typeof signer.sendTransaction!=="function")
     throw executionStageError("ERC20_APPROVAL",new Error("GMX signer does not expose sendTransaction"),meta);
 
-  // V17.3.9: exact-amount approvals can still fail at the relay layer when
-  // GMX's actual ERC20 transfer amount includes protocol-side accounting/fees.
-  // On the recovery path, grant the configured GMX Router the standard uint256
-  // max allowance so the next request cannot exceed the approved amount.
-  // This does NOT transfer funds; it only changes ERC20 spending permission.
-  const approvalAmount = forceRefresh ? ((1n << 256n) - 1n) : required;
+  // V17.5.12: an exact collateral approval is not sufficient for every
+  // Express increase path. GMX Relay can transfer slightly more than the
+  // user-facing collateralToPay amount because of protocol-side accounting
+  // and execution-fee handling. Approve the configured Router with the
+  // standard uint256 max allowance whenever an approval is needed. This does
+  // NOT transfer funds; it only changes ERC20 spending permission.
+  const approvalAmount = (1n << 256n) - 1n;
   meta.approvalAmount = approvalAmount.toString();
-  meta.approvalMode = forceRefresh ? "MAX_UINT256_RECOVERY" : "EXACT_REQUIRED";
+  meta.approvalMode = forceRefresh ? "MAX_UINT256_RECOVERY" : "MAX_UINT256_STANDARD";
 
   let approveTx;
   try{
@@ -10191,6 +10192,28 @@ await markLiveExecutionSubmitted(env, lock.key, signal, result);
 const orderStatusResult = await pollLiveOrderStatus(sdk, result?.requestId, 60000, 2000);
 const orderStatus = String(orderStatusResult?.status || result?.status || "unknown").toLowerCase();
 if (orderStatusResult?.available && orderStatusResult?.terminal && orderStatus !== "executed") {
+  // V17.5.12: expose the live allowance context on relay failures. The
+  // approval path now uses max allowance, so an ERC20 allowance failure is
+  // actionable evidence of a spender/token mismatch rather than an amount
+  // ceiling that the exact approval itself created.
+  let relayAllowanceDiagnostic = null;
+  try {
+    if (orderStatus === "relay_failed" && /allowance|transfer amount exceeds allowance/i.test(orderStatusFailureReason(orderStatusResult))) {
+      const tokenAddress = await resolveGmxCollateralTokenAddress(sdk, collateral.symbol, balances);
+      let routerAddress = null;
+      try {
+        const probe = await sdk.buildApproveTransaction({tokenAddress, spender:"router", amount:0n});
+        const data = String(probe?.data || "");
+        if (/^0x095ea7b3[0-9a-fA-F]{128}$/.test(data)) routerAddress = `0x${data.slice(34,74)}`;
+      } catch (_) {}
+      const liveAllowance = (env.ARBITRUM_RPC && tokenAddress && routerAddress)
+        ? await readGmxOnchainAllowance(env.ARBITRUM_RPC, tokenAddress, account, routerAddress)
+        : null;
+      relayAllowanceDiagnostic = {token:collateral.symbol,tokenAddress,routerAddress,requiredAmount:toBigIntDecimal(finalCollateralUsd,6).toString(),liveAllowance:liveAllowance==null?null:liveAllowance.toString(),liveAllowanceHex:liveAllowance==null?null:`0x${liveAllowance.toString(16)}`};
+    }
+  } catch (diagError) {
+    relayAllowanceDiagnostic = {error:safeError(diagError)};
+  }
   const walletAfterFailure = await readLiveWalletSnapshot(sdk, account);
   const tokenKey=String(collateral.symbol||"").toUpperCase();
   const beforeToken=Number(walletBefore?.[tokenKey]);
@@ -10215,7 +10238,7 @@ if (orderStatusResult?.available && orderStatusResult?.terminal && orderStatus !
     preparedWarnings:result?.preparedWarnings||[],
     preparedValidationWarnings:result?.preparedValidationWarnings||[],
     preparedEstimates:result?.preparedEstimates||null,
-    recovery:orderStatusResult?.recovery||null, positionVerified:false,
+    recovery:orderStatusResult?.recovery||null, relayAllowanceDiagnostic, positionVerified:false,
     walletBefore, walletAfter:walletAfterFailure, walletDelta:delta,
     collateralToken:collateral.symbol, collateralUsd:finalCollateralUsd, executionKey:lock.key
   };
