@@ -7,7 +7,7 @@ import worker, { BOT_VERSION, BOT_BUILD } from "./worker_core.mjs";
 
 const ROOT = process.cwd();
 const STATE_DIR = path.join(ROOT, "state");
-const EXPECTED_WORKER_VERSION = "V17.5.12-GMX-ALLOWANCE-MAX-HARDENED";
+const EXPECTED_WORKER_VERSION = "V17.5.14-STRUCTURE-SHARP-MOVE";
 
 async function ensureStateFiles() {
   await fs.mkdir(STATE_DIR, { recursive: true });

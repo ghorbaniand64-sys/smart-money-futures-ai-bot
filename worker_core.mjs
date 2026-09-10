@@ -1,9 +1,9 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
-║  V17.5.0 — CANONICAL GMX EXECUTION + PREPARE/SIGN/SUBMIT                                          ║
+║  V17.5.14 — STRUCTURE + SHARP-MOVE ENTRY ENGINE + FEE TELEMETRY                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.5.0-GMX-CANONICAL-EXECUTION                                   ║
+║  RELEASE: V17.5.14-STRUCTURE-SHARP-MOVE                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.5.12-GMX-ALLOWANCE-MAX-HARDENED";
-export const BOT_BUILD = "V17.5.12";
+export const BOT_VERSION = "V17.5.14-STRUCTURE-SHARP-MOVE";
+export const BOT_BUILD = "V17.5.14";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -908,41 +908,26 @@ function hybridEarlyImpulse(symbol,candles,flow,debugStats=null){
       activityPath
     });
 
-  // V17.3.9: score is normalized to the actual Early thresholds.
-  // The previous formula required roughly ~1% candle movement to reach
-  // earlyMinScore=62 even though earlyMinMovePct was only 0.12%.
-  const moveScore=Math.min(20,(directionalMove/Math.max(0.001,Number(CONFIG.HYBRID_ENTRY.earlyMinMovePct||0.12)))*20);
-  const accelScore=Math.min(15,(Math.max(0,accelValue)/Math.max(0.001,Number(CONFIG.HYBRID_ENTRY.earlyMinAccelerationPct||0.04)))*15);
-  const volumeScore=volumeOk
-    ?Math.min(15,Math.max(0,(Number(vol.volumeRatio||1)-1)/0.35*10))
-    :0;
-  const flowScore=flowOk
-    ?Math.min(15,Math.max(0,aligned)/0.07*10)
-    :0;
-  const bodyScore=Math.min(10,Math.max(0,(m.bodyRatio-0.35)/0.30*10));
-  const proximityScore=Math.min(10,Math.max(0,1-distance/Math.max(0.001,Number(CONFIG.HYBRID_ENTRY.earlyMaxEntryDistanceAtr||1.30)))*10);
-  const prebreakScore=nearBreak?5:0;
-  const score=Math.min(100,25+moveScore+accelScore+volumeScore+flowScore+bodyScore+proximityScore+prebreakScore);
+  // V17.5.14: EARLY ENTRY IS NO LONGER SCORE-DRIVEN.
+  // The old weighted score/edge gates are intentionally removed because they
+  // could delay entry until the move was already mature.  Early qualification
+  // is now structural + momentum based only: a valid S/R zone, controlled
+  // distance from that zone, candle body, acceleration, and at least one of
+  // volume/flow/momentum-activity must be present.
+  //
+  // Keep a non-blocking eventStrength number for telemetry/ranking only.
+  const moveStrength=Math.min(25,(directionalMove/Math.max(0.001,Number(CONFIG.HYBRID_ENTRY.earlyMinMovePct||0.12)))*25);
+  const accelStrength=Math.min(25,(Math.max(0,accelValue)/Math.max(0.001,Number(CONFIG.HYBRID_ENTRY.earlyMinAccelerationPct||0.04)))*25);
+  const volumeStrength=volumeOk?Math.min(20,Math.max(0,(Number(vol.volumeRatio||1)-1)/0.35*20)):0;
+  const flowStrength=flowOk?Math.min(20,Math.max(0,aligned)/0.07*20):0;
+  const bodyStrength=Math.min(10,Math.max(0,(m.bodyRatio-0.35)/0.30*10));
+  const eventStrength=Math.min(100,moveStrength+accelStrength+volumeStrength+flowStrength+bodyStrength);
+  const confluence=(volumeOk?1:0)+(flowOk?1:0)+(momentumActivityOk?1:0)+(nearBreak?1:0);
 
-  // Momentum-only path receives enough edge from the impulse itself;
-  // volume/flow remain positive confluence, not mandatory evidence.
-  const edge=(volumeOk?3:0)+(flowOk?4:0)+(accelOk?3:0)+(m.bodyRatio>=0.55?2:0)+(extension<=0.75?2:0)+(momentumActivityOk&&!volumeOk&&!flowOk?2:0);
-
-  if(score>=Number(CONFIG.HYBRID_ENTRY.earlyMinScore||62))bump('scorePass');
-  else return reject('SCORE',{
-    score:Number(score.toFixed(1)),
-    required:Number(CONFIG.HYBRID_ENTRY.earlyMinScore||62),
-    activityPath,
-    distanceAtr:Number(distance.toFixed(3))
-  });
-
-  if(edge>=Number(CONFIG.HYBRID_ENTRY.earlyMinEdge||5))bump('edgePass');
-  else return reject('EDGE',{
-    edge:Number(edge.toFixed(1)),
-    required:Number(CONFIG.HYBRID_ENTRY.earlyMinEdge||5),
-    activityPath
-  });
-
+  // Legacy debug counters are retained for compatibility, but they are
+  // telemetry only and never act as entry gates.
+  bump('scorePass');
+  bump('edgePass');
   bump('qualified');
 
   return {
@@ -961,8 +946,9 @@ function hybridEarlyImpulse(symbol,candles,flow,debugStats=null){
     tier:score>=82?"PRIME":score>=72?"NORMAL":"FAST",
     confirmationCount:Number(volumeOk)+Number(flowOk)+Number(accelOk)+Number(momentumActivityOk&&!volumeOk&&!flowOk),
     early:true,
-    earlyScore:Number(score.toFixed(1)),
-    edge:Number(edge.toFixed(1)),
+    earlyScore:Number(eventStrength.toFixed(1)),
+    eventStrength:Number(eventStrength.toFixed(1)),
+    edge:Number(confluence.toFixed(1)),
     movePct:Number(movePct.toFixed(4)),
     accelerationPct:Number(acceleration.toFixed(4)),
     extensionAtr:Number(extension.toFixed(3)),
@@ -4575,7 +4561,7 @@ async function runFullScan(env, scanOptions = {}) {
       if(!state.hybridStructureStates)state.hybridStructureStates={};state.hybridStructureStates[row.s]=analysis.nextState||prev;
       const ef=analysis.eventFlags||{};eventStats.supportZones+=ef.supportZone?1:0;eventStats.resistanceZones+=ef.resistanceZone?1:0;eventStats.flowEvents+=(flow.flowSurge||flow.explosiveFlow)?1:0;eventStats.volumeEvents+=(analysis.volume?.volumeSurge||analysis.volume?.rangeExpansion||analysis.volume?.volumeExplosive)?1:0;eventStats.supportReactions+=ef.supportReaction?1:0;eventStats.resistanceReactions+=ef.resistanceReaction?1:0;eventStats.breakouts+=ef.breakout?1:0;eventStats.waitingRetests+=ef.waitingRetest?1:0;eventStats.retestConfirmed+=ef.retestConfirmed?1:0;
       if(ef.supportReaction||ef.resistanceReaction||ef.breakout||ef.waitingRetest||ef.retestConfirmed)eventCandidates++;
-      let setup=hybridBuildSetup(row.s,analysis,flow,traders); let setupMode="STRUCTURE"; const early=hybridEarlyImpulse(row.s,{"5m":c5},flow,eventStats.earlyDebug); if(!setup&&early){ const earlyAnalysis={...analysis,price:early.price,atr:early.atr,zones:analysis.zones,entries:[early],volume:early.volume}; setup=hybridBuildSetup(row.s,earlyAnalysis,flow,traders); if(!setup){ eventStats.earlyDebug.setupRejected=(Number(eventStats.earlyDebug.setupRejected)||0)+1; if(eventStats.earlyDebug.lastRejections){eventStats.earlyDebug.lastRejections.push({symbol:row.s,reason:"SETUP_REJECT"});if(eventStats.earlyDebug.lastRejections.length>20)eventStats.earlyDebug.lastRejections.shift();} } if(setup){setup.trigger=early.trigger;setup.tier=early.tier;setup.early=true;setup.earlyScore=early.earlyScore;setup.edge=early.edge;setup.evidence=[...(setup.evidence||[]),...(early.evidence||[])];setupMode="EARLY_IMPULSE";eventStats.earlyImpulses=(eventStats.earlyImpulses||0)+1;}} if(setup){eventStats.entryReady++;signals.push({id:crypto.randomUUID(),symbol:setup.symbol,market:pairSymbol(setup.symbol),direction:setup.direction,status:"EVENT_ENTRY_READY",score:Number(setup.earlyScore||0),confidence:Number(setup.earlyScore||0),price:setup.entryPrice,tradePlan:{valid:true,entry:setup.entryPrice,stopLoss:setup.stopLoss,tp1:setup.tp1,tp2:setup.tp2,tp3:setup.tp3,leverage:setup.leverage,allocation:setup.allocation,allocationPercent:Number((setup.allocation*100).toFixed(2))},trend:{},components:{structureEvent:setup.trigger,volume:analysis.volume,flow:flow},diagnostics:setup.evidence,signalTier:"EVENT_SEQUENCE",executionEligible:true,edge:Number(setup.edge||0),riskScore:0,entryQuality:{overextended:false},topTraderIntelligence:setup.topTrader,hybridSetup:{...setup,mode:setupMode},generatedAt:Date.now()});}
+      let setup=hybridBuildSetup(row.s,analysis,flow,traders); let setupMode="STRUCTURE"; const early=hybridEarlyImpulse(row.s,{"5m":c5},flow,eventStats.earlyDebug); if(!setup&&early){ const earlyAnalysis={...analysis,price:early.price,atr:early.atr,zones:analysis.zones,entries:[early],volume:early.volume}; setup=hybridBuildSetup(row.s,earlyAnalysis,flow,traders); if(!setup){ eventStats.earlyDebug.setupRejected=(Number(eventStats.earlyDebug.setupRejected)||0)+1; if(eventStats.earlyDebug.lastRejections){eventStats.earlyDebug.lastRejections.push({symbol:row.s,reason:"SETUP_REJECT"});if(eventStats.earlyDebug.lastRejections.length>20)eventStats.earlyDebug.lastRejections.shift();} } if(setup){setup.trigger=early.trigger;setup.tier=early.tier;setup.early=true;setup.earlyScore=early.earlyScore;setup.eventStrength=early.eventStrength||early.earlyScore;setup.edge=0;setup.evidence=[...(setup.evidence||[]),...(early.evidence||[])];setupMode="EARLY_IMPULSE";eventStats.earlyImpulses=(eventStats.earlyImpulses||0)+1;}} if(setup){eventStats.entryReady++;signals.push({id:crypto.randomUUID(),symbol:setup.symbol,market:pairSymbol(setup.symbol),direction:setup.direction,status:"EVENT_ENTRY_READY",score:0,confidence:100,price:setup.entryPrice,tradePlan:{valid:true,entry:setup.entryPrice,stopLoss:setup.stopLoss,tp1:setup.tp1,tp2:setup.tp2,tp3:setup.tp3,leverage:setup.leverage,allocation:setup.allocation,allocationPercent:Number((setup.allocation*100).toFixed(2))},trend:{},components:{structureEvent:setup.trigger,volume:analysis.volume,flow:flow},diagnostics:setup.evidence,signalTier:"EVENT_SEQUENCE",executionEligible:true,edge:0,riskScore:0,entryQuality:{overextended:false},entryEngine:"STRUCTURE_SHARP_MOVE",eventStrength:Number(setup.eventStrength||setup.earlyScore||0),topTraderIntelligence:setup.topTrader,hybridSetup:{...setup,mode:setupMode},generatedAt:Date.now()});}
       deepSucceeded++;
       console.log("[HYBRID][STRUCTURE]",{symbol:row.s,state:analysis.state,direction:analysis.direction,move5:analysis.move5,flow:flow.imbalance,flowSurge:Boolean(flow.flowSurge||flow.explosiveFlow),volume:analysis.volume?.volumeRatio,range:analysis.volume?.rangeRatio,support:analysis.zones?.support?.[0]?.center||null,resistance:analysis.zones?.resistance?.[0]?.center||null,events:analysis.eventFlags||{}});
     }catch(e){deepErrors++;const detail=safeError(e);errors.push({symbol:row.s,scope:"deep-structure",stage:deepStage,error:detail});console.error("[HYBRID][DEEP_ERROR]",{symbol:row.s,stage:deepStage,error:detail});}
@@ -9793,8 +9779,8 @@ function formatTelegramLiveEntry(result) {
     `${icon} LIVE ENTRY — ${direction}`,
     "━━━━━━━━━━━━━━━━━━",
     `🪙 ${result?.symbol||"UNKNOWN"}`,
-    `🔥 Score: ${Number(result?.score||0).toFixed(1)}/100`,
-    `⚡ Confidence: ${Number(result?.confidence||0).toFixed(0)}%`,
+    result?.entryEngine ? `🧠 Entry Engine: ${result.entryEngine}` : null,
+    result?.eventStrength!=null ? `⚡ Event Strength: ${Number(result.eventStrength).toFixed(1)}/100 (telemetry only)` : `⚡ Confidence: ${Number(result?.confidence||0).toFixed(0)}%`,
     `💰 Entry: ${result?.entryPrice!=null?safeFormatPrice(result.entryPrice):"N/A"}`,
     `🛑 Stop Loss: ${result?.stopLoss!=null?safeFormatPrice(result.stopLoss):"N/A"}`,
     `🎯 TP1: ${result?.tp1!=null?safeFormatPrice(result.tp1):"N/A"}`,
@@ -9807,9 +9793,13 @@ function formatTelegramLiveEntry(result) {
     `💰 Wallet BEFORE: ${Number(result?.walletBefore?.[String(result?.collateralToken||"").toUpperCase()]).toFixed(4)}`,
     `💰 Wallet AFTER: ${Number(result?.walletAfter?.[String(result?.collateralToken||"").toUpperCase()]).toFixed(4)}`,
     `📉 Wallet Δ: ${result?.walletDelta!=null?Number(result.walletDelta).toFixed(6):"N/A"}`,
+    result?.accounting?.walletDebitUsd!=null ? `💸 Observed Debit: $${Number(result.accounting.walletDebitUsd).toFixed(6)}` : null,
+    result?.accounting?.observedExtraDebitUsd!=null ? `🧾 Extra Debit vs Collateral: $${Number(result.accounting.observedExtraDebitUsd).toFixed(6)}` : null,
+    result?.accounting?.positionCollateralUsd!=null ? `📌 GMX Position Collateral: $${Number(result.accounting.positionCollateralUsd).toFixed(6)}` : null,
+    ...feeTelemetryDisplayLines(result),
     `🧾 Request ID: ${result?.requestId||"n/a"}`,
     verified ? (result?.settlementVerified ? "✅ GMX POSITION VERIFIED + WALLET SETTLEMENT OBSERVED" : "✅ GMX POSITION VERIFIED | WALLET SETTLEMENT STILL SETTLING") : "⚠️ GMX ORDER ACCEPTED — POSITION VERIFICATION PENDING",
-    "ℹ️ Executed is counted only after the GMX position is verified."
+    "ℹ️ Extra Debit is observed wallet movement beyond requested collateral; it is not assumed to be a fee unless GMX/SDK reports it as such."
   ].filter(Boolean).join("\n");
 }
 
@@ -9853,6 +9843,94 @@ function executionStageError(stage, error, meta = {}) {
   e.causeMessage = message;
   e.executionMeta = meta;
   return e;
+}
+
+// V17.5.13: capture fee/cost fields exposed by GMX prepare/submit responses.
+// The SDK has changed response shapes across releases, so this telemetry is
+// deliberately schema-tolerant and never serializes native BigInt directly.
+function feeTelemetryValue(value, key = "") {
+  const k = String(key || "").toLowerCase();
+  if (value === null || value === undefined) return null;
+  if (typeof value === "bigint") {
+    const raw = value.toString();
+    return k.includes("usd") ? { raw, usd: gmxUsdHumanNumber(raw) } : { raw };
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
+    return k.includes("usd") ? { raw: value, usd: gmxUsdHumanNumber(value) } : { raw: value };
+  }
+  if (typeof value === "string") {
+    if (k.includes("usd") && /^-?\d+(?:\.\d+)?$/.test(value.trim())) return { raw:value, usd:gmxUsdHumanNumber(value.trim()) };
+    return { raw:value };
+  }
+  return null;
+}
+
+function collectGmxFeeTelemetry(...sources) {
+  const out = {};
+  const seen = new WeakSet();
+  let nodes = 0;
+  const visit = (value, path = "", depth = 0) => {
+    if (value == null || depth > 7 || nodes++ > 600) return;
+    if (typeof value !== "object") return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      value.slice(0, 50).forEach((v,i)=>visit(v, `${path}[${i}]`, depth+1));
+      return;
+    }
+    for (const [key, child] of Object.entries(value)) {
+      const childPath = path ? `${path}.${key}` : key;
+      const lower = key.toLowerCase();
+      if (/(fee|cost|gas)/i.test(key) && (typeof child !== "object" || child === null)) {
+        const item = feeTelemetryValue(child, key);
+        if (item) {
+          const bucket = lower.includes("position") && lower.includes("fee") ? "positionFee"
+            : lower.includes("execution") && lower.includes("fee") ? "executionFee"
+            : lower.includes("relay") && lower.includes("fee") ? "relayFee"
+            : lower.includes("swap") && lower.includes("fee") ? "feeSwap"
+            : lower.includes("gas") ? "gas"
+            : lower.includes("fee") ? "fee" : "cost";
+          if (!out[bucket]) out[bucket] = [];
+          if (out[bucket].length < 12) out[bucket].push({ key: childPath, ...item });
+        }
+      }
+      if (typeof child === "object" && child !== null) visit(child, childPath, depth+1);
+    }
+  };
+  sources.forEach(src=>visit(src));
+  return Object.keys(out).length ? out : null;
+}
+
+function feeTelemetryDisplayLines(result) {
+  const f = result?.feeTelemetry || {};
+  const lines = [];
+  const add = (label,bucket) => {
+    const rows=Array.isArray(f[bucket])?f[bucket]:[];
+    if(!rows.length)return;
+    const shown=rows.slice(0,3).map(x=>x?.usd!=null&&Number.isFinite(Number(x.usd))?`$${Number(x.usd).toFixed(6)}`:String(x?.raw??"reported")).join(" | ");
+    lines.push(`💳 ${label}: ${shown}`);
+  };
+  add("Position fee","positionFee");
+  add("Execution fee","executionFee");
+  add("Relay fee","relayFee");
+  add("Fee swap","feeSwap");
+  add("Gas/cost","gas");
+  add("Other fee","fee");
+  return lines;
+}
+
+function buildObservedWalletAccounting(result) {
+  const token=String(result?.collateralToken||"").toUpperCase();
+  const before=Number(result?.walletBefore?.[token]);
+  const after=Number(result?.walletAfter?.[token]);
+  const delta=Number(result?.walletDelta);
+  const walletDebitUsd=Number.isFinite(delta)?Math.max(0,-delta):null;
+  const collateralUsd=Number(result?.collateralUsd);
+  const observedExtraDebitUsd=Number.isFinite(walletDebitUsd)&&Number.isFinite(collateralUsd)?Math.max(0,walletDebitUsd-collateralUsd):null;
+  const position=result?.position||null;
+  const positionCollateralUsd=position?gmxUsdHumanNumber(position?.collateralUsd??position?.collateralValueUsd??position?.initialCollateralUsd):null;
+  return { token, before:Number.isFinite(before)?before:null, after:Number.isFinite(after)?after:null, netDelta:Number.isFinite(delta)?delta:null, walletDebitUsd, collateralUsd:Number.isFinite(collateralUsd)?collateralUsd:null, observedExtraDebitUsd, positionCollateralUsd:Number.isFinite(positionCollateralUsd)&&positionCollateralUsd>0?positionCollateralUsd:null };
 }
 
 async function executeGmxOrder(sdk, request, signer, meta = {}) {
@@ -9907,6 +9985,7 @@ async function executeGmxOrder(sdk, request, signer, meta = {}) {
     preparedWarnings: Array.isArray(prepared?.warnings) ? prepared.warnings : [],
     preparedValidationWarnings: Array.isArray(prepared?.validationWarnings) ? prepared.validationWarnings : [],
     preparedEstimates: prepared?.estimates || null,
+    feeTelemetry: collectGmxFeeTelemetry(prepared, prepared?.payload, submitted, submitted?.response),
   };
 }
 
@@ -10266,7 +10345,8 @@ if (!verification.verified) {
 }
 const walletAfter=verification.walletAfter || await readLiveWalletSnapshot(sdk, account);
 const walletDelta=Number.isFinite(Number(verification.walletDelta)) ? Number(verification.walletDelta) : null;
-const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,requestedCollateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,allowance:allowanceInfo,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:true,walletBefore,walletAfter,walletDelta,settlementVerified:Boolean(verification.settled),executionKey:lock.key};
+const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,requestedCollateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,allowance:allowanceInfo,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:result?.requestId||null,status:result?.status||null,entryEngine:String(signal?.entryEngine||"STRUCTURE_SHARP_MOVE"),eventStrength:Number(signal?.eventStrength||0),positionVerified:true,walletBefore,walletAfter,walletDelta,settlementVerified:Boolean(verification.settled),position:verification.position||null,feeTelemetry:result?.feeTelemetry||null,executionKey:lock.key};
+entryNotice.accounting=buildObservedWalletAccounting(entryNotice);
 try { await sendTelegram(env, formatTelegramLiveEntry(entryNotice)); } catch(_) {}
 return entryNotice;
 } catch (error) {
