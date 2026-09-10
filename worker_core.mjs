@@ -1,9 +1,9 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
-║  V17.3.25 — RUNTIME IDENTITY + TELEGRAM FORMATTER HARDENING + GMX STAGE DIAGNOSTICS                                          ║
+║  V17.3.26 — GMX OFFICIAL BIGINT SERIALIZATION HARDENING                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.3.25-RUNTIME-IDENTITY-TELEGRAM-HARDENING                                   ║
+║  RELEASE: V17.3.26-GMX-OFFICIAL-BIGINT-SERIALIZATION                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.3.25-RUNTIME-IDENTITY-TELEGRAM-HARDENING";
-export const BOT_BUILD = "V17.3.25";
+export const BOT_VERSION = "V17.3.26-GMX-OFFICIAL-BIGINT-SERIALIZATION";
+export const BOT_BUILD = "V17.3.26";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -60,6 +60,7 @@ async function loadGmxSdkSafe(){
   if(GmxApiSdk && PrivateKeySigner && getViemChain) return true;
   try {
     const sdk = require("@gmx-io/sdk/v2");
+const { serializeBigIntsInObject } = require("@gmx-io/sdk/utils/numbers");
     const chains = require("@gmx-io/sdk/configs/chains");
     GmxApiSdk = sdk?.GmxApiSdk || null;
     PrivateKeySigner = sdk?.PrivateKeySigner || null;
@@ -127,17 +128,9 @@ return JSON.stringify(value, (_key, v) => typeof v === "bigint" ? v.toString() :
 // where every BigInt becomes its base-10 string representation. This preserves all
 // 30-decimal / 6-decimal precision and avoids the SDK v1.8.2 JSON.stringify failure.
 function withGmxBigIntJsonBridge(fn) {
-  const proto = BigInt.prototype;
-  const hadOwn = Object.prototype.hasOwnProperty.call(proto, "toJSON");
-  const previous = proto.toJSON;
-  Object.defineProperty(proto, "toJSON", {
-    configurable: true, enumerable: false, writable: true,
-    value: function () { return this.toString(); }
-  });
-  return Promise.resolve().then(fn).finally(() => {
-    if (hadOwn) Object.defineProperty(proto, "toJSON", { configurable:true, enumerable:false, writable:true, value:previous });
-    else { try { delete proto.toJSON; } catch (_) {} }
-  });
+  // V17.3.26: kept as a compatibility wrapper only. Never monkey-patch
+  // BigInt.prototype: GMX SDK v2 prepare/sign require native BigInt values.
+  return Promise.resolve().then(fn);
 }
 
 function cloneGmxJsonExact(value, path = "$", audit = null) {
@@ -9828,7 +9821,10 @@ async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
       relayParams: prepared?.payload?.relayParams,
     };
     const bigintAudit = gmxBigIntAudit(rawEip712Data, "$.eip712Data");
-    const exactEip712Data = cloneGmxJsonExact(rawEip712Data, "$.eip712Data");
+    // V17.3.26: use the serializer shipped by GMX SDK for the HTTP boundary.
+    // It converts bigint values to the SDK's JSON-safe {type:"bigint",value:"..."}
+    // envelope instead of lossy Number conversion or ad-hoc decimal strings.
+    const exactEip712Data = serializeBigIntsInObject(rawEip712Data);
     const exactJsonProbe = assertGmxExactJson(rawEip712Data);
     console.log("[GMX][EXPRESS_SUBMIT_PREP]", {
       requestId: prepared?.requestId || null,
@@ -9851,7 +9847,7 @@ async function executeExpressOrderDiagnostic(sdk, request, signer, meta = {}) {
       idempotencyKey: prepared.idempotencyKey,
       eip712Data: exactEip712Data,
     };
-    const directSubmitClone = cloneGmxJsonExact(directSubmitRequest, "$.submit");
+    const directSubmitClone = serializeBigIntsInObject(directSubmitRequest);
     const directSubmitJson = JSON.stringify(directSubmitClone);
     console.log("[GMX][EXEC_STAGE] DIRECT_JSON_OK", {
       requestId: prepared?.requestId || null, bodyBytes: Buffer.byteLength(directSubmitJson, "utf8")
