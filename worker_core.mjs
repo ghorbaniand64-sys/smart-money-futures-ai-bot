@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.5.7-GMX-RELAY-DIAGNOSTICS-FIX";
-export const BOT_BUILD = "V17.5.7";
+export const BOT_VERSION = "V17.5.8-GMX-RELAY-FORENSICS";
+export const BOT_BUILD = "V17.5.8";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -9696,6 +9696,12 @@ function formatTelegramLiveExecutionStatus(result) {
     response?.reason ? `🔎 Relay Reason: ${telegramTextSafe(response.reason)}` : null,
     response?.revertReason ? `↩️ Revert Reason: ${telegramTextSafe(response.revertReason)}` : null,
     response?.revertData ? `🧱 Revert Data: ${telegramTextSafe(String(response.revertData).slice(0,180))}` : null,
+    result?.statusDiagnostic?.submitCode ? `📨 Submit Error Code: ${telegramTextSafe(result.statusDiagnostic.submitCode)}` : null,
+    result?.statusDiagnostic?.submitMessage ? `📨 Submit Error: ${telegramTextSafe(result.statusDiagnostic.submitMessage)}` : null,
+    result?.statusDiagnostic?.submitTraceId ? `🧬 Submit Trace ID: ${telegramTextSafe(result.statusDiagnostic.submitTraceId)}` : null,
+    result?.statusDiagnostic?.preparedTraceId ? `🧬 Prepared Trace ID: ${telegramTextSafe(result.statusDiagnostic.preparedTraceId)}` : null,
+    Array.isArray(result?.preparedValidationWarnings) && result.preparedValidationWarnings.length ? `⚠️ Prepare Validation: ${telegramTextSafe(jsonStringifySafe(result.preparedValidationWarnings).slice(0,260))}` : null,
+    Array.isArray(result?.preparedWarnings) && result.preparedWarnings.length ? `⚠️ Prepare Warnings: ${telegramTextSafe(jsonStringifySafe(result.preparedWarnings).slice(0,260))}` : null,
     `❌ GMX Reason: ${telegramTextSafe(err)}`,
     terminal ? "🟢 GMX relay reports EXECUTED — verifying on-chain position next." : "❌ No confirmed execution; this is NOT counted as Executed."
   ].filter(Boolean).join("\n");
@@ -9838,6 +9844,12 @@ async function executeGmxOrder(sdk, request, signer, meta = {}) {
   return {
     ...submitted,
     requestId: submitted?.requestId || prepared?.requestId || null,
+    submitResponse: submitted || null,
+    preparedTraceId: prepared?.traceId || null,
+    preparedExpiresAt: prepared?.expiresAt || null,
+    preparedWarnings: Array.isArray(prepared?.warnings) ? prepared.warnings : [],
+    preparedValidationWarnings: Array.isArray(prepared?.validationWarnings) ? prepared.validationWarnings : [],
+    preparedEstimates: prepared?.estimates || null,
   };
 }
 
@@ -9916,7 +9928,16 @@ async function pollLiveOrderStatus(sdk, requestId, timeoutMs = 60000, intervalMs
       lastResponse = response || null;
       const status = String(response?.status || "unknown").toLowerCase();
       if (terminal.has(status)) {
-        return { available: true, terminal: true, timedOut: false, status, response, polls, elapsedMs: Date.now() - started };
+        const forensic = {
+          requestId,
+          status,
+          polls,
+          elapsedMs: Date.now() - started,
+          response: response || null,
+          diagnostic: orderStatusDiagnostic({ response }),
+        };
+        try { console.warn("[GMX][ORDER_STATUS_FORENSICS]", jsonStringifySafe(forensic)); } catch (_) {}
+        return { available: true, terminal: true, timedOut: false, status, response, polls, elapsedMs: Date.now() - started, forensic };
       }
       // A successful read with a non-terminal state is meaningful, but remains
       // inconclusive until the documented terminal state is reached.
@@ -10121,8 +10142,21 @@ if (orderStatusResult?.available && orderStatusResult?.terminal && orderStatus !
     reason:`GMX_ORDER_${orderStatus.toUpperCase()}`,
     stage:"GMX_ORDER_STATUS", requestId:result?.requestId||null,
     status:orderStatus, statusResponse:orderStatusResult?.response||null,
-    statusError:orderStatusFailureReason(orderStatusResult), statusDiagnostic:orderStatusDiagnostic(orderStatusResult),
-    submitResponse:result||null, recovery:orderStatusResult?.recovery||null, positionVerified:false,
+    statusError:orderStatusFailureReason(orderStatusResult),
+    statusDiagnostic:{
+      ...orderStatusDiagnostic(orderStatusResult),
+      submitCode: result?.error?.code || null,
+      submitMessage: result?.error?.message || null,
+      submitTraceId: result?.traceId || null,
+      preparedTraceId: result?.preparedTraceId || null,
+      preparedExpiresAt: result?.preparedExpiresAt || null,
+    },
+    statusForensics:orderStatusResult?.forensic||null,
+    submitResponse:result?.submitResponse || result || null,
+    preparedWarnings:result?.preparedWarnings||[],
+    preparedValidationWarnings:result?.preparedValidationWarnings||[],
+    preparedEstimates:result?.preparedEstimates||null,
+    recovery:orderStatusResult?.recovery||null, positionVerified:false,
     walletBefore, walletAfter:walletAfterFailure, walletDelta:delta,
     collateralToken:collateral.symbol, collateralUsd:finalCollateralUsd, executionKey:lock.key
   };
