@@ -1,9 +1,9 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
-║  V17.4.4 — GMX SDK BIGINT TRANSPORT FIX + PREPARE/SIGN/SUBMIT                                          ║
+║  V17.5.0 — CANONICAL GMX EXECUTION + PREPARE/SIGN/SUBMIT                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.4.4-GMX-SDK-BIGINT-TRANSPORT-FIX                                   ║
+║  RELEASE: V17.5.0-GMX-CANONICAL-EXECUTION                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.4.4-GMX-SDK-BIGINT-TRANSPORT-FIX";
-export const BOT_BUILD = "V17.4.4";
+export const BOT_VERSION = "V17.5.0-GMX-CANONICAL-EXECUTION";
+export const BOT_BUILD = "V17.5.0";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -43,15 +43,14 @@ function safeFormatPrice(value) {
   }
 }
 
-// V17.4.2 LIVE EXECUTION — OFFICIAL GMX SDK TRANSPORT + BIGINT SUBMIT FALLBACK
+// V17.4.1 LIVE EXECUTION — OFFICIAL GMX SDK TRANSPORT
 // V17.2.4 LIVE DIAGNOSTICS + SELECTION REPAIR
 // V17.1.6 SDK SAFE LOADER
 // CommonJS resolution is intentional: GMX SDK 1.8.2 may expose a broken
 // ESM subpath in GitHub Actions while the package is resolvable via require().
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-let serializeBigIntsInObject = null;
-try { serializeBigIntsInObject = require("@gmx-io/sdk/utils/numbers")?.serializeBigIntsInObject || null; } catch (_) {}
+
 
 let GmxApiSdk = null;
 let PrivateKeySigner = null;
@@ -459,7 +458,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.3.22-GMX-EXPRESS-EXACT-SERIALIZATION",
+VERSION: "V17.5.0-GMX-CANONICAL-EXECUTION",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -594,20 +593,9 @@ RADAR_LIVE_MAX_POSITIONS: 1,
 RADAR_LIVE_RISK_PER_TRADE: 0.005,
 RADAR_LIVE_CAPITAL_ALLOCATION: 0.03,
 RADAR_LIVE_MAX_POSITION_NOTIONAL_USD: 2500,
-// V16.1.4: qualified live signals may use the configured minimum order floor
-// when the wallet can fund it without exceeding the explicit minimum-order
-// risk ceiling. This changes sizing only; Core signal gates remain unchanged.
 RADAR_HOT_MAX_WALLET_RISK: 0.015,
-EXECUTION_MIN_WALLET_RISK: 0.015,
 RADAR_LIVE_REVERSAL_CONFIRMATIONS: 1,
 RADAR_LIVE_LEDGER_TTL_SEC: 86400,
-// V17.3.6: warm the GMX Router allowance before market scanning. This is a
-// read-only check when allowance is already sufficient; an on-chain ERC20
-// approval is sent only when the current one-position collateral ceiling is
-// not covered. Approval never transfers collateral and never changes sizing.
-ALLOWANCE_PREFLIGHT_ENABLED: true,
-ALLOWANCE_PREFLIGHT_ALL_AVAILABLE_COLLATERALS: true,
-ALLOWANCE_PREFLIGHT_MAX_TOKENS: 2,
 // V14.0.5.5: live collateral may be USDC or USDT when the selected GMX perp market supports it.
 LIVE_COLLATERAL_PREFERENCE: ["USDC","USDT"],
 RADAR_SUBREQUEST_RESERVE: 0,
@@ -4589,19 +4577,6 @@ async function runFullScan(env, scanOptions = {}) {
   const selection = selectPrioritySignals(signals, selectionBasePositions, {liveMode});
   const selectedEvents = selection.selected;
   selectedEvents.sort((a,b)=>hybridEventPriority(b)-hybridEventPriority(a));
-  // V17.3.13: LIVE execution is never allowed to proceed when the cycle-start
-  // allowance preflight did not actually run or did not finish READY. This
-  // prevents misleading "execution failures" caused by an unprepared wallet
-  // and forces the Telegram report to expose the exact preflight state.
-  if(liveMode && scanOptions?.allowancePreflight && (scanOptions.allowancePreflight.attempted!==true || scanOptions.allowancePreflight.ok!==true)){
-    const pf=scanOptions.allowancePreflight;
-    const reason=`LIVE_EXECUTION_BLOCKED_BY_ALLOWANCE_PREFLIGHT: attempted=${Boolean(pf.attempted)}, ok=${Boolean(pf.ok)}, skipped=${(pf.skipped||[]).join(",")||"-"}, errors=${(pf.errors||[]).map(e=>e?.error||e?.stage||"unknown").join(" | ")||"-"}`;
-    for(const signal of selectedEvents){
-      executionResults.push({executed:false,mode:"LIVE",symbol:signal.symbol,direction:signal.direction,reason,stage:"ALLOWANCE_PREFLIGHT_GUARD"});
-      errors.push({symbol:signal.symbol,error:reason});
-    }
-    selectedEvents.length=0;
-  }
   for(const signal of selectedEvents){
     const key=signal.id;
     try{
@@ -5792,12 +5767,7 @@ if (executionEnabled(env)) {
   exits = await FUTURES_V6.updatePaperPositions(env);
 }
  
-let allowancePreflight = {enabled:false,attempted:false,ok:true,approved:[],sufficient:[],skipped:["NOT_RUN"],errors:[],elapsedMs:0};
-if (executionEnabled(env)) {
-  // V17.3.6: warm Router allowance BEFORE scanning so an approval tx, if needed,
-  // is paid/waited for outside the signal's latency-critical execution path.
-  allowancePreflight = await preflightGmxCollateralAllowances(env);
-}
+const allowancePreflight = {enabled:false,attempted:false,ok:true,approved:[],sufficient:[],skipped:["EXECUTION_TIME_ONLY"],errors:[],elapsedMs:0};
 let scheduledOpenPositions = 0;
 try {
 const scheduledPositions = await FUTURES_V6.positions(env);
@@ -5819,8 +5789,7 @@ if (resourceGuardSnapshot.paused) {
   scan = await FUTURES_V6.scan(env, {
     additionalSubrequestReserve: scheduledPositionReserve,
     source: "cron",
-    scanId,
-    allowancePreflight
+    scanId
   });
 }
  
@@ -9100,58 +9069,6 @@ async function resolveLiveCollateralBalances(sdk,account,balances,rpcUrl){
   return {balances:result,source:[...new Set(source)],walletUsd:Object.values(result).reduce((sum,b)=>sum+Number(b?.usd||0),0)};
 }
 
-async function preflightGmxCollateralAllowances(env){
-  const started=Date.now();
-  const base={enabled:CONFIG.ALLOWANCE_PREFLIGHT_ENABLED!==false,attempted:false,ok:true,approved:[],sufficient:[],skipped:[],errors:[],elapsedMs:0,mode:executionEnabled(env)?"LIVE":"PAPER",walletUsd:0,balanceSource:[]};
-  if(CONFIG.ALLOWANCE_PREFLIGHT_ENABLED===false || !executionEnabled(env)){
-    base.ok=false;
-    base.skipped.push(executionEnabled(env)?"DISABLED_BY_CONFIG":"EXECUTION_DISABLED");
-    base.elapsedMs=Date.now()-started;
-    return base;
-  }
-  try{
-    const {sdk,signer,account}=await getLiveContext(env);
-    const balances=await sdk.fetchWalletBalances({address:account});
-    const resolved=await resolveLiveCollateralBalances(sdk,account,balances,env.ARBITRUM_RPC);
-    const collateralBalances=resolved.balances;
-    const walletUsd=Number(resolved.walletUsd||0);
-    base.walletUsd=Number(walletUsd.toFixed(6));
-    base.balanceSource=resolved.source;
-    console.log("[BALANCE][PREFLIGHT]",{walletUsd:base.walletUsd,source:base.balanceSource,USDC:collateralBalances.USDC?.usd||0,USDT:collateralBalances.USDT?.usd||0});
-    if(!(walletUsd>0)){
-      base.ok=false;
-      base.skipped.push("NO_USDC_USDT_BALANCE_ONCHAIN_OR_API");
-      base.elapsedMs=Date.now()-started;
-      return base;
-    }
-    const symbols=CONFIG.ALLOWANCE_PREFLIGHT_ALL_AVAILABLE_COLLATERALS!==false
-      ? ["USDC","USDT"].filter(sym=>collateralBalances[sym]?.usd>0).slice(0,Math.max(1,Number(CONFIG.ALLOWANCE_PREFLIGHT_MAX_TOKENS||2)))
-      : [collateralBalances.USDC?.usd>0?"USDC":collateralBalances.USDT?.usd>0?"USDT":null].filter(Boolean);
-    base.attempted=symbols.length>0;
-    if(!symbols.length){ base.ok=false; base.skipped.push("NO_ELIGIBLE_COLLATERAL_SYMBOL"); }
-    for(const symbol of symbols){
-      const tokenUsd=Number(collateralBalances[symbol]?.usd||0);
-      const targetUsd=Math.min(tokenUsd,walletUsd*Number(CONFIG.MAX_CAPITAL_ALLOCATION||0.20));
-      if(!(targetUsd>0)){base.ok=false;base.skipped.push(`${symbol}:NO_TARGET`);continue;}
-      try{
-        const info=await ensureGmxCollateralAllowance(sdk,signer,account,symbol,toBigIntDecimal(targetUsd,6),balances,{rpcUrl:env.ARBITRUM_RPC});
-        if(info?.approved)base.approved.push({token:symbol,tokenAddress:info?.tokenAddress||null,requiredUsd:Number(targetUsd.toFixed(6)),txHash:info.approvalTxHash||null,allowanceAfter:info.allowanceAfter||null,polls:info.polls||0});
-        else base.sufficient.push({token:symbol,tokenAddress:info?.tokenAddress||null,requiredUsd:Number(targetUsd.toFixed(6)),allowanceAfter:info?.allowanceAfter||null});
-      }catch(error){
-        base.ok=false;
-        base.errors.push({token:symbol,stage:error?.executionStage||"ALLOWANCE_PREFLIGHT",error:safeError(error),meta:error?.executionMeta||null});
-      }
-    }
-  }catch(error){
-    base.ok=false;
-    base.errors.push({stage:error?.executionStage||"ALLOWANCE_PREFLIGHT_INIT",error:safeError(error),meta:error?.executionMeta||null});
-  }
-  base.elapsedMs=Date.now()-started;
-  console.log("[ALLOWANCE][PREFLIGHT]",base);
-  return base;
-}
-
-
 function findSdkMarket(markets, symbol) {
 const wanted = liveNormalizeSymbol(symbol);
 return markets.find(m => {
@@ -9740,195 +9657,52 @@ function executionStageError(stage, error, meta = {}) {
   return e;
 }
 
-function summarizeExpressValue(value, depth = 0) {
-  if (depth > 4) return "[MAX_DEPTH]";
-  if (typeof value === "bigint") return {type:"bigint",digits:value.toString().length,tail:value.toString().slice(-12)};
-  if (value === null || value === undefined) return value ?? null;
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
-  if (Array.isArray(value)) return value.slice(0,12).map(v=>summarizeExpressValue(v,depth+1));
-  if (typeof value === "object") {
-    const out={};
-    for (const [k,v] of Object.entries(value).slice(0,80)) out[k]=summarizeExpressValue(v,depth+1);
-    return out;
-  }
-  return String(value);
-}
-
-// V17.3.22: diagnostic three-stage Express flow with stage passthrough. Keep native BigInt values
-// untouched for GMX, but isolate prepare/sign/submit so a serialization
-// failure identifies the exact boundary instead of collapsing into one
-// EXECUTE_EXPRESS_ORDER error.
 async function executeGmxOrder(sdk, request, signer, meta = {}) {
   let prepared;
-  console.log("[GMX][EXEC_STAGE] PREPARE_START", {
-    symbol: meta?.symbol || request?.symbol || null,
-    direction: meta?.direction || request?.direction || null,
-    kind: request?.kind || null,
-    orderType: request?.orderType || null,
-    sizeType: typeof request?.size,
-    collateralAmountType: typeof request?.collateralToPay?.amount,
-  });
   try {
-    // Canonical GMX SDK flow: native BigInt enters prepareOrder unchanged.
     prepared = await sdk.prepareOrder(request);
-    console.log("[GMX][EXEC_STAGE] PREPARE_OK", {
-      requestId: prepared?.requestId || null,
-      payloadType: prepared?.payloadType || null,
-    });
   } catch (error) {
-    throw executionStageError("PREPARE", error, {
-      ...meta,
-      request: summarizeExpressValue(request),
-    });
+    throw executionStageError("PREPARE", error, meta);
   }
 
   let signature;
   try {
-    console.log("[GMX][EXEC_STAGE] SIGN_START", { requestId: prepared?.requestId || null });
     signature = await sdk.signOrder(prepared, signer);
-    console.log("[GMX][EXEC_STAGE] SIGN_OK", {
-      requestId: prepared?.requestId || null,
-      signatureType: typeof signature,
-    });
   } catch (error) {
     throw executionStageError("SIGN", error, {
       ...meta,
       requestId: prepared?.requestId || null,
-      payloadType: prepared?.payloadType || null,
-      payload: summarizeExpressValue(prepared?.payload),
     });
   }
 
+  const submitRequest = {
+    mode: prepared.mode,
+    requestId: prepared.requestId,
+    signature,
+    from: request.from,
+    idempotencyKey: prepared.idempotencyKey,
+    eip712Data: {
+      batchParams: prepared?.payload?.batchParams,
+      relayParams: prepared?.payload?.relayParams,
+    },
+  };
+
   let submitted;
   try {
-    // Do not stringify/clone/transform the GMX payload here. submitOrder is
-    // the official SDK transport boundary and receives exactly the fields
-    // produced by prepareOrder + signOrder.
-    const submitRequest = {
-      mode: prepared.mode,
-      requestId: prepared.requestId,
-      signature,
-      from: request.from,
-      idempotencyKey: prepared.idempotencyKey,
-      eip712Data: {
-        batchParams: prepared?.payload?.batchParams,
-        relayParams: prepared?.payload?.relayParams,
-      },
-    };
-    console.log("[GMX][EXEC_STAGE] SUBMIT_START", {
-      requestId: prepared?.requestId || null,
-      payloadType: prepared?.payloadType || null,
-      idempotencyKey: prepared?.idempotencyKey || null,
-    });
-    try {
-      submitted = await sdk.submitOrder(submitRequest);
-    } catch (error) {
-      const message = String(error?.message || error || "");
-      const bigintSerializationFailure = /Do not know how to serialize a BigInt|serialize a BigInt|BigInt.*serializ/i.test(message);
-      if (!bigintSerializationFailure) throw error;
-
-      // V17.4.4: the prepared/signature flow is already valid. The failure is
-      // at the SDK HTTP JSON boundary, where some SDK 1.8.x builds attempt
-      // JSON.stringify() on eip712Data containing native BigInt values.
-      // GMX's submit endpoint receives the signed EIP-712 payload as JSON;
-      // convert only the transport copy to decimal strings and retry the
-      // official SDK submitOrder() method. prepareOrder/signOrder remain native.
-      // V17.4.4: sdk.submitOrder() is failing locally while JSON.stringify()
-      // sees native BigInt inside the signed EIP-712 payload. Do NOT retry
-      // sdk.submitOrder() with ad-hoc decimal strings: that still enters the
-      // same SDK serializer and cannot solve the local failure.
-      // Instead, after this very specific pre-network serialization failure,
-      // submit the exact signed request directly to GMX's documented HTTP
-      // endpoint using GMX's own BigInt JSON serializer. This is safe here
-      // because the SDK call failed before it could submit the request.
-      if (typeof serializeBigIntsInObject !== "function") {
-        throw new Error("GMX_BIGINT_SERIALIZER_UNAVAILABLE");
-      }
-      const serializedBody = serializeBigIntsInObject(submitRequest);
-      const bodyJson = JSON.stringify(serializedBody);
-      const submitUrls = [
-        "https://arbitrum.gmxapi.io/v1/orders/txns/submit",
-        "https://arbitrum.gmxapi.ai/v1/orders/txns/submit",
-      ];
-      let directError = null;
-      for (const url of submitUrls) {
-        console.log("[GMX][SUBMIT_BIGINT_DIRECT_START]", {
-          requestId: prepared?.requestId || null,
-          url,
-          transport: "GMX_SERIALIZE_BIGINTS"
-        });
-        try {
-          const response = await fetch(url, {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              "accept": "application/json",
-            },
-            body: bodyJson,
-          });
-          const text = await response.text();
-          let data = null;
-          try { data = text ? JSON.parse(text) : null; } catch (_) { data = text; }
-          console.log("[GMX][SUBMIT_BIGINT_DIRECT_RESPONSE]", {
-            requestId: prepared?.requestId || null,
-            url,
-            status: response.status,
-            ok: response.ok,
-            response: summarizeExpressValue(data),
-          });
-          if (response.ok) {
-            submitted = data && typeof data === "object" ? data : { requestId: prepared?.requestId || null, status: "submitted" };
-            console.log("[GMX][SUBMIT_BIGINT_DIRECT_OK]", {
-              requestId: submitted?.requestId || prepared?.requestId || null,
-              status: submitted?.status || null,
-              txHash: submitted?.txHash || null,
-              taskId: submitted?.taskId || null,
-            });
-            break;
-          }
-          directError = new Error(`GMX_DIRECT_SUBMIT_HTTP_${response.status}: ${text.slice(0, 1000)}`);
-        } catch (directFailure) {
-          directError = directFailure;
-          console.log("[GMX][SUBMIT_BIGINT_DIRECT_ERROR]", {
-            requestId: prepared?.requestId || null,
-            url,
-            error: String(directFailure?.message || directFailure),
-          });
-        }
-      }
-      if (!submitted) throw directError || new Error("GMX_DIRECT_SUBMIT_FAILED");
-      console.log("[GMX][SUBMIT_BIGINT_RETRY_OK]", {
-        requestId: submitted?.requestId || prepared?.requestId || null,
-        status: submitted?.status || null,
-      });
-    }
-    console.log("[GMX][EXEC_STAGE] SUBMIT_OK", {
-      requestId: submitted?.requestId || prepared?.requestId || null,
-      status: submitted?.status || null,
-    });
+    // Official GMX SDK transport boundary.
+    // IMPORTANT: native BigInt values produced by prepareOrder are passed
+    // unchanged. No JSON stringify, manual serializer, or direct HTTP submit.
+    submitted = await sdk.submitOrder(submitRequest);
   } catch (error) {
     throw executionStageError("SUBMIT", error, {
       ...meta,
       requestId: prepared?.requestId || null,
-      idempotencyKey: prepared?.idempotencyKey || null,
-      payloadType: prepared?.payloadType || null,
-      response: summarizeExpressValue(error?.response),
     });
   }
 
   return {
     ...submitted,
     requestId: submitted?.requestId || prepared?.requestId || null,
-    diagnostic: {
-      flow: "prepare->sign->submit",
-      prepareOk: true,
-      signOk: true,
-      submitOk: true,
-      payloadType: prepared?.payloadType || null,
-      requestId: prepared?.requestId || null,
-      submitStatus: submitted?.status || null,
-      traceId: submitted?.traceId || prepared?.traceId || null,
-    },
   };
 }
 
@@ -9987,29 +9761,19 @@ if (!(riskBasedNotional>0)) throw new Error("Risk-based position sizing is inval
 const allocationNotional=collateralUsd*leverage;
 let notionalUsd=Math.min(allocationNotional,riskBasedNotional,CONFIG.MAX_POSITION_NOTIONAL_USD,capacityUsd>0?capacityUsd:Number.MAX_SAFE_INTEGER);
 
-// V16.1.5: no synthetic $10 (or any other) minimum order. Core sizing
-// remains risk-based. Only the live GMX market metadata may impose a minimum.
-const executionMinRisk=Number(CONFIG.EXECUTION_MIN_WALLET_RISK||0.015);
-const executionRiskCapNotional=stopFraction>0&&executionMinRisk>0 ? (walletUsd*executionMinRisk)/stopFraction : 0;
-notionalUsd=Math.min(notionalUsd,CONFIG.MAX_POSITION_NOTIONAL_USD,capacityUsd>0?capacityUsd:Number.MAX_SAFE_INTEGER,executionRiskCapNotional>0?executionRiskCapNotional:Number.MAX_SAFE_INTEGER);
+// No synthetic order floor and no extra execution-only risk gate.
+// Sizing is bounded by the existing strategy allocation/risk model and
+// the live GMX market's own capacity/minimum metadata.
 const maxCollateralUsd=Math.min(walletUsd*CONFIG.MAX_CAPITAL_ALLOCATION,CONFIG.MAX_POSITION_NOTIONAL_USD/Math.max(leverage,1));
 if (notionalUsd/Math.max(leverage,1)>maxCollateralUsd) notionalUsd=maxCollateralUsd*Math.max(leverage,1);
 let finalCollateralUsd=Math.min(maxCollateralUsd,Math.max(collateralUsd,notionalUsd/Math.max(leverage,1)));
 const requestedCollateralUsd=finalCollateralUsd;
 const marketMinPositionUsd=Number(market?.minPositionSizeUsd||0n)/1e30;
 const marketMinCollateralUsd=Number(market?.minCollateralUsd||0n)/1e30;
-if (marketMinPositionUsd>0 && notionalUsd<marketMinPositionUsd) throw new Error(`CORE_MARKET_MIN_POSITION_BLOCKED: marketMinimum=$${marketMinPositionUsd.toFixed(6)}, computed=$${notionalUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, stop=${(stopFraction*100).toFixed(2)}%, riskCap=$${executionRiskCapNotional.toFixed(6)}, allocationNotional=$${allocationNotional.toFixed(6)}, riskBasedNotional=$${riskBasedNotional.toFixed(6)}, capacity=$${capacityUsd.toFixed(6)}`);
+if (marketMinPositionUsd>0 && notionalUsd<marketMinPositionUsd) throw new Error(`CORE_MARKET_MIN_POSITION_BLOCKED: marketMinimum=$${marketMinPositionUsd.toFixed(6)}, computed=$${notionalUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, stop=${(stopFraction*100).toFixed(2)}%, allocationNotional=$${allocationNotional.toFixed(6)}, riskBasedNotional=$${riskBasedNotional.toFixed(6)}, capacity=$${capacityUsd.toFixed(6)}`);
 if (marketMinCollateralUsd>0) {
   if (walletUsd<marketMinCollateralUsd || maxCollateralUsd<marketMinCollateralUsd) throw new Error(`CORE_MARKET_MIN_COLLATERAL_BLOCKED: marketMinimum=$${marketMinCollateralUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, maxCollateral=$${maxCollateralUsd.toFixed(6)}, computedNotional=$${notionalUsd.toFixed(6)}`);
   finalCollateralUsd=Math.max(finalCollateralUsd,marketMinCollateralUsd);
-}
-// V17.3.8: GMX protocol-level minimum-after-fees viability guard.
-const minimumViableCollateralUsd=gmxMinimumViableCollateralUsd();
-if (finalCollateralUsd < minimumViableCollateralUsd) {
-  if (walletUsd < minimumViableCollateralUsd || maxCollateralUsd < minimumViableCollateralUsd) {
-    throw new Error(`EXECUTION_GMX_MIN_COLLATERAL_BLOCKED: requested=$${finalCollateralUsd.toFixed(6)}, minimumViable=$${minimumViableCollateralUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, maxCollateral=$${maxCollateralUsd.toFixed(6)}, allocation=${(allocation*100).toFixed(2)}%`);
-  }
-  finalCollateralUsd=minimumViableCollateralUsd;
 }
 let size, collateralAmount, tp, sl;
 try { size=toBigIntDecimal(notionalUsd,30); collateralAmount=toBigIntDecimal(finalCollateralUsd,6); tp=toBigIntDecimal(signal.tradePlan.tp1,30); sl=toBigIntDecimal(signal.tradePlan.stopLoss,30); } catch(error) { throw executionStageError("BUILD_BIGINTS", error, {notionalUsd,finalCollateralUsd}); }
@@ -10018,7 +9782,6 @@ try { lock=await acquireLiveExecutionLock(env, signal); } catch(error) { throw e
 if (!lock.acquired) return {executed:false,mode:"LIVE",reason:lock.reason,executionKey:lock.key};
 
 try {
-let usedCollateralUsd = finalCollateralUsd;
 const size1=toBigIntDecimal(notionalUsd*0.40,30);
 const size2=toBigIntDecimal(notionalUsd*0.30,30);
 const size3=toBigIntDecimal(notionalUsd*0.30,30);
@@ -10026,39 +9789,21 @@ const buildOrderRequest = (collateralUsdForOrder) => ({kind:"increase",symbol:sd
 
 let allowanceInfo;
 try {
-  allowanceInfo=await ensureGmxCollateralAllowance(sdk,signer,account,collateral.symbol,toBigIntDecimal(usedCollateralUsd,6),balances,{rpcUrl:env.ARBITRUM_RPC});
+  allowanceInfo=await ensureGmxCollateralAllowance(sdk,signer,account,collateral.symbol,toBigIntDecimal(finalCollateralUsd,6),balances,{rpcUrl:env.ARBITRUM_RPC});
 } catch(error) {
-  throw executionStageError("ALLOWANCE_PREFLIGHT", error, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:usedCollateralUsd>requestedCollateralUsd+0.000001}));
+  throw executionStageError("COLLATERAL_ALLOWANCE", error, {symbol:sdkSymbol,direction:orderDirection});
 }
 
-// V17.3.22: use the documented three-stage Express flow explicitly so the
-// exact BigInt/serialization boundary is visible. Native BigInt values are
-// preserved; no Number conversion or unprotected fallback is introduced.
 let result;
 try {
-  if (typeof sdk?.prepareOrder !== "function" || typeof sdk?.signOrder !== "function") {
-    throw new Error("GMX SDK manual Express prepare/sign methods are unavailable");
+  if (typeof sdk?.prepareOrder !== "function" || typeof sdk?.signOrder !== "function" || typeof sdk?.submitOrder !== "function") {
+    throw new Error("GMX SDK prepareOrder/signOrder/submitOrder methods are unavailable");
   }
-  result=await executeGmxOrder(sdk,buildOrderRequest(usedCollateralUsd),signer,{symbol:sdkSymbol,direction:orderDirection,requestHasTpsl:true});
+  result=await executeGmxOrder(sdk,buildOrderRequest(finalCollateralUsd),signer,{symbol:sdkSymbol,direction:orderDirection});
 } catch(error) {
-  if (isCollateralAfterFeesMinimumError(error)) {
-    const recoveryCollateralUsd=Math.min(maxCollateralUsd,Math.max(usedCollateralUsd,gmxMinimumViableCollateralUsd()));
-    if (recoveryCollateralUsd > usedCollateralUsd + 0.000001) {
-      usedCollateralUsd=recoveryCollateralUsd;
-      try { result=await executeGmxOrder(sdk,buildOrderRequest(usedCollateralUsd),signer,{symbol:sdkSymbol,direction:orderDirection,requestHasTpsl:true,retry:"MIN_COLLATERAL"}); }
-      catch(retryError) { throw executionStageError("EXECUTE_EXPRESS_ORDER_MIN_COLLATERAL", retryError, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:true,retryStage:retryError?.executionStage||null})); }
-    } else {
-      throw executionStageError("EXECUTE_EXPRESS_ORDER_MIN_COLLATERAL", error, executionViabilityMeta({walletUsd,allocation,maxCollateralUsd,requestedCollateralUsd,finalCollateralUsd:usedCollateralUsd,marketMinCollateralUsd,notionalUsd,leverage,adjusted:false}));
-    }
-  } else {
-    // Preserve the innermost diagnostic stage. Do not wrap EXPRESS_PREPARE,
-    // EXPRESS_SIGN, or EXPRESS_SUBMIT again, otherwise the outer execution
-    // result loses the exact boundary that failed.
-    if (error?.executionStage) throw error;
-    throw executionStageError("EXECUTE_EXPRESS_ORDER", error, {symbol:sdkSymbol,direction:orderDirection,requestHasTpsl:true});
-  }
+  if (error?.executionStage) throw error;
+  throw executionStageError("GMX_ORDER", error, {symbol:sdkSymbol,direction:orderDirection});
 }
-finalCollateralUsd = usedCollateralUsd;
 await markLiveExecutionSubmitted(env, lock.key, signal, result);
 
 // V17.3.4: A GMX Express submit acknowledgement is NOT execution.
@@ -10068,28 +9813,6 @@ await markLiveExecutionSubmitted(env, lock.key, signal, result);
 const orderStatusResult = await pollLiveOrderStatus(sdk, result?.requestId, 60000, 2000);
 const orderStatus = String(orderStatusResult?.status || result?.status || "unknown").toLowerCase();
 if (orderStatusResult?.available && orderStatusResult?.terminal && orderStatus !== "executed") {
-  if (orderStatus === "relay_failed" && isAllowanceRelayFailure(orderStatusResult)) {
-    let repairInfo=null;
-    try {
-      repairInfo=await forceRefreshGmxAllowance(sdk,signer,account,collateral.symbol,toBigIntDecimal(usedCollateralUsd,6),balances,env.ARBITRUM_RPC);
-      const retryResult=await executeGmxOrder(sdk,buildOrderRequest(usedCollateralUsd),signer,{symbol:sdkSymbol,direction:orderDirection,requestHasTpsl:true,retry:"ALLOWANCE_REPAIR"});
-      const retryStatusResult=await pollLiveOrderStatus(sdk,retryResult?.requestId,60000,2000);
-      const retryStatus=String(retryStatusResult?.status||retryResult?.status||"unknown").toLowerCase();
-      if(retryStatusResult?.available && retryStatusResult?.terminal && retryStatus === "executed") {
-        const verification=await verifyLiveEntrySettlement(sdk,account,sdkSymbol,orderDirection,collateral.symbol,walletBefore,5);
-        if(verification.verified){
-          const walletAfter=verification.walletAfter||await readLiveWalletSnapshot(sdk,account);
-          const walletDelta=Number.isFinite(Number(verification.walletDelta))?Number(verification.walletDelta):null;
-          const recovered={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:usedCollateralUsd,requestedCollateralUsd,minimumViableCollateralUsd,collateralAdjustedForGmxMinimum:usedCollateralUsd>requestedCollateralUsd+0.000001,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,allowance:{...allowanceInfo,relayRecovery:true,repair:repairInfo,retryRequestId:retryResult?.requestId||null},entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:retryResult?.requestId||null,status:retryStatus,positionVerified:true,walletBefore,walletAfter,walletDelta,settlementVerified:Boolean(verification.settled),executionKey:lock.key};
-          try { await sendTelegram(env,formatTelegramLiveEntry(recovered)); } catch(_) {}
-          return recovered;
-        }
-      }
-      orderStatusResult.recovery={attempted:true,repair:repairInfo,retryRequestId:retryResult?.requestId||null,retryStatus,retryStatusResponse:retryStatusResult?.response||null};
-    } catch(recoveryError) {
-      orderStatusResult.recovery={attempted:true,repair:repairInfo,recoveryError:safeError(recoveryError),recoveryStage:recoveryError?.executionStage||null};
-    }
-  }
   const walletAfterFailure = await readLiveWalletSnapshot(sdk, account);
   const tokenKey=String(collateral.symbol||"").toUpperCase();
   const beforeToken=Number(walletBefore?.[tokenKey]);
@@ -10128,7 +9851,7 @@ if (!verification.verified) {
 }
 const walletAfter=verification.walletAfter || await readLiveWalletSnapshot(sdk, account);
 const walletDelta=Number.isFinite(Number(verification.walletDelta)) ? Number(verification.walletDelta) : null;
-const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,requestedCollateralUsd,minimumViableCollateralUsd,collateralAdjustedForGmxMinimum:finalCollateralUsd>requestedCollateralUsd+0.000001,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,allowance:allowanceInfo,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:true,walletBefore,walletAfter,walletDelta,settlementVerified:Boolean(verification.settled),executionKey:lock.key};
+const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,requestedCollateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,allowance:allowanceInfo,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:result?.requestId||null,status:result?.status||null,positionVerified:true,walletBefore,walletAfter,walletDelta,settlementVerified:Boolean(verification.settled),executionKey:lock.key};
 try { await sendTelegram(env, formatTelegramLiveEntry(entryNotice)); } catch(_) {}
 return entryNotice;
 } catch (error) {

@@ -1,7 +1,11 @@
 {
-  "name": "smart-money-futures-ai-bot-v17-4-3",
+  "name": "smart-money-futures-ai-bot-v17-5-0-canonical-execution",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
-  "dependencies": { "@gmx-io/sdk": "1.8.2" }
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@gmx-io/sdk": "1.8.2"
+  }
 }

@@ -1,5 +1,5 @@
 // Smart Money Futures AI Bot — GitHub Actions adapter
-// V17.4.4-GITHUB-ACTIONS-CANONICAL-VERSION-HANDSHAKE
+// V17.5.0-GITHUB-ACTIONS-CANONICAL-EXECUTION
 // Imports the canonical root worker_core.mjs and fails fast on stale deployments.
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -7,7 +7,7 @@ import worker, { BOT_VERSION, BOT_BUILD } from "./worker_core.mjs";
 
 const ROOT = process.cwd();
 const STATE_DIR = path.join(ROOT, "state");
-const EXPECTED_WORKER_VERSION = BOT_VERSION;
+const EXPECTED_WORKER_VERSION = "V17.5.0-GMX-CANONICAL-EXECUTION";
 
 async function ensureStateFiles() {
   await fs.mkdir(STATE_DIR, { recursive: true });
@@ -73,7 +73,7 @@ async function buildEnv() {
     TELEGRAM_TOKEN: envValue("TELEGRAM_TOKEN"),
     TELEGRAM_CHAT_ID: envValue("TELEGRAM_CHAT_ID"),
     EXECUTION_ENABLED: envValue("EXECUTION_ENABLED", "true"),
-    EXPECTED_VERSION: EXPECTED_WORKER_VERSION,
+    EXPECTED_VERSION: envValue("EXPECTED_VERSION", EXPECTED_WORKER_VERSION),
     BOT_STATE: makeFileKvBinding("bot_state"),
     GMX_CACHE: makeFileKvBinding("gmx_cache")
   };
