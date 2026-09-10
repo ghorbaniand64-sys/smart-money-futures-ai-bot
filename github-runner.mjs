@@ -7,7 +7,7 @@ import worker, { BOT_VERSION, BOT_BUILD } from "./worker_core.mjs";
 
 const ROOT = process.cwd();
 const STATE_DIR = path.join(ROOT, "state");
-const EXPECTED_WORKER_VERSION = "V17.5.2-GMX-BIGINT-SAFE-MARKET-RESOLVER";
+const EXPECTED_WORKER_VERSION = "V17.5.3-GMX-LIVE-WALLET-SNAPSHOT-FIX";
 
 async function ensureStateFiles() {
   await fs.mkdir(STATE_DIR, { recursive: true });

@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.5.2-GMX-BIGINT-SAFE-MARKET-RESOLVER";
-export const BOT_BUILD = "V17.5.2";
+export const BOT_VERSION = "V17.5.3-GMX-LIVE-WALLET-SNAPSHOT-FIX";
+export const BOT_BUILD = "V17.5.3";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -9791,6 +9791,132 @@ async function executeGmxOrder(sdk, request, signer, meta = {}) {
   return {
     ...submitted,
     requestId: submitted?.requestId || prepared?.requestId || null,
+  };
+}
+
+
+// V17.5.3 — LIVE execution read/verification helpers.
+// These helpers intentionally use the documented SDK v2 account-read surfaces:
+// fetchWalletBalances(), fetchPositionsInfo(), and fetchOrderStatus().
+// Keep all native bigint values inside the SDK boundary; only convert values
+// to Number for human-readable diagnostics/comparisons.
+async function readLiveWalletSnapshot(sdk, account) {
+  if (!sdk || typeof sdk.fetchWalletBalances !== "function") {
+    throw new Error("GMX_SDK_FETCH_WALLET_BALANCES_UNAVAILABLE");
+  }
+  const balances = await sdk.fetchWalletBalances({ address: account });
+  const parsed = extractCollateralBalances(balances);
+  return {
+    USDC: Number(parsed?.USDC?.usd || 0),
+    USDT: Number(parsed?.USDT?.usd || 0),
+    walletUsd: Number(parsed?.USDC?.usd || 0) + Number(parsed?.USDT?.usd || 0),
+  };
+}
+
+async function pollLiveOrderStatus(sdk, requestId, timeoutMs = 60000, intervalMs = 2000) {
+  const terminal = new Set(["executed", "cancelled", "relay_failed", "relay_reverted"]);
+  if (!requestId) {
+    return { available: false, terminal: false, timedOut: false, status: "unknown", response: null, polls: 0, elapsedMs: 0, error: "MISSING_REQUEST_ID" };
+  }
+  if (!sdk || typeof sdk.fetchOrderStatus !== "function") {
+    return { available: false, terminal: false, timedOut: false, status: "unknown", response: null, polls: 0, elapsedMs: 0, error: "GMX_SDK_FETCH_ORDER_STATUS_UNAVAILABLE" };
+  }
+  const started = Date.now();
+  let polls = 0;
+  let lastResponse = null;
+  let lastError = null;
+  while (Date.now() - started < timeoutMs) {
+    polls += 1;
+    try {
+      const response = await sdk.fetchOrderStatus({ requestId });
+      lastResponse = response || null;
+      const status = String(response?.status || "unknown").toLowerCase();
+      if (terminal.has(status)) {
+        return { available: true, terminal: true, timedOut: false, status, response, polls, elapsedMs: Date.now() - started };
+      }
+      // A successful read with a non-terminal state is meaningful, but remains
+      // inconclusive until the documented terminal state is reached.
+      if (Date.now() - started >= timeoutMs) break;
+    } catch (error) {
+      lastError = safeError(error);
+    }
+    await new Promise(resolve => setTimeout(resolve, Math.max(250, intervalMs)));
+  }
+  const status = String(lastResponse?.status || "unknown").toLowerCase();
+  return {
+    available: Boolean(lastResponse),
+    terminal: terminal.has(status),
+    timedOut: true,
+    status,
+    response: lastResponse,
+    polls,
+    elapsedMs: Date.now() - started,
+    error: lastError,
+  };
+}
+
+function livePositionMatches(positions, sdkSymbol, direction) {
+  const wanted = liveNormalizeSymbol(sdkSymbol);
+  const wantedBase = liveNormalizeSymbol(String(sdkSymbol || "").split("/")[0]);
+  const isLong = direction === "long";
+  return (Array.isArray(positions) ? positions : []).find(position => {
+    if (!position || Boolean(position.isLong) !== isLong) return false;
+    const candidates = [position.indexName, position.symbol, position.marketSymbol, position.name]
+      .filter(Boolean)
+      .map(v => liveNormalizeSymbol(v));
+    const marketAddress = String(position.marketAddress || position.marketTokenAddress || position.market || "").toLowerCase();
+    const symbolAddress = String(sdkSymbol || "").match(/\[([^\]]+)\]/)?.[1]?.toLowerCase() || "";
+    const symbolMatch = candidates.some(v => v === wanted || v === wantedBase || wanted === v || wanted.startsWith(v));
+    const addressMatch = Boolean(symbolAddress && marketAddress && marketAddress === symbolAddress);
+    const size = Number(position.sizeInUsd || position.size || 0);
+    return (symbolMatch || addressMatch) && Number.isFinite(size) && size > 0;
+  }) || null;
+}
+
+async function verifyLiveEntrySettlement(sdk, account, sdkSymbol, direction, collateralSymbol, walletBefore, maxPolls = 5) {
+  let walletAfter = null;
+  let matchedPosition = null;
+  let lastError = null;
+  for (let poll = 0; poll < Math.max(1, Number(maxPolls) || 1); poll++) {
+    try {
+      const [positions, wallet] = await Promise.all([
+        sdk.fetchPositionsInfo({ address: account }),
+        readLiveWalletSnapshot(sdk, account),
+      ]);
+      walletAfter = wallet;
+      matchedPosition = livePositionMatches(positions, sdkSymbol, direction);
+      if (matchedPosition) {
+        const token = String(collateralSymbol || "").toUpperCase();
+        const before = Number(walletBefore?.[token]);
+        const after = Number(walletAfter?.[token]);
+        const delta = Number.isFinite(before) && Number.isFinite(after) ? after - before : null;
+        return {
+          verified: true,
+          settled: Number.isFinite(delta) ? delta < -0.000001 : false,
+          position: matchedPosition,
+          walletAfter,
+          walletDelta: delta,
+          polls: poll + 1,
+        };
+      }
+    } catch (error) {
+      lastError = safeError(error);
+    }
+    if (poll + 1 < Math.max(1, Number(maxPolls) || 1)) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+  const token = String(collateralSymbol || "").toUpperCase();
+  const before = Number(walletBefore?.[token]);
+  const after = Number(walletAfter?.[token]);
+  return {
+    verified: false,
+    settled: false,
+    position: null,
+    walletAfter,
+    walletDelta: Number.isFinite(before) && Number.isFinite(after) ? after - before : null,
+    polls: Math.max(1, Number(maxPolls) || 1),
+    error: lastError,
   };
 }
 
