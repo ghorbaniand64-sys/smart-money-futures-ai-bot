@@ -1,5 +1,5 @@
 // Smart Money Futures AI Bot — GitHub Actions adapter
-// V17.4.3-GITHUB-ACTIONS-CANONICAL-VERSION-HANDSHAKE
+// V17.4.4-GITHUB-ACTIONS-CANONICAL-VERSION-HANDSHAKE
 // Imports the canonical root worker_core.mjs and fails fast on stale deployments.
 import fs from "node:fs/promises";
 import path from "node:path";

@@ -1,9 +1,9 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
-║  V17.4.3 — GMX SDK BIGINT TRANSPORT FIX + PREPARE/SIGN/SUBMIT                                          ║
+║  V17.4.4 — GMX SDK BIGINT TRANSPORT FIX + PREPARE/SIGN/SUBMIT                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.4.3-GMX-SDK-BIGINT-TRANSPORT-FIX                                   ║
+║  RELEASE: V17.4.4-GMX-SDK-BIGINT-TRANSPORT-FIX                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.4.3-GMX-SDK-BIGINT-TRANSPORT-FIX";
-export const BOT_BUILD = "V17.4.3";
+export const BOT_VERSION = "V17.4.4-GMX-SDK-BIGINT-TRANSPORT-FIX";
+export const BOT_BUILD = "V17.4.4";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -50,6 +50,8 @@ function safeFormatPrice(value) {
 // ESM subpath in GitHub Actions while the package is resolvable via require().
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
+let serializeBigIntsInObject = null;
+try { serializeBigIntsInObject = require("@gmx-io/sdk/utils/numbers")?.serializeBigIntsInObject || null; } catch (_) {}
 
 let GmxApiSdk = null;
 let PrivateKeySigner = null;
@@ -9825,34 +9827,76 @@ async function executeGmxOrder(sdk, request, signer, meta = {}) {
       const bigintSerializationFailure = /Do not know how to serialize a BigInt|serialize a BigInt|BigInt.*serializ/i.test(message);
       if (!bigintSerializationFailure) throw error;
 
-      // V17.4.3: the prepared/signature flow is already valid. The failure is
+      // V17.4.4: the prepared/signature flow is already valid. The failure is
       // at the SDK HTTP JSON boundary, where some SDK 1.8.x builds attempt
       // JSON.stringify() on eip712Data containing native BigInt values.
       // GMX's submit endpoint receives the signed EIP-712 payload as JSON;
       // convert only the transport copy to decimal strings and retry the
       // official SDK submitOrder() method. prepareOrder/signOrder remain native.
-      const stringifyBigIntsForTransport = (value) => {
-        if (typeof value === "bigint") return value.toString();
-        if (Array.isArray(value)) return value.map(stringifyBigIntsForTransport);
-        if (value && typeof value === "object") {
-          const out = {};
-          for (const [key, child] of Object.entries(value)) {
-            out[key] = stringifyBigIntsForTransport(child);
+      // V17.4.4: sdk.submitOrder() is failing locally while JSON.stringify()
+      // sees native BigInt inside the signed EIP-712 payload. Do NOT retry
+      // sdk.submitOrder() with ad-hoc decimal strings: that still enters the
+      // same SDK serializer and cannot solve the local failure.
+      // Instead, after this very specific pre-network serialization failure,
+      // submit the exact signed request directly to GMX's documented HTTP
+      // endpoint using GMX's own BigInt JSON serializer. This is safe here
+      // because the SDK call failed before it could submit the request.
+      if (typeof serializeBigIntsInObject !== "function") {
+        throw new Error("GMX_BIGINT_SERIALIZER_UNAVAILABLE");
+      }
+      const serializedBody = serializeBigIntsInObject(submitRequest);
+      const bodyJson = JSON.stringify(serializedBody);
+      const submitUrls = [
+        "https://arbitrum.gmxapi.io/v1/orders/txns/submit",
+        "https://arbitrum.gmxapi.ai/v1/orders/txns/submit",
+      ];
+      let directError = null;
+      for (const url of submitUrls) {
+        console.log("[GMX][SUBMIT_BIGINT_DIRECT_START]", {
+          requestId: prepared?.requestId || null,
+          url,
+          transport: "GMX_SERIALIZE_BIGINTS"
+        });
+        try {
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "accept": "application/json",
+            },
+            body: bodyJson,
+          });
+          const text = await response.text();
+          let data = null;
+          try { data = text ? JSON.parse(text) : null; } catch (_) { data = text; }
+          console.log("[GMX][SUBMIT_BIGINT_DIRECT_RESPONSE]", {
+            requestId: prepared?.requestId || null,
+            url,
+            status: response.status,
+            ok: response.ok,
+            response: summarizeExpressValue(data),
+          });
+          if (response.ok) {
+            submitted = data && typeof data === "object" ? data : { requestId: prepared?.requestId || null, status: "submitted" };
+            console.log("[GMX][SUBMIT_BIGINT_DIRECT_OK]", {
+              requestId: submitted?.requestId || prepared?.requestId || null,
+              status: submitted?.status || null,
+              txHash: submitted?.txHash || null,
+              taskId: submitted?.taskId || null,
+            });
+            break;
           }
-          return out;
+          directError = new Error(`GMX_DIRECT_SUBMIT_HTTP_${response.status}: ${text.slice(0, 1000)}`);
+        } catch (directFailure) {
+          directError = directFailure;
+          console.log("[GMX][SUBMIT_BIGINT_DIRECT_ERROR]", {
+            requestId: prepared?.requestId || null,
+            url,
+            error: String(directFailure?.message || directFailure),
+          });
         }
-        return value;
-      };
-      const sanitizedSubmitRequest = {
-        ...submitRequest,
-        eip712Data: stringifyBigIntsForTransport(submitRequest.eip712Data),
-      };
-      console.log("[GMX][SUBMIT_BIGINT_RETRY]", {
-        requestId: prepared?.requestId || null,
-        reason: "SDK_JSON_BIGINT_SERIALIZATION",
-        eip712BigIntSanitized: true,
-      });
-      submitted = await sdk.submitOrder(sanitizedSubmitRequest);
+      }
+      if (!submitted) throw directError || new Error("GMX_DIRECT_SUBMIT_FAILED");
       console.log("[GMX][SUBMIT_BIGINT_RETRY_OK]", {
         requestId: submitted?.requestId || prepared?.requestId || null,
         status: submitted?.status || null,
