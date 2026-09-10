@@ -1,6 +1,6 @@
 /*
  GMX SMART MONEY FUTURES AI BOT — CLEAN CORE
- V18.1.0-CLEAN-HYBRID-FAST-REACTION
+ V18.2.0-SMART-MONEY-FAST-SR
 
  Purpose:
  - Preserve the Hybrid structure/event signal core.
@@ -15,8 +15,8 @@ import { createRequire } from "node:module";
 import crypto from "node:crypto";
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V18.1.0-CLEAN-HYBRID-FAST-REACTION";
-export const BOT_BUILD = "V18.1.0";
+export const BOT_VERSION = "V18.2.0-SMART-MONEY-FAST-SR";
+export const BOT_BUILD = "V18.2.0";
 
 let GmxApiSdk = null;
 let PrivateKeySigner = null;
@@ -75,8 +75,12 @@ const CONFIG = {
   ORACLE: "https://arbitrum-api.gmxinfra.io",
   ORACLE_PEERS: ["https://arbitrum-api.gmxinfra.io","https://arbitrum-api-fallback.gmxinfra.io","https://arbitrum-api-fallback.gmxinfra2.io"],
   CANDLE_LIMIT: 120,
-  BROAD_LIMIT: 126,
-  DEEP_LIMIT: 18,
+  BROAD_LIMIT: 1000,
+  DEEP_LIMIT: 24,
+  BROAD_5M_BATCH: 12,
+  OPTIONAL_15M: true,
+  ALT_CORRELATION_CAP: null,
+  CORRELATION_GATE_ENABLED: false,
   MAX_POSITIONS: 3,
   MAX_CAPITAL_ALLOCATION: 0.20,
   MAX_TOTAL_CAPITAL_ALLOCATION: 0.60,
@@ -88,19 +92,21 @@ const CONFIG = {
   TELEGRAM_ENABLED: true,
   TELEGRAM_DEDUPE_TTL_MS: 6*60*60*1000,
   HYBRID_SR: {
-    pivotLeft:2,pivotRight:2,lookback5m:120,lookback15m:120,lookback1h:120,lookback4h:120,
-    mergeAtrDistance:0.40,zoneAtrWidth:0.16,minTouches:2,maxZonesPerSide:8,proximityAtr:1.20,
+    pivotLeft:2,pivotRight:2,lookback5m:120,lookback15m:96,
+    mergeAtrDistance:0.35,zoneAtrWidth:0.14,minTouches:1,maxZonesPerSide:10,proximityAtr:1.35,
     rejectionWickRatio:0.30,rejectionCloseRatio:0.60,sweepDepthAtr:0.15,breakoutBufferAtr:0.10,retestToleranceAtr:0.22
   },
-  HYBRID_VOLUME: { expansionStrong:1.40, expansionExplosive:2.20, rangeExpansionStrong:1.25, rangeExpansionExplosive:1.80 },
+  HYBRID_VOLUME: { expansionStrong:1.25, expansionExplosive:1.90, rangeExpansionStrong:1.20, rangeExpansionExplosive:1.60 },
+  SMART_MONEY: { enabled:true, lookbackMs:5*60*1000, limit:750, largeNotionalUsd:5000, whaleNotionalUsd:25000, concentrationCap:0.55, minDirectionalImbalance:0.08, suspiciousRepeatCount:2 },
+  FAST_INDICATORS: { emaFast:9, emaSlow:21, rsiPeriod:14, macdFast:12, macdSlow:26, macdSignal:9, rocBars:3 },
   HYBRID_ENTRY: {
-    minEvidence:1,requireFlowOrVolume:false,minReactionVolumeRatio:1.10,minReactionFlowImbalance:0.08,
-    minBreakoutVolumeRatio:1.15,minBreakoutFlowImbalance:0.08,breakoutMinBodyRatio:0.45,retestMinBodyRatio:0.25,
-    breakoutRetestTtlMs:35*60*1000,maxChaseAtr:2.10,priorMovePct:0.20,minZoneQuality:2,maxEntryDistanceAtr:1.05,
+    minEvidence:1,requireFlowOrVolume:false,minReactionVolumeRatio:1.05,minReactionFlowImbalance:0.06,
+    minBreakoutVolumeRatio:1.05,minBreakoutFlowImbalance:0.06,breakoutMinBodyRatio:0.45,retestMinBodyRatio:0.25,
+    breakoutRetestTtlMs:35*60*1000,maxChaseAtr:2.40,priorMovePct:0.12,minZoneQuality:1,maxEntryDistanceAtr:1.20,
     maxRetestDistanceAtr:0.70,tierFastAllocation:0.45,tierNormalAllocation:0.75,tierPrimeAllocation:1.00,allowNeutralActivity:true,
-    earlyEnabled:true,earlyMinMovePct:0.12,earlyMinBodyRatio:0.35,earlyMinVolumeRatio:1.35,earlyMinFlowImbalance:0.07,
-    earlyMinAccelerationPct:0.04,earlyMaxEntryDistanceAtr:1.30,earlyPrebreakToleranceAtr:0.45,earlyMaxExtensionAtr:1.25,
-    earlyMinScore:62,earlyMinEdge:5,earlyMinElapsedMs:20000
+    earlyEnabled:true,earlyMinMovePct:0.10,earlyMinBodyRatio:0.30,earlyMinVolumeRatio:1.20,earlyMinFlowImbalance:0.06,
+    earlyMinAccelerationPct:0.03,earlyMaxEntryDistanceAtr:1.45,earlyPrebreakToleranceAtr:0.55,earlyMaxExtensionAtr:1.40,
+    earlyMinScore:58,earlyMinEdge:4,earlyMinElapsedMs:15000
   },
   HYBRID_RISK: { capitalAllocation:0.20,minLeverage:3,defaultLeverage:5,maxLeverage:10,stopAtrBuffer:0.25,tp1R:1,tp2R:2,tp3R:3 }
 };
@@ -147,10 +153,70 @@ async function fetchMarkets(){
 }
 async function fetchCandles(symbol,tf){
   const q={tokenSymbol:normalizeSymbol(symbol),period:tf,limit:CONFIG.CANDLE_LIMIT};
+  const errors=[];
   for(const base of CONFIG.ORACLE_PEERS){
-    try { const u=new URL(`${base}/prices/candles`); for(const [k,v] of Object.entries(q))u.searchParams.set(k,String(v)); const c=normalizeCandles(await fetchJson(u.toString(),{headers:{accept:"application/json"}})); if(c.length)return c; } catch(_){}
+    try { const u=new URL(`${base}/prices/candles`); for(const [k,v] of Object.entries(q))u.searchParams.set(k,String(v)); const c=normalizeCandles(await fetchJson(u.toString(),{headers:{accept:"application/json"}})); if(c.length)return c; errors.push("EMPTY"); } catch(e){errors.push(safeError(e));}
   }
-  throw new Error(`No candles: ${symbol} ${tf}`);
+  throw new Error(`No candles: ${symbol} ${tf} | ${errors.join(" | ")}`);
+}
+
+function tradeRows(payload){
+  if(Array.isArray(payload))return payload;
+  for(const k of ["trades","data","rows","result","items"]){if(Array.isArray(payload?.[k]))return payload[k];}
+  return [];
+}
+function tradeSymbol(t){return normalizeSymbol(t?.symbol||t?.indexTokenSymbol||t?.indexName||t?.marketSymbol||t?.market?.symbol||t?.market?.indexTokenSymbol||"");}
+function tradeAccount(t){return String(t?.account||t?.user||t?.wallet||t?.address||t?.trader||"").toLowerCase();}
+function tradeTimestamp(t){return num(t?.timestamp??t?.updatedAt??t?.blockTimestamp??t?.createdAt)*((num(t?.timestamp??t?.updatedAt??t?.blockTimestamp??t?.createdAt)<1e12)?1000:1);}
+function tradeNotional(t){
+  for(const v of [t?.sizeDeltaUsd,t?.sizeUsd,t?.notionalUsd,t?.positionSizeUsd,t?.size,t?.collateralUsd]){const n=num(v);if(n>0){if(n>1e18)return n/1e30;return n;}}
+  return 0;
+}
+function tradeDirection(t){
+  const d=String(t?.direction||t?.marketDirection||t?.side||"").toLowerCase();
+  if(d.includes("long"))return "LONG"; if(d.includes("short"))return "SHORT";
+  return t?.isLong===true?"LONG":t?.isLong===false?"SHORT":"";
+}
+function tradeIsClose(t){const a=String(t?.eventName||t?.eventType||t?.action||t?.orderEvent||t?.type||"").toLowerCase();return /close|decrease|liquidat|stop|take.?profit/.test(a);}
+function tradeIsOpen(t){const a=String(t?.eventName||t?.eventType||t?.action||t?.orderEvent||t?.type||"").toLowerCase();return /open|increase|create|execut/.test(a)&&!tradeIsClose(t);}
+async function fetchSmartMoneyFlow(sdk){
+  const empty={imbalance:0,flowSpikeRatio:1,flowSurge:false,explosiveFlow:false,largeTradeCount:0,smartWalletCount:0,suspiciousWalletCount:0,walletConcentration:0,bySymbol:{},source:"NONE",available:false};
+  if(!CONFIG.SMART_MONEY.enabled||!sdk?.searchTrades)return empty;
+  try{
+    const from=Date.now()-CONFIG.SMART_MONEY.lookbackMs;
+    const res=await sdk.searchTrades({forAllAccounts:true,fromTimestamp:Math.floor(from/1000),limit:CONFIG.SMART_MONEY.limit,showDebugValues:false});
+    const trades=tradeRows(res);
+    const by={};
+    for(const t of trades){
+      const symbol=tradeSymbol(t),account=tradeAccount(t),notional=tradeNotional(t),dir=tradeDirection(t),ts=tradeTimestamp(t);
+      if(!symbol||!account||!dir||!(notional>0)||!ts||ts<from)continue;
+      const close=tradeIsClose(t), open=tradeIsOpen(t)||!close;
+      let signed=0;
+      if(open) signed=dir==="LONG"?notional:-notional;
+      else signed=dir==="SHORT"?notional:-notional;
+      const b=by[symbol] ||= {net:0,openLong:0,openShort:0,closeLong:0,closeShort:0,notional:0,largeTradeCount:0,wallets:{},events:0};
+      b.net+=signed; b.notional+=notional; b.events++; if(open&&dir==="LONG")b.openLong+=notional; if(open&&dir==="SHORT")b.openShort+=notional; if(close&&dir==="LONG")b.closeLong+=notional; if(close&&dir==="SHORT")b.closeShort+=notional;
+      if(notional>=CONFIG.SMART_MONEY.largeNotionalUsd){b.largeTradeCount++;const w=b.wallets[account] ||= {notional:0,count:0,net:0};w.notional+=notional;w.count++;w.net+=signed;}
+    }
+    for(const b of Object.values(by)){const ws=Object.values(b.wallets).sort((a,c)=>c.notional-a.notional);const totalLarge=ws.reduce((a,w)=>a+w.notional,0);const top=ws[0]?.notional||0;b.walletConcentration=totalLarge>0?top/totalLarge:0;b.smartWalletCount=ws.length;b.suspiciousWalletCount=ws.filter(w=>w.count>=CONFIG.SMART_MONEY.suspiciousRepeatCount||w.notional>=CONFIG.SMART_MONEY.whaleNotionalUsd).length;b.imbalance=b.notional>0?b.net/b.notional:0;b.flowSpikeRatio=b.notional>0?Math.max(1,b.largeTradeCount/(Math.max(1,b.events)*0.12)):1;b.flowSurge=b.flowSpikeRatio>=1.8;b.explosiveFlow=b.flowSpikeRatio>=3;delete b.wallets;}
+    return {imbalance:0,flowSpikeRatio:1,flowSurge:false,explosiveFlow:false,largeTradeCount:Object.values(by).reduce((n,b)=>n+b.largeTradeCount,0),smartWalletCount:Object.values(by).reduce((n,b)=>n+b.smartWalletCount,0),suspiciousWalletCount:Object.values(by).reduce((n,b)=>n+b.suspiciousWalletCount,0),walletConcentration:Math.max(0,...Object.values(by).map(b=>b.walletConcentration)),bySymbol:by,source:"GMX_SEARCH_TRADES_ALL_ACCOUNTS",available:trades.length>0};
+  }catch(e){console.warn("[SMART_MONEY][ERROR]",safeError(e));return empty;}
+}
+function smartMoneyForSymbol(flow,symbol,direction){
+  const b=flow?.bySymbol?.[normalizeSymbol(symbol)]||{};const aligned=Number(b.imbalance||0)*(direction==="LONG"?1:-1);
+  return {...b,imbalance:Number(b.imbalance||0),aligned,confirmed:aligned>=CONFIG.SMART_MONEY.minDirectionalImbalance||Number(b.suspiciousWalletCount||0)>0||Number(b.walletConcentration||0)>=CONFIG.SMART_MONEY.concentrationCap};
+}
+function fastIndicators(candles){
+  const a=Array.isArray(candles)?candles.filter(Boolean):[], closes=a.map(c=>num(c.close)).filter(x=>x>0);
+  const ema=(vals,p)=>{if(vals.length<p)return null;let e=vals.slice(0,p).reduce((x,y)=>x+y,0)/p,k=2/(p+1);for(let i=p;i<vals.length;i++)e=vals[i]*k+e*(1-k);return e;};
+  const ef=ema(closes,CONFIG.FAST_INDICATORS.emaFast),es=ema(closes,CONFIG.FAST_INDICATORS.emaSlow);
+  const p=CONFIG.FAST_INDICATORS.rsiPeriod;let gain=0,loss=0;if(closes.length>p){for(let i=closes.length-p;i<closes.length;i++){const d=closes[i]-closes[i-1];if(d>=0)gain+=d;else loss-=d;}gain/=p;loss/=p;}const rsi=loss===0?100:100-(100/(1+(gain/Math.max(loss,1e-12))));
+  const macdFast=ema(closes,CONFIG.FAST_INDICATORS.macdFast),macdSlow=ema(closes,CONFIG.FAST_INDICATORS.macdSlow),macd=(macdFast&&macdSlow)?macdFast-macdSlow:0;
+  const rocBars=CONFIG.FAST_INDICATORS.rocBars;const roc=closes.length>rocBars?((closes.at(-1)-closes.at(-1-rocBars))/closes.at(-1-rocBars))*100:0;
+  const ranges=a.slice(-20).map(c=>Math.max(0,num(c.high)-num(c.low))).filter(x=>x>0),recent=ranges.slice(-3).reduce((x,y)=>x+y,0)/Math.max(1,Math.min(3,ranges.length)),base=ranges.slice(0,-3).reduce((x,y)=>x+y,0)/Math.max(1,ranges.length-3),rangeRatio=base>0?recent/base:1;
+  const last=a.at(-1),m=hybridCandleMetrics(last||{}),price=num(last?.close),atr=num(hybridAtr(a.slice(0,-1),14))||price*0.005;
+  const trend=ef&&es?(ef>es?1:-1):0;const momentum=(Math.min(100,Math.abs(roc)*12)+Math.min(100,Math.abs(rsi-50)*2)+Math.min(100,rangeRatio*35))/3;
+  return {emaFast:ef,emaSlow:es,rsi:Number(rsi.toFixed(2)),macd:Number(macd.toFixed(8)),rocPct:Number(roc.toFixed(4)),rangeRatio:Number(rangeRatio.toFixed(3)),atr,bodyRatio:m.bodyRatio,trend,momentumScore:Number(momentum.toFixed(1)),bullish:trend>0&&rsi>=50&&macd>=0,bearish:trend<0&&rsi<=50&&macd<=0};
 }
 
 function topTraderScore(_topTrader,_symbol,_direction){ return {available:false,boost:0,alignment:0,policy:"NON_BLOCKING"}; }
@@ -162,18 +228,18 @@ function hybridAtr(candles, period=14){
   const n=Math.max(2,Number(period)||14);if(tr.length<n)return null;let value=tr.slice(0,n).reduce((x,y)=>x+y,0)/n;for(let i=n;i<tr.length;i++)value=((value*(n-1))+tr[i])/n;return Number.isFinite(value)&&value>0?value:null;
 }
 function hybridTsMs(ts){const n=Number(ts);if(!Number.isFinite(n)||n<=0)return 0;return n<1e12?n*1000:n;}
-function hybridCandleIntervalMs(tf){return ({'5m':300000,'15m':900000,'1h':3600000,'4h':14400000}[tf]||300000);}
+function hybridCandleIntervalMs(tf){return ({'5m':300000,'15m':900000}[tf]||300000);}
 function hybridClosedCandles(candles,tf){const a=Array.isArray(candles)?candles.filter(Boolean):[];if(a.length<2)return a;const ts=hybridTsMs(a.at(-1)?.timestamp);return ts>0&&ts+hybridCandleIntervalMs(tf)>Date.now()+5000?a.slice(0,-1):a;}
 function hybridCandleMetrics(c){const open=Number(c?.open),high=Number(c?.high),low=Number(c?.low),close=Number(c?.close),range=Math.max(0,high-low),body=Math.abs(close-open);return{bullish:close>open,bearish:close<open,range,body,bodyRatio:range>0?body/range:0,lowerWick:range>0?(Math.min(open,close)-low)/range:0,upperWick:range>0?(high-Math.max(open,close))/range:0,closeLocation:range>0?(close-low)/range:0};}
 function hybridFlowAligned(flow,direction){const f=Number(flow?.imbalance||0);return Number.isFinite(f)?(direction==='LONG'?f:-f):0;}
 function hybridFlowEvidence(flow,direction){const a=hybridFlowAligned(flow,direction),r=[];if(a>=0.15)r.push('SMART_MONEY_FLOW');if(a>=0.30)r.push('STRONG_SMART_MONEY_FLOW');if(Number(flow?.flowSpikeRatio||1)>=Number(CONFIG.SMART_MONEY_FLOW_SPIKE_THRESHOLD||1.8))r.push('FLOW_SURGE');if(Number(flow?.flowSpikeRatio||1)>=Number(CONFIG.SMART_MONEY_FLOW_EXPLOSIVE_THRESHOLD||3))r.push('EXPLOSIVE_FLOW');if(Number(flow?.largeTradeCount||0)>=1)r.push('LARGE_TRADE_PARTICIPATION');if(direction==='LONG'&&Number(flow?.longOpenUsd||0)>Number(flow?.longCloseUsd||0))r.push('LONG_OPENING_PRESSURE');if(direction==='SHORT'&&Number(flow?.shortOpenUsd||0)>Number(flow?.shortCloseUsd||0))r.push('SHORT_OPENING_PRESSURE');return r;}
 function hybridCollectPivots(candles,type,lookback){const a=(candles||[]).slice(-lookback),out=[],l=CONFIG.HYBRID_SR.pivotLeft,r=CONFIG.HYBRID_SR.pivotRight;for(let i=l;i<a.length-r;i++){const v=type==='R'?Number(a[i].high):Number(a[i].low);if(!(v>0))continue;let ok=true;for(let j=i-l;j<=i+r;j++)if(j!==i){const x=type==='R'?Number(a[j].high):Number(a[j].low);if((type==='R'&&x>=v)||(type==='S'&&x<=v)){ok=false;break;}}if(ok)out.push({price:v,at:hybridTsMs(a[i].timestamp)});}return out;}
 function hybridBuildZones(candlesByTf,currentPrice,currentAtr){
-  const atrValue=Number(currentAtr)>0?Number(currentAtr):currentPrice*0.005,all={S:[],R:[]},weights={'5m':1,'15m':1.4,'1h':1.8,'4h':2.1};
-  for(const [tf,raw] of Object.entries(candlesByTf||{})){const c=hybridClosedCandles(raw,tf),look=CONFIG.HYBRID_SR['lookback'+tf]||120,tfAtr=Number(hybridAtr(c,14))||atrValue;for(const type of ['S','R'])for(const p of hybridCollectPivots(c,type,look))all[type].push({...p,tf,weight:weights[tf]||1,tfAtr});}
+  const atrValue=Number(currentAtr)>0?Number(currentAtr):currentPrice*0.005,all={S:[],R:[]},weights={'5m':1,'15m':1.25};
+  for(const tf of ['5m','15m']){const raw=Array.isArray(candlesByTf?.[tf])?candlesByTf[tf]:[],c=hybridClosedCandles(raw,tf),look=CONFIG.HYBRID_SR['lookback'+tf]||96,tfAtr=Number(hybridAtr(c,14))||atrValue;for(const type of ['S','R'])for(const p of hybridCollectPivots(c,type,look))all[type].push({...p,tf,weight:weights[tf]||1,tfAtr});}
   const out={support:[],resistance:[]};
-  for(const type of ['S','R']){const zones=[];for(const p of all[type].sort((a,b)=>b.at-a.at)){const mergeDistance=Math.max(atrValue*CONFIG.HYBRID_SR.mergeAtrDistance,Number(p.tfAtr||atrValue)*0.25),zoneWidth=Math.max(atrValue*CONFIG.HYBRID_SR.zoneAtrWidth,Number(p.tfAtr||atrValue)*0.08);let z=zones.find(x=>Math.abs(x.center-p.price)<=mergeDistance);if(!z){z={center:p.price,low:p.price-zoneWidth,high:p.price+zoneWidth,touches:0,weight:0,timeframes:new Set(),lastAt:p.at};zones.push(z);}z.touches++;z.weight+=p.weight;z.timeframes.add(p.tf);z.center=(z.center*(z.touches-1)+p.price)/z.touches;z.low=Math.min(z.low,p.price-zoneWidth);z.high=Math.max(z.high,p.price+zoneWidth);z.lastAt=Math.max(z.lastAt,p.at);}
-    const usable=zones.filter(z=>z.touches>=CONFIG.HYBRID_SR.minTouches||z.timeframes.size>=2).map(z=>({...z,timeframes:[...z.timeframes],quality:Number((z.touches+Math.min(3,z.timeframes.size)*0.75+Math.min(3,z.weight)*0.25).toFixed(2)),distanceAtr:Math.abs(currentPrice-z.center)/atrValue})).filter(z=>z.quality>=CONFIG.HYBRID_ENTRY.minZoneQuality).sort((a,b)=>b.quality-a.quality||a.distanceAtr-b.distanceAtr).slice(0,CONFIG.HYBRID_SR.maxZonesPerSide);
+  for(const type of ['S','R']){const zones=[];for(const p of all[type].sort((a,b)=>b.at-a.at)){const mergeDistance=Math.max(atrValue*CONFIG.HYBRID_SR.mergeAtrDistance,Number(p.tfAtr||atrValue)*0.22),zoneWidth=Math.max(atrValue*CONFIG.HYBRID_SR.zoneAtrWidth,Number(p.tfAtr||atrValue)*0.06);let z=zones.find(x=>Math.abs(x.center-p.price)<=mergeDistance);if(!z){z={center:p.price,low:p.price-zoneWidth,high:p.price+zoneWidth,touches:0,weight:0,timeframes:new Set(),lastAt:p.at};zones.push(z);}z.touches++;z.weight+=p.weight;z.timeframes.add(p.tf);z.center=(z.center*(z.touches-1)+p.price)/z.touches;z.low=Math.min(z.low,p.price-zoneWidth);z.high=Math.max(z.high,p.price+zoneWidth);z.lastAt=Math.max(z.lastAt,p.at);}
+    const usable=zones.filter(z=>z.touches>=CONFIG.HYBRID_SR.minTouches||z.timeframes.size>=2).map(z=>({...z,timeframes:[...z.timeframes],quality:Number((z.touches+Math.min(2,z.timeframes.size)*0.6+Math.min(2,z.weight)*0.2).toFixed(2)),distanceAtr:Math.abs(currentPrice-z.center)/atrValue})).filter(z=>z.quality>=CONFIG.HYBRID_ENTRY.minZoneQuality).sort((a,b)=>b.quality-a.quality||a.distanceAtr-b.distanceAtr).slice(0,CONFIG.HYBRID_SR.maxZonesPerSide);
     if(type==='S')out.support=usable;else out.resistance=usable;}return out;
 }
 function hybridNearestZone(zones,price,maxAtr,atrValue,side){const tol=atrValue*maxAtr;return(zones||[]).filter(z=>side==='S'?Number(z.center)<=price+tol&&price>=Number(z.low)-tol:Number(z.center)>=price-tol&&price<=Number(z.high)+tol).sort((a,b)=>a.distanceAtr-b.distanceAtr||b.quality-a.quality)[0]||null;}
@@ -276,7 +342,7 @@ function hybridEarlyImpulse(symbol,candles,flow,debugStats=null){
     return reject('EXTENSION',{extensionAtr:Number(extension.toFixed(3))});
   bump('extensionPass');
 
-  const zones=hybridBuildZones({"5m":closed,"15m":[],"1h":[],"4h":[]},price,atr);
+  const zones=hybridBuildZones({"5m":closed,"15m":[]},price,atr);
 
   // For an early LONG, the relevant structural target is resistance.
   // For an early SHORT, the relevant structural target is support.
@@ -373,15 +439,15 @@ function hybridEarlyImpulse(symbol,candles,flow,debugStats=null){
 }
 
 function hybridClassifyStructure(symbol,candles,price,flow,previousState={}){
-  const raw5=Array.isArray(candles['5m'])?candles['5m']:[],c5=hybridClosedCandles(raw5,'5m'),c15=hybridClosedCandles(candles['15m']||[],'15m'),c1h=hybridClosedCandles(candles['1h']||[],'1h'),c4h=hybridClosedCandles(candles['4h']||[],'4h'),current=raw5.at(-1)||c5.at(-1);if(!current)return{state:'NO_DATA',direction:'NONE',entries:[],zones:{support:[],resistance:[]}};
-  const atr5=Number(hybridAtr(c5,14))||price*0.005,zones=hybridBuildZones({'5m':c5,'15m':c15,'1h':c1h,'4h':c4h},price,atr5),vol=hybridVolumeContext(c5),entries=[],watched=[],priorC5=c5.slice(0,-1),preMove5=hybridPercentChange(priorC5,5),support=hybridNearestZone(zones.support,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'S'),resistance=hybridNearestZone(zones.resistance,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'R');
-  const pushReaction=(direction,trigger,zone,rx)=>{const distance=Math.abs(price-zone.center)/atr5;const priorOk=direction==='LONG'?preMove5<=-CONFIG.HYBRID_ENTRY.priorMovePct:preMove5>=CONFIG.HYBRID_ENTRY.priorMovePct;const structural=rx.confirmed&&distance<=CONFIG.HYBRID_ENTRY.maxEntryDistanceAtr;if(structural&&(priorOk||rx.sweep)){const evidence=[...(rx.evidence||[])];const confirmations=Number(Boolean(rx.sweep))+Number(Boolean(rx.flowOk))+Number(Boolean(rx.volumeOk));const tier=rx.sweep&&confirmations>=2?'PRIME':confirmations>=1?'NORMAL':'FAST';entries.push({direction,trigger,zone,evidence,atr:atr5,price,volume:vol,flow,entryDistanceAtr:distance,tier,confirmationCount:confirmations});}};
+  const raw5=Array.isArray(candles['5m'])?candles['5m']:[],c5=hybridClosedCandles(raw5,'5m'),c15=hybridClosedCandles(candles['15m']||[],'15m'),current=raw5.at(-1)||c5.at(-1);if(!current)return{state:'NO_DATA',direction:'NONE',entries:[],zones:{support:[],resistance:[]}};
+  const atr5=Number(hybridAtr(c5,14))||price*0.005,zones=hybridBuildZones({'5m':c5,'15m':c15},price,atr5),vol=hybridVolumeContext(c5),fast=fastIndicators(raw5),sm=smartMoneyForSymbol(flow,symbol,'LONG'),entries=[],watched=[],priorC5=c5.slice(0,-1),preMove5=hybridPercentChange(priorC5,5),support=hybridNearestZone(zones.support,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'S'),resistance=hybridNearestZone(zones.resistance,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'R');
+  const pushReaction=(direction,trigger,zone,rx)=>{const distance=Math.abs(price-zone.center)/atr5;const priorOk=direction==='LONG'?preMove5<=-CONFIG.HYBRID_ENTRY.priorMovePct:preMove5>=CONFIG.HYBRID_ENTRY.priorMovePct;const structural=rx.confirmed&&distance<=CONFIG.HYBRID_ENTRY.maxEntryDistanceAtr;const smart=smartMoneyForSymbol(flow,symbol,direction);const fastOk=direction==='LONG'?fast.bullish:fast.bearish;if(structural&&(priorOk||rx.sweep)&&(smart.confirmed||rx.sweep||fastOk)){const evidence=[...(rx.evidence||[])];if(smart.confirmed)evidence.push('SMART_MONEY_CONFIRMATION');if(smart.suspiciousWalletCount)evidence.push('SUSPICIOUS_WHALE_ACTIVITY');if(fastOk)evidence.push('FAST_INDICATOR_ALIGNMENT');const confirmations=Number(Boolean(rx.sweep))+Number(Boolean(rx.flowOk))+Number(Boolean(rx.volumeOk))+Number(Boolean(smart.confirmed));const tier=rx.sweep&&confirmations>=2?'PRIME':confirmations>=1?'NORMAL':'FAST';entries.push({direction,trigger,zone,evidence,atr:atr5,price,volume:vol,flow,smartMoney:smart,fastIndicators:fast,entryDistanceAtr:distance,tier,confirmationCount:confirmations,sweep:Boolean(rx.sweep)});}};
   if(support){const bounce=hybridReactionSupport(current,support,flow,vol,atr5);watched.push({type:'SUPPORT',zone:support,bounce});if(preMove5<=-CONFIG.HYBRID_ENTRY.priorMovePct)pushReaction('LONG','SUPPORT_BOUNCE',support,bounce);const br=hybridBreakout(current,support,'SHORT',flow,vol,atr5);if(br.broken)entries.push({direction:'WAIT',trigger:'SUPPORT_BREAK_WAIT_RETEST',zone:support,evidence:['SUPPORT_BROKEN',...(br.volumeOk?['ACTIVITY_CONFIRMATION']:[]),...(br.flowOk?['FLOW_CONFIRMATION']:[])],breakoutAt:Number(current.timestamp)||Date.now(),atr:atr5,price,flow,volume:vol});}
   if(resistance){const rej=hybridReactionResistance(current,resistance,flow,vol,atr5);watched.push({type:'RESISTANCE',zone:resistance,rejection:rej});if(preMove5>=CONFIG.HYBRID_ENTRY.priorMovePct)pushReaction('SHORT','RESISTANCE_REJECTION',resistance,rej);const br=hybridBreakout(current,resistance,'LONG',flow,vol,atr5);if(br.broken)entries.push({direction:'WAIT',trigger:'RESISTANCE_BREAK_WAIT_RETEST',zone:resistance,evidence:['RESISTANCE_BROKEN',...(br.volumeOk?['ACTIVITY_CONFIRMATION']:[]),...(br.flowOk?['FLOW_CONFIRMATION']:[])],breakoutAt:Number(current.timestamp)||Date.now(),atr:atr5,price,flow,volume:vol});}
   const next={...(previousState||{}),updatedAt:Date.now()},wait=entries.find(x=>x.direction==='WAIT');if(wait)next.pendingRetest={direction:wait.trigger.startsWith('SUPPORT')?'SHORT':'LONG',zone:wait.zone,zoneId:hybridZoneId(wait.zone),createdAt:Date.now(),breakoutAt:wait.breakoutAt,atr:atr5};if(next.pendingRetest&&Date.now()-Number(next.pendingRetest.createdAt||0)>CONFIG.HYBRID_ENTRY.breakoutRetestTtlMs)delete next.pendingRetest;
-  const p=next.pendingRetest;if(p){const fresh=Number(current.timestamp)>Number(p.breakoutAt||0),rt=fresh?hybridRetest(current,p.zone,p.direction,flow,vol,atr5):{confirmed:false,touched:false,holds:false,rejection:false,activity:false,aligned:hybridFlowAligned(flow,p.direction)};watched.push({type:'RETEST',zone:p.zone,direction:p.direction,retest:rt,freshCandle:fresh});const distance=Math.abs(price-Number(p.zone.center))/atr5;if(fresh&&rt.confirmed&&distance<=CONFIG.HYBRID_ENTRY.maxRetestDistanceAtr){entries.push({direction:p.direction,trigger:p.direction==='LONG'?'RESISTANCE_BREAK_RETEST_LONG':'SUPPORT_BREAK_RETEST_SHORT',zone:p.zone,evidence:['BREAKOUT_RETEST','RETEST_HOLD',...(rt.activity?['ACTIVITY']:[]),...(rt.aligned>=CONFIG.HYBRID_ENTRY.minReactionFlowImbalance?['FLOW_CONFIRMATION']:[])],atr:atr5,price,volume:vol,flow,entryDistanceAtr:distance});delete next.pendingRetest;}}
-  const move5=Math.abs(hybridPercentChange(c5,5)),extension=atr5>0?Math.abs(price-Number(current.open))/atr5:0,near=Boolean(support||resistance||p);if(!entries.length&&move5>=1.5&&extension>=CONFIG.HYBRID_ENTRY.maxChaseAtr&&!near)next.lastState='EXHAUSTED_NO_CHASE';else if(!entries.length)next.lastState=near?'WATCH_LEVEL':'NO_SETUP';
-  return{state:entries.length?(entries.some(e=>e.direction!=='WAIT')?'ENTRY_READY':'WAITING_RETEST'):next.lastState,direction:entries.find(e=>e.direction!=='WAIT')?.direction||'NONE',entries,zones,watched,volume:vol,atr:atr5,nextState:next,move5,preMove5,extension,eventFlags:{supportZone:Boolean(support),resistanceZone:Boolean(resistance),supportReaction:watched.some(x=>x.type==='SUPPORT'&&x.bounce?.confirmed),resistanceReaction:watched.some(x=>x.type==='RESISTANCE'&&x.rejection?.confirmed),breakout:entries.some(x=>x.trigger.includes('WAIT_RETEST')),waitingRetest:Boolean(next.pendingRetest),retestConfirmed:entries.some(x=>x.trigger.includes('RETEST')),exhausted:next.lastState==='EXHAUSTED_NO_CHASE'}};
+  const p=next.pendingRetest;if(p){const fresh=Number(current.timestamp)>Number(p.breakoutAt||0),rt=fresh?hybridRetest(current,p.zone,p.direction,flow,vol,atr5):{confirmed:false,touched:false,holds:false,rejection:false,activity:false,aligned:hybridFlowAligned(flow,p.direction)};watched.push({type:'RETEST',zone:p.zone,direction:p.direction,retest:rt,freshCandle:fresh});const distance=Math.abs(price-Number(p.zone.center))/atr5;const smart=smartMoneyForSymbol(flow,symbol,p.direction),fastOk=p.direction==='LONG'?fast.bullish:fast.bearish;if(fresh&&rt.confirmed&&distance<=CONFIG.HYBRID_ENTRY.maxRetestDistanceAtr&&(smart.confirmed||rt.aligned>=CONFIG.HYBRID_ENTRY.minReactionFlowImbalance||fastOk)){entries.push({direction:p.direction,trigger:p.direction==='LONG'?'RESISTANCE_BREAK_RETEST_LONG':'SUPPORT_BREAK_RETEST_SHORT',zone:p.zone,evidence:['BREAKOUT_RETEST','RETEST_HOLD',...(rt.activity?['ACTIVITY']:[]),...(smart.confirmed?['SMART_MONEY_CONFIRMATION']:[]),...(fastOk?['FAST_INDICATOR_ALIGNMENT']:[])],atr:atr5,price,volume:vol,flow,smartMoney:smart,fastIndicators:fast,entryDistanceAtr:distance,confirmationCount:Number(rt.activity)+Number(smart.confirmed)+Number(fastOk)});delete next.pendingRetest;}}
+  const move5=Math.abs(hybridPercentChange(c5,5)),extension=atr5>0?Math.abs(price-Number(current.open))/atr5:0,near=Boolean(support||resistance||p);if(!entries.length&&move5>=1.2&&extension>=CONFIG.HYBRID_ENTRY.maxChaseAtr&&!near)next.lastState='EXHAUSTED_NO_CHASE';else if(!entries.length)next.lastState=near?'WATCH_LEVEL':'NO_SETUP';
+  return{state:entries.length?(entries.some(e=>e.direction!=='WAIT')?'ENTRY_READY':'WAITING_RETEST'):next.lastState,direction:entries.find(e=>e.direction!=='WAIT')?.direction||'NONE',entries,zones,watched,volume:vol,fastIndicators:fast,atr:atr5,nextState:next,move5,preMove5,extension,eventFlags:{supportZone:Boolean(support),resistanceZone:Boolean(resistance),supportReaction:watched.some(x=>x.type==='SUPPORT'&&x.bounce?.confirmed),resistanceReaction:watched.some(x=>x.type==='RESISTANCE'&&x.rejection?.confirmed),breakout:entries.some(x=>x.trigger.includes('WAIT_RETEST')),waitingRetest:Boolean(next.pendingRetest),retestConfirmed:entries.some(x=>x.trigger.includes('RETEST')),exhausted:next.lastState==='EXHAUSTED_NO_CHASE'}};
 }
 function hybridLeverage(setup){let l=Number(CONFIG.HYBRID_RISK.defaultLeverage||5),t=String(setup?.trigger||'');if(t.includes('RETEST'))l=7;else if(t.includes('BOUNCE')||t.includes('REJECTION'))l=5;if(setup?.flow?.flowSurge)l=Math.max(l,7);if(setup?.flow?.explosiveFlow)l=Math.max(l,8);return Math.max(CONFIG.HYBRID_RISK.minLeverage,Math.min(CONFIG.HYBRID_RISK.maxLeverage,l));}
 function hybridSignalScore(entry,analysis,flow){
@@ -410,9 +476,8 @@ function hybridBuildSetup(symbol,analysis,flow,topTrader){
   const stopBase=direction==='LONG'?Number(zone.low):Number(zone.high),buffer=atrValue*CONFIG.HYBRID_RISK.stopAtrBuffer,stop=direction==='LONG'?stopBase-buffer:stopBase+buffer,r=Math.max(Math.abs(price-stop),buffer),oppositeZones=direction==='LONG'?(analysis.zones?.resistance||[]):(analysis.zones?.support||[]),levelTarget=oppositeZones.filter(z=>direction==='LONG'?Number(z.center)>price:Number(z.center)<price).sort((a,b)=>Math.abs(Number(a.center)-price)-Math.abs(Number(b.center)-price))[0],levelDistance=levelTarget?Math.abs(Number(levelTarget.center)-price):0,rMin=r*0.90,tp1=levelTarget&&levelDistance>=rMin?Number(levelTarget.center):(direction==='LONG'?price+r*CONFIG.HYBRID_RISK.tp1R:price-r*CONFIG.HYBRID_RISK.tp1R),tp2=direction==='LONG'?Math.max(price+r*CONFIG.HYBRID_RISK.tp2R,tp1+r*0.5):Math.min(price-r*CONFIG.HYBRID_RISK.tp2R,tp1-r*0.5),tp3=direction==='LONG'?Math.max(price+r*CONFIG.HYBRID_RISK.tp3R,tp2+r*0.5):Math.min(price-r*CONFIG.HYBRID_RISK.tp3R,tp2-r*0.5),trader=topTraderScore(topTrader, hybridNormalizeSymbol(symbol), direction);
   if((direction==='LONG'&&!(stop<price))||(direction==='SHORT'&&!(stop>price)))return null;if((direction==='LONG'&&!(tp1>price&&tp2>tp1&&tp3>tp2))||(direction==='SHORT'&&!(tp1<price&&tp2<tp1&&tp3<tp2)))return null;const tier=['FAST','NORMAL','PRIME'].includes(e.tier)?e.tier:(String(e.trigger).includes('RETEST')?'PRIME':'NORMAL');const mult=tier==='PRIME'?CONFIG.HYBRID_ENTRY.tierPrimeAllocation:tier==='NORMAL'?CONFIG.HYBRID_ENTRY.tierNormalAllocation:CONFIG.HYBRID_ENTRY.tierFastAllocation;const allocation=CONFIG.HYBRID_RISK.capitalAllocation*mult;
   const score=hybridSignalScore(e,analysis,flow),directionScores=hybridDirectionScores(e,analysis,flow);
-  return{valid:true,symbol:hybridNormalizeSymbol(symbol),direction,trigger:e.trigger,score,longScore:directionScores.longScore,shortScore:directionScores.shortScore,tier,state:'ENTRY_READY',entry:price,entryPrice:price,stopLoss:Number(stop.toFixed(8)),tp1:Number(tp1.toFixed(8)),tp2:Number(tp2.toFixed(8)),tp3:Number(tp3.toFixed(8)),atr:atrValue,stopDistance:r,stopPercent:Number((r/price*100).toFixed(3)),entryDistanceAtr:Number(entryDistanceAtr.toFixed(3)),leverage:hybridLeverage({trigger:e.trigger,flow}),allocation,allocationPercent:Number((allocation*100).toFixed(2)),riskPerTradePercent:Number((CONFIG.RISK_PER_TRADE*100).toFixed(2)),zone,zoneType:e.trigger.includes('SUPPORT')?'SUPPORT':'RESISTANCE',evidence:[...new Set([...(e.evidence||[]),...hybridFlowEvidence(flow,direction)])],confirmationCount:Number(e.confirmationCount||0),entryTier:tier,flow,topTrader:trader,topTraderPolicy:'CONFIRMATION_ONLY_NO_BLOCK',volume:analysis.volume,candleTimestamp:Number(candlesTimestamp(analysis))||0,createdAt:Date.now()};
+  return{valid:true,symbol:hybridNormalizeSymbol(symbol),direction,trigger:e.trigger,score,longScore:directionScores.longScore,shortScore:directionScores.shortScore,tier,state:'ENTRY_READY',entry:price,entryPrice:price,stopLoss:Number(stop.toFixed(8)),tp1:Number(tp1.toFixed(8)),tp2:Number(tp2.toFixed(8)),tp3:Number(tp3.toFixed(8)),atr:atrValue,stopDistance:r,stopPercent:Number((r/price*100).toFixed(3)),entryDistanceAtr:Number(entryDistanceAtr.toFixed(3)),leverage:hybridLeverage({trigger:e.trigger,flow}),allocation,allocationPercent:Number((allocation*100).toFixed(2)),riskPerTradePercent:Number((CONFIG.RISK_PER_TRADE*100).toFixed(2)),zone,zoneType:e.trigger.includes('SUPPORT')?'SUPPORT':'RESISTANCE',evidence:[...new Set([...(e.evidence||[]),...hybridFlowEvidence(flow,direction)])],confirmationCount:Number(e.confirmationCount||0),entryTier:tier,flow,smartMoney:e.smartMoney||smartMoneyForSymbol(flow,symbol,direction),fastIndicators:e.fastIndicators||analysis.fastIndicators,topTrader:trader,topTraderPolicy:'CONFIRMATION_ONLY_NO_BLOCK',volume:analysis.volume,candleTimestamp:Number(analysis?.candleTimestamp||0)||0,createdAt:Date.now()};
 }
-function candlesTimestamp(a){return a?.candles?.['5m']?.at(-1)?.timestamp||0;}
 function hybridEventPriority(signal){const s=signal?.hybridSetup||{},t=String(s.trigger||'');let p=0;if(t.includes('RETEST'))p+=40;else if(t.includes('BOUNCE')||t.includes('REJECTION'))p+=30;p+=Math.min(20,Number(s.zone?.quality||0)*2);const d=Number(s.entryDistanceAtr||9);p+=Math.max(0,12-d*8);const f=Math.abs(Number(s.flow?.imbalance||0));p+=Math.min(12,f*30);if(s.volume?.volumeSurge||s.volume?.rangeExpansion)p+=6;if(s.flow?.flowSurge)p+=5;if(s.flow?.explosiveFlow)p+=5;return p;}
 
 function hybridResolveIndexSymbol(m){
@@ -574,7 +639,7 @@ function executionTelegram(signal,result,error){
   return [`🟢 LIVE EXECUTION SUBMITTED`,`🪙 ${telegramTextSafe(result?.symbol)}`,`📌 Direction: ${telegramTextSafe(result?.direction)}`,`💰 Wallet: $${num(result?.walletUsd).toFixed(4)}`,`📦 Notional: $${num(result?.notionalUsd).toFixed(4)}`,`🔑 Request: ${telegramTextSafe(result?.requestId)}`,`📡 Status: ${telegramTextSafe(result?.status)}`].join("\n");
 }
 function cycleTelegram(result){
-  return [`🤖 GMX BOT — CYCLE REPORT`,`Status: ${telegramTextSafe(result.status)}`,`Universe: ${num(result.scanned)}`,`Deep: ${num(result.deepScanned)}`,`Signals: ${num(result.signals)}`,`Entry ready: ${num(result.entryReady)}`,`Executed: ${num(result.executed)}`,`Failures: ${num(result.failures)}`,`🛡️ Per position cap: 20% | Total cap: 60% | Max positions: 3`].join("\n");
+  return [`🤖 GMX BOT — CYCLE REPORT`,`Status: ${telegramTextSafe(result.status)}`,`Universe: ${num(result.scanned)}`,`5m analyzed: ${num(result.deepScanned)}`,`Signals: ${num(result.signals)}`,`Entry ready: ${num(result.entryReady)}`,`Executed: ${num(result.executed)}`,`Failures: ${num(result.failures)}`,`🛡️ Per position cap: 20% | Total cap: 60% | Max positions: 3`].join("\n");
 }
 async function sendTelegram(env,message){
   if(!CONFIG.TELEGRAM_ENABLED||!env.TELEGRAM_TOKEN||!env.TELEGRAM_CHAT_ID)return {ok:false,reason:"TELEGRAM_NOT_CONFIGURED"};
@@ -584,36 +649,107 @@ async function sendTelegram(env,message){
 function rankMarkets(markets){
   return markets.map(m=>({m,symbol:marketSymbol(m),price:marketPrice(m)})).filter(x=>x.symbol&&x.price>0).sort((a,b)=>Math.abs(num(b.m?.priceChange5m??b.m?.change5m))-Math.abs(num(a.m?.priceChange5m??a.m?.change5m)));
 }
+
+function normalizeGmxUsd(v){
+  if(typeof v==='bigint')return Number(v)/1e30;
+  const n=num(v);
+  if(n>=1e18)return n/1e30;
+  return n;
+}
+function positionDirection(p){return p?.isLong===true||String(p?.direction||p?.side||'').toLowerCase()==='long'?'LONG':'SHORT';}
+function positionSizeUsd(p){return normalizeGmxUsd(p?.sizeInUsd??p?.sizeUsd??p?.positionSizeUsd??p?.size);}
+function positionEntryPrice(p){return normalizeGmxUsd(p?.entryPrice??p?.entryPriceUsd??p?.averagePrice??p?.entryPrice30);}
+function positionSymbol(p){return normalizeSymbol(p?.indexName||p?.indexTokenSymbol||p?.symbol||p?.marketSymbol||'');}
+function orderTrigger(o){return normalizeGmxUsd(o?.triggerPrice??o?.triggerPriceUsd??o?.price);}
+function orderKey(o){return o?.key||o?.orderKey||o?.id||null;}
+function isTpOrder(o){const t=String(o?.orderType||o?.type||o?.orderTypeString||o?.eventName||'').toLowerCase();return Boolean(o?.isTakeProfit)||t.includes('take-profit')||t.includes('take_profit')||t==='takeprofit';}
+function isSlOrder(o){const t=String(o?.orderType||o?.type||o?.orderTypeString||o?.eventName||'').toLowerCase();return Boolean(o?.isStopLoss)||t.includes('stop-loss')||t.includes('stop_loss')||t==='stoploss';}
+function favorableHit(direction,price,target){return direction==='LONG'?price>=target:price<=target;}
+function smartDynamicStop(position,price,atr,tpLevel,stage){
+  const dir=positionDirection(position),entry=positionEntryPrice(position),a=Math.max(atr,entry*0.0025),buffer=a*(stage>=2?0.18:0.28);
+  const candidate=stage>=2?(dir==='LONG'?Math.max(entry,tpLevel-buffer):Math.min(entry,tpLevel+buffer)):(dir==='LONG'?Math.max(entry,entry+a*0.10):Math.min(entry,entry-a*0.10));
+  return Number(candidate.toFixed(8));
+}
+async function editStopOrder(sdk,signer,account,orderId,newTrigger){
+  const prepared=await sdk.prepareEditOrder({orderIds:[orderId],newTriggerPrice:toBigIntDecimal(newTrigger,30),mode:'express',from:account});
+  const signature=await sdk.signOrder(prepared,signer);
+  const body={mode:prepared.mode,requestId:prepared.requestId,signature,from:account,idempotencyKey:prepared.idempotencyKey,eip712Data:{batchParams:prepared?.payload?.batchParams,relayParams:prepared?.payload?.relayParams}};
+  const encoded=serializeBigIntsInObject(body);let last=null;
+  for(const base of CONFIG.API_PEERS){try{const r=await fetch(`${base}/orders/txns/submit`,{method:'POST',headers:{'content-type':'application/json',accept:'application/json'},body:JSON.stringify(encoded)});const text=await r.text();if(!r.ok){last=new Error(`GMX_EDIT_HTTP_${r.status}: ${text.slice(0,240)}`);continue;}const parsed=text?JSON.parse(text):{};return {requestId:parsed?.requestId||prepared.requestId,status:parsed?.status||'submitted'};}catch(e){last=e;}}
+  throw last||new Error('GMX_EDIT_STOP_FAILED');
+}
+async function monitorOpenPositions(env){
+  if(!executionEnabled(env)||!loadSdk())return {checked:0,protected:0,exits:0};
+  try{
+    const {sdk,signer,account}=await liveContext(env);
+    if(typeof sdk.fetchPositionsInfo!=='function')return {checked:0,protected:0,exits:0};
+    const positions=await sdk.fetchPositionsInfo({address:account,includeRelatedOrders:true});
+    const active=(Array.isArray(positions)?positions:[]).filter(p=>positionSizeUsd(p)>0);
+    if(!active.length)return {checked:0,protected:0,exits:0};
+    const symbols=[...new Set(active.map(positionSymbol).filter(Boolean))];
+    const tickers=typeof sdk.fetchMarketsTickers==='function'?await sdk.fetchMarketsTickers({symbols:symbols.map(x=>`${x}/USD`)}).catch(()=>[]):[];
+    const tickerBy={};for(const t of tickers||[]){const s=normalizeSymbol(t?.symbol||t?.indexName||t?.name||'');tickerBy[s]=t;}
+    const flow=await fetchSmartMoneyFlow(sdk);let protectedCount=0,exits=0;
+    for(const p of active){
+      const symbol=positionSymbol(p),dir=positionDirection(p),entry=positionEntryPrice(p);if(!symbol||!entry)continue;
+      const t=tickerBy[symbol],price=normalizeGmxUsd(t?.maxPrice??t?.minPrice??t?.price??t?.markPrice);if(!(price>0))continue;
+      const orders=Array.isArray(p?.relatedOrders)?p.relatedOrders:Array.isArray(p?.orders)?p.orders:[];
+      const tpOrders=orders.filter(isTpOrder).map(o=>({...o,trigger:orderTrigger(o)})).filter(o=>o.trigger>0).sort((a,b)=>dir==='LONG'?a.trigger-b.trigger:b.trigger-a.trigger);
+      const sl=orders.find(isSlOrder),slTrigger=orderTrigger(sl);
+      const hit=tpOrders.find(o=>favorableHit(dir,price,o.trigger));
+      if(hit&&sl&&orderKey(sl)){
+        const atr=Math.max(entry*0.0025,Math.abs(price-entry)*0.25),stage=tpOrders.length>=2?2:1,newStop=smartDynamicStop(p,price,atr,hit.trigger,stage);
+        const better=dir==='LONG'?newStop>slTrigger:newStop<slTrigger;
+        if(better){const edited=await editStopOrder(sdk,signer,account,orderKey(sl),newStop);protectedCount++;console.log('[EXIT][TP1_PROTECT]',{symbol,direction:dir,price,tpHit:hit.trigger,oldStop:slTrigger,newStop,status:edited.status});}
+      }
+      const sm=smartMoneyForSymbol(flow,symbol,dir),fast=fastIndicators(await fetchCandles(symbol,'5m').catch(()=>[]));
+      const severeOutflow=Number(sm.aligned||0)<=-0.18&&Number(sm.suspiciousWalletCount||0)>0;
+      const reversal=dir==='LONG'?(fast.bearish&&fast.rsi<45&&fast.macd<0):(fast.bullish&&fast.rsi>55&&fast.macd>0);
+      if(severeOutflow&&reversal){
+        console.warn('[EXIT][SMART_MONEY_OUTFLOW]',{symbol,direction:dir,price,aligned:sm.aligned,suspiciousWallets:sm.suspiciousWalletCount});
+        // Protective partial exit: close 50% only when smart-money outflow and fast reversal agree.
+        const size=positionSizeUsd(p),closeSize=toBigIntDecimal(size*0.5,30);
+        if(closeSize>0&&typeof sdk.prepareOrder==='function'){
+          const req={kind:'decrease',symbol:p?.indexName||`${symbol}/USD`,direction:dir.toLowerCase(),orderType:'market',size:closeSize,collateralToken:'USDC',receiveToken:'USDC',mode:'express',from:account};
+          try{const submitted=await prepareSignDirectSubmit(sdk,signer,req);exits++;console.log('[EXIT][SMART_MONEY_PARTIAL]',{symbol,direction:dir,requestId:submitted.requestId,status:submitted.status});}catch(e){console.error('[EXIT][SMART_MONEY_PARTIAL_FAILED]',{symbol,error:safeError(e)});}
+        }
+      }
+    }
+    return {checked:active.length,protected:protectedCount,exits};
+  }catch(e){console.error('[EXIT][MONITOR_ERROR]',safeError(e));return {checked:0,protected:0,exits:0,error:safeError(e)};}
+}
+
 async function runScan(env){
-  const scanId=`scheduled-${Date.now()}-${Math.random().toString(36).slice(2,8)}`; const started=Date.now();
-  const markets=await fetchMarkets(); const ranked=rankMarkets(markets); const deep=ranked.slice(0,CONFIG.DEEP_LIMIT);
-  const signals=[]; let deepOk=0; let eventCandidates=0;
-  const eventStats={supportZones:0,resistanceZones:0,supportReactions:0,resistanceReactions:0,breakouts:0,waitingRetests:0,retestConfirmed:0,earlyImpulses:0,entryReady:0};
-  for(const row of deep){
-    try{
-      const [c5,c15,c1,c4]=await Promise.all([fetchCandles(row.symbol,"5m"),fetchCandles(row.symbol,"15m"),fetchCandles(row.symbol,"1h"),fetchCandles(row.symbol,"4h")]);
-      const flow={imbalance:0,flowSpikeRatio:1,flowSurge:false,explosiveFlow:false};
-      const prev=stateCache.hybrid[row.symbol]||{};
-      const analysis=hybridClassifyStructure(row.symbol,{"5m":c5,"15m":c15,"1h":c1,"4h":c4},row.price,flow,prev);
-      stateCache.hybrid[row.symbol]=analysis.nextState||prev; deepOk++;
-      const ef=analysis.eventFlags||{}; const eventMap={supportZone:"supportZones",resistanceZone:"resistanceZones",supportReaction:"supportReactions",resistanceReaction:"resistanceReactions",breakout:"breakouts",waitingRetest:"waitingRetests",retestConfirmed:"retestConfirmed"}; for(const [src,dst] of Object.entries(eventMap)){if(ef[src])eventStats[dst]++;} if(ef.supportReaction||ef.resistanceReaction||ef.breakout||ef.waitingRetest||ef.retestConfirmed)eventCandidates++;
-      let setup=hybridBuildSetup(row.symbol,{...analysis,price:row.price},flow,null); const early=hybridEarlyImpulse(row.symbol,{"5m":c5},flow,null);
-      if(!setup&&early){setup=hybridBuildSetup(row.symbol,{...analysis,price:early.price,atr:early.atr,entries:[early],volume:early.volume},flow,null);if(setup){setup.early=true;setup.earlyScore=early.earlyScore;setup.edge=early.edge;setup.trigger=early.trigger;setup.evidence=[...(setup.evidence||[]),...(early.evidence||[])];eventStats.earlyImpulses++;}}
-      if(setup){eventStats.entryReady++; signals.push({id:crypto.randomUUID(),symbol:setup.symbol,market:pairSymbol(setup.symbol),direction:setup.direction,status:"ENTRY_READY",score:num(setup.earlyScore,setup.score),confidence:num(setup.earlyScore,setup.score),longScore:num(setup.longScore,setup.direction==="LONG"?setup.score:100-setup.score),shortScore:num(setup.shortScore,setup.direction==="SHORT"?setup.score:100-setup.score),edge:num(setup.edge,5),price:setup.entryPrice,tradePlan:buildPlan(row.symbol,{...analysis,price:setup.entryPrice,atr:setup.atr,entries:[{...analysis.entries?.find(e=>e.direction===setup.direction),...setup}]})||{valid:false},hybridSetup:setup,diagnostics:setup.evidence,generatedAt:Date.now(),executionEligible:true});}
-    }catch(e){console.error("[HYBRID][DEEP_ERROR]",{symbol:row.symbol,error:safeError(e)});}
+  const scanId=`scheduled-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;const started=Date.now();
+  if(!loadSdk())throw new Error("GMX_SDK_UNAVAILABLE");
+  const sdk=new GmxApiSdk({chainId:CONFIG.CHAIN_ID});
+  const markets=await fetchMarkets();
+  const universe=markets.map(m=>({m,symbol:marketSymbol(m),price:marketPrice(m)})).filter(x=>x.symbol&&x.price>0);
+  const smartFlow=await fetchSmartMoneyFlow(sdk);
+  const signals=[];let deepOk=0,deep5mFailed=0,optional15mFailed=0,eventCandidates=0;
+  const eventStats={supportZones:0,resistanceZones:0,supportReactions:0,resistanceReactions:0,breakouts:0,waitingRetests:0,retestConfirmed:0,earlyImpulses:0,entryReady:0,data5mReady:0,data5mFailed:0,data15mReady:0,data15mFailed:0,smartMoneySymbols:Object.keys(smartFlow.bySymbol||{}).length,suspiciousWallets:smartFlow.suspiciousWalletCount||0};
+  // Every active market receives a 5m pass. 15m is optional context only; 1h/4h are intentionally absent.
+  for(let i=0;i<universe.length;i+=CONFIG.BROAD_5M_BATCH){
+    const batch=universe.slice(i,i+CONFIG.BROAD_5M_BATCH);
+    await Promise.all(batch.map(async row=>{
+      try{
+        const c5=await fetchCandles(row.symbol,"5m");eventStats.data5mReady++;
+        let c15=[];try{c15=await fetchCandles(row.symbol,"15m");eventStats.data15mReady++;}catch(e){optional15mFailed++;eventStats.data15mFailed++;console.warn("[HYBRID][15M_OPTIONAL_FAIL]",{symbol:row.symbol,error:safeError(e)});}
+        const price=num(c5.at(-1)?.close,row.price);const flow=smartFlow;const prev=stateCache.hybrid[row.symbol]||{};
+        const analysis=hybridClassifyStructure(row.symbol,{"5m":c5,"15m":c15},price,flow,prev);analysis.price=price;analysis.candleTimestamp=c5.at(-1)?.timestamp||0;stateCache.hybrid[row.symbol]=analysis.nextState||prev;deepOk++;
+        const ef=analysis.eventFlags||{};for(const [src,dst] of Object.entries({supportZone:"supportZones",resistanceZone:"resistanceZones",supportReaction:"supportReactions",resistanceReaction:"resistanceReactions",breakout:"breakouts",waitingRetest:"waitingRetests",retestConfirmed:"retestConfirmed"})){if(ef[src])eventStats[dst]++;}if(ef.supportReaction||ef.resistanceReaction||ef.breakout||ef.waitingRetest||ef.retestConfirmed)eventCandidates++;
+        let setup=hybridBuildSetup(row.symbol,analysis,flow,null);
+        const early=hybridEarlyImpulse(row.symbol,{"5m":c5},smartMoneyForSymbol(flow,row.symbol,analysis.direction||"LONG"),null);
+        if(!setup&&early){const earlyAnalysis={...analysis,price:early.price,atr:early.atr,entries:[early],volume:early.volume,fastIndicators:fastIndicators(c5),candleTimestamp:early.candleTimestamp};setup=hybridBuildSetup(row.symbol,earlyAnalysis,flow,null);if(setup){setup.early=true;setup.earlyScore=early.earlyScore;setup.edge=early.edge;setup.trigger=early.trigger;setup.evidence=[...(setup.evidence||[]),...(early.evidence||[])];eventStats.earlyImpulses++;}}
+        if(setup){eventStats.entryReady++;const scores={longScore:num(setup.longScore),shortScore:num(setup.shortScore)};signals.push({id:crypto.randomUUID(),symbol:setup.symbol,market:pairSymbol(setup.symbol),direction:setup.direction,status:"ENTRY_READY",score:num(setup.score,setup.earlyScore||0),confidence:num(setup.score,setup.earlyScore||0),...scores,edge:num(setup.edge,5),price:setup.entryPrice,tradePlan:{valid:true,entry:setup.entryPrice,stopLoss:setup.stopLoss,tp1:setup.tp1,tp2:setup.tp2,tp3:setup.tp3,leverage:setup.leverage,allocation:setup.allocation,allocationPercent:setup.allocationPercent},hybridSetup:setup,diagnostics:setup.evidence,generatedAt:Date.now(),executionEligible:true});}
+        console.log("[HYBRID][MARKET]",{symbol:row.symbol,price,entryReady:Boolean(setup),state:analysis.state,smartMoney:smartMoneyForSymbol(flow,row.symbol,setup?.direction||analysis.direction||"LONG"),fast:{rsi:analysis.fastIndicators?.rsi,roc:analysis.fastIndicators?.rocPct,emaTrend:analysis.fastIndicators?.trend,rangeRatio:analysis.fastIndicators?.rangeRatio},support:analysis.zones?.support?.[0]?.center||null,resistance:analysis.zones?.resistance?.[0]?.center||null});
+      }catch(e){deep5mFailed++;eventStats.data5mFailed++;console.error("[HYBRID][DATA_REJECT]",{symbol:row.symbol,stage:"5m",error:safeError(e)});}
+    }));
   }
-  signals.sort((a,b)=>hybridEventPriority(b)-hybridEventPriority(a));
-  const selected=signals.slice(0,1); const executionResults=[];
-  for(const signal of selected){
-    try{
-      const {sdk,account}=await liveContext(env);
-      const bal=await liveBalanceUsd(sdk,account); const marketsSdk=await sdk.fetchMarkets(); const collateral=chooseCollateral(marketsSdk,signal.symbol,bal.raw);
-      let pf={ok:false}; if(collateral){try{const tmp=await allowanceOk(sdk,account,collateral.symbol,toBigIntDecimal(Math.max(0.000001,bal.walletUsd*num(signal.tradePlan.allocation,.2)),6));pf=tmp;}catch(e){pf={ok:false,reason:safeError(e)};}}
-      const result=await executeLiveSignal(signal,env,pf); executionResults.push(result); await sendTelegram(env,executionTelegram(signal,result,null));
-    }catch(e){executionResults.push({executed:false,symbol:signal.symbol,direction:signal.direction,error:safeError(e)});await sendTelegram(env,executionTelegram(signal,null,e));console.error("[TELEGRAM][EXECUTION_FAILURE]",{scanId,symbol:signal.symbol,sent:true,reason:"SENT"});}
-  }
-  const out={ok:true,status:signals.length?"ENTRY_READY":"WATCHING",scanId,scanned:markets.length,deepScanned:deepOk,signals:signals.length,entryReady:signals.length,executed:executionResults.filter(x=>x.executed).length,failures:executionResults.filter(x=>!x.executed).length,eventCandidates,eventStats,executionResults,durationMs:Date.now()-started};
-  await sendTelegram(env,cycleTelegram(out)); console.log("[HYBRID][SELECTION]",{scanId,candidates:signals.length,eligible:signals.length,selected:selected.length}); console.log("[SCHEDULED][DONE]",out); return out;
+  signals.sort((a,b)=>hybridEventPriority(b)-hybridEventPriority(a));const selected=signals.slice(0,1),executionResults=[];
+  for(const signal of selected){try{const {sdk:liveSdk,account}=await liveContext(env);const bal=await liveBalanceUsd(liveSdk,account);const marketsSdk=await liveSdk.fetchMarkets();const collateral=chooseCollateral(marketsSdk,signal.symbol,bal.raw);let pf={ok:false};if(collateral){try{pf=await allowanceOk(liveSdk,account,collateral.symbol,toBigIntDecimal(Math.max(0.000001,bal.walletUsd*num(signal.tradePlan.allocation,.2)),6));}catch(e){pf={ok:false,reason:safeError(e)}}}const result=await executeLiveSignal(signal,env,pf);executionResults.push(result);await sendTelegram(env,executionTelegram(signal,result,null));}catch(e){executionResults.push({executed:false,symbol:signal.symbol,direction:signal.direction,error:safeError(e)});await sendTelegram(env,executionTelegram(signal,null,e));console.error("[TELEGRAM][EXECUTION_FAILURE]",{scanId,symbol:signal.symbol,reason:safeError(e)});}}
+  const out={ok:true,status:signals.length?"ENTRY_READY":"WATCHING",scanId,scanned:universe.length,deepScanned:deepOk,signals:signals.length,entryReady:signals.length,executed:executionResults.filter(x=>x.executed).length,failures:executionResults.filter(x=>!x.executed).length,eventCandidates,eventStats,smartMoney:{available:smartFlow.available,symbols:Object.keys(smartFlow.bySymbol||{}).length,largeTrades:smartFlow.largeTradeCount,suspiciousWallets:smartFlow.suspiciousWalletCount,concentration:smartFlow.walletConcentration},optional15mFailed,durationMs:Date.now()-started};
+  await sendTelegram(env,cycleTelegram(out));console.log("[HYBRID][SELECTION]",{scanId,candidates:signals.length,eligible:signals.length,selected:selected.length});console.log("[SCHEDULED][DONE]",out);return out;
 }
 
 async function scheduled(env={}){
@@ -621,7 +757,9 @@ async function scheduled(env={}){
   const scanId=`scheduled-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
   console.log("[GITHUB][START]",{worker:"worker_core.mjs",expectedVersion:BOT_VERSION,actualWorkerVersion:BOT_VERSION,build:BOT_BUILD,executionEnabled:String(env.EXECUTION_ENABLED??true),executionEnabledSource:"github-env"});
   console.log("[EXECUTION][RUNTIME]",{mode:executionEnabled(env)?"LIVE":"SIGNAL",sdkLoaded:loadSdk()});
-  const out=await runScan(env); return {...out,scanId};
+  const exitMonitor=await monitorOpenPositions(env);
+  console.log("[EXIT][MONITOR]",exitMonitor);
+  const out=await runScan(env); return {...out,exitMonitor,scanId};
 }
 
 export default { scheduled };
