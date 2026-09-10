@@ -26,7 +26,7 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.5.4-GMX-STABLECOIN-BALANCE-FIX";
+export const BOT_VERSION = "V17.5.5-GMX-STABLECOIN-BALANCE-FIX-ROBUST";
 export const BOT_BUILD = "V17.5.4";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
@@ -9053,7 +9053,7 @@ async function resolveLiveCollateralBalances(sdk,account,balances,rpcUrl){
           const chainUsd=Number(chain.balance);
           // On-chain is authoritative for execution sizing, including zero.
           result[symbol]=chainUsd>0
-            ? {symbol,usd:chainUsd,balance:chainUsd,decimals:6,address,source:"ONCHAIN"}
+            ? {symbol,usd:chainUsd,balance:chainUsd,decimals:6,address,source:"ONCHAIN",interpretation:"ERC20_RAW_6_DECIMALS"}
             : null;
           source.push(`ONCHAIN_${symbol}${chainUsd>0?"":"_ZERO"}`);
         }
@@ -9105,21 +9105,60 @@ function tokenNumericBalance(entry) {
   const decimalsRaw=Number(b?.decimals ?? b?.token?.decimals ?? 6);
   const decimals=Number.isFinite(decimalsRaw)&&decimalsRaw>=0&&decimalsRaw<=36?decimalsRaw:6;
   const explicitUsd=Number(b?.balanceUsd ?? b?.balanceUSD ?? b?.usdValue ?? b?.valueUsd ?? b?.token?.usdValue ?? 0);
-  const humanCandidates=[b?.balanceFormatted,b?.balanceHuman,b?.uiAmount,b?.amountFormatted,b?.displayBalance,b?.token?.balanceFormatted];
+
+  // GMX API wallet responses can expose both a human token quantity and a USD
+  // value, while older wrappers may expose explicit raw/base-unit fields.
+  // Never divide an already-human `balance` by 10**decimals: that was the
+  // V17.5.4 failure that turned ~$28.87 into ~$0.000029.
+  const humanCandidates=[
+    b?.balanceFormatted,b?.balanceHuman,b?.uiAmount,b?.amountFormatted,
+    b?.displayBalance,b?.token?.balanceFormatted
+  ];
   let human=humanCandidates.map(Number).find(n=>Number.isFinite(n)&&n>0);
+  let interpretation=human>0?"FORMATTED_HUMAN":null;
+
   if(!(human>0)){
     const rawValue=b?.balanceRaw ?? b?.rawBalance ?? b?.tokenBalance ?? b?.amountRaw;
-    if(rawValue!=null){ const n=Number(rawValue); if(Number.isFinite(n)&&n>0) human=n/(10**decimals); }
-  }
-  if(!(human>0)){
-    const rawValue=b?.balance ?? b?.amount ?? b?.value;
-    const n=Number(rawValue);
-    if(Number.isFinite(n)&&n>0){
-      // GMX /balances/wallet returns `balance` in token base units.
-      human=n/(10**decimals);
+    if(rawValue!=null){
+      const n=Number(rawValue);
+      if(Number.isFinite(n)&&n>0){ human=n/(10**decimals); interpretation="EXPLICIT_RAW"; }
     }
   }
-  return {usd:explicitUsd>0?explicitUsd:human>0?human:0,balance:human>0?human:0,decimals};
+
+  if(!(human>0)){
+    const value=b?.balance ?? b?.amount ?? b?.value;
+    if(value!=null){
+      const text=String(value).trim();
+      const n=Number(value);
+      if(Number.isFinite(n)&&n>0){
+        // If a USD value exists, use it as a scale cross-check. A raw USDC
+        // amount will differ from USD by approximately 10**6; an API-human
+        // amount will be close to the USD amount.
+        if(explicitUsd>0){
+          const humanErr=Math.abs(n-explicitUsd)/Math.max(Math.abs(explicitUsd),1e-12);
+          const rawConverted=n/(10**decimals);
+          const rawErr=Math.abs(rawConverted-explicitUsd)/Math.max(Math.abs(explicitUsd),1e-12);
+          if(humanErr<=0.05 && rawErr>humanErr){
+            human=n; interpretation="BALANCE_HUMAN_BY_USD";
+          } else if(rawErr<=0.05 && humanErr>rawErr){
+            human=rawConverted; interpretation="BALANCE_RAW_BY_USD";
+          } else {
+            human=n; interpretation="BALANCE_HUMAN_DEFAULT";
+          }
+        } else if(/[.eE]/.test(text) || !Number.isInteger(n)) {
+          human=n; interpretation="BALANCE_HUMAN_DECIMAL";
+        } else if(n>1_000_000) {
+          human=n/(10**decimals); interpretation="BALANCE_RAW_LARGE_INTEGER";
+        } else {
+          // The v2 wallet endpoint is API-facing; absent an explicit raw field,
+          // treat the generic balance as human units rather than silently
+          // shrinking a normal $1-$100 wallet by 10**decimals.
+          human=n; interpretation="BALANCE_HUMAN_DEFAULT";
+        }
+      }
+    }
+  }
+  return {usd:explicitUsd>0?explicitUsd:human>0?human:0,balance:human>0?human:0,decimals,interpretation};
 }
 
 function extractCollateralBalances(balances) {
@@ -9139,7 +9178,7 @@ function extractCollateralBalances(balances) {
     // For execution sizing, the human token balance is the authoritative USD
     // quantity; on-chain RPC (when available) supersedes this API value below.
     const stableUsd=Number(parsed.balance||0);
-    const candidate={symbol,usd:stableUsd,balance:stableUsd,decimals:parsed.decimals,address:address||GMX_ARBITRUM_CANONICAL_COLLATERAL[symbol]||null,source:"GMX_API_STABLECOIN_BALANCE"};
+    const candidate={symbol,usd:stableUsd,balance:stableUsd,decimals:parsed.decimals,address:address||GMX_ARBITRUM_CANONICAL_COLLATERAL[symbol]||null,source:"GMX_API_STABLECOIN_BALANCE",interpretation:parsed.interpretation||"UNKNOWN"};
     // Prefer the largest positive balance when multiple wrapper entries exist.
     if(!result[symbol] || candidate.usd>Number(result[symbol].usd||0)) result[symbol]=candidate;
   }
@@ -9237,7 +9276,7 @@ function selectLiveCollateral(markets, symbol, balances) {
     const bal=available[preferred];
     if (!(bal?.usd>0)) continue;
     const market=findSdkMarketWithCollateral(markets,symbol,preferred);
-    if (market) return {symbol:preferred,usd:bal.usd,balance:bal.balance,decimals:bal.decimals,address:bal.address||GMX_ARBITRUM_CANONICAL_COLLATERAL[preferred],market};
+    if (market) return {symbol:preferred,usd:bal.usd,balance:bal.balance,decimals:bal.decimals,address:bal.address||GMX_ARBITRUM_CANONICAL_COLLATERAL[preferred],market,source:bal.source||"UNKNOWN",interpretation:bal.interpretation||"UNKNOWN"};
     diagnostics.push(`${preferred}:NO_MARKET_COLLATERAL_MATCH`);
   }
   return null;
@@ -9323,7 +9362,7 @@ async function resolveLiveCollateralForSignal(sdk, markets, symbol, balances) {
       } catch(e) { console.warn("[EXECUTION][MARKET_TICKER_RESOLVE]",safeError(e)); }
     }
     if(exact && !exact.isSpotOnly) {
-      return {symbol:preferred,usd:bal.usd,balance:bal.balance,decimals:bal.decimals,address:bal.address||GMX_ARBITRUM_CANONICAL_COLLATERAL[preferred],market:exact,resolution:"SDK_MARKETS_INFO_ADDRESS"};
+      return {symbol:preferred,usd:bal.usd,balance:bal.balance,decimals:bal.decimals,address:bal.address||GMX_ARBITRUM_CANONICAL_COLLATERAL[preferred],market:exact,resolution:"SDK_MARKETS_INFO_ADDRESS",source:bal.source||"UNKNOWN",interpretation:bal.interpretation||"UNKNOWN"};
     }
   }
   return null;
@@ -9986,7 +10025,7 @@ let finalCollateralUsd=Math.min(maxCollateralUsd,Math.max(collateralUsd,notional
 const requestedCollateralUsd=finalCollateralUsd;
 const marketMinPositionUsd=Number(market?.minPositionSizeUsd||0n)/1e30;
 const marketMinCollateralUsd=Number(market?.minCollateralUsd||0n)/1e30;
-if (marketMinPositionUsd>0 && notionalUsd<marketMinPositionUsd) throw new Error(`CORE_MARKET_MIN_POSITION_BLOCKED: marketMinimum=$${marketMinPositionUsd.toFixed(6)}, computed=$${notionalUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, stop=${(stopFraction*100).toFixed(2)}%, allocationNotional=$${allocationNotional.toFixed(6)}, riskBasedNotional=$${riskBasedNotional.toFixed(6)}, capacity=$${capacityUsd.toFixed(6)}, collateral=${collateral.symbol}, balanceSource=${collateral.source||"UNKNOWN"}`);
+if (marketMinPositionUsd>0 && notionalUsd<marketMinPositionUsd) throw new Error(`CORE_MARKET_MIN_POSITION_BLOCKED: marketMinimum=$${marketMinPositionUsd.toFixed(6)}, computed=$${notionalUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, stop=${(stopFraction*100).toFixed(2)}%, allocationNotional=$${allocationNotional.toFixed(6)}, riskBasedNotional=$${riskBasedNotional.toFixed(6)}, capacity=$${capacityUsd.toFixed(6)}, collateral=${collateral.symbol}, balanceSource=${collateral.source||"UNKNOWN"}, balanceInterpretation=${collateral.interpretation||"UNKNOWN"}`);
 if (marketMinCollateralUsd>0) {
   if (walletUsd<marketMinCollateralUsd || maxCollateralUsd<marketMinCollateralUsd) throw new Error(`CORE_MARKET_MIN_COLLATERAL_BLOCKED: marketMinimum=$${marketMinCollateralUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, maxCollateral=$${maxCollateralUsd.toFixed(6)}, computedNotional=$${notionalUsd.toFixed(6)}`);
   finalCollateralUsd=Math.max(finalCollateralUsd,marketMinCollateralUsd);
