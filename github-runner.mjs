@@ -1,5 +1,5 @@
 // Smart Money Futures AI Bot — GitHub Actions adapter
-// V17.4.0-GITHUB-ACTIONS-CANONICAL-EXECUTION
+// V17.4.1-GITHUB-ACTIONS-CANONICAL-EXECUTION
 // Imports the canonical root worker_core.mjs and fails fast on stale deployments.
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -7,7 +7,7 @@ import worker, { BOT_VERSION, BOT_BUILD } from "./worker_core.mjs";
 
 const ROOT = process.cwd();
 const STATE_DIR = path.join(ROOT, "state");
-const EXPECTED_WORKER_VERSION = "V17.4.0-GMX-CANONICAL-EXECUTION";
+const EXPECTED_WORKER_VERSION = "V17.4.1-GMX-CANONICAL-EXECUTION";
 
 async function ensureStateFiles() {
   await fs.mkdir(STATE_DIR, { recursive: true });

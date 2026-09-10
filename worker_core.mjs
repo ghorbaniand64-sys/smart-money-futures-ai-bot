@@ -1,9 +1,9 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
-║  V17.4.0 — CANONICAL GMX EXECUTION + PREPARE/SIGN/SUBMIT                                          ║
+║  V17.4.1 — CANONICAL GMX EXECUTION + PREPARE/SIGN/SUBMIT                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.4.0-GMX-CANONICAL-EXECUTION                                   ║
+║  RELEASE: V17.4.1-GMX-CANONICAL-EXECUTION                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.4.0-GMX-CANONICAL-EXECUTION";
-export const BOT_BUILD = "V17.4.0";
+export const BOT_VERSION = "V17.4.1-GMX-CANONICAL-EXECUTION";
+export const BOT_BUILD = "V17.4.1";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -43,7 +43,7 @@ function safeFormatPrice(value) {
   }
 }
 
-// V17.4.0 LIVE EXECUTION — OFFICIAL GMX SDK TRANSPORT
+// V17.4.1 LIVE EXECUTION — OFFICIAL GMX SDK TRANSPORT
 // V17.2.4 LIVE DIAGNOSTICS + SELECTION REPAIR
 // V17.1.6 SDK SAFE LOADER
 // CommonJS resolution is intentional: GMX SDK 1.8.2 may expose a broken
@@ -8783,6 +8783,20 @@ function toBigIntDecimal(value, decimals) {
   const d = Number(decimals);
   if (!Number.isInteger(d) || d < 0 || d > 80) throw new Error(`Invalid decimals: ${decimals}`);
   if (typeof value === "bigint") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error(`Invalid decimal value: ${value}`);
+    // Numeric values in this engine are IEEE-754 quantities. Values such as
+    // 5.7744086 can arrive as 5.774408600000001 even though the intended
+    // token amount has exactly 6 decimals. Quantize numeric inputs to the
+    // token precision before converting; never reject harmless binary-float
+    // residue as if it were real token precision.
+    const factor = 10 ** d;
+    if (!Number.isSafeInteger(Math.round(Math.abs(value) * factor))) {
+      const fixed = value.toFixed(d);
+      return toBigIntDecimal(fixed, d);
+    }
+    return BigInt(Math.round(value * factor));
+  }
   let s = String(value ?? "").trim().replace(/,/g, "");
   if (!s) throw new Error("Decimal value is empty");
   if (/e/i.test(s)) {
