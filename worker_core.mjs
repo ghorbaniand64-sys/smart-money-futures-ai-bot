@@ -3,7 +3,7 @@
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
 ║  V17.5.14 — STRUCTURE + SHARP-MOVE ENTRY ENGINE + FEE TELEMETRY                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.5.14-STRUCTURE-SHARP-MOVE                                   ║
+║  RELEASE: V17.5.15-DASHBOARD                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -26,7 +26,7 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.5.14-STRUCTURE-SHARP-MOVE";
+export const BOT_VERSION = "V17.5.15-DASHBOARD";
 export const BOT_BUILD = "V17.5.14";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
@@ -470,7 +470,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.5.0-GMX-CANONICAL-EXECUTION",
+VERSION: "V17.5.15-DASHBOARD",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -6027,6 +6027,15 @@ positions
  
  
  
+// V17.5.15 dashboard routes — read-only
+if(url.pathname === "/dashboard") {
+  return new Response(dashboardHtml(), { status:200, headers:{"content-type":"text/html; charset=UTF-8","cache-control":"no-store"} });
+}
+if(url.pathname === "/dashboard/data") {
+  try { return jsonResponse(await gmxDashboardData(env)); }
+  catch(error) { return jsonResponse({ok:false,error:safeError(error),version:"V17.5.15-DASHBOARD"},503); }
+}
+
 // ======================================================
 // V6 PRO SIGNAL ROUTES (MERGED)
 // ======================================================
