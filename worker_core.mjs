@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.5.8-GMX-RELAY-FORENSICS";
-export const BOT_BUILD = "V17.5.8";
+export const BOT_VERSION = "V17.5.10-GMX-COLLATERAL-RESOLVER-HARDENED";
+export const BOT_BUILD = "V17.5.10";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -9238,12 +9238,27 @@ function marketCollateralSymbols(market) {
   const raw=jsonStringifySafe(market||{}).toUpperCase();
   if(raw.includes("USDC")) out.add("USDC");
   if(raw.includes("USDT")) out.add("USDT");
-  // V17.3.15: GMX market metadata can expose collateral as token addresses
-  // rather than human-readable symbols. Address matching is authoritative for
-  // the two collateral tokens we support on Arbitrum.
+  // GMX market/config rows can expose the collateral as explicit long/short
+  // token addresses instead of symbols. Address matching is authoritative.
   if(marketHasTokenAddress(market,GMX_ARBITRUM_CANONICAL_COLLATERAL.USDC)) out.add("USDC");
   if(marketHasTokenAddress(market,GMX_ARBITRUM_CANONICAL_COLLATERAL.USDT)) out.add("USDT");
   return out;
+}
+
+function marketHasCanonicalCollateral(market, collateralSymbol) {
+  const canonical=String(collateralSymbol||"").toUpperCase();
+  const address=GMX_ARBITRUM_CANONICAL_COLLATERAL[canonical];
+  if(!address) return false;
+  if(marketHasTokenAddress(market,address)) return true;
+  // Explicit token-address fields are checked separately so this remains
+  // resilient even when a future SDK object stops serializing nested tokens.
+  const explicit=[
+    market?.longTokenAddress, market?.shortTokenAddress,
+    market?.longToken?.address, market?.shortToken?.address,
+    market?.longToken?.tokenAddress, market?.shortToken?.tokenAddress,
+    market?.longToken?.contractAddress, market?.shortToken?.contractAddress
+  ].filter(Boolean).map(String).map(x=>x.toLowerCase());
+  return explicit.includes(String(address).toLowerCase());
 }
 
 function marketMatchesRequestedSymbol(market,wanted) {
@@ -9262,7 +9277,7 @@ function findSdkMarketWithCollateral(markets, symbol, collateralSymbol) {
   const wanted=liveNormalizeSymbol(symbol);
   const collateral=String(collateralSymbol||"").toUpperCase();
   const matches=(markets||[]).filter(m=>!m?.isSpotOnly && marketMatchesRequestedSymbol(m,wanted));
-  const exact=matches.find(m=>marketCollateralSymbols(m).has(collateral));
+  const exact=matches.find(m=>marketHasCanonicalCollateral(m,collateral) || marketCollateralSymbols(m).has(collateral));
   if(exact) return exact;
   // If the SDK returned exactly one non-spot market for the requested index and
   // omitted token metadata entirely, preserve the previous safe single-market fallback.
@@ -9329,6 +9344,9 @@ function marketIndexMatches(market,wanted) {
 }
 
 async function resolveLiveCollateralForSignal(sdk, markets, symbol, balances) {
+  // V17.5.10: resolver hardening. Do not assume the first market-info/config
+  // row is the complete source of truth. GMX v2 exposes the market catalog,
+  // raw market info, config and tickers as separate read surfaces.
   const direct=selectLiveCollateral(markets,symbol,balances);
   if(direct) return {...direct,resolution:"SDK_MARKETS"};
 
@@ -9342,29 +9360,55 @@ async function resolveLiveCollateralForSignal(sdk, markets, symbol, balances) {
   try { if(typeof sdk.fetchMarketsConfig==="function") configs=await sdk.fetchMarketsConfig(); } catch(e) { console.warn("[EXECUTION][MARKET_CONFIG_FALLBACK]",safeError(e)); }
 
   const rows=[...(Array.isArray(infos)?infos:[]),...(Array.isArray(configs)?configs:[])];
-  const row=rows.find(m=>marketIndexMatches(m,wanted));
-  if(!row) return null;
+  const matchingRows=rows.filter(m=>marketIndexMatches(m,wanted));
 
-  const addresses=[...new Set([...marketAddressCandidates(row), ...marketAddressCandidates(row?.market)])];
-  for(const preferred of ["USDC","USDT"]) {
-    const bal=available[preferred];
-    if(!(bal?.usd>0)) continue;
-    const collateralAddress=GMX_ARBITRUM_CANONICAL_COLLATERAL[preferred].toLowerCase();
-    const collateralMatch=marketHasTokenAddress(row,collateralAddress);
-    if(!collateralMatch) continue;
+  // First resolve by the canonical collateral address from every matching row.
+  // SATS/USD is a WBTC-USDC market, so the pool must not be hard-coded to WETH-USDC.
+  for(const row of matchingRows) {
+    const addresses=[...new Set([...marketAddressCandidates(row), ...marketAddressCandidates(row?.market)])];
+    for(const preferred of ["USDC","USDT"]) {
+      const bal=available[preferred];
+      if(!(bal?.usd>0)) continue;
+      if(!(marketHasCanonicalCollateral(row,preferred) || marketCollateralSymbols(row).has(preferred))) continue;
 
-    let exact=addresses.map(a=>(markets||[]).find(m=>String(m?.marketTokenAddress||m?.marketAddress||m?.address||"").toLowerCase()===a)).find(Boolean)||null;
-    if(!exact && addresses.length && typeof sdk.fetchMarketsTickers==="function") {
-      try {
-        const tickers=await sdk.fetchMarketsTickers({addresses:[addresses[0]]});
-        const t=Array.isArray(tickers)?tickers[0]:null;
-        if(t?.symbol) exact={...row,...t,marketTokenAddress:t.marketTokenAddress||addresses[0]};
-      } catch(e) { console.warn("[EXECUTION][MARKET_TICKER_RESOLVE]",safeError(e)); }
-    }
-    if(exact && !exact.isSpotOnly) {
-      return {symbol:preferred,usd:bal.usd,balance:bal.balance,decimals:bal.decimals,address:bal.address||GMX_ARBITRUM_CANONICAL_COLLATERAL[preferred],market:exact,resolution:"SDK_MARKETS_INFO_ADDRESS",source:bal.source||"UNKNOWN",interpretation:bal.interpretation||"UNKNOWN"};
+      let exact=addresses.map(a=>(markets||[]).find(m=>String(m?.marketTokenAddress||m?.marketAddress||m?.address||"").toLowerCase()===a)).find(Boolean)||null;
+      if(!exact && addresses.length && typeof sdk.fetchMarketsTickers==="function") {
+        try {
+          const tickers=await sdk.fetchMarketsTickers({addresses:[addresses[0]]});
+          const t=Array.isArray(tickers)?tickers.find(x=>String(x?.marketTokenAddress||x?.marketAddress||"").toLowerCase()===addresses[0]) || tickers[0]:null;
+          if(t?.symbol) exact={...row,...t,marketTokenAddress:t.marketTokenAddress||addresses[0]};
+        } catch(e) { console.warn("[EXECUTION][MARKET_TICKER_RESOLVE]",safeError(e)); }
+      }
+      if(exact && !exact.isSpotOnly) {
+        return {symbol:preferred,usd:bal.usd,balance:bal.balance,decimals:bal.decimals,address:bal.address||GMX_ARBITRUM_CANONICAL_COLLATERAL[preferred],market:exact,resolution:"SDK_MARKETS_INFO_ADDRESS",source:bal.source||"UNKNOWN",interpretation:bal.interpretation||"UNKNOWN"};
+      }
     }
   }
+
+  // Last SDK-native fallback: fetch the complete ticker catalog and match by
+  // the exact market name/pool. This catches cases where /markets and
+  // /markets/info expose slightly different shapes or caches.
+  if(typeof sdk.fetchMarketsTickers==="function") {
+    try {
+      const tickers=await sdk.fetchMarketsTickers();
+      for(const ticker of (Array.isArray(tickers)?tickers:[])) {
+        if(ticker?.isSpotOnly) continue;
+        if(!marketMatchesRequestedSymbol(ticker,wanted)) continue;
+        for(const preferred of ["USDC","USDT"]) {
+          const bal=available[preferred];
+          if(!(bal?.usd>0)) continue;
+          if(!(marketHasCanonicalCollateral(ticker,preferred) || marketCollateralSymbols(ticker).has(preferred))) continue;
+          const address=String(ticker?.marketTokenAddress||ticker?.marketAddress||ticker?.address||"").toLowerCase();
+          const base=(markets||[]).find(m=>String(m?.marketTokenAddress||m?.marketAddress||m?.address||"").toLowerCase()===address);
+          const market=base ? {...base,...ticker} : ticker;
+          if(market?.symbol) {
+            return {symbol:preferred,usd:bal.usd,balance:bal.balance,decimals:bal.decimals,address:bal.address||GMX_ARBITRUM_CANONICAL_COLLATERAL[preferred],market,resolution:"SDK_MARKETS_TICKER_FALLBACK",source:bal.source||"UNKNOWN",interpretation:bal.interpretation||"UNKNOWN"};
+          }
+        }
+      }
+    } catch(e) { console.warn("[EXECUTION][MARKET_TICKER_CATALOG_FALLBACK]",safeError(e)); }
+  }
+
   return null;
 }
  
