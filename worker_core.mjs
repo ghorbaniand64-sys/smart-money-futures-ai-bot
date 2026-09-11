@@ -26,7 +26,7 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.5.15-DASHBOARD";
+export const BOT_VERSION = "V17.6.0-CLASSIC-COST-PROBE";
 export const BOT_BUILD = "V17.5.14";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
@@ -6027,6 +6027,25 @@ positions
  
  
  
+// V17.6.0 Classic cost probe — prepares a real Classic transaction but NEVER broadcasts it.
+if(url.pathname === "/debug/gmx/classic-cost") {
+  try {
+    const {sdk,account}=await getLiveContext(env);
+    const qs=new URL(request.url).searchParams;
+    const result=await classicCostProbe(sdk,env,{
+      account,
+      symbol:qs.get("symbol") || "ETH/USD [WETH-USDC]",
+      direction:qs.get("direction") || "long",
+      sizeUsd:qs.get("sizeUsd") || "5",
+      collateralUsd:qs.get("collateralUsd") || "1",
+      collateralToken:qs.get("collateralToken") || "USDC"
+    });
+    return jsonResponse(result);
+  } catch(error) {
+    return jsonResponse({ok:false,mode:"classic",error:safeError(error),stage:error?.executionStage||"CLASSIC_COST_PROBE",version:BOT_VERSION},503);
+  }
+}
+
 // V17.5.15 dashboard routes — read-only
 if(url.pathname === "/dashboard") {
   return new Response(dashboardHtml(), { status:200, headers:{"content-type":"text/html; charset=UTF-8","cache-control":"no-store"} });
@@ -9616,9 +9635,9 @@ if (!lock.acquired) return { executed:false, mode:"LIVE", lane:"RADAR", reason:l
 try {
 const result = await executeGmxOrder(sdk, {
   kind:"increase", symbol:market.symbol, direction:plan.direction === "LONG" ? "long" : "short", orderType:"market",
-  size, collateralToken:collateral.symbol, collateralToPay:{amount:collateralAmount,token:collateral.symbol}, mode:"express", from:account,
+  size, collateralToken:collateral.symbol, collateralToPay:{amount:collateralAmount,token:collateral.symbol}, mode:"classic", from:account,
   tpsl:[{type:"take-profit",triggerPrice:tp,size},{type:"stop-loss",triggerPrice:sl,size}]
-}, signer, {symbol:market.symbol, direction:plan.direction, lane:"RADAR"});
+}, signer, {symbol:market.symbol, direction:plan.direction, lane:"RADAR", rpcUrl:env.ARBITRUM_RPC});
 ledger[key] = { status:"OPEN", lane:"RADAR", symbol, direction:plan.direction, radarScore:plan.score, radarEdge:Number(candidate?.pumpRadar?.edge || 0), entryPrice:plan.entry, initialStopPrice:plan.stopLoss, tp1:plan.tp1, tp2:plan.tp2, tp3:plan.tp3, leverage, notionalUsd, collateralToken:collateral.symbol, openedAt:Date.now(), requestId:result?.requestId || null };
 await saveRadarLiveLedger(env, ledger);
 return { executed:true, mode:"LIVE", lane:"RADAR", account, symbol, direction:plan.direction, radarScore:plan.score, radarEdge:Number(candidate?.pumpRadar?.edge || 0), leverage, walletUsd, collateralUsd, collateralToken:collateral.symbol, notionalUsd, riskBasedNotional, hotSizing:isHotRadar, marketMinPositionUsd, marketMinCollateralUsd, allowance:allowanceInfo, requestId:result?.requestId || null, executionKey:lock.key };
@@ -9950,53 +9969,139 @@ async function executeGmxOrder(sdk, request, signer, meta = {}) {
     throw executionStageError("PREPARE", error, meta);
   }
 
-  let signature;
-  try {
-    signature = await sdk.signOrder(prepared, signer);
-  } catch (error) {
-    throw executionStageError("SIGN", error, {
-      ...meta,
+  // V17.6.0: CLASSIC is the only live execution transport.
+  // GMX SDK v2 returns an on-chain transaction for mode=classic; there is
+  // no signOrder()/submitOrder()/GMX Relay step. The transaction's value is
+  // the execution fee paid in ETH on Arbitrum.
+  if (String(request?.mode || prepared?.mode || "").toLowerCase() === "classic") {
+    if (prepared?.payloadType !== "transaction" || !prepared?.payload?.to || !prepared?.payload?.data) {
+      throw executionStageError("CLASSIC_PREPARE", new Error("GMX_CLASSIC_TRANSACTION_PAYLOAD_MISSING"), meta);
+    }
+    let txHash;
+    try {
+      txHash = await signer.sendTransaction({
+        to: prepared.payload.to,
+        data: prepared.payload.data,
+        value: BigInt(prepared.payload.value ?? 0),
+      });
+    } catch (error) {
+      throw executionStageError("CLASSIC_SEND", error, {
+        ...meta,
+        requestId: prepared?.requestId || null,
+        executionFeeWei: String(prepared?.payload?.value ?? 0),
+        preparedEstimates: prepared?.estimates || null,
+      });
+    }
+    const receiptResult = await waitClassicReceipt(meta?.rpcUrl || null, typeof txHash === "string" ? txHash : (txHash?.hash || txHash?.transactionHash || null), 120000, 2500);
+    const receipt = receiptResult?.receipt || null;
+    const receiptStatus = receipt ? (String(receipt.status || "").toLowerCase() === "0x1" ? "classic_confirmed" : "classic_reverted") : "classic_pending";
+    return {
       requestId: prepared?.requestId || null,
-    });
+      status: receiptStatus,
+      mode: "classic",
+      txHash: typeof txHash === "string" ? txHash : (txHash?.hash || txHash?.transactionHash || null),
+      transactionHash: typeof txHash === "string" ? txHash : (txHash?.hash || txHash?.transactionHash || null),
+      receipt,
+      receiptAvailable: Boolean(receipt),
+      receiptTimedOut: Boolean(receiptResult?.timedOut),
+      preparedTraceId: prepared?.traceId || null,
+      preparedExpiresAt: prepared?.expiresAt || null,
+      preparedWarnings: Array.isArray(prepared?.warnings) ? prepared.warnings : [],
+      preparedValidationWarnings: Array.isArray(prepared?.validationWarnings) ? prepared.validationWarnings : [],
+      preparedEstimates: prepared?.estimates || null,
+      classicPayload: {
+        to: prepared.payload.to,
+        data: prepared.payload.data,
+        value: String(prepared.payload.value ?? 0),
+      },
+      feeTelemetry: collectGmxFeeTelemetry(prepared, prepared?.payload, null, null),
+    };
   }
 
-  const submitRequest = {
-    mode: prepared.mode,
-    requestId: prepared.requestId,
-    signature,
-    from: request.from,
-    idempotencyKey: prepared.idempotencyKey,
-    eip712Data: {
-      batchParams: prepared?.payload?.batchParams,
-      relayParams: prepared?.payload?.relayParams,
-    },
-  };
+  throw executionStageError("EXECUTION_MODE", new Error("LIVE_EXECUTION_REQUIRES_CLASSIC_MODE"), meta);
+}
 
-  let submitted;
+function classicCostHuman(value, decimals) {
   try {
-    // Official GMX SDK transport boundary.
-    // IMPORTANT: native BigInt values produced by prepareOrder are passed
-    // unchanged. No JSON stringify, manual serializer, or direct HTTP submit.
-    submitted = await sdk.submitOrder(submitRequest);
-  } catch (error) {
-    throw executionStageError("SUBMIT", error, {
-      ...meta,
-      requestId: prepared?.requestId || null,
-    });
-  }
+    const n = typeof value === "bigint" ? Number(value) : Number(value || 0);
+    if (!Number.isFinite(n)) return null;
+    return n / (10 ** Number(decimals));
+  } catch (_) { return null; }
+}
 
+async function rpcJson(rpcUrl, method, params = []) {
+  const response = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }),
+  });
+  const data = await response.json();
+  if (!response.ok || data?.error) throw new Error(data?.error?.message || `RPC_${method}_FAILED`);
+  return data?.result;
+}
+
+async function waitClassicReceipt(rpcUrl, txHash, timeoutMs = 120000, intervalMs = 2500) {
+  if (!rpcUrl || !txHash) return { available:false, timedOut:false, receipt:null };
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    try {
+      const receipt = await rpcJson(rpcUrl, "eth_getTransactionReceipt", [txHash]);
+      if (receipt) return { available:true, timedOut:false, receipt };
+    } catch (_) {}
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+  }
+  return { available:false, timedOut:true, receipt:null };
+}
+
+async function classicCostProbe(sdk, env, params = {}) {
+  const account = String(params.account || "0x0000000000000000000000000000000000000000");
+  const symbol = String(params.symbol || "ETH/USD [WETH-USDC]");
+  const direction = String(params.direction || "long").toLowerCase() === "short" ? "short" : "long";
+  const sizeUsd = Math.max(1, Number(params.sizeUsd || 5));
+  const collateralUsd = Math.max(0.01, Number(params.collateralUsd || Math.max(1, sizeUsd / 5)));
+  const size = toBigIntDecimal(sizeUsd, 30);
+  const collateralAmount = toBigIntDecimal(collateralUsd, 6);
+  const prepared = await sdk.prepareOrder({
+    kind:"increase", symbol, direction, orderType:"market", size,
+    collateralToken:String(params.collateralToken || "USDC"),
+    collateralToPay:{amount:collateralAmount, token:String(params.collateralToken || "USDC")},
+    mode:"classic", from:account,
+  });
+  const estimates = prepared?.estimates || {};
+  let requestGas = null;
+  let gasPriceWei = null;
+  let requestGasCostEth = null;
+  try {
+    gasPriceWei = BigInt(await rpcJson(env.ARBITRUM_RPC, "eth_gasPrice", []));
+    const gas = await rpcJson(env.ARBITRUM_RPC, "eth_estimateGas", [{
+      from:account, to:prepared?.payload?.to, data:prepared?.payload?.data, value:`0x${BigInt(prepared?.payload?.value || 0).toString(16)}`
+    }]);
+    requestGas = BigInt(gas);
+    requestGasCostEth = Number(requestGas * gasPriceWei) / 1e18;
+  } catch (error) {
+    requestGas = null;
+  }
+  const executionFeeWei = BigInt(prepared?.payload?.value ?? estimates?.executionFeeAmount ?? 0);
   return {
-    ...submitted,
-    requestId: submitted?.requestId || prepared?.requestId || null,
-    submitResponse: submitted || null,
-    preparedTraceId: prepared?.traceId || null,
-    preparedExpiresAt: prepared?.expiresAt || null,
-    preparedWarnings: Array.isArray(prepared?.warnings) ? prepared.warnings : [],
-    preparedValidationWarnings: Array.isArray(prepared?.validationWarnings) ? prepared.validationWarnings : [],
-    preparedEstimates: prepared?.estimates || null,
-    feeTelemetry: collectGmxFeeTelemetry(prepared, prepared?.payload, submitted, submitted?.response),
+    ok:true, mode:"classic", chainId:42161, account, symbol, direction,
+    sizeUsd, collateralUsd,
+    positionFeeUsd:classicCostHuman(estimates?.positionFeeUsd,30),
+    executionFeeEth:Number(executionFeeWei)/1e18,
+    executionFeeWei:executionFeeWei.toString(),
+    requestGasEstimate:requestGas == null ? null : requestGas.toString(),
+    gasPriceGwei:gasPriceWei == null ? null : Number(gasPriceWei)/1e9,
+    requestGasCostEth,
+    positionPriceImpactUsd:classicCostHuman(estimates?.positionPriceImpactDeltaUsd,30),
+    swapPriceImpactUsd:classicCostHuman(estimates?.swapPriceImpactDeltaUsd,30),
+    borrowingFeeUsd:classicCostHuman(estimates?.borrowingFeeUsd,30),
+    fundingFeeUsd:classicCostHuman(estimates?.fundingFeeUsd,30),
+    acceptablePrice:estimates?.acceptablePrice == null ? null : String(estimates.acceptablePrice),
+    relayFeeUsd:0,
+    note:"Classic probe prepares the real on-chain transaction but does NOT broadcast it. executionFee is the max keeper fee; unused execution fee is refunded by GMX.",
+    preparedPayload:{to:prepared?.payload?.to || null, value:String(prepared?.payload?.value ?? 0)},
   };
 }
+
 
 
 // V17.5.3 — LIVE execution read/verification helpers.
@@ -10198,7 +10303,7 @@ const market=collateral.market;
 const sdkSymbol=market.symbol;
 const orderDirection=signal.direction==="LONG"?"long":"short";
 let capacity;
-try { capacity=await sdk.getTradingCapacity({symbol:sdkSymbol,direction:orderDirection}); } catch(error) { throw executionStageError("GET_TRADING_CAPACITY", error, {symbol:sdkSymbol,direction:orderDirection}); }
+try { capacity=await sdk.getTradingCapacity({symbol:sdkSymbol,direction:orderDirection,rpcUrl:env.ARBITRUM_RPC}); } catch(error) { throw executionStageError("GET_TRADING_CAPACITY", error, {symbol:sdkSymbol,direction:orderDirection,rpcUrl:env.ARBITRUM_RPC}); }
 const capacityUsd=Number(capacity?.availableLiquidity||0n)/1e30;
 const walletUsd=collateral.usd;
 const existingCollateralUsd=Array.isArray(positions)?positions.reduce((sum,p)=>{
@@ -10252,24 +10357,24 @@ try {
 const size1=toBigIntDecimal(notionalUsd*0.40,30);
 const size2=toBigIntDecimal(notionalUsd*0.30,30);
 const size3=toBigIntDecimal(notionalUsd*0.30,30);
-const buildOrderRequest = (collateralUsdForOrder) => ({kind:"increase",symbol:sdkSymbol,direction:orderDirection,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:toBigIntDecimal(collateralUsdForOrder,6),token:collateral.symbol},mode:"express",from:account,tpsl:[{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp1,30),size:size1},{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp2,30),size:size2},{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp3,30),size:size3},{type:"stop-loss",triggerPrice:sl,size}]});
+const buildOrderRequest = (collateralUsdForOrder) => ({kind:"increase",symbol:sdkSymbol,direction:orderDirection,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:toBigIntDecimal(collateralUsdForOrder,6),token:collateral.symbol},mode:"classic",from:account,tpsl:[{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp1,30),size:size1},{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp2,30),size:size2},{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp3,30),size:size3},{type:"stop-loss",triggerPrice:sl,size}]});
 
 let allowanceInfo;
 try {
   allowanceInfo=await ensureGmxCollateralAllowance(sdk,signer,account,collateral.symbol,toBigIntDecimal(finalCollateralUsd,6),balances,{rpcUrl:env.ARBITRUM_RPC});
 } catch(error) {
-  throw executionStageError("COLLATERAL_ALLOWANCE", error, {symbol:sdkSymbol,direction:orderDirection});
+  throw executionStageError("COLLATERAL_ALLOWANCE", error, {symbol:sdkSymbol,direction:orderDirection,rpcUrl:env.ARBITRUM_RPC});
 }
 
 let result;
 try {
-  if (typeof sdk?.prepareOrder !== "function" || typeof sdk?.signOrder !== "function" || typeof sdk?.submitOrder !== "function") {
-    throw new Error("GMX SDK prepareOrder/signOrder/submitOrder methods are unavailable");
+  if (typeof sdk?.prepareOrder !== "function") {
+    throw new Error("GMX SDK prepareOrder method is unavailable");
   }
-  result=await executeGmxOrder(sdk,buildOrderRequest(finalCollateralUsd),signer,{symbol:sdkSymbol,direction:orderDirection});
+  result=await executeGmxOrder(sdk,buildOrderRequest(finalCollateralUsd),signer,{symbol:sdkSymbol,direction:orderDirection,rpcUrl:env.ARBITRUM_RPC});
 } catch(error) {
   if (error?.executionStage) throw error;
-  throw executionStageError("GMX_ORDER", error, {symbol:sdkSymbol,direction:orderDirection});
+  throw executionStageError("GMX_ORDER", error, {symbol:sdkSymbol,direction:orderDirection,rpcUrl:env.ARBITRUM_RPC});
 }
 await markLiveExecutionSubmitted(env, lock.key, signal, result);
 
@@ -10277,9 +10382,16 @@ await markLiveExecutionSubmitted(env, lock.key, signal, result);
 // Track the exact requestId through the GMX order lifecycle before counting
 // anything as Executed. GMX documents terminal states as executed/cancelled/
 // relay_failed/relay_reverted; pending/accepted states remain inconclusive.
-const orderStatusResult = await pollLiveOrderStatus(sdk, result?.requestId, 60000, 2000);
-const orderStatus = String(orderStatusResult?.status || result?.status || "unknown").toLowerCase();
-if (orderStatusResult?.available && orderStatusResult?.terminal && orderStatus !== "executed") {
+let orderStatusResult;
+let orderStatus;
+if (String(result?.mode || "").toLowerCase() === "classic") {
+  orderStatus = String(result?.status || "classic_pending").toLowerCase();
+  orderStatusResult = {available:Boolean(result?.receiptAvailable),terminal:Boolean(result?.receiptAvailable),timedOut:Boolean(result?.receiptTimedOut),status:orderStatus,response:result?.receipt||null,polls:result?.receiptAvailable?1:0,elapsedMs:0};
+} else {
+  orderStatusResult = await pollLiveOrderStatus(sdk, result?.requestId, 60000, 2000);
+  orderStatus = String(orderStatusResult?.status || result?.status || "unknown").toLowerCase();
+}
+if (orderStatusResult?.available && orderStatusResult?.terminal && !["executed","classic_confirmed"].includes(orderStatus)) {
   // V17.5.12: expose the live allowance context on relay failures. The
   // approval path now uses max allowance, so an ERC20 allowance failure is
   // actionable evidence of a spender/token mismatch rather than an amount
@@ -10438,7 +10550,7 @@ if (radarMeta) {
     if (marketSdk && size > 0n) {
       const positionCollateral = String(position?.collateralToken || position?.collateralSymbol || position?.receiveToken || "USDC").toUpperCase();
 const exitCollateral = positionCollateral === "USDT" ? "USDT" : "USDC";
-const result = await executeGmxOrder(sdk, {kind:"decrease",symbol:marketSdk.symbol,direction:isLong?"long":"short",orderType:"market",size,collateralToken:exitCollateral,receiveToken:exitCollateral,mode:"express",from:account},signer,{symbol:marketSdk.symbol,direction:isLong?"LONG":"SHORT",lane:"RADAR",action:"REVERSAL_CLOSE"});
+const result = await executeGmxOrder(sdk, {kind:"decrease",symbol:marketSdk.symbol,direction:isLong?"long":"short",orderType:"market",size,collateralToken:exitCollateral,receiveToken:exitCollateral,mode:"classic",from:account},signer,{symbol:marketSdk.symbol,direction:isLong?"LONG":"SHORT",lane:"RADAR",action:"REVERSAL_CLOSE",rpcUrl:env.ARBITRUM_RPC});
       radarLedger[radarKey] = {...radarMeta,status:"CLOSED",closedAt:Date.now(),closeRequestId:result?.requestId || null,closeReason:reversal.reason};
       await saveRadarLiveLedger(env, radarLedger);
       const actionRecord = {symbol,direction:side,lane:"RADAR",action:"RADAR_REVERSAL_FULL",reason:reversal.reason,closePercent:100,pnlPercent:entryPrice>0&&currentPrice>0?(isLong?(currentPrice-entryPrice)/entryPrice:(entryPrice-currentPrice)/entryPrice)*100:0,pnlUsd:null,entryPrice,exitPrice:currentPrice,leverage:Number(position?.leverage||radarMeta?.leverage||1),notionalUsd:Number(position?.sizeInUsd||radarMeta?.notionalUsd||0),radarScore:reversal.radarScore,radarDirection:reversal.radarDirection,requestId:result?.requestId||null};
@@ -10476,9 +10588,9 @@ const result = await executeGmxOrder(sdk, {
   size,
   collateralToken: positionCollateral || "USDC",
   receiveToken: positionCollateral || "USDC",
-  mode: "express",
+  mode: "classic",
   from: account
-}, signer, {symbol:marketSdk.symbol,direction:isLong?"LONG":"SHORT",lane:"CORE_EXIT",action});
+}, signer, {symbol:marketSdk.symbol,direction:isLong?"LONG":"SHORT",lane:"CORE_EXIT",action,rpcUrl:env.ARBITRUM_RPC});
  
 const pnlPercent = entryPrice > 0 && currentPrice > 0
 ? (isLong ? (currentPrice - entryPrice) / entryPrice : (entryPrice - currentPrice) / entryPrice) * 100
