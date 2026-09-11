@@ -7,7 +7,7 @@ import worker, { BOT_VERSION, BOT_BUILD } from "./worker_core.mjs";
 
 const ROOT = process.cwd();
 const STATE_DIR = path.join(ROOT, "state");
-const EXPECTED_WORKER_VERSION = "V17.6.0-CLASSIC-COST-PROBE";
+const EXPECTED_WORKER_VERSION = "V17.7.0-LIQUIDITY-REACTION-5M-ONLY";
 
 async function ensureStateFiles() {
   await fs.mkdir(STATE_DIR, { recursive: true });

@@ -470,7 +470,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.5.15-DASHBOARD",
+VERSION: "V17.7.0-LIQUIDITY-REACTION-5M-ONLY",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -600,7 +600,7 @@ RADAR_RISK_PER_TRADE: 0.005,
 RADAR_CAPITAL_ALLOCATION: 0.03,
 RADAR_MAX_POSITION_NOTIONAL_USD: 2500,
 // V15.3.5: independent Radar live lane is armed; execution still honors executionEnabled(env).
-RADAR_LIVE_ENABLED: true,
+RADAR_LIVE_ENABLED: false,
 RADAR_LIVE_MAX_POSITIONS: 1,
 RADAR_LIVE_RISK_PER_TRADE: 0.005,
 RADAR_LIVE_CAPITAL_ALLOCATION: 0.03,
@@ -785,195 +785,133 @@ function hybridReactionResistance(c,level,flow,vol,atrValue){const m=hybridCandl
 function hybridBreakout(c,level,direction,flow,vol,atrValue){const m=hybridCandleMetrics(c),buffer=atrValue*CONFIG.HYBRID_SR.breakoutBufferAtr,above=c.close>level.high+buffer,below=c.close<level.low-buffer,a=hybridFlowAligned(flow,direction),volumeOk=vol.volumeAvailable?vol.volumeRatio>=CONFIG.HYBRID_ENTRY.minBreakoutVolumeRatio:vol.rangeRatio>=1.15,flowOk=a>=CONFIG.HYBRID_ENTRY.minBreakoutFlowImbalance,bodyOk=m.bodyRatio>=CONFIG.HYBRID_ENTRY.breakoutMinBodyRatio,broken=direction==='LONG'?above&&m.bullish:below&&m.bearish;return{broken:broken&&bodyOk,above,below,bodyOk,volumeOk,flowOk,aligned:a};}
 function hybridRetest(c,level,direction,flow,vol,atrValue){const tol=atrValue*CONFIG.HYBRID_SR.retestToleranceAtr,m=hybridCandleMetrics(c),touched=direction==='LONG'?c.low<=level.high+tol&&c.low>=level.low-tol:c.high>=level.low-tol&&c.high<=level.high+tol,holds=direction==='LONG'?c.close>level.high:c.close<level.low,rejection=direction==='LONG'?(m.bullish&&m.lowerWick>=0.15):(m.bearish&&m.upperWick>=0.15),a=hybridFlowAligned(flow,direction),activity=vol.volumeSurge||vol.rangeExpansion||a>=CONFIG.HYBRID_ENTRY.minReactionFlowImbalance||CONFIG.HYBRID_ENTRY.allowNeutralActivity;return{touched,holds,rejection,activity,aligned:a,confirmed:touched&&holds&&rejection&&activity&&m.bodyRatio>=CONFIG.HYBRID_ENTRY.retestMinBodyRatio};}
 function hybridZoneId(z){return z?`${Number(z.center).toFixed(6)}:${Number(z.low).toFixed(6)}:${Number(z.high).toFixed(6)}`:'';}
-function hybridEarlyImpulse(symbol,candles,flow,debugStats=null){
-  const dbg=debugStats&&typeof debugStats==='object'?debugStats:null;
-  const bump=(key)=>{if(dbg)dbg[key]=(Number(dbg[key])||0)+1;};
-  const reject=(reason,meta={})=>{
-    bump('rejected');
-    bump(reason);
-    if(dbg?.lastRejections){
-      dbg.lastRejections.push({symbol,reason,...meta});
-      if(dbg.lastRejections.length>20)dbg.lastRejections.shift();
-    }
-    return null;
-  };
-  bump('attempted');
-
-  if(CONFIG.HYBRID_ENTRY?.earlyEnabled===false)return reject('DISABLED');
-
-  const raw=Array.isArray(candles?.["5m"])?candles["5m"]:[];
-  if(raw.length<25)return reject('HISTORY');
-
-  const closed=hybridClosedCandles(raw,"5m");
-  const current=raw.at(-1);
-  if(!current||closed.length<20)return reject('HISTORY');
-
-  const now=Date.now(),ts=hybridTsMs(current.timestamp);
-  if(ts>0&&now-ts<0)return reject('FUTURE_CANDLE');
-  if(ts>0&&now-ts<Number(CONFIG.HYBRID_ENTRY.earlyMinElapsedMs||20000))return reject('TOO_EARLY');
-  bump('elapsedPass');
-
-  const price=Number(current.close||0),open=Number(current.open||price);
-  if(!(price>0&&open>0))return reject('PRICE');
-
-  const atr=Number(hybridAtr(closed,14))||price*0.005;
-  if(!(atr>0))return reject('ATR');
-
-  const m=hybridCandleMetrics(current);
-  const prev1=Number(closed.at(-1)?.close||0),prev2=Number(closed.at(-2)?.close||0);
-  const movePct=(price-open)/open*100;
-  const prevMove1=prev2>0&&prev1>0?(prev1-prev2)/prev2*100:0;
-  const acceleration=movePct-prevMove1;
-  const extension=Math.abs(price-open)/atr;
-
-  const vol=hybridVolumeContext(raw);
-  const alignedLong=hybridFlowAligned(flow,"LONG"),alignedShort=hybridFlowAligned(flow,"SHORT");
-  const directionalMove=Math.abs(movePct);
-  const dir=movePct>0?"LONG":movePct<0?"SHORT":null;
-
-  if(!dir)return reject('NO_DIRECTION');
-  if(directionalMove<Number(CONFIG.HYBRID_ENTRY.earlyMinMovePct||0.12))
-    return reject('MOVE',{movePct:Number(movePct.toFixed(4))});
-  bump('movePass');
-
-  const aligned=dir==="LONG"?alignedLong:alignedShort;
-  const volumeOk=vol.volumeAvailable
-    ? Number(vol.volumeRatio)>=Number(CONFIG.HYBRID_ENTRY.earlyMinVolumeRatio||1.35)
-    : Number(vol.rangeRatio)>=1.20;
-  const flowOk=aligned>=Number(CONFIG.HYBRID_ENTRY.earlyMinFlowImbalance||0.07);
-  const bodyOk=m.bodyRatio>=Number(CONFIG.HYBRID_ENTRY.earlyMinBodyRatio||0.35);
-  const accelValue=dir==="LONG"?acceleration:-acceleration;
-  const accelOk=accelValue>=Number(CONFIG.HYBRID_ENTRY.earlyMinAccelerationPct||0.04);
-
-  if(bodyOk)bump('bodyPass');
-  else return reject('BODY',{bodyRatio:Number(m.bodyRatio.toFixed(3))});
-
-  if(volumeOk)bump('volumePass');
-  if(flowOk)bump('flowPass');
-
-  // V17.3.9: activity is no longer a blind hard gate.
-  // A genuine momentum impulse can qualify when volume/flow is neutral,
-  // but only with materially stronger acceleration + candle body.
-  const momentumActivityOk=
-    accelValue>=Number(CONFIG.HYBRID_ENTRY.earlyMinAccelerationPct||0.04)*2 &&
-    m.bodyRatio>=0.45;
-  const activityOk=volumeOk||flowOk||momentumActivityOk;
-  const activityPath=volumeOk?"VOLUME":flowOk?"FLOW":momentumActivityOk?"MOMENTUM":"NONE";
-
-  if(momentumActivityOk&&!volumeOk&&!flowOk)bump('momentumActivityPass');
-  if(!activityOk)
-    return reject('ACTIVITY',{
-      volumeRatio:Number(vol.volumeRatio||0),
-      flowImbalance:Number(aligned||0),
-      accelerationPct:Number(accelValue.toFixed(4)),
-      bodyRatio:Number(m.bodyRatio.toFixed(3))
-    });
-
-  if(accelOk)bump('accelerationPass');
-  else return reject('ACCELERATION',{accelerationPct:Number(accelValue.toFixed(4))});
-
-  if(extension>Number(CONFIG.HYBRID_ENTRY.earlyMaxExtensionAtr||1.25))
-    return reject('EXTENSION',{extensionAtr:Number(extension.toFixed(3))});
-  bump('extensionPass');
-
-  const zones=hybridBuildZones({"5m":closed,"15m":[],"1h":[],"4h":[]},price,atr);
-
-  // For an early LONG, the relevant structural target is resistance.
-  // For an early SHORT, the relevant structural target is support.
-  const zone=dir==="LONG"
-    ?hybridNearestZone(zones.resistance,price,Number(CONFIG.HYBRID_ENTRY.earlyMaxEntryDistanceAtr||1.30),atr,"R")
-    :hybridNearestZone(zones.support,price,Number(CONFIG.HYBRID_ENTRY.earlyMaxEntryDistanceAtr||1.30),atr,"S");
-
-  if(!zone)return reject('ZONE');
-  bump('zonePass');
-
-  const distance=Math.abs(price-Number(zone.center))/atr;
-  if(distance>Number(CONFIG.HYBRID_ENTRY.earlyMaxEntryDistanceAtr||1.30))
-    return reject('DISTANCE',{distanceAtr:Number(distance.toFixed(3))});
-
-  bump('proximityPass');
-
-  // V17.3.9: "near break" is a confirmation bonus, not a mandatory gate.
-  // This prevents the old PREBREAK choke where a valid early impulse was
-  // discarded simply because price had not yet touched the zone.
-  const nearBreak=dir==="LONG"
-    ?price>=Number(zone.low)-atr*Number(CONFIG.HYBRID_ENTRY.earlyPrebreakToleranceAtr||0.45)
-    :price<=Number(zone.high)+atr*Number(CONFIG.HYBRID_ENTRY.earlyPrebreakToleranceAtr||0.45);
-
-  if(nearBreak)bump('prebreakPass');
-  else if(!(momentumActivityOk&&distance<=0.90))
-    return reject('PREBREAK',{
-      distanceAtr:Number(distance.toFixed(3)),
-      nearBreak:false,
-      activityPath
-    });
-
-  // V17.5.14: EARLY ENTRY IS NO LONGER SCORE-DRIVEN.
-  // The old weighted score/edge gates are intentionally removed because they
-  // could delay entry until the move was already mature.  Early qualification
-  // is now structural + momentum based only: a valid S/R zone, controlled
-  // distance from that zone, candle body, acceleration, and at least one of
-  // volume/flow/momentum-activity must be present.
-  //
-  // Keep a non-blocking eventStrength number for telemetry/ranking only.
-  const moveStrength=Math.min(25,(directionalMove/Math.max(0.001,Number(CONFIG.HYBRID_ENTRY.earlyMinMovePct||0.12)))*25);
-  const accelStrength=Math.min(25,(Math.max(0,accelValue)/Math.max(0.001,Number(CONFIG.HYBRID_ENTRY.earlyMinAccelerationPct||0.04)))*25);
-  const volumeStrength=volumeOk?Math.min(20,Math.max(0,(Number(vol.volumeRatio||1)-1)/0.35*20)):0;
-  const flowStrength=flowOk?Math.min(20,Math.max(0,aligned)/0.07*20):0;
-  const bodyStrength=Math.min(10,Math.max(0,(m.bodyRatio-0.35)/0.30*10));
-  const eventStrength=Math.min(100,moveStrength+accelStrength+volumeStrength+flowStrength+bodyStrength);
-  const confluence=(volumeOk?1:0)+(flowOk?1:0)+(momentumActivityOk?1:0)+(nearBreak?1:0);
-
-  // Legacy debug counters are retained for compatibility, but they are
-  // telemetry only and never act as entry gates.
-  bump('scorePass');
-  bump('edgePass');
-  bump('qualified');
-
-  return {
-    direction:dir,
-    trigger:dir==="LONG"?"EARLY_IMPULSE_BREAKOUT_LONG":"EARLY_IMPULSE_BREAKOUT_SHORT",
-    zone,
-    evidence:[
-      "LIVE_5M_IMPULSE",
-      "ACCELERATION",
-      ...(volumeOk?["VOLUME_BURST"]:[]),
-      ...(flowOk?["FLOW_CONFIRMATION"]:[]),
-      ...(momentumActivityOk&&!volumeOk&&!flowOk?["MOMENTUM_ACTIVITY_CONFIRMATION"]:[]),
-      ...(nearBreak?["PRE_BREAKOUT_PROXIMITY"]:["STRUCTURAL_PROXIMITY"])
-    ],
-    atr,price,volume:vol,flow,entryDistanceAtr:distance,
-    tier:score>=82?"PRIME":score>=72?"NORMAL":"FAST",
-    confirmationCount:Number(volumeOk)+Number(flowOk)+Number(accelOk)+Number(momentumActivityOk&&!volumeOk&&!flowOk),
-    early:true,
-    earlyScore:Number(eventStrength.toFixed(1)),
-    eventStrength:Number(eventStrength.toFixed(1)),
-    edge:Number(confluence.toFixed(1)),
-    movePct:Number(movePct.toFixed(4)),
-    accelerationPct:Number(acceleration.toFixed(4)),
-    extensionAtr:Number(extension.toFixed(3)),
-    activityPath,
-    nearBreak,
-    candleTimestamp:ts
-  };
-}
-
+// V17.7: legacy early-impulse/score entry function removed.
 function hybridClassifyStructure(symbol,candles,price,flow,previousState={}){
-  const c5=hybridClosedCandles(candles['5m']||[],'5m'),c15=hybridClosedCandles(candles['15m']||[],'15m'),c1h=hybridClosedCandles(candles['1h']||[],'1h'),c4h=hybridClosedCandles(candles['4h']||[],'4h'),current=c5.at(-1);if(!current)return{state:'NO_DATA',direction:'NONE',entries:[],zones:{support:[],resistance:[]}};
-  const atr5=Number(hybridAtr(c5,14))||price*0.005,zones=hybridBuildZones({'5m':c5,'15m':c15,'1h':c1h,'4h':c4h},price,atr5),vol=hybridVolumeContext(c5),entries=[],watched=[],priorC5=c5.slice(0,-1),preMove5=hybridPercentChange(priorC5,5),support=hybridNearestZone(zones.support,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'S'),resistance=hybridNearestZone(zones.resistance,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'R');
-  const pushReaction=(direction,trigger,zone,rx)=>{const distance=Math.abs(price-zone.center)/atr5;const priorOk=direction==='LONG'?preMove5<=-CONFIG.HYBRID_ENTRY.priorMovePct:preMove5>=CONFIG.HYBRID_ENTRY.priorMovePct;const structural=rx.confirmed&&distance<=CONFIG.HYBRID_ENTRY.maxEntryDistanceAtr;if(structural&&(priorOk||rx.sweep)){const evidence=[...(rx.evidence||[])];const confirmations=Number(Boolean(rx.sweep))+Number(Boolean(rx.flowOk))+Number(Boolean(rx.volumeOk));const tier=rx.sweep&&confirmations>=2?'PRIME':confirmations>=1?'NORMAL':'FAST';entries.push({direction,trigger,zone,evidence,atr:atr5,price,volume:vol,flow,entryDistanceAtr:distance,tier,confirmationCount:confirmations});}};
-  if(support){const bounce=hybridReactionSupport(current,support,flow,vol,atr5);watched.push({type:'SUPPORT',zone:support,bounce});if(preMove5<=-CONFIG.HYBRID_ENTRY.priorMovePct)pushReaction('LONG','SUPPORT_BOUNCE',support,bounce);const br=hybridBreakout(current,support,'SHORT',flow,vol,atr5);if(br.broken)entries.push({direction:'WAIT',trigger:'SUPPORT_BREAK_WAIT_RETEST',zone:support,evidence:['SUPPORT_BROKEN',...(br.volumeOk?['ACTIVITY_CONFIRMATION']:[]),...(br.flowOk?['FLOW_CONFIRMATION']:[])],breakoutAt:Number(current.timestamp)||Date.now(),atr:atr5,price,flow,volume:vol});}
-  if(resistance){const rej=hybridReactionResistance(current,resistance,flow,vol,atr5);watched.push({type:'RESISTANCE',zone:resistance,rejection:rej});if(preMove5>=CONFIG.HYBRID_ENTRY.priorMovePct)pushReaction('SHORT','RESISTANCE_REJECTION',resistance,rej);const br=hybridBreakout(current,resistance,'LONG',flow,vol,atr5);if(br.broken)entries.push({direction:'WAIT',trigger:'RESISTANCE_BREAK_WAIT_RETEST',zone:resistance,evidence:['RESISTANCE_BROKEN',...(br.volumeOk?['ACTIVITY_CONFIRMATION']:[]),...(br.flowOk?['FLOW_CONFIRMATION']:[])],breakoutAt:Number(current.timestamp)||Date.now(),atr:atr5,price,flow,volume:vol});}
-  const next={...(previousState||{}),updatedAt:Date.now()},wait=entries.find(x=>x.direction==='WAIT');if(wait)next.pendingRetest={direction:wait.trigger.startsWith('SUPPORT')?'SHORT':'LONG',zone:wait.zone,zoneId:hybridZoneId(wait.zone),createdAt:Date.now(),breakoutAt:wait.breakoutAt,atr:atr5};if(next.pendingRetest&&Date.now()-Number(next.pendingRetest.createdAt||0)>CONFIG.HYBRID_ENTRY.breakoutRetestTtlMs)delete next.pendingRetest;
-  const p=next.pendingRetest;if(p){const fresh=Number(current.timestamp)>Number(p.breakoutAt||0),rt=fresh?hybridRetest(current,p.zone,p.direction,flow,vol,atr5):{confirmed:false,touched:false,holds:false,rejection:false,activity:false,aligned:hybridFlowAligned(flow,p.direction)};watched.push({type:'RETEST',zone:p.zone,direction:p.direction,retest:rt,freshCandle:fresh});const distance=Math.abs(price-Number(p.zone.center))/atr5;if(fresh&&rt.confirmed&&distance<=CONFIG.HYBRID_ENTRY.maxRetestDistanceAtr){entries.push({direction:p.direction,trigger:p.direction==='LONG'?'RESISTANCE_BREAK_RETEST_LONG':'SUPPORT_BREAK_RETEST_SHORT',zone:p.zone,evidence:['BREAKOUT_RETEST','RETEST_HOLD',...(rt.activity?['ACTIVITY']:[]),...(rt.aligned>=CONFIG.HYBRID_ENTRY.minReactionFlowImbalance?['FLOW_CONFIRMATION']:[])],atr:atr5,price,volume:vol,flow,entryDistanceAtr:distance});delete next.pendingRetest;}}
-  const move5=Math.abs(hybridPercentChange(c5,5)),extension=atr5>0?Math.abs(price-Number(current.open))/atr5:0,near=Boolean(support||resistance||p);if(!entries.length&&move5>=1.5&&extension>=CONFIG.HYBRID_ENTRY.maxChaseAtr&&!near)next.lastState='EXHAUSTED_NO_CHASE';else if(!entries.length)next.lastState=near?'WATCH_LEVEL':'NO_SETUP';
-  return{state:entries.length?(entries.some(e=>e.direction!=='WAIT')?'ENTRY_READY':'WAITING_RETEST'):next.lastState,direction:entries.find(e=>e.direction!=='WAIT')?.direction||'NONE',entries,zones,watched,volume:vol,atr:atr5,nextState:next,move5,preMove5,extension,eventFlags:{supportZone:Boolean(support),resistanceZone:Boolean(resistance),supportReaction:watched.some(x=>x.type==='SUPPORT'&&x.bounce?.confirmed),resistanceReaction:watched.some(x=>x.type==='RESISTANCE'&&x.rejection?.confirmed),breakout:entries.some(x=>x.trigger.includes('WAIT_RETEST')),waitingRetest:Boolean(next.pendingRetest),retestConfirmed:entries.some(x=>x.trigger.includes('RETEST')),exhausted:next.lastState==='EXHAUSTED_NO_CHASE'}};
+  const c5=hybridClosedCandles(candles?.['5m']||[],'5m');
+  const c15=hybridClosedCandles(candles?.['15m']||[],'15m');
+  const c1h=hybridClosedCandles(candles?.['1h']||[],'1h');
+  const c4h=hybridClosedCandles(candles?.['4h']||[],'4h');
+  const current=c5.at(-1);
+  if(!current)return{state:'NO_DATA',direction:'NONE',entries:[],zones:{support:[],resistance:[]},nextState:previousState||{}};
+
+  const atr5=Number(hybridAtr(c5,14))||price*0.005;
+  const zones=hybridBuildZones({'5m':c5,'15m':c15,'1h':c1h,'4h':c4h},price,atr5);
+  const vol=hybridVolumeContext(c5);
+  const entries=[],watched=[];
+  const currentTs=hybridTsMs(current.timestamp)||Date.now();
+  const prior=c5.slice(0,-1);
+  const move3=hybridPercentChange(prior,3);
+  const move5=hybridPercentChange(prior,5);
+  const atrPct=price>0?atr5/price*100:0;
+  const m=hybridCandleMetrics(current);
+  const closes=c5.slice(-20).map(x=>Number(x.close)).filter(Number.isFinite);
+  const mean=hybridSma(closes,20);
+  const sd=closes.length>=20?Math.sqrt(closes.slice(-20).reduce((a,x)=>a+(x-mean)**2,0)/20):null;
+  const bbWidth=mean>0&&Number.isFinite(sd)?(4*sd/mean)*100:null;
+  const prevCloses=closes.slice(0,-1),prevMean=hybridSma(prevCloses,Math.min(20,prevCloses.length));
+  const prevSd=prevCloses.length>=20?Math.sqrt(prevCloses.slice(-20).reduce((a,x)=>a+(x-prevMean)**2,0)/20):null;
+  const prevBbWidth=prevMean>0&&Number.isFinite(prevSd)?(4*prevSd/prevMean)*100:null;
+  const bbExpanding=Number.isFinite(bbWidth)&&Number.isFinite(prevBbWidth)&&bbWidth>prevBbWidth*1.05;
+  const flowLong=hybridFlowAligned(flow,'LONG'),flowShort=hybridFlowAligned(flow,'SHORT');
+  const flowSurge=Boolean(flow?.flowSurge||flow?.explosiveFlow);
+  const newCandle=currentTs!==Number(previousState?.lastCandleTs||0);
+
+  // Sharp displacement is a prerequisite, not an entry trigger.
+  const sharpThreshold=Math.max(0.45,atrPct*1.15);
+  const downImpulse=move3<=-sharpThreshold || move5<=-Math.max(0.65,atrPct*1.55);
+  const upImpulse=move3>=sharpThreshold || move5>=Math.max(0.65,atrPct*1.55);
+  const explosion=(vol.volumeAvailable?vol.volumeRatio>=1.35:vol.rangeRatio>=1.20) &&
+    (vol.rangeExpansion||vol.rangeExplosive||bbExpanding||Math.max(Math.abs(move3),Math.abs(move5))>=sharpThreshold) &&
+    m.bodyRatio>=0.42;
+  const expansionEvidence=explosion||vol.volumeSurge||vol.rangeExpansion||flowSurge;
+
+  const support=hybridNearestZone(zones.support,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'S');
+  const resistance=hybridNearestZone(zones.resistance,price,CONFIG.HYBRID_SR.proximityAtr,atr5,'R');
+  const next={...(previousState||{}),updatedAt:Date.now(),lastCandleTs:currentTs};
+
+  // ONLY reversal setups are tradable:
+  // bearish impulse -> strong support -> rejection/absorption -> bounce -> pullback/retest -> LONG
+  // bullish impulse -> strong resistance -> rejection/absorption -> bounce -> pullback/retest -> SHORT
+  if(!next.stage && newCandle && support){
+    const rx=hybridReactionSupport(current,support,flow,vol,atr5);
+    const strongLevel=Number(support.quality||0)>=3 || Number(support.timeframes?.length||0)>=2;
+    const hit=current.low<=Number(support.high)+atr5*0.15 && current.close>=Number(support.low);
+    const bearishContext=downImpulse && expansionEvidence;
+    const flowConflict=flowShort>=0.12;
+    const absorption=rx.confirmed && (rx.sweep||rx.flowOk||rx.volumeOk);
+    watched.push({type:'SUPPORT',zone:support,bounce:rx,sharpMove:downImpulse,explosion,flowConflict});
+    if(strongLevel&&hit&&bearishContext&&!flowConflict&&absorption){
+      next.stage='REACTION_SUPPORT';
+      next.direction='LONG'; next.zone=support; next.zoneId=hybridZoneId(support);
+      next.reactionCandleTs=currentTs; next.reactionPrice=price;
+      next.reactionHigh=Number(current.high); next.reactionLow=Number(current.low);
+      next.impulseDirection=-1; next.impulseAt=Date.now(); next.awaySeen=false;
+    }
+  }
+  if(!next.stage && newCandle && resistance){
+    const rx=hybridReactionResistance(current,resistance,flow,vol,atr5);
+    const strongLevel=Number(resistance.quality||0)>=3 || Number(resistance.timeframes?.length||0)>=2;
+    const hit=current.high>=Number(resistance.low)-atr5*0.15 && current.close<=Number(resistance.high);
+    const bullishContext=upImpulse && expansionEvidence;
+    const flowConflict=flowLong>=0.12;
+    const absorption=rx.confirmed && (rx.sweep||rx.flowOk||rx.volumeOk);
+    watched.push({type:'RESISTANCE',zone:resistance,rejection:rx,sharpMove:upImpulse,explosion,flowConflict});
+    if(strongLevel&&hit&&bullishContext&&!flowConflict&&absorption){
+      next.stage='REACTION_RESISTANCE';
+      next.direction='SHORT'; next.zone=resistance; next.zoneId=hybridZoneId(resistance);
+      next.reactionCandleTs=currentTs; next.reactionPrice=price;
+      next.reactionHigh=Number(current.high); next.reactionLow=Number(current.low);
+      next.impulseDirection=1; next.impulseAt=Date.now(); next.awaySeen=false;
+    }
+  }
+
+  if(next.stage==='REACTION_SUPPORT'&&next.zone){
+    const z=next.zone, fresh=currentTs>Number(next.reactionCandleTs||0);
+    const away=fresh&&price>=Number(next.reactionPrice||price)+atr5*0.20;
+    if(away)next.awaySeen=true;
+    const pullback=fresh&&Boolean(next.awaySeen)&&current.low<=Number(z.high)+atr5*0.22&&current.close>Number(z.high)&&m.bullish&&m.bodyRatio>=0.25;
+    const flowConflict=flowShort>=0.12;
+    const flowConfirm=flowLong>=0.06;
+    const activity=vol.volumeAvailable?vol.volumeRatio>=1.05:vol.rangeRatio>=1.05;
+    const vwap5=Number(v7Vwap(c5,60));
+    const vwapContext=!Number.isFinite(vwap5)||price>=vwap5*0.998;
+    if(pullback&&!flowConflict&&(flowConfirm||activity)&&vwapContext){
+      entries.push({direction:'LONG',trigger:'SUPPORT_REACTION_PULLBACK_RETEST',zone:z,evidence:['SHARP_DOWN_MOVE_INTO_SUPPORT','SUPPORT_REACTION','ABSORPTION_OR_SWEEP','BOUNCE_AWAY','PULLBACK_RETEST_HOLD',...(flowConfirm?['BUY_FLOW_CONFIRMATION']:[]),...(activity?['ACTIVITY_CONFIRMATION']:[]),...(explosion?['VOLATILITY_EXPANSION']:[])],atr:atr5,price,volume:vol,flow,entryDistanceAtr:Math.abs(price-Number(z.center))/atr5,tier:'PRIME',confirmationCount:Number(flowConfirm)+Number(activity)+Number(explosion)});
+      next.lastTriggeredCandle=currentTs; delete next.stage; delete next.zone; delete next.zoneId; next.awaySeen=false;
+    }
+  }
+
+  if(next.stage==='REACTION_RESISTANCE'&&next.zone){
+    const z=next.zone, fresh=currentTs>Number(next.reactionCandleTs||0);
+    const away=fresh&&price<=Number(next.reactionPrice||price)-atr5*0.20;
+    if(away)next.awaySeen=true;
+    const pullback=fresh&&Boolean(next.awaySeen)&&current.high>=Number(z.low)-atr5*0.22&&current.close<Number(z.low)&&m.bearish&&m.bodyRatio>=0.25;
+    const flowConflict=flowLong>=0.12;
+    const flowConfirm=flowShort>=0.06;
+    const activity=vol.volumeAvailable?vol.volumeRatio>=1.05:vol.rangeRatio>=1.05;
+    const vwap5=Number(v7Vwap(c5,60));
+    const vwapContext=!Number.isFinite(vwap5)||price<=vwap5*1.002;
+    if(pullback&&!flowConflict&&(flowConfirm||activity)&&vwapContext){
+      entries.push({direction:'SHORT',trigger:'RESISTANCE_REACTION_PULLBACK_RETEST',zone:z,evidence:['SHARP_UP_MOVE_INTO_RESISTANCE','RESISTANCE_REJECTION','ABSORPTION_OR_SWEEP','BOUNCE_AWAY','PULLBACK_RETEST_HOLD',...(flowConfirm?['SELL_FLOW_CONFIRMATION']:[]),...(activity?['ACTIVITY_CONFIRMATION']:[]),...(explosion?['VOLATILITY_EXPANSION']:[])],atr:atr5,price,volume:vol,flow,entryDistanceAtr:Math.abs(price-Number(z.center))/atr5,tier:'PRIME',confirmationCount:Number(flowConfirm)+Number(activity)+Number(explosion)});
+      next.lastTriggeredCandle=currentTs; delete next.stage; delete next.zone; delete next.zoneId; next.awaySeen=false;
+    }
+  }
+
+  if(next.stage&&Date.now()-Number(next.reactionCandleTs||0)>35*60*1000){delete next.stage;delete next.zone;delete next.zoneId;delete next.awaySeen;next.lastState='REACTION_EXPIRED';}
+  if(!next.stage&&!entries.length&&next.lastState!=='REACTION_EXPIRED')next.lastState=(support||resistance)?'WATCH_LEVEL':'NO_SETUP';
+
+  return{
+    state:entries.length?'ENTRY_READY':(next.stage||next.lastState||'WATCH_LEVEL'),direction:entries.find(e=>e.direction)?.direction||'NONE',entries,zones,watched,volume:vol,atr:atr5,nextState:next,move5:hybridPercentChange(c5,5),preMove5:move5,extension:atr5>0?Math.abs(price-Number(current.open))/atr5:0,
+    eventFlags:{supportZone:Boolean(support),resistanceZone:Boolean(resistance),supportReaction:watched.some(x=>x.type==='SUPPORT'&&x.bounce?.confirmed),resistanceReaction:watched.some(x=>x.type==='RESISTANCE'&&x.rejection?.confirmed),sharpDownMove:downImpulse,sharpUpMove:upImpulse,explosion,waitingRetest:Boolean(next.stage),retestConfirmed:entries.length>0,pullbackRetest:entries.length>0,breakout:false,exhausted:false},
+    indicators:{atrPct:Number(atrPct.toFixed(4)),bbWidth:Number.isFinite(bbWidth)?Number(bbWidth.toFixed(4)):null,bbExpanding,flowLong:Number(flowLong.toFixed(4)),flowShort:Number(flowShort.toFixed(4)),volumeRatio:Number(vol.volumeRatio||1),rangeRatio:Number(vol.rangeRatio||1)},
+    engine:'LIQUIDITY_REACTION_5M'
+  };
 }
 function hybridLeverage(setup){let l=Number(CONFIG.HYBRID_RISK.defaultLeverage||5),t=String(setup?.trigger||'');if(t.includes('RETEST'))l=7;else if(t.includes('BOUNCE')||t.includes('REJECTION'))l=5;if(setup?.flow?.flowSurge)l=Math.max(l,7);if(setup?.flow?.explosiveFlow)l=Math.max(l,8);return Math.max(CONFIG.HYBRID_RISK.minLeverage,Math.min(CONFIG.HYBRID_RISK.maxLeverage,l));}
 function hybridBuildSetup(symbol,analysis,flow,topTrader){
   const e=analysis.entries?.find(x=>x.direction==='LONG'||x.direction==='SHORT');if(!e)return null;const price=Number(analysis.price||e.price),atrValue=Number(analysis.atr||e.atr),direction=e.direction,zone=e.zone;if(!(price>0)||!(atrValue>0)||!zone||Number(zone.quality||0)<CONFIG.HYBRID_ENTRY.minZoneQuality)return null;const entryDistanceAtr=Math.abs(price-Number(zone.center))/atrValue;const maxEntryDistanceAtr=e.early?Number(CONFIG.HYBRID_ENTRY.earlyMaxEntryDistanceAtr||CONFIG.HYBRID_ENTRY.maxEntryDistanceAtr):Number(CONFIG.HYBRID_ENTRY.maxEntryDistanceAtr);if(entryDistanceAtr>maxEntryDistanceAtr)return null;
   const stopBase=direction==='LONG'?Number(zone.low):Number(zone.high),buffer=atrValue*CONFIG.HYBRID_RISK.stopAtrBuffer,stop=direction==='LONG'?stopBase-buffer:stopBase+buffer,r=Math.max(Math.abs(price-stop),buffer),oppositeZones=direction==='LONG'?(analysis.zones?.resistance||[]):(analysis.zones?.support||[]),levelTarget=oppositeZones.filter(z=>direction==='LONG'?Number(z.center)>price:Number(z.center)<price).sort((a,b)=>Math.abs(Number(a.center)-price)-Math.abs(Number(b.center)-price))[0],levelDistance=levelTarget?Math.abs(Number(levelTarget.center)-price):0,rMin=r*0.90,tp1=levelTarget&&levelDistance>=rMin?Number(levelTarget.center):(direction==='LONG'?price+r*CONFIG.HYBRID_RISK.tp1R:price-r*CONFIG.HYBRID_RISK.tp1R),tp2=direction==='LONG'?Math.max(price+r*CONFIG.HYBRID_RISK.tp2R,tp1+r*0.5):Math.min(price-r*CONFIG.HYBRID_RISK.tp2R,tp1-r*0.5),tp3=direction==='LONG'?Math.max(price+r*CONFIG.HYBRID_RISK.tp3R,tp2+r*0.5):Math.min(price-r*CONFIG.HYBRID_RISK.tp3R,tp2-r*0.5),trader=ttiScoreForSymbol(topTrader?.cohort||[],hybridNormalizeSymbol(symbol),direction);
-  if((direction==='LONG'&&!(stop<price))||(direction==='SHORT'&&!(stop>price)))return null;if((direction==='LONG'&&!(tp1>price&&tp2>tp1&&tp3>tp2))||(direction==='SHORT'&&!(tp1<price&&tp2<tp1&&tp3<tp2)))return null;const tier=['FAST','NORMAL','PRIME'].includes(e.tier)?e.tier:(String(e.trigger).includes('RETEST')?'PRIME':'NORMAL');const mult=tier==='PRIME'?CONFIG.HYBRID_ENTRY.tierPrimeAllocation:tier==='NORMAL'?CONFIG.HYBRID_ENTRY.tierNormalAllocation:CONFIG.HYBRID_ENTRY.tierFastAllocation;const allocation=CONFIG.HYBRID_RISK.capitalAllocation*mult;
+  if((direction==='LONG'&&!(stop<price))||(direction==='SHORT'&&!(stop>price)))return null;if((direction==='LONG'&&!(tp1>price&&tp2>tp1&&tp3>tp2))||(direction==='SHORT'&&!(tp1<price&&tp2<tp1&&tp3<tp2)))return null;const tier=['FAST','NORMAL','PRIME'].includes(e.tier)?e.tier:(String(e.trigger).includes('RETEST')?'PRIME':'NORMAL');const allocation=CONFIG.HYBRID_RISK.capitalAllocation;
   return{valid:true,symbol:hybridNormalizeSymbol(symbol),direction,trigger:e.trigger,tier,state:'ENTRY_READY',entry:price,entryPrice:price,stopLoss:Number(stop.toFixed(8)),tp1:Number(tp1.toFixed(8)),tp2:Number(tp2.toFixed(8)),tp3:Number(tp3.toFixed(8)),atr:atrValue,stopDistance:r,stopPercent:Number((r/price*100).toFixed(3)),entryDistanceAtr:Number(entryDistanceAtr.toFixed(3)),leverage:hybridLeverage({trigger:e.trigger,flow}),allocation,allocationPercent:Number((allocation*100).toFixed(2)),riskPerTradePercent:Number((CONFIG.RISK_PER_TRADE*100).toFixed(2)),zone,zoneType:e.trigger.includes('SUPPORT')?'SUPPORT':'RESISTANCE',evidence:[...new Set([...(e.evidence||[]),...hybridFlowEvidence(flow,direction)])],confirmationCount:Number(e.confirmationCount||0),entryTier:tier,flow,topTrader:trader,topTraderPolicy:'CONFIRMATION_ONLY_NO_BLOCK',volume:analysis.volume,candleTimestamp:Number(candlesTimestamp(analysis))||0,createdAt:Date.now()};
 }
 function candlesTimestamp(a){return a?.candles?.['5m']?.at(-1)?.timestamp||0;}
@@ -1171,7 +1109,7 @@ PREFER_MAJOR_MARKETS: false,
 MAJOR_SYMBOLS: ["BTC","ETH","SOL","ARB","AVAX","INJ","LINK","OP","APT","NEAR"],
 // A candidate can proceed without OI; OI is diagnostics only and is not an entry-score blocker.
 OI_OPTIONAL: true,
-PUMP_RADAR: {enabled: CONFIG.PUMP_RADAR_ENABLED, watchScore: CONFIG.PUMP_RADAR_WATCH_SCORE, hotScore: CONFIG.PUMP_RADAR_HOT_SCORE},
+entryEngine: "LIQUIDITY_REACTION_5M", legacyRadar: "REMOVED", legacyScoreEntry: "REMOVED",
 PRECISION: {
 enabled: true,
 minEntryScore: 72,
@@ -4527,7 +4465,7 @@ async function runFullScan(env, scanOptions = {}) {
   const cursor=Math.abs(Number(state.hybridScanCursor||0))%Math.max(1,ranked.length),rows=[];const hot=ranked.filter(x=>x.priority>=4).sort((a,b)=>(Number(b.earlyBoost||0)-Number(a.earlyBoost||0))||(b.priority-a.priority)).slice(0,Math.min(8,limit));
   // Retest states get first-class rotation priority so a valid breakout is not lost
   // simply because its symbol moved out of the top-flow slice on the next cycle.
-  const pendingSymbols=new Set(Object.entries(state.hybridStructureStates||{}).filter(([,v])=>v?.pendingRetest).map(([k])=>normalizeSymbol(k)));
+  const pendingSymbols=new Set(Object.entries(state.hybridStructureStates||{}).filter(([,v])=>['REACTION_SUPPORT','REACTION_RESISTANCE'].includes(String(v?.stage||''))).map(([k])=>normalizeSymbol(k)));
   const rowSymbols=new Set();
   const pushDeepRow=(x)=>{
     const symbol=normalizeSymbol(x?.s);
@@ -4561,7 +4499,21 @@ async function runFullScan(env, scanOptions = {}) {
       if(!state.hybridStructureStates)state.hybridStructureStates={};state.hybridStructureStates[row.s]=analysis.nextState||prev;
       const ef=analysis.eventFlags||{};eventStats.supportZones+=ef.supportZone?1:0;eventStats.resistanceZones+=ef.resistanceZone?1:0;eventStats.flowEvents+=(flow.flowSurge||flow.explosiveFlow)?1:0;eventStats.volumeEvents+=(analysis.volume?.volumeSurge||analysis.volume?.rangeExpansion||analysis.volume?.volumeExplosive)?1:0;eventStats.supportReactions+=ef.supportReaction?1:0;eventStats.resistanceReactions+=ef.resistanceReaction?1:0;eventStats.breakouts+=ef.breakout?1:0;eventStats.waitingRetests+=ef.waitingRetest?1:0;eventStats.retestConfirmed+=ef.retestConfirmed?1:0;
       if(ef.supportReaction||ef.resistanceReaction||ef.breakout||ef.waitingRetest||ef.retestConfirmed)eventCandidates++;
-      let setup=hybridBuildSetup(row.s,analysis,flow,traders); let setupMode="STRUCTURE"; const early=hybridEarlyImpulse(row.s,{"5m":c5},flow,eventStats.earlyDebug); if(!setup&&early){ const earlyAnalysis={...analysis,price:early.price,atr:early.atr,zones:analysis.zones,entries:[early],volume:early.volume}; setup=hybridBuildSetup(row.s,earlyAnalysis,flow,traders); if(!setup){ eventStats.earlyDebug.setupRejected=(Number(eventStats.earlyDebug.setupRejected)||0)+1; if(eventStats.earlyDebug.lastRejections){eventStats.earlyDebug.lastRejections.push({symbol:row.s,reason:"SETUP_REJECT"});if(eventStats.earlyDebug.lastRejections.length>20)eventStats.earlyDebug.lastRejections.shift();} } if(setup){setup.trigger=early.trigger;setup.tier=early.tier;setup.early=true;setup.earlyScore=early.earlyScore;setup.eventStrength=early.eventStrength||early.earlyScore;setup.edge=0;setup.evidence=[...(setup.evidence||[]),...(early.evidence||[])];setupMode="EARLY_IMPULSE";eventStats.earlyImpulses=(eventStats.earlyImpulses||0)+1;}} if(setup){eventStats.entryReady++;signals.push({id:crypto.randomUUID(),symbol:setup.symbol,market:pairSymbol(setup.symbol),direction:setup.direction,status:"EVENT_ENTRY_READY",score:0,confidence:100,price:setup.entryPrice,tradePlan:{valid:true,entry:setup.entryPrice,stopLoss:setup.stopLoss,tp1:setup.tp1,tp2:setup.tp2,tp3:setup.tp3,leverage:setup.leverage,allocation:setup.allocation,allocationPercent:Number((setup.allocation*100).toFixed(2))},trend:{},components:{structureEvent:setup.trigger,volume:analysis.volume,flow:flow},diagnostics:setup.evidence,signalTier:"EVENT_SEQUENCE",executionEligible:true,edge:0,riskScore:0,entryQuality:{overextended:false},entryEngine:"STRUCTURE_SHARP_MOVE",eventStrength:Number(setup.eventStrength||setup.earlyScore||0),topTraderIntelligence:setup.topTrader,hybridSetup:{...setup,mode:setupMode},generatedAt:Date.now()});}
+      let setup=hybridBuildSetup(row.s,analysis,flow,traders);
+      const setupMode="LIQUIDITY_REACTION_5M";
+      if(setup && !String(setup.trigger||"").includes("REACTION_PULLBACK_RETEST")) setup=null;
+      if(setup){
+        eventStats.entryReady++;
+        signals.push({
+          id:crypto.randomUUID(), symbol:setup.symbol, market:pairSymbol(setup.symbol), direction:setup.direction,
+          status:"EVENT_ENTRY_READY", score:0, confidence:100, price:setup.entryPrice,
+          tradePlan:{valid:true,entry:setup.entryPrice,stopLoss:setup.stopLoss,tp1:setup.tp1,tp2:setup.tp2,tp3:setup.tp3,leverage:setup.leverage,allocation:setup.allocation,allocationPercent:Number((setup.allocation*100).toFixed(2))},
+          trend:{}, components:{structureEvent:setup.trigger,volume:analysis.volume,flow:flow,reaction5m:analysis.indicators},
+          diagnostics:setup.evidence, signalTier:"LIQUIDITY_REACTION_5M", executionEligible:true, edge:0, riskScore:0,
+          entryQuality:{overextended:false}, entryEngine:"LIQUIDITY_REACTION_5M", eventStrength:0, topTraderIntelligence:null,
+          hybridSetup:{...setup,mode:setupMode}, generatedAt:Date.now()
+        });
+      }
       deepSucceeded++;
       console.log("[HYBRID][STRUCTURE]",{symbol:row.s,state:analysis.state,direction:analysis.direction,move5:analysis.move5,flow:flow.imbalance,flowSurge:Boolean(flow.flowSurge||flow.explosiveFlow),volume:analysis.volume?.volumeRatio,range:analysis.volume?.rangeRatio,support:analysis.zones?.support?.[0]?.center||null,resistance:analysis.zones?.resistance?.[0]?.center||null,events:analysis.eventFlags||{}});
     }catch(e){deepErrors++;const detail=safeError(e);errors.push({symbol:row.s,scope:"deep-structure",stage:deepStage,error:detail});console.error("[HYBRID][DEEP_ERROR]",{symbol:row.s,stage:deepStage,error:detail});}
@@ -5339,58 +5291,12 @@ const currentPrice = v1565NormalizePrice(snapshot?.price || snapshot?.currentPri
 if (!(currentPrice > 0)) continue;
 position.currentPrice = currentPrice;
 
-// V15.6.5: quarantine legacy/corrupt Radar paper positions whose stored
-// entry and current price are on incompatible scales. Do not emit a fake PnL.
-if (String(position?.lane || "CORE").toUpperCase() === "RADAR") {
-  const integrity=v1565RadarPriceIntegrity(position?.entryPrice,currentPrice,{maxRatio:25});
-  if (!integrity.ok) {
-    const actualPct=Math.max(0,Math.min(100,Number(position?.remainingPct||100)));
-    position.remainingPct=0;
-    position.status="PAPER_CLOSED";
-    position.closedAt=now;
-    position.lastExitActionAt=now;
-    position.exitHistory=Array.isArray(position.exitHistory)?position.exitHistory:[];
-    position.exitHistory.push({at:now,action:"RADAR_PRICE_DATA_QUARANTINE",reason:integrity.reason,price:currentPrice,closePercent:actualPct,pnlUsd:null,entryPrice:v1565NormalizePrice(position?.entryPrice),exitPrice:currentPrice,ratio:integrity.ratio});
-    actions.push({id:position.id,symbol,direction:position.side,lane:"RADAR",action:"RADAR_PRICE_DATA_QUARANTINE",reason:integrity.reason,closePercent:actualPct,pnlPercent:null,pnlUsd:null,entryPrice:v1565NormalizePrice(position?.entryPrice),exitPrice:currentPrice,leverage:position.leverage,notionalUsd:position.notionalUsd,exitScore:0,remainingPct:0,priceRatio:integrity.ratio});
-    continue;
-  }
-}
- 
 const previous = await loadMarketSnapshot(env, symbol);
 const analysis = scoreSignal(snapshot, previous?.market || null);
 const market = { ...snapshot, price: currentPrice, currentPrice, score: analysis.score, trend: snapshot.trend, structure: snapshot.structure, participation: snapshot.participation, momentum: snapshot.momentum, smartMoney: snapshot.smartMoney, smartMoneyOutflow: snapshot.smartMoneyOutflow, risk: analysis.risk, atr: snapshot.atr ?? snapshot.indicators?.atr };
 
 // V13.9.9.1 HOTFIX: bind the unified exit plan before the CORE exit branch uses it.
 const plan = buildPositionExitPlan(position, market, false);
-
-if (String(position.lane || "CORE").toUpperCase() === "RADAR") {
-  const radarNow = v8PumpRadar(snapshot.market, previous?.market || null);
-  position.radarLastScore = Number(radarNow?.score || 0);
-  position.radarPeakScore = Math.max(Number(position.radarPeakScore || 0), Number(radarNow?.score || 0));
-  const radarExit = radarReversalDecision(position, radarNow, analysis);
-  if (radarExit.close) {
-    const actualPct = Number(position.remainingPct || 100);
-    const pnlIntegrity=v1565RadarPriceIntegrity(position?.entryPrice,currentPrice,{maxRatio:25});
-    if(!pnlIntegrity.ok){
-      const actualPct=Math.max(0,Math.min(100,Number(position?.remainingPct||100)));
-      position.remainingPct=0; position.status="PAPER_CLOSED"; position.closedAt=now; position.lastExitActionAt=now;
-      position.exitHistory=Array.isArray(position.exitHistory)?position.exitHistory:[];
-      position.exitHistory.push({at:now,action:"RADAR_PRICE_DATA_QUARANTINE",reason:pnlIntegrity.reason,price:currentPrice,closePercent:actualPct,pnlUsd:null,entryPrice:v1565NormalizePrice(position?.entryPrice),exitPrice:currentPrice,ratio:pnlIntegrity.ratio});
-      actions.push({id:position.id,symbol,direction:position.side,lane:"RADAR",action:"RADAR_PRICE_DATA_QUARANTINE",reason:pnlIntegrity.reason,closePercent:actualPct,pnlPercent:null,pnlUsd:null,entryPrice:v1565NormalizePrice(position?.entryPrice),exitPrice:currentPrice,leverage:position.leverage,notionalUsd:position.notionalUsd,radarScore:radarExit.radarScore,radarDirection:radarExit.radarDirection,remainingPct:0,priceRatio:pnlIntegrity.ratio});
-      continue;
-    }
-    const pnl = paperPnlUsd(position, currentPrice, actualPct);
-    position.realizedPnlUsd = Number((Number(position.realizedPnlUsd || 0) + pnl).toFixed(4));
-    position.remainingPct = 0;
-    position.status = "PAPER_CLOSED";
-    position.closedAt = now;
-    position.lastExitActionAt = now;
-    position.exitHistory = Array.isArray(position.exitHistory) ? position.exitHistory : [];
-    position.exitHistory.push({ at: now, action: "RADAR_REVERSAL_FULL", reason: radarExit.reason, price: currentPrice, closePercent: actualPct, pnlUsd: Number(pnl.toFixed(4)), radarScore: radarExit.radarScore, radarDirection: radarExit.radarDirection });
-    actions.push({ id: position.id, symbol, direction: position.side, lane: "RADAR", action: "RADAR_REVERSAL_FULL", reason: radarExit.reason, closePercent: actualPct, pnlPercent: Number((pnl / Math.max(1, Number(position.notionalUsd || 1)) * 100).toFixed(2)), pnlUsd: Number(pnl.toFixed(4)), entryPrice: position.entryPrice, exitPrice: currentPrice, leverage: position.leverage, notionalUsd: position.notionalUsd, radarScore: radarExit.radarScore, radarDirection: radarExit.radarDirection, remainingPct: 0 });
-    continue;
-  }
-}
 
 const lockPlan = deriveProfitLockPlan(position, market);
 const stageBefore = profitLockStage(position);
@@ -10281,6 +10187,7 @@ const direction = String(signal?.direction || "").toUpperCase();
 // V17 HYBRID: entry gating is event-based. Do not reintroduce score/trend-count gates.
 // Risk limits, valid direction/plan, wallet/market capacity and GMX-native minimums remain safety controls.
 if (!signal?.tradePlan?.valid || !["LONG","SHORT"].includes(direction)) return {executed:false,mode:"LIVE",reason:"Invalid live signal"};
+if (String(signal?.entryEngine||"") !== "LIQUIDITY_REACTION_5M" || String(signal?.signalTier||"") !== "LIQUIDITY_REACTION_5M") return {executed:false,mode:"LIVE",reason:"LEGACY_ENTRY_ENGINE_BLOCKED"};
 
 let sdk,signer,account;
 try { ({sdk,signer,account}=await getLiveContext(env)); } catch(error) { throw executionStageError("LIVE_CONTEXT", error); }
@@ -10318,7 +10225,7 @@ const existingCollateralUsd=Array.isArray(positions)?positions.reduce((sum,p)=>{
 if(walletUsd>0&&existingCollateralUsd>=walletUsd*CONFIG.MAX_TOTAL_CAPITAL_ALLOCATION-1e-9) throw new Error(`MAX_TOTAL_CAPITAL_ALLOCATION_REACHED: estimatedCollateral=$${existingCollateralUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, cap=${(CONFIG.MAX_TOTAL_CAPITAL_ALLOCATION*100).toFixed(2)}%`);
 const leverage=Number(signal.tradePlan.leverage||CONFIG.DEFAULT_LEVERAGE);
 if (!Number.isFinite(leverage)||leverage<=0||leverage>CONFIG.MAX_LEVERAGE) throw new Error(`Invalid leverage: ${leverage}`);
-const allocation=Number(signal.tradePlan.allocation??allocationFromScore(signal.score));
+const allocation=Number(signal.tradePlan.allocation??CONFIG.HYBRID_RISK.capitalAllocation);
 if (!Number.isFinite(allocation)||allocation<=0||allocation>CONFIG.MAX_CAPITAL_ALLOCATION) throw new Error(`Invalid capital allocation: ${allocation}`);
 const collateralTargetUsd=walletUsd*allocation;
 const collateralCapUsd=CONFIG.MAX_POSITION_NOTIONAL_USD/Math.max(leverage,1);
@@ -10466,7 +10373,7 @@ if (!verification.verified) {
 }
 const walletAfter=verification.walletAfter || await readLiveWalletSnapshot(sdk, account);
 const walletDelta=Number.isFinite(Number(verification.walletDelta)) ? Number(verification.walletDelta) : null;
-const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:Number(signal.score||0),confidence:Number(signal.confidence||0),leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,requestedCollateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,allowance:allowanceInfo,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:result?.requestId||null,status:result?.status||null,entryEngine:String(signal?.entryEngine||"STRUCTURE_SHARP_MOVE"),eventStrength:Number(signal?.eventStrength||0),positionVerified:true,walletBefore,walletAfter,walletDelta,settlementVerified:Boolean(verification.settled),position:verification.position||null,feeTelemetry:result?.feeTelemetry||null,executionKey:lock.key};
+const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:0,confidence:100,leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,requestedCollateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,allowance:allowanceInfo,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:result?.requestId||null,status:result?.status||null,entryEngine:"LIQUIDITY_REACTION_5M",eventStrength:Number(signal?.eventStrength||0),positionVerified:true,walletBefore,walletAfter,walletDelta,settlementVerified:Boolean(verification.settled),position:verification.position||null,feeTelemetry:result?.feeTelemetry||null,executionKey:lock.key};
 entryNotice.accounting=buildObservedWalletAccounting(entryNotice);
 try { await sendTelegram(env, formatTelegramLiveEntry(entryNotice)); } catch(_) {}
 return entryNotice;
@@ -10529,39 +10436,8 @@ const hardStop = entryPrice > 0 && currentPrice > 0 && (
 (!isLong && Number(position.stopLossPrice || position.stopLoss || 0) > 0 && currentPrice >= Number(position.stopLossPrice || position.stopLoss))
 );
  
-const radarLedger = await loadRadarLiveLedger(env);
-const radarKey = radarLiveLedgerKey(symbol);
-const radarMeta = radarLedger[radarKey]?.status === "OPEN" ? radarLedger[radarKey] : null;
-const syntheticPosition = {
-...position,
-lane: radarMeta ? "RADAR" : "CORE",
-side,
-entryPrice,
-score: radarMeta ? Number(radarMeta.radarScore || analysis.score) : analysis.score,
-initialStopPrice: Number(position.stopLossPrice || position.stopLoss || radarMeta?.initialStopPrice || 0) || undefined
-};
-if (radarMeta) {
-  const radarNow = v8PumpRadar(snapshot.market, previous?.market || null);
-  const reversal = radarReversalDecision(syntheticPosition, radarNow, analysis);
-  if (reversal.close) {
-    const sizeUsd = Number(position.sizeInUsd);
-    const size = BigInt(Math.floor(sizeUsd));
-    const marketSdk = findSdkMarket(markets, symbol);
-    if (marketSdk && size > 0n) {
-      const positionCollateral = String(position?.collateralToken || position?.collateralSymbol || position?.receiveToken || "USDC").toUpperCase();
-const exitCollateral = positionCollateral === "USDT" ? "USDT" : "USDC";
-const result = await executeGmxOrder(sdk, {kind:"decrease",symbol:marketSdk.symbol,direction:isLong?"long":"short",orderType:"market",size,collateralToken:exitCollateral,receiveToken:exitCollateral,mode:"classic",from:account},signer,{symbol:marketSdk.symbol,direction:isLong?"LONG":"SHORT",lane:"RADAR",action:"REVERSAL_CLOSE",rpcUrl:env.ARBITRUM_RPC});
-      radarLedger[radarKey] = {...radarMeta,status:"CLOSED",closedAt:Date.now(),closeRequestId:result?.requestId || null,closeReason:reversal.reason};
-      await saveRadarLiveLedger(env, radarLedger);
-      const actionRecord = {symbol,direction:side,lane:"RADAR",action:"RADAR_REVERSAL_FULL",reason:reversal.reason,closePercent:100,pnlPercent:entryPrice>0&&currentPrice>0?(isLong?(currentPrice-entryPrice)/entryPrice:(entryPrice-currentPrice)/entryPrice)*100:0,pnlUsd:null,entryPrice,exitPrice:currentPrice,leverage:Number(position?.leverage||radarMeta?.leverage||1),notionalUsd:Number(position?.sizeInUsd||radarMeta?.notionalUsd||0),radarScore:reversal.radarScore,radarDirection:reversal.radarDirection,requestId:result?.requestId||null};
-      actions.push(actionRecord);
-      await auditLog(env,{type:"LIVE_RADAR_REVERSAL_CLOSE",account,action:actionRecord});
-      try { await sendTelegram(env, formatTelegramExit(actionRecord)); } catch (_) {}
-      continue;
-    }
-  }
-}
-const plan = buildPositionExitPlan(syntheticPosition, market, hardStop);
+// V17.7: legacy Radar reversal exit is disabled; only unified hard-stop/TP exit logic may close positions.
+const plan = buildPositionExitPlan(position, market, hardStop);
  
 // Preserve the original smart-money/reversal protection as a fallback signal,
 // but let the unified exit manager decide the action.
