@@ -1,9 +1,9 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
-║  V17.5.14 — STRUCTURE + SHARP-MOVE ENTRY ENGINE + FEE TELEMETRY                                          ║
+║  V17.7.0 — LIQUIDITY REACTION 5M-ONLY ENGINE                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.5.15-DASHBOARD                                   ║
+║  RELEASE: V17.7.0-LIQUIDITY-REACTION-5M-ONLY                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -26,7 +26,7 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.6.0-CLASSIC-COST-PROBE";
+export const BOT_VERSION = "V17.7.0-LIQUIDITY-REACTION-5M-ONLY";
 export const BOT_BUILD = "V17.5.14";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
