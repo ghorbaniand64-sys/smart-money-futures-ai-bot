@@ -3,7 +3,7 @@
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
 ║  V17.8.1 — LIQUIDITY MAP + REACTION + EARLY IMPULSE ENGINE                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.8.4-TELEGRAM-HEARTBEAT-HARDENING                                   ║
+║  RELEASE: V17.8.5-EARLY-LANE-EXECUTION-ROBUST                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.8.4-TELEGRAM-HEARTBEAT-HARDENING";
-export const BOT_BUILD = "V17.8.4-TELEGRAM-HEARTBEAT-HARDENING";
+export const BOT_VERSION = "V17.8.5-EARLY-LANE-EXECUTION-ROBUST";
+export const BOT_BUILD = "V17.8.5-EARLY-LANE-EXECUTION-ROBUST";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -470,7 +470,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.8.4-TELEGRAM-HEARTBEAT-HARDENING",
+VERSION: "V17.8.5-EARLY-LANE-EXECUTION-ROBUST",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -4618,23 +4618,6 @@ async function runFullScan(env, scanOptions = {}) {
   let eventCandidates=0;
   let deepAttempted=0,deepSucceeded=0,deepErrors=0;
   console.log("[HYBRID][DEEP_START]",{scanId,planned:rows.length,uniqueDeepSymbols:rowSymbols.size,universe:markets.length,broad5mScanned:broad5m.size});
-  // V17.8.4: immediate heartbeat before deep analysis so Telegram cannot appear dead while a fetch/analysis stalls.
-  try {
-    const startHeartbeat = await sendTelegram(env, [
-      "🟡 GMX BOT — CYCLE START",
-      "━━━━━━━━━━━━━━━━━━",
-      "📡 Status: DEEP_SCAN_RUNNING",
-      `🪙 Universe: ${Number(markets.length||0)}`,
-      `🔎 Broad 5M: ${Number(broad5m.size||0)}`,
-      `🧠 Deep planned: ${Number(rows.length||0)}`,
-      `🆔 Scan: ${telegramTextSafe(scanId, "n/a")}`,
-      `🕐 ${new Date().toISOString()}`,
-      "ℹ️ Deep scan شروع شد؛ گزارش نهایی پس از Selection/Execution ارسال می‌شود."
-    ].join("\n"));
-    console.log("[TELEGRAM][CYCLE_START]",{scanId,sent:Boolean(startHeartbeat?.ok),reason:startHeartbeat?.reason||null});
-  } catch (tgError) {
-    console.error("[TELEGRAM][CYCLE_START_ERROR]",{scanId,error:safeError(tgError)});
-  }
   for(const row of rows){
     deepAttempted++;
     let deepStage="START";
@@ -10355,11 +10338,11 @@ const direction = String(signal?.direction || "").toUpperCase();
 if (!signal?.tradePlan?.valid || !["LONG","SHORT"].includes(direction)) return {executed:false,mode:"LIVE",reason:"Invalid live signal"};
 const entryEngine = String(signal?.entryEngine || "").toUpperCase();
 const signalTier = String(signal?.signalTier || "").toUpperCase();
-// V17.8.4: only the two active HYBRID event lanes may execute.
-// Legacy Score/Radar entry paths remain permanently blocked.
-const activeEventLane =
-  (entryEngine === "LIQUIDITY_REACTION_5M" && signalTier === "LIQUIDITY_REACTION_5M") ||
-  (entryEngine === "EARLY_IMPULSE_5M" && signalTier === "EARLY_IMPULSE_5M");
+// V17.8.5: execution eligibility is keyed to the canonical HYBRID lane (signalTier).
+// Do NOT require entryEngine to duplicate signalTier: selection/serialization layers
+// may omit or transform entryEngine even though the signal itself is an active event.
+// Legacy Score/Radar lanes remain blocked because their canonical tiers are not active.
+const activeEventLane = ["LIQUIDITY_REACTION_5M", "EARLY_IMPULSE_5M"].includes(signalTier);
 if (!activeEventLane) return {executed:false,mode:"LIVE",reason:"LEGACY_ENTRY_ENGINE_BLOCKED"};
 
 let sdk,signer,account;
@@ -11089,7 +11072,7 @@ timestamp: Date.now()
 // The WeakMap is keyed by the current Worker env object, so separate
 // invocations do not share counters.
 const TELEGRAM_BUDGETS = new WeakMap();
-const TELEGRAM_MAX_SENDS_PER_INVOCATION = 8;
+const TELEGRAM_MAX_SENDS_PER_INVOCATION = 6;
 
 function telegramBudget(env) {
   let budget = TELEGRAM_BUDGETS.get(env);
