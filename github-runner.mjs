@@ -1,5 +1,5 @@
 // Smart Money Futures AI Bot — GitHub Actions adapter
-// V17.8.2-EARLY-IMPULSE-UNLOCK-GITHUB-ACTIONS-MATCHED
+// V17.5.2-GITHUB-ACTIONS-BIGINT-SAFE-MARKET-RESOLVER
 // Imports the canonical root worker_core.mjs and fails fast on stale deployments.
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -88,7 +88,6 @@ async function main() {
     worker: "worker_core.mjs",
     expectedVersion: env.EXPECTED_VERSION,
     actualWorkerVersion: actualVersion,
-    configuredExpectedVersion: process.env.EXPECTED_VERSION ?? null,
     build: BOT_BUILD || "UNKNOWN",
     executionEnabled: env.EXECUTION_ENABLED,
     executionEnabledSource: process.env.EXECUTION_ENABLED == null ? "runner-default-true" : "github-env"

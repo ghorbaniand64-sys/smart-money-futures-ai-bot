@@ -3,7 +3,7 @@
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
 ║  V17.8.1 — LIQUIDITY MAP + REACTION + EARLY IMPULSE ENGINE                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.8.2-EARLY-IMPULSE-UNLOCK                                   ║
+║  RELEASE: V17.8.3-EARLY-EXECUTION-LANE-FIX                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.8.2-EARLY-IMPULSE-UNLOCK";
-export const BOT_BUILD = "V17.8.2-EARLY-IMPULSE-UNLOCK";
+export const BOT_VERSION = "V17.8.3-EARLY-EXECUTION-LANE-FIX";
+export const BOT_BUILD = "V17.8.3-EARLY-EXECUTION-LANE-FIX";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -470,7 +470,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.8.2-EARLY-IMPULSE-UNLOCK",
+VERSION: "V17.8.3-EARLY-EXECUTION-LANE-FIX",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -10336,7 +10336,14 @@ const direction = String(signal?.direction || "").toUpperCase();
 // V17 HYBRID: entry gating is event-based. Do not reintroduce score/trend-count gates.
 // Risk limits, valid direction/plan, wallet/market capacity and GMX-native minimums remain safety controls.
 if (!signal?.tradePlan?.valid || !["LONG","SHORT"].includes(direction)) return {executed:false,mode:"LIVE",reason:"Invalid live signal"};
-if (String(signal?.entryEngine||"") !== "LIQUIDITY_REACTION_5M" || String(signal?.signalTier||"") !== "LIQUIDITY_REACTION_5M") return {executed:false,mode:"LIVE",reason:"LEGACY_ENTRY_ENGINE_BLOCKED"};
+const entryEngine = String(signal?.entryEngine || "").toUpperCase();
+const signalTier = String(signal?.signalTier || "").toUpperCase();
+// V17.8.3: accept only the two active HYBRID event lanes.
+// Legacy Score/Radar entry paths remain blocked and are never re-enabled.
+const activeEventLane =
+  (entryEngine === "LIQUIDITY_REACTION_5M" && signalTier === "LIQUIDITY_REACTION_5M") ||
+  (entryEngine === "EARLY_IMPULSE_5M" && signalTier === "EARLY_IMPULSE_5M");
+if (!activeEventLane) return {executed:false,mode:"LIVE",reason:"LEGACY_ENTRY_ENGINE_BLOCKED"};
 
 let sdk,signer,account;
 try { ({sdk,signer,account}=await getLiveContext(env)); } catch(error) { throw executionStageError("LIVE_CONTEXT", error); }
@@ -10522,7 +10529,7 @@ if (!verification.verified) {
 }
 const walletAfter=verification.walletAfter || await readLiveWalletSnapshot(sdk, account);
 const walletDelta=Number.isFinite(Number(verification.walletDelta)) ? Number(verification.walletDelta) : null;
-const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:0,confidence:100,leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,requestedCollateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,allowance:allowanceInfo,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:result?.requestId||null,status:result?.status||null,entryEngine:"LIQUIDITY_REACTION_5M",eventStrength:Number(signal?.eventStrength||0),positionVerified:true,walletBefore,walletAfter,walletDelta,settlementVerified:Boolean(verification.settled),position:verification.position||null,feeTelemetry:result?.feeTelemetry||null,executionKey:lock.key};
+const entryNotice={executed:true,mode:"LIVE",account,symbol:sdkSymbol,direction:orderDirection,score:0,confidence:100,leverage,allocation,allocationPercent:Number((allocation*100).toFixed(2)),walletUsd,collateralUsd:finalCollateralUsd,requestedCollateralUsd,collateralToken:collateral.symbol,notionalUsd,riskBasedNotional,marketMinPositionUsd,marketMinCollateralUsd,allowance:allowanceInfo,entryPrice:Number(signal.tradePlan.entry||0),stopLoss:Number(signal.tradePlan.stopLoss||0),tp1:Number(signal.tradePlan.tp1||0),tp2:Number(signal.tradePlan.tp2||0),tp3:Number(signal.tradePlan.tp3||0),requestId:result?.requestId||null,status:result?.status||null,entryEngine:entryEngine,eventStrength:Number(signal?.eventStrength||0),positionVerified:true,walletBefore,walletAfter,walletDelta,settlementVerified:Boolean(verification.settled),position:verification.position||null,feeTelemetry:result?.feeTelemetry||null,executionKey:lock.key};
 entryNotice.accounting=buildObservedWalletAccounting(entryNotice);
 try { await sendTelegram(env, formatTelegramLiveEntry(entryNotice)); } catch(_) {}
 return entryNotice;
