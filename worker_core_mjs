@@ -3,7 +3,7 @@
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
 ║  V17.8.8 — LIQUIDITY MAP + REACTION + EARLY IMPULSE ENGINE                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.8.8-CLEAN-TELEGRAM-CLASSIC-EXECUTION                                   ║
+║  RELEASE: V17.8.9-TELEGRAM-HARDENED-CLASSIC-EXECUTION                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.8.8-CLEAN-TELEGRAM-CLASSIC-EXECUTION";
-export const BOT_BUILD = "V17.8.8-CLEAN-TELEGRAM-CLASSIC-EXECUTION";
+export const BOT_VERSION = "V17.8.9-TELEGRAM-HARDENED-CLASSIC-EXECUTION";
+export const BOT_BUILD = "V17.8.9-TELEGRAM-HARDENED-CLASSIC-EXECUTION";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -470,7 +470,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.8.8-CLEAN-TELEGRAM-CLASSIC-EXECUTION",
+VERSION: "V17.8.9-TELEGRAM-HARDENED-CLASSIC-EXECUTION",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -9761,10 +9761,34 @@ return { executed:true, mode:"LIVE", lane:"RADAR", account, symbol, direction:pl
 }
 
 
+function telegramCompactError(value, maxLen = 900) {
+  let s = value === null || value === undefined ? "" : String(value);
+  s = s.replace(/\r/g, "").replace(/\n+/g, " ").replace(/\s{2,}/g, " ").trim();
+  // Preserve the useful API/SDK reason while dropping huge calldata dumps.
+  const markers = [
+    "Market does not support increase orders",
+    "Insufficient liquidity",
+    "INSUFFICIENT_LIQUIDITY",
+    "exceeds the balance of the account",
+    "insufficient funds",
+    "execution reverted",
+    "HTTP 400", "HTTP 401", "HTTP 403", "HTTP 429", "HTTP 500"
+  ];
+  const lower = s.toLowerCase();
+  for (const marker of markers) {
+    const i = lower.indexOf(marker.toLowerCase());
+    if (i >= 0) {
+      const start = Math.max(0, i - 180);
+      return s.slice(start, i + marker.length + 420).slice(0, maxLen);
+    }
+  }
+  return s.slice(0, maxLen) + (s.length > maxLen ? " …[truncated]" : "");
+}
+
 function formatTelegramExecutionFailure(signal, error, result=null) {
   const symbol = telegramTextSafe(signal?.symbol || result?.symbol || "UNKNOWN");
   const direction = String(signal?.direction || result?.direction || "UNKNOWN").toUpperCase();
-  const reason = telegramTextSafe(result?.reason || result?.error || error || "UNKNOWN_EXECUTION_ERROR");
+  const reason = telegramTextSafe(telegramCompactError(result?.reason || result?.error || error || "UNKNOWN_EXECUTION_ERROR"));
   const tier = telegramTextSafe(signal?.signalTier || signal?.hybridSetup?.tier || "EVENT");
   const p=signal?.tradePlan||{};
   const stage=telegramTextSafe(result?.stage || error?.executionStage || "PRE-EXECUTION");
@@ -9839,7 +9863,7 @@ ${icon2} EXECUTED #${i+1} — ${telegramTextSafe(x?.symbol || "UNKNOWN")}`,
     `🎯 Entry ready: ${Number(result?.candidates || 0)}`,
     `🟢 Executed: ${executed}`,
     `🔴 Execution failures: ${failures}`,
-    ...exec.filter(x => x && x.executed === false && (x.error || x.reason)).slice(0,3).map((x,i) => `❌ FAIL #${i+1}: ${telegramTextSafe(x.symbol||"UNKNOWN")} | ${telegramTextSafe(x.direction||x.signalDirection||"?")} | ${telegramTextSafe(x.stage||"?")} | ${telegramTextSafe(x.error||x.reason||"UNKNOWN")}`),
+    ...exec.filter(x => x && x.executed === false && (x.error || x.reason)).slice(0,3).map((x,i) => `❌ FAIL #${i+1}: ${telegramTextSafe(x.symbol||"UNKNOWN")} | ${telegramTextSafe(x.direction||x.signalDirection||"?")} | ${telegramTextSafe(x.stage||"?")} | ${telegramCompactError(x.error||x.reason||"UNKNOWN")}`),
     ...executedDetails,
     `📍 Reactions: S ${Number(stats.supportReactions || 0)} / R ${Number(stats.resistanceReactions || 0)}`,
     `💥 Breakouts: ${Number(stats.breakouts || 0)}`,
@@ -11222,11 +11246,17 @@ if (!consumeTelegramBudget(env)) {
 return {ok:false,reason:"TELEGRAM_SUBREQUEST_BUDGET"};
 }
 const url = `https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/sendMessage`;
+const telegramText = String(message||"");
+const telegramPayloadText = telegramText.length > 3900 ? telegramText.slice(0, 3890) + "\n…[Telegram message truncated]" : telegramText;
+console.log("[TELEGRAM][SEND_ATTEMPT]", { chars: telegramText.length, sentChars: telegramPayloadText.length });
 try {
 const response = await fetch(url,{
 method:"POST",
 headers:{"content-type":"application/json; charset=UTF-8"},
-body:JSON.stringify({chat_id:env.TELEGRAM_CHAT_ID,text:String(message||"")})
+body:JSON.stringify({
+  chat_id:env.TELEGRAM_CHAT_ID,
+  text: telegramPayloadText
+})
 });
 const body = await response.text();
 if(!response.ok){
