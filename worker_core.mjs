@@ -3,7 +3,7 @@
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
 ║  V17.8.1 — LIQUIDITY MAP + REACTION + EARLY IMPULSE ENGINE                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.8.5-EARLY-LANE-EXECUTION-ROBUST                                   ║
+║  RELEASE: V17.8.6-TELEGRAM-PROGRESS-RESTORE                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.8.5-EARLY-LANE-EXECUTION-ROBUST";
-export const BOT_BUILD = "V17.8.5-EARLY-LANE-EXECUTION-ROBUST";
+export const BOT_VERSION = "V17.8.6-TELEGRAM-PROGRESS-RESTORE";
+export const BOT_BUILD = "V17.8.6-TELEGRAM-PROGRESS-RESTORE";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -470,7 +470,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.8.5-EARLY-LANE-EXECUTION-ROBUST",
+VERSION: "V17.8.6-TELEGRAM-PROGRESS-RESTORE",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -4618,6 +4618,24 @@ async function runFullScan(env, scanOptions = {}) {
   let eventCandidates=0;
   let deepAttempted=0,deepSucceeded=0,deepErrors=0;
   console.log("[HYBRID][DEEP_START]",{scanId,planned:rows.length,uniqueDeepSymbols:rowSymbols.size,universe:markets.length,broad5mScanned:broad5m.size});
+  // V17.8.6: Telegram visibility only. This does not alter selection or execution.
+  // Keep the original final CYCLE REPORT intact, while giving a lightweight progress
+  // signal so a long deep scan cannot look like Telegram has died.
+  try {
+    const tgStart=await sendTelegram(env,[
+      "🟡 GMX BOT — CYCLE START",
+      "━━━━━━━━━━━━━━━━━━",
+      "📡 Status: DEEP_SCAN_RUNNING",
+      `🪙 Universe: ${Number(markets.length||0)}`,
+      `🔎 Broad 5M: ${Number(broad5m.size||0)}`,
+      `🧠 Deep planned: ${Number(rows.length||0)}`,
+      `🆔 Scan: ${telegramTextSafe(scanId,"n/a")}`,
+      `🕐 ${new Date().toISOString()}`
+    ].join("\n"));
+    console.log("[TELEGRAM][CYCLE_START]",{scanId,sent:Boolean(tgStart?.ok),reason:tgStart?.reason||null});
+  } catch(tgError) {
+    console.error("[TELEGRAM][CYCLE_START_ERROR]",{scanId,error:safeError(tgError)});
+  }
   for(const row of rows){
     deepAttempted++;
     let deepStage="START";
@@ -4665,6 +4683,24 @@ async function runFullScan(env, scanOptions = {}) {
       }
       deepSucceeded++;
       console.log("[HYBRID][STRUCTURE]",{symbol:row.s,state:analysis.state,direction:analysis.direction,move5:analysis.move5,flow:flow.imbalance,flowSurge:Boolean(flow.flowSurge||flow.explosiveFlow),volume:analysis.volume?.volumeRatio,range:analysis.volume?.rangeRatio,support:analysis.zones?.support?.[0]?.center||null,resistance:analysis.zones?.resistance?.[0]?.center||null,events:analysis.eventFlags||{}});
+      // Progress every 3 completed rows; final report remains the authoritative cycle summary.
+      if(deepSucceeded % 3 === 0 && deepSucceeded < rows.length){
+        try {
+          const tgProgress=await sendTelegram(env,[
+            "🔵 GMX BOT — DEEP PROGRESS",
+            "━━━━━━━━━━━━━━━━━━",
+            `📡 ${deepSucceeded}/${rows.length} markets analyzed`,
+            `🪙 Last: ${telegramTextSafe(row.s,"?")}`,
+            `⚡ Early impulses: ${Number(eventStats.earlyImpulses||0)}`,
+            `🎯 Entry ready: ${Number(eventStats.entryReady||0)}`,
+            `🆔 Scan: ${telegramTextSafe(scanId,"n/a")}`,
+            `🕐 ${new Date().toISOString()}`
+          ].join("\n"));
+          console.log("[TELEGRAM][DEEP_PROGRESS]",{scanId,completed:deepSucceeded,planned:rows.length,sent:Boolean(tgProgress?.ok),reason:tgProgress?.reason||null});
+        } catch(tgError) {
+          console.error("[TELEGRAM][DEEP_PROGRESS_ERROR]",{scanId,completed:deepSucceeded,error:safeError(tgError)});
+        }
+      }
     }catch(e){deepErrors++;const detail=safeError(e);errors.push({symbol:row.s,scope:"deep-structure",stage:deepStage,error:detail});console.error("[HYBRID][DEEP_ERROR]",{symbol:row.s,stage:deepStage,error:detail});}
   }
   console.log("[HYBRID][DEEP_DONE]",{scanId,attempted:deepAttempted,succeeded:deepSucceeded,errors:deepErrors,planned:rows.length,uniqueDeepSymbols:rowSymbols.size,eventCandidates});
@@ -11072,7 +11108,7 @@ timestamp: Date.now()
 // The WeakMap is keyed by the current Worker env object, so separate
 // invocations do not share counters.
 const TELEGRAM_BUDGETS = new WeakMap();
-const TELEGRAM_MAX_SENDS_PER_INVOCATION = 6;
+const TELEGRAM_MAX_SENDS_PER_INVOCATION = 8;
 
 function telegramBudget(env) {
   let budget = TELEGRAM_BUDGETS.get(env);
