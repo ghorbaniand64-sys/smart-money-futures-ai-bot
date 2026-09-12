@@ -3,7 +3,7 @@
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
 ║  V17.8.1 — LIQUIDITY MAP + REACTION + EARLY IMPULSE ENGINE                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.8.1-DUAL-PATH-EARLY-IMPULSE                                   ║
+║  RELEASE: V17.8.2-EARLY-IMPULSE-UNLOCK                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.8.1-DUAL-PATH-EARLY-IMPULSE";
-export const BOT_BUILD = "V17.8.1-DUAL-PATH-EARLY-IMPULSE";
+export const BOT_VERSION = "V17.8.2-EARLY-IMPULSE-UNLOCK";
+export const BOT_BUILD = "V17.8.2-EARLY-IMPULSE-UNLOCK";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -470,7 +470,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.8.1-DUAL-PATH-EARLY-IMPULSE",
+VERSION: "V17.8.2-EARLY-IMPULSE-UNLOCK",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -718,21 +718,21 @@ HYBRID_ENTRY: {
   allowNeutralActivity: true,
   // V17.3: detect the live 5m impulse before candle close.
   earlyEnabled: true,
-  earlyMinMovePct: 0.12,
-  earlyMinBodyRatio: 0.35,
-  earlyMinVolumeRatio: 1.35,
-  earlyMinFlowImbalance: 0.07,
-  earlyMinAccelerationPct: 0.04,
-  earlyMaxEntryDistanceAtr: 1.30,
+  earlyMinMovePct: 0.10,
+  earlyMinBodyRatio: 0.30,
+  earlyMinVolumeRatio: 1.15,
+  earlyMinFlowImbalance: 0.05,
+  earlyMinAccelerationPct: 0.03,
+  earlyMaxEntryDistanceAtr: 1.50,
   earlyPrebreakToleranceAtr: 0.45,
-  earlyMaxExtensionAtr: 1.25,
+  earlyMaxExtensionAtr: 1.50,
   earlyMinScore: 62,
   earlyMinEdge: 5,
   earlyMinElapsedMs: 20 * 1000,
-  earlyImpulseEnabled: true, earlyImpulseMinBodyRatio: 0.55,
-  earlyImpulseMinVolumeRatio: 1.45, earlyImpulseMinFlowImbalance: 0.10,
-  earlyImpulseMinAccelerationPct: 0.06, earlyImpulseMaxExtensionAtr: 1.10,
-  earlyImpulsePrebreakAtr: 0.30, squeezeMaxBbWidthPct: 2.50,
+  earlyImpulseEnabled: true, earlyImpulseMinBodyRatio: 0.45,
+  earlyImpulseMinVolumeRatio: 1.20, earlyImpulseMinFlowImbalance: 0.06,
+  earlyImpulseMinAccelerationPct: 0.03, earlyImpulseMaxExtensionAtr: 1.50,
+  earlyImpulsePrebreakAtr: 0.30, squeezeMaxBbWidthPct: 3.25,
   squeezeExpansionRatio: 1.08, earlyImpulseMinConfluence: 2
 },
 HYBRID_RISK: {
@@ -810,53 +810,67 @@ function hybridOrderbookEvidence(flow,side){
   const aligned=side==='BUY'?raw:-raw;return {available:true,score:Math.min(100,Math.abs(aligned)*100),aligned};
 }
 function hybridEarlyImpulse(c5,price,atrValue,flow,vol,resistance,support){
-  // V17.8.1: completely independent 5M entry lane.
-  // No MTF confirmation, no liquidity-zone requirement, no retest and NO SCORE GATE.
-  if(!CONFIG.HYBRID_ENTRY.earlyImpulseEnabled||!(price>0)||!(atrValue>0))return {long:false,short:false,evidence:[],reason:'DISABLED_OR_INVALID'};
-  const cur=c5.at(-1),prev=c5.at(-2);if(!cur||!prev)return {long:false,short:false,evidence:[],reason:'NO_CANDLES'};
-  const m=hybridCandleMetrics(cur), pm=hybridCandleMetrics(prev);
-  const move1=hybridPercentChange(c5,1), prevMove=hybridPercentChange(c5.slice(0,-1),1), acceleration=move1-prevMove;
+  // V17.8.2 EARLY IMPULSE UNLOCK: independent 5M lane.
+  // No legacy Score/Radar entry gate; volume OR smart-money flow can confirm activity.
+  if(!CONFIG.HYBRID_ENTRY.earlyImpulseEnabled||!(price>0)||!(atrValue>0))
+    return {long:false,short:false,evidence:[],reason:'DISABLED_OR_INVALID'};
+  const cur=c5.at(-1),prev=c5.at(-2);
+  if(!cur||!prev)return {long:false,short:false,evidence:[],reason:'NO_CANDLES'};
+  const m=hybridCandleMetrics(cur);
+  const move1=hybridPercentChange(c5,1);
+  const prevMove=hybridPercentChange(c5.slice(0,-1),1);
+  const acceleration=move1-prevMove;
   const atrPct=Math.max(0.0001,atrValue/price*100);
-  const bodyAtr=m.body/atrValue;
-  const rangeAtr=m.range/atrValue;
-  const volumeOk=vol.volumeAvailable?vol.volumeRatio>=Number(CONFIG.HYBRID_ENTRY.earlyImpulseMinVolumeRatio||1.45):vol.rangeRatio>=1.25;
-  const rangeOk=rangeAtr>=0.45 || vol.rangeExpansion || vol.rangeExplosive;
-  const bodyOk=m.bodyRatio>=Number(CONFIG.HYBRID_ENTRY.earlyImpulseMinBodyRatio||0.55) && bodyAtr>=0.30;
-  const accelAbs=Math.abs(acceleration)>=Number(CONFIG.HYBRID_ENTRY.earlyImpulseMinAccelerationPct||0.06);
+  const bodyAtr=m.body/atrValue,rangeAtr=m.range/atrValue;
+  const volumeRatio=Number(vol.volumeRatio||1),rangeRatio=Number(vol.rangeRatio||1);
+  const volumePass=vol.volumeAvailable?volumeRatio>=Number(CONFIG.HYBRID_ENTRY.earlyImpulseMinVolumeRatio||1.20):rangeRatio>=1.15;
+  const rangePass=rangeAtr>=0.32||rangeRatio>=1.12||vol.rangeExpansion||vol.rangeExplosive;
+  const bodyPass=m.bodyRatio>=Number(CONFIG.HYBRID_ENTRY.earlyImpulseMinBodyRatio||0.45)&&bodyAtr>=0.22;
+  const accelPass=Math.abs(acceleration)>=Number(CONFIG.HYBRID_ENTRY.earlyImpulseMinAccelerationPct||0.03);
   const flowLong=hybridFlowAligned(flow,'LONG'),flowShort=hybridFlowAligned(flow,'SHORT');
-  const flowLongOk=flowLong>=Number(CONFIG.HYBRID_ENTRY.earlyImpulseMinFlowImbalance||0.10);
-  const flowShortOk=flowShort>=Number(CONFIG.HYBRID_ENTRY.earlyImpulseMinFlowImbalance||0.10);
-  const lookback=c5.slice(-9,-1),priorHigh=lookback.length?Math.max(...lookback.map(x=>Number(x.high)).filter(Number.isFinite)):0,priorLow=lookback.length?Math.min(...lookback.map(x=>Number(x.low)).filter(Number.isFinite)):0;
+  const flowThreshold=Number(CONFIG.HYBRID_ENTRY.earlyImpulseMinFlowImbalance||0.06);
+  const flowLongPass=flowLong>=flowThreshold,flowShortPass=flowShort>=flowThreshold;
+  const lookback=c5.slice(-9,-1);
+  const priorHigh=lookback.length?Math.max(...lookback.map(x=>Number(x.high)).filter(Number.isFinite)):0;
+  const priorLow=lookback.length?Math.min(...lookback.map(x=>Number(x.low)).filter(Number.isFinite)):0;
   const firstBreakLong=priorHigh>0&&Number(cur.close)>priorHigh;
   const firstBreakShort=priorLow>0&&Number(cur.close)<priorLow;
-  const compressionBase=c5.slice(-13,-3),avgRange=compressionBase.length?compressionBase.reduce((a,x)=>a+Math.max(0,Number(x.high)-Number(x.low)),0)/compressionBase.length:0;
-  const compression=avgRange>0 && Number(prev.high)-Number(prev.low)<=avgRange*0.90;
+  const compressionBase=c5.slice(-13,-3);
+  const avgRange=compressionBase.length?compressionBase.reduce((a,x)=>a+Math.max(0,Number(x.high)-Number(x.low)),0)/compressionBase.length:0;
+  const compression=avgRange>0&&Number(prev.high)-Number(prev.low)<=avgRange*0.95;
   const squeezeBase=c5.slice(-22,-2).map(x=>Number(x.close)).filter(Number.isFinite);
   const squeezeMean=squeezeBase.length?squeezeBase.reduce((a,b)=>a+b,0)/squeezeBase.length:0;
   const squeezeSd=squeezeBase.length>=10?Math.sqrt(squeezeBase.reduce((a,x)=>a+(x-squeezeMean)**2,0)/squeezeBase.length):0;
   const squeezeWidth=squeezeMean>0?4*squeezeSd/squeezeMean*100:0;
-  const squeeze= squeezeWidth>0 && squeezeWidth<=Number(CONFIG.HYBRID_ENTRY.squeezeMaxBbWidthPct||2.5);
-  const expansion=compression||squeeze||vol.rangeExpansion||vol.volumeSurge||firstBreakLong||firstBreakShort;
+  const squeeze=squeezeWidth>0&&squeezeWidth<=Number(CONFIG.HYBRID_ENTRY.squeezeMaxBbWidthPct||3.25);
+  const expansion=compression||squeeze||vol.rangeExpansion||vol.volumeSurge||vol.volumeExplosive||firstBreakLong||firstBreakShort;
   const extension=Math.abs(move1)/atrPct;
-  const notChasing=extension<=Number(CONFIG.HYBRID_ENTRY.earlyImpulseMaxExtensionAtr||1.10);
-  const directionalLong=m.bullish&&move1>0&&acceleration>0;
-  const directionalShort=m.bearish&&move1<0&&acceleration<0;
-  const longConfluence=Number(firstBreakLong)+Number(flowLongOk)+Number(expansion)+Number(volumeOk);
-  const shortConfluence=Number(firstBreakShort)+Number(flowShortOk)+Number(expansion)+Number(volumeOk);
-  const common=bodyOk&&rangeOk&&volumeOk&&accelAbs&&notChasing&&expansion;
-  const long=common&&directionalLong&&flowLongOk&&(firstBreakLong||compression||squeeze)&&longConfluence>=Number(CONFIG.HYBRID_ENTRY.earlyImpulseMinConfluence||2);
-  const short=common&&directionalShort&&flowShortOk&&(firstBreakShort||compression||squeeze)&&shortConfluence>=Number(CONFIG.HYBRID_ENTRY.earlyImpulseMinConfluence||2);
+  const notChasing=extension<=Number(CONFIG.HYBRID_ENTRY.earlyImpulseMaxExtensionAtr||1.50);
+  const directionalLong=m.bullish&&move1>0,directionalShort=m.bearish&&move1<0;
+  const activityLong=volumePass||flowLongPass,activityShort=volumePass||flowShortPass;
+  const momentumLong=accelPass||firstBreakLong||vol.rangeExplosive,momentumShort=accelPass||firstBreakShort||vol.rangeExplosive;
+  const longConfluence=Number(firstBreakLong)+Number(flowLongPass)+Number(volumePass)+Number(expansion)+Number(accelPass);
+  const shortConfluence=Number(firstBreakShort)+Number(flowShortPass)+Number(volumePass)+Number(expansion)+Number(accelPass);
+  const long=directionalLong&&bodyPass&&rangePass&&activityLong&&momentumLong&&expansion&&notChasing&&longConfluence>=Number(CONFIG.HYBRID_ENTRY.earlyImpulseMinConfluence||2);
+  const short=directionalShort&&bodyPass&&rangePass&&activityShort&&momentumShort&&expansion&&notChasing&&shortConfluence>=Number(CONFIG.HYBRID_ENTRY.earlyImpulseMinConfluence||2);
   const evidence=[];
   if(compression||squeeze)evidence.push('COMPRESSION_RELEASE');
-  if(bodyOk)evidence.push('BODY_EXPANSION');
-  if(volumeOk)evidence.push('VOLUME_EXPANSION');
-  if(rangeOk)evidence.push('RANGE_EXPANSION');
-  if(accelAbs)evidence.push('ACCELERATION');
+  if(bodyPass)evidence.push('BODY_EXPANSION');
+  if(volumePass)evidence.push('VOLUME_OR_RANGE_EXPANSION');
+  if(rangePass)evidence.push('RANGE_EXPANSION');
+  if(accelPass)evidence.push('ACCELERATION');
   if(firstBreakLong)evidence.push('FIRST_BREAKOUT_HIGH_8');
   if(firstBreakShort)evidence.push('FIRST_BREAKOUT_LOW_8');
-  if(flowLongOk)evidence.push('BUY_FLOW_ALIGNMENT');
-  if(flowShortOk)evidence.push('SELL_FLOW_ALIGNMENT');
-  return {long,short,evidence,move1,acceleration,bodyAtr,rangeAtr,volumeRatio:Number(vol.volumeRatio||1),rangeRatio:Number(vol.rangeRatio||1),extension,firstBreakLong,firstBreakShort,compression,squeeze,confluenceLong:longConfluence,confluenceShort:shortConfluence,reason:long?'EARLY_LONG_READY':short?'EARLY_SHORT_READY':'GATE_FAIL'};
+  if(flowLongPass)evidence.push('BUY_FLOW_ALIGNMENT');
+  if(flowShortPass)evidence.push('SELL_FLOW_ALIGNMENT');
+  return {
+    long,short,evidence,move1,acceleration,bodyAtr,rangeAtr,volumeRatio,rangeRatio,extension,
+    firstBreakLong,firstBreakShort,compression,squeeze,confluenceLong:longConfluence,confluenceShort:shortConfluence,
+    gates:{move:Math.abs(move1)>=Number(CONFIG.HYBRID_ENTRY.earlyMinMovePct||0.10),body:bodyPass,volume:volumePass,
+      flowLong:flowLongPass,flowShort:flowShortPass,activityLong,activityShort,acceleration:accelPass,
+      extension:notChasing,expansion,prebreak:firstBreakLong||firstBreakShort,score:true,edge:true},
+    reason:long?'EARLY_LONG_READY':short?'EARLY_SHORT_READY':'GATE_FAIL'
+  };
 }
 function hybridReactionSupport(c,level,flow,vol,atrValue){const m=hybridCandleMetrics(c),inside=c.low<=level.high+atrValue*0.25&&c.close>=level.low,wick=m.lowerWick>=CONFIG.HYBRID_SR.rejectionWickRatio,closeBack=m.closeLocation>=CONFIG.HYBRID_SR.rejectionCloseRatio,sweep=(level.low-c.low)>=atrValue*CONFIG.HYBRID_SR.sweepDepthAtr&&inside,a=hybridFlowAligned(flow,'LONG'),flowOk=a>=CONFIG.HYBRID_ENTRY.minReactionFlowImbalance,volumeOk=vol.volumeAvailable?vol.volumeRatio>=CONFIG.HYBRID_ENTRY.minReactionVolumeRatio:vol.rangeRatio>=1.15,evidence=[];if(wick)evidence.push('LOWER_WICK_REJECTION');if(closeBack)evidence.push('CLOSE_BACK_ABOVE_SUPPORT');if(sweep)evidence.push('LIQUIDITY_SWEEP_RECLAIM');if(flowOk)evidence.push('BUY_FLOW');if(volumeOk)evidence.push('ACTIVITY_CONFIRMATION');return{confirmed:inside&&m.bullish&&(wick||sweep)&&closeBack,evidence,sweep,wick,flowAligned:a,flowOk,volumeOk};}
 function hybridReactionResistance(c,level,flow,vol,atrValue){const m=hybridCandleMetrics(c),inside=c.high>=level.low-atrValue*0.20&&c.close<=level.high,wick=m.upperWick>=CONFIG.HYBRID_SR.rejectionWickRatio,closeBack=(1-m.closeLocation)>=CONFIG.HYBRID_SR.rejectionCloseRatio,sweep=(c.high-level.high)>=atrValue*CONFIG.HYBRID_SR.sweepDepthAtr&&inside,a=hybridFlowAligned(flow,'SHORT'),flowOk=a>=CONFIG.HYBRID_ENTRY.minReactionFlowImbalance,volumeOk=vol.volumeAvailable?vol.volumeRatio>=CONFIG.HYBRID_ENTRY.minReactionVolumeRatio:vol.rangeRatio>=1.20,evidence=[];if(wick)evidence.push('UPPER_WICK_REJECTION');if(closeBack)evidence.push('CLOSE_BACK_BELOW_RESISTANCE');if(sweep)evidence.push('LIQUIDITY_SWEEP_RECLAIM');if(flowOk)evidence.push('SELL_FLOW');if(volumeOk)evidence.push('ACTIVITY_CONFIRMATION');return{confirmed:inside&&m.bearish&&(wick||sweep)&&closeBack,evidence,sweep,wick,flowAligned:a,flowOk,volumeOk};}
@@ -998,6 +1012,7 @@ function hybridClassifyStructure(symbol,candles,price,flow,previousState={}){
   return{
     state:entries.length?'ENTRY_READY':(next.stage||next.lastState||'WATCH_LEVEL'),direction:entries.find(e=>e.direction)?.direction||'NONE',entries,zones,watched,volume:vol,atr:atr5,nextState:next,move5:hybridPercentChange(c5,5),preMove5:move5,extension:atr5>0?Math.abs(price-Number(current.open))/atr5:0,
     eventFlags:{earlyImpulse:earlyImpulseHit,earlyImpulseLong:Boolean(earlyImpulseInfo?.long),earlyImpulseShort:Boolean(earlyImpulseInfo?.short),supportZone:Boolean(support),resistanceZone:Boolean(resistance),supportReaction:watched.some(x=>x.type==='SUPPORT'&&x.bounce?.confirmed),resistanceReaction:watched.some(x=>x.type==='RESISTANCE'&&x.rejection?.confirmed),sharpDownMove:downImpulse,sharpUpMove:upImpulse,explosion,waitingRetest:Boolean(next.stage),retestConfirmed:entries.length>0,pullbackRetest:entries.length>0,breakout:entries.some(e=>String(e.trigger||'').includes('EARLY_IMPULSE')),earlyImpulse:entries.some(e=>String(e.trigger||'').includes('EARLY_IMPULSE')),exhausted:false},
+    earlyImpulseInfo,
     indicators:{atrPct:Number(atrPct.toFixed(4)),bbWidth:Number.isFinite(bbWidth)?Number(bbWidth.toFixed(4)):null,bbExpanding,flowLong:Number(flowLong.toFixed(4)),flowShort:Number(flowShort.toFixed(4)),volumeRatio:Number(vol.volumeRatio||1),rangeRatio:Number(vol.rangeRatio||1),liquidityProfileAvailable:Boolean(liquidityProfile.available),liquidityZones:Number(liquidityProfile.zones?.length||0)},
     engine:'DUAL_PATH_LIQUIDITY_REACTION_5M_PLUS_EARLY_IMPULSE_5M'
   };
@@ -4618,6 +4633,19 @@ async function runFullScan(env, scanOptions = {}) {
       const analysis=hybridClassifyStructure(row.s,{"5m":c5,"15m":c15,"1h":c1h,"4h":c4h},price,flow,prev);analysis.price=price;analysis.candles={"5m":c5,"15m":c15,"1h":c1h,"4h":c4h};
       if(!state.hybridStructureStates)state.hybridStructureStates={};state.hybridStructureStates[row.s]=analysis.nextState||prev;
       const ef=analysis.eventFlags||{};eventStats.earlyImpulses+=ef.earlyImpulse?1:0;eventStats.supportZones+=ef.supportZone?1:0;eventStats.resistanceZones+=ef.resistanceZone?1:0;eventStats.flowEvents+=(flow.flowSurge||flow.explosiveFlow)?1:0;eventStats.volumeEvents+=(analysis.volume?.volumeSurge||analysis.volume?.rangeExpansion||analysis.volume?.volumeExplosive)?1:0;eventStats.supportReactions+=ef.supportReaction?1:0;eventStats.resistanceReactions+=ef.resistanceReaction?1:0;eventStats.breakouts+=ef.breakout?1:0;eventStats.waitingRetests+=ef.waitingRetest?1:0;eventStats.retestConfirmed+=ef.retestConfirmed?1:0;
+      const ei=analysis.earlyImpulseInfo||null,eg=ei?.gates||null;
+      if(eg){
+        const d=eventStats.earlyDebug; d.attempted++;
+        d.movePass+=eg.move?1:0; d.bodyPass+=eg.body?1:0; d.volumePass+=eg.volume?1:0;
+        d.flowPass+=(eg.flowLong||eg.flowShort)?1:0; d.momentumActivityPass+=(eg.activityLong||eg.activityShort)?1:0;
+        d.accelerationPass+=eg.acceleration?1:0; d.extensionPass+=eg.extension?1:0;
+        d.prebreakPass+=eg.prebreak?1:0; d.scorePass+=eg.score?1:0; d.edgePass+=eg.edge?1:0; d.zonePass+=eg.expansion?1:0;
+        if(ei.long||ei.short)d.qualified++; else { d.rejected++;
+          if(!eg.move)d.MOVE++; else if(!eg.body)d.BODY++; else if(!eg.volume&&!eg.flowLong&&!eg.flowShort)d.ACTIVITY++;
+          else if(!eg.acceleration&&!eg.prebreak)d.ACCELERATION++; else if(!eg.extension)d.EXTENSION++;
+          else if(!eg.expansion)d.ZONE++; else d.setupRejected++;
+        }
+      }
       if(ef.supportReaction||ef.resistanceReaction||ef.breakout||ef.waitingRetest||ef.retestConfirmed)eventCandidates++;
       const earlySetup=hybridBuildEarlySetup(row.s,analysis,flow);
       const reactionSetup=hybridBuildSetup(row.s,analysis,flow,traders);
