@@ -7,7 +7,7 @@ import worker, { BOT_VERSION, BOT_BUILD } from "./worker_core.mjs";
 
 const ROOT = process.cwd();
 const STATE_DIR = path.join(ROOT, "state");
-const EXPECTED_WORKER_VERSION = BOT_VERSION;
+const EXPECTED_WORKER_VERSION = "V17.7.0-LIQUIDITY-REACTION-5M-ONLY";
 
 async function ensureStateFiles() {
   await fs.mkdir(STATE_DIR, { recursive: true });
@@ -73,7 +73,7 @@ async function buildEnv() {
     TELEGRAM_TOKEN: envValue("TELEGRAM_TOKEN"),
     TELEGRAM_CHAT_ID: envValue("TELEGRAM_CHAT_ID"),
     EXECUTION_ENABLED: envValue("EXECUTION_ENABLED", "true"),
-    EXPECTED_VERSION: EXPECTED_WORKER_VERSION,
+    EXPECTED_VERSION: envValue("EXPECTED_VERSION", EXPECTED_WORKER_VERSION),
     BOT_STATE: makeFileKvBinding("bot_state"),
     GMX_CACHE: makeFileKvBinding("gmx_cache")
   };
