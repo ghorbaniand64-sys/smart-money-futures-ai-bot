@@ -817,7 +817,19 @@ function candidateIsActionable(candidate) {
   if (candidate.edge < CONFIG.minEdge) {
     return { ok: false, reason: `EDGE_${candidate.edge.toFixed(1)}_BELOW_${CONFIG.minEdge}` };
   }
-  if (candidate.trendConfluence < CONFIG.minTrendConfluence) {
+  // Normal setups still require full trend confluence.
+  // Sharp 5m/15m impulses are allowed through a narrow selection override:
+  // this avoids missing the early part of a move while still requiring
+  // directional evidence (trend, S/R reaction, or OI alignment).
+  const impulseOverride = Boolean(
+    candidate.indicators?.explosive &&
+    candidate.trendConfluence >= 1 &&
+    (candidate.indicators?.move5m * (candidate.direction === "long" ? 1 : -1) > 0 ||
+      candidate.indicators?.move15m * (candidate.direction === "long" ? 1 : -1) > 0) &&
+    (candidate.indicators?.reactionScore >= 12 || candidate.indicators?.oiChange5m * (candidate.direction === "long" ? 1 : -1) > 0 || candidate.trendConfluence >= 2)
+  );
+
+  if (candidate.trendConfluence < CONFIG.minTrendConfluence && !impulseOverride) {
     return { ok: false, reason: `TREND_CONFLUENCE_${candidate.trendConfluence}` };
   }
   if (candidate.risk > CONFIG.maxRisk) {
