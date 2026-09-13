@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V18.0.0-CLEAN-CLASSIC-ONE-TP";
+export const BOT_VERSION = "V18.0.1-CLEAN-OHLCV-FALLBACK-CLASSIC-ONE-TP";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -853,18 +853,68 @@ async function mapLimit(items, concurrency, fn) {
   return out;
 }
 
-async function fetchCandles(sdk, symbol, timeframe, limit) {
-  if (typeof sdk.fetchOhlcv !== "function") {
-    throw new Error("GMX_SDK_FETCH_OHLCV_UNAVAILABLE");
+
+
+const GMX_ORACLE_BASE = String(process.env.GMX_ORACLE_URL || "https://arbitrum-api.gmxinfra.io").replace(/\/+$/, "");
+
+function oracleAssetFromMarket(market) {
+  const candidates = [market?.indexTokenSymbol, market?.indexName, market?.symbol, market?.name, market?.marketSymbol].filter(Boolean).map(String);
+  for (const raw of candidates) {
+    const pair = raw.split("[")[0].trim();
+    const asset = pair.includes("/") ? pair.split("/")[0].trim() : normalizeAsset(pair);
+    if (asset && asset.length <= 32) return asset.toUpperCase();
   }
-  const rows = await sdk.fetchOhlcv({
-    symbol,
-    timeframe,
-    limit,
-  });
-  const candles = cleanCandles(rows);
-  if (candles.length < 20) throw new Error(`INSUFFICIENT_${timeframe}_CANDLES:${candles.length}`);
-  return candles;
+  return "";
+}
+
+function normalizeOhlcvRows(raw) {
+  const rows = Array.isArray(raw) ? raw : Array.isArray(raw?.candles) ? raw.candles : Array.isArray(raw?.data) ? raw.data : [];
+  const out = [];
+  for (const r of rows) {
+    const vals = Array.isArray(r)
+      ? r
+      : [r?.timestamp ?? r?.time ?? r?.t, r?.open ?? r?.o, r?.high ?? r?.h, r?.low ?? r?.l, r?.close ?? r?.c, r?.volume ?? r?.v ?? 0];
+    const [ts, o, h, l, c, v] = vals.map(Number);
+    if ([ts,o,h,l,c].every(Number.isFinite)) out.push({ timestamp: ts > 1e12 ? Math.floor(ts/1000) : Math.floor(ts), open:o, high:h, low:l, close:c, volume:Number.isFinite(v)?v:0 });
+  }
+  out.sort((a,b)=>a.timestamp-b.timestamp);
+  return out;
+}
+
+async function fetchOracleCandles(market, timeframe, limit) {
+  const asset = oracleAssetFromMarket(market);
+  if (!asset) throw new Error("GMX_ORACLE_ASSET_UNRESOLVED");
+  const url = `${GMX_ORACLE_BASE}/prices/candles?tokenSymbol=${encodeURIComponent(asset)}&period=${encodeURIComponent(timeframe)}&limit=${Math.min(500, Math.max(20, Number(limit)||120))}`;
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), 12000);
+  try {
+    const res = await fetch(url, { headers:{accept:"application/json"}, signal:controller.signal });
+    if (!res.ok) throw new Error(`GMX_ORACLE_HTTP_${res.status}`);
+    const candles = normalizeOhlcvRows(await res.json());
+    if (candles.length < 20) throw new Error(`INSUFFICIENT_ORACLE_${timeframe}_CANDLES:${candles.length}`);
+    return candles;
+  } finally { clearTimeout(timer); }
+}
+async function fetchCandles(sdk, marketOrSymbol, timeframe, limit) {
+  const market = typeof marketOrSymbol === "string" ? null : marketOrSymbol;
+  const full = market ? marketDisplaySymbol(market) : String(marketOrSymbol || "");
+  const base = full.split("[")[0].trim();
+  const symbols = [...new Set([full, base, market ? candleSymbolFromMarket(market) : full].filter(Boolean))];
+  const errors = [];
+  if (typeof sdk?.fetchOhlcv === "function") {
+    for (const symbol of symbols) {
+      try {
+        const candles = cleanCandles(await sdk.fetchOhlcv({symbol, timeframe, limit}));
+        if (candles.length >= 20) return candles;
+        errors.push(`${symbol}:INSUFFICIENT:${candles.length}`);
+      } catch (e) { errors.push(`${symbol}:${safeError(e)}`); }
+    }
+  } else errors.push("SDK_FETCH_OHLCV_UNAVAILABLE");
+  if (market) {
+    try { return await fetchOracleCandles(market, timeframe, limit); }
+    catch (e) { errors.push(`ORACLE:${safeError(e)}`); }
+  }
+  throw new Error(`OHLCV_ALL_SOURCES_FAILED:${errors.slice(0,4).join("|")}`);
 }
 
 async function broadScan(sdk, markets, tickers) {
@@ -872,7 +922,7 @@ async function broadScan(sdk, markets, tickers) {
   const results = await mapLimit(listed, CONFIG.ohlcvConcurrency, async (market) => {
     const symbol = candleSymbolFromMarket(market);
     try {
-      const candles5 = await fetchCandles(sdk, symbol, CONFIG.broadTimeframe, CONFIG.broadLimit);
+      const candles5 = await fetchCandles(sdk, market, CONFIG.broadTimeframe, CONFIG.broadLimit);
       const ticker = findTicker(tickers, market);
       const five = structureIndicators(candles5, "long");
       const short = structureIndicators(candles5, "short");
@@ -919,7 +969,7 @@ async function deepScan(sdk, broadRows) {
     try {
       const candles15 = await fetchCandles(
         sdk,
-        row.candleSymbol,
+        row.market,
         CONFIG.deepTimeframe,
         CONFIG.deepLimit
       );
