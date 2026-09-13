@@ -470,7 +470,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.8.7-CLEAN-TELEGRAM-CLASSIC-EXECUTION",
+VERSION: "V17.8.8-EMERGENCY-CLOSE-ATOM",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
