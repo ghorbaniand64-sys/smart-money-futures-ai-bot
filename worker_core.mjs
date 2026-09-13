@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V19.0.1-DATA-PIPELINE-DEBUG-TRUE-REVERSAL";
+export const BOT_VERSION = "V19.0.1-DATA-PIPELINE-FIX-TRUE-REVERSAL-CLASSIC-ONE-TP";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -848,7 +848,15 @@ async function mapLimit(items, concurrency, fn) {
 
 
 
-const GMX_ORACLE_BASE = String(process.env.GMX_ORACLE_URL || "https://arbitrum-api.gmxinfra.io").replace(/\/+$/, "");
+const GMX_API_PEERS = [
+  String(process.env.GMX_API_URL || "https://arbitrum.gmxapi.io/v1").replace(/\/+$/, ""),
+  String(process.env.GMX_API_FALLBACK_URL || "https://arbitrum.gmxapi.ai/v1").replace(/\/+$/, ""),
+];
+const GMX_ORACLE_PEERS = [
+  String(process.env.GMX_ORACLE_URL || "https://arbitrum-api.gmxinfra.io").replace(/\/+$/, ""),
+  "https://arbitrum-api-fallback.gmxinfra.io",
+  "https://arbitrum-api-fallback.gmxinfra2.io",
+];
 
 function oracleAssetFromMarket(market) {
   const candidates = [market?.indexTokenSymbol, market?.indexName, market?.symbol, market?.name, market?.marketSymbol].filter(Boolean).map(String);
@@ -861,51 +869,99 @@ function oracleAssetFromMarket(market) {
 }
 
 function normalizeOhlcvRows(raw) {
-  const rows = Array.isArray(raw) ? raw : Array.isArray(raw?.candles) ? raw.candles : Array.isArray(raw?.data) ? raw.data : [];
+  let rows = [];
+  if (Array.isArray(raw)) rows = raw;
+  else if (Array.isArray(raw?.candles)) rows = raw.candles;
+  else if (Array.isArray(raw?.data)) rows = raw.data;
+  else if (Array.isArray(raw?.data?.candles)) rows = raw.data.candles;
+  else if (Array.isArray(raw?.result)) rows = raw.result;
+  else if (Array.isArray(raw?.result?.candles)) rows = raw.result.candles;
+
   const out = [];
   for (const r of rows) {
     const vals = Array.isArray(r)
       ? r
       : [r?.timestamp ?? r?.time ?? r?.t, r?.open ?? r?.o, r?.high ?? r?.h, r?.low ?? r?.l, r?.close ?? r?.c, r?.volume ?? r?.v ?? 0];
     const [ts, o, h, l, c, v] = vals.map(Number);
-    if ([ts,o,h,l,c].every(Number.isFinite)) out.push({ timestamp: ts > 1e12 ? Math.floor(ts/1000) : Math.floor(ts), open:o, high:h, low:l, close:c, volume:Number.isFinite(v)?v:0 });
+    if ([ts, o, h, l, c].every(Number.isFinite) && o > 0 && h > 0 && l > 0 && c > 0) {
+      out.push({
+        timestamp: ts > 1e12 ? Math.floor(ts / 1000) : Math.floor(ts),
+        open: o,
+        high: h,
+        low: l,
+        close: c,
+        volume: Number.isFinite(v) ? v : 0,
+      });
+    }
   }
-  out.sort((a,b)=>a.timestamp-b.timestamp);
+  out.sort((a, b) => a.timestamp - b.timestamp);
   return out;
+}
+
+async function fetchDirectApiCandles(symbol, timeframe, limit) {
+  const errors = [];
+  for (const base of GMX_API_PEERS) {
+    const url = `${base}/prices/ohlcv?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=${Math.min(500, Math.max(20, Number(limit) || 120))}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const res = await fetch(url, { headers: { accept: "application/json" }, signal: controller.signal });
+      if (!res.ok) {
+        errors.push(`${base}:HTTP_${res.status}`);
+        continue;
+      }
+      const payload = await res.json();
+      const candles = normalizeOhlcvRows(payload);
+      if (candles.length >= 20) return candles;
+      errors.push(`${base}:INSUFFICIENT:${candles.length}`);
+    } catch (e) {
+      errors.push(`${base}:${safeError(e)}`);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw new Error(`GMX_API_OHLCV_FAILED:${errors.slice(0, 3).join("|")}`);
 }
 
 async function fetchOracleCandles(market, timeframe, limit) {
   const asset = oracleAssetFromMarket(market);
   if (!asset) throw new Error("GMX_ORACLE_ASSET_UNRESOLVED");
-  const url = `${GMX_ORACLE_BASE}/prices/candles?tokenSymbol=${encodeURIComponent(asset)}&period=${encodeURIComponent(timeframe)}&limit=${Math.min(500, Math.max(20, Number(limit)||120))}`;
-  const controller = new AbortController();
-  const timer = setTimeout(()=>controller.abort(), 12000);
-  try {
-    const res = await fetch(url, { headers:{accept:"application/json"}, signal:controller.signal });
-    if (!res.ok) throw new Error(`GMX_ORACLE_HTTP_${res.status}`);
-    const candles = normalizeOhlcvRows(await res.json());
-    if (candles.length < 20) throw new Error(`INSUFFICIENT_ORACLE_${timeframe}_CANDLES:${candles.length}`);
-    return candles;
-  } finally { clearTimeout(timer); }
+  const errors = [];
+  for (const base of GMX_ORACLE_PEERS) {
+    const url = `${base}/prices/candles?tokenSymbol=${encodeURIComponent(asset)}&period=${encodeURIComponent(timeframe)}&limit=${Math.min(500, Math.max(20, Number(limit) || 120))}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const res = await fetch(url, { headers: { accept: "application/json" }, signal: controller.signal });
+      if (!res.ok) {
+        errors.push(`${base}:HTTP_${res.status}`);
+        continue;
+      }
+      const candles = normalizeOhlcvRows(await res.json());
+      if (candles.length >= 20) return candles;
+      errors.push(`${base}:INSUFFICIENT:${candles.length}`);
+    } catch (e) {
+      errors.push(`${base}:${safeError(e)}`);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw new Error(`GMX_ORACLE_OHLCV_FAILED:${errors.slice(0, 3).join("|")}`);
 }
+
 async function fetchCandles(sdk, marketOrSymbol, timeframe, limit) {
   const market = typeof marketOrSymbol === "string" ? null : marketOrSymbol;
   const full = market ? marketDisplaySymbol(market) : String(marketOrSymbol || "");
   const base = full.split("[")[0].trim();
-  const symbols = [...new Set([market ? candleSymbolFromMarket(market) : full, full, base].filter(Boolean))];
+  const candleSymbol = market ? candleSymbolFromMarket(market) : base;
+  const symbols = [...new Set([full, base, candleSymbol].filter(Boolean))];
   const errors = [];
-
-  console.log("[OHLCV][START]", { symbol: symbols[0] || full, timeframe, limit });
 
   if (typeof sdk?.fetchOhlcv === "function") {
     for (const symbol of symbols) {
       try {
-        const raw = await sdk.fetchOhlcv({ symbol, timeframe, limit });
-        const candles = cleanCandles(raw);
-        if (candles.length >= 20) {
-          console.log("[OHLCV][SDK_OK]", { symbol, timeframe, candles: candles.length });
-          return candles;
-        }
+        const candles = cleanCandles(await sdk.fetchOhlcv({ symbol, timeframe, limit }));
+        if (candles.length >= 20) return candles;
         errors.push(`SDK:${symbol}:INSUFFICIENT:${candles.length}`);
       } catch (e) {
         errors.push(`SDK:${symbol}:${safeError(e)}`);
@@ -915,17 +971,25 @@ async function fetchCandles(sdk, marketOrSymbol, timeframe, limit) {
     errors.push("SDK_FETCH_OHLCV_UNAVAILABLE");
   }
 
+  // Direct GMX API peer path. This is the primary recovery path when the
+  // installed SDK method is unavailable, stale, or returns an unexpected shape.
+  for (const symbol of [...new Set([candleSymbol, base, full].filter(Boolean))]) {
+    try {
+      return await fetchDirectApiCandles(symbol, timeframe, limit);
+    } catch (e) {
+      errors.push(`API:${symbol}:${safeError(e)}`);
+    }
+  }
+
   if (market) {
     try {
-      const candles = await fetchOracleCandles(market, timeframe, limit);
-      console.log("[OHLCV][ORACLE_OK]", { symbol: candleSymbolFromMarket(market), timeframe, candles: candles.length });
-      return candles;
+      return await fetchOracleCandles(market, timeframe, limit);
     } catch (e) {
       errors.push(`ORACLE:${safeError(e)}`);
     }
   }
 
-  throw new Error(`OHLCV_ALL_SOURCES_FAILED:${errors.slice(0,6).join("|")}`);
+  throw new Error(`OHLCV_ALL_SOURCES_FAILED:${errors.slice(0, 6).join("|")}`);
 }
 
 async function broadScan(sdk, markets, tickers) {
@@ -954,28 +1018,29 @@ async function broadScan(sdk, markets, tickers) {
         ).toFixed(3)),
       };
     } catch (error) {
-      const reason = safeError(error);
-      console.log("[MARKET][5M][REJECT]", { symbol: marketDisplaySymbol(market), candleSymbol: symbol, reason });
       return {
         market,
         ticker: findTicker(tickers, market),
         symbol: marketDisplaySymbol(market),
         candleSymbol: symbol,
-        error: reason,
+        error: safeError(error),
       };
     }
   });
 
-  const successful = results.filter((x) => x.candles5).length;
-  const failed = results.filter((x) => x.error).length;
-  console.log("[BROAD][5M][SUMMARY]", { attempted: listed.length, successful, failed });
+  const rows = results.filter((x) => x.candles5).sort((a, b) => b.broadRankScore - a.broadRankScore);
+  const failed = results.filter((x) => x.error);
+  console.log("[BROAD][5M][SUMMARY]", {
+    attempted: listed.length,
+    successful: rows.length,
+    failed: failed.length,
+    sampleErrors: failed.slice(0, 5).map((x) => ({ symbol: x.symbol, error: x.error })),
+  });
   return {
     universe: listed.length,
-    successful,
-    failed,
-    rows: results
-      .filter((x) => x.candles5)
-      .sort((a, b) => b.broadRankScore - a.broadRankScore),
+    successful: rows.length,
+    failed: failed.length,
+    rows,
   };
 }
 
