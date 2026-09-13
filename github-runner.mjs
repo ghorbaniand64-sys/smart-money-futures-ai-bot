@@ -73,6 +73,7 @@ async function buildEnv() {
     TELEGRAM_TOKEN: envValue("TELEGRAM_TOKEN"),
     TELEGRAM_CHAT_ID: envValue("TELEGRAM_CHAT_ID"),
     EXECUTION_ENABLED: envValue("EXECUTION_ENABLED", "true"),
+    EMERGENCY_CLOSE_SYMBOL: envValue("EMERGENCY_CLOSE_SYMBOL"),
     EXPECTED_VERSION: EXPECTED_WORKER_VERSION,
     BOT_STATE: makeFileKvBinding("bot_state"),
     GMX_CACHE: makeFileKvBinding("gmx_cache")
