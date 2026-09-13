@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V19.0.1-DATA-PIPELINE-FIX-TRUE-REVERSAL-CLASSIC-ONE-TP";
+export const BOT_VERSION = "V19.0.2-TRUE-REVERSAL-BROADSCAN-FIX-CLASSIC-ONE-TP";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -1013,7 +1013,10 @@ async function broadScan(sdk, markets, tickers) {
         broadRankScore: Number((
           impulse * 10 +
           Math.max(five.adx, short.adx) * 0.7 +
-          Math.max(five.reaction.score, short.reaction.score) +
+          Math.max(
+            Number(five.rejection?.bull || 0) + Number(five.rejection?.bear || 0),
+            Number(short.rejection?.bull || 0) + Number(short.rejection?.bear || 0)
+          ) * 4 +
           (tickerOpenInterest(ticker) > 0 ? 3 : 0)
         ).toFixed(3)),
       };
