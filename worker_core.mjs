@@ -2,7 +2,7 @@
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║ GMX SMART MONEY FUTURES AI BOT — CLEAN V19                                  ║
 ║ Single pipeline • 5M broad scan • 15M deep scan • Classic GMX only          ║
-║ 5x leverage • 30% wallet per position • max 3 positions • one TP • no SL    ║
+║ 5x leverage • 100% eligible wallet collateral • max 1 position • one TP ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 Architecture:
@@ -10,8 +10,8 @@ GMX MARKET UNIVERSE
   → FULL 5M BROAD SCAN
   → TOP DEEP CANDIDATES
   → 15M STRUCTURE + SMART-MONEY/OI/FLOW + S/R
-  → TOP 3
-  → 30% WALLET COLLATERAL EACH
+  → TOP 1
+  → 100% ELIGIBLE WALLET COLLATERAL
   → 5x CLASSIC GMX MARKET INCREASE
   → ONE STRUCTURE TP (attached to the increase)
   → POSITION VERIFICATION
@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V19.0.4-TRUE-REVERSAL-OI-SCORE-FIX-CLASSIC-ONE-TP";
+export const BOT_VERSION = "V19.1.0-ONE-POSITION-FULL-WALLET-CLASSIC-ONE-TP";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -45,9 +45,9 @@ const CONFIG = Object.freeze({
   chainId: CHAIN_ID,
   cronRecommended: "* * * * *",
 
-  maxPositions: 3,
-  walletAllocationPerPosition: 0.30,
-  maxTotalWalletAllocation: 0.90,
+  maxPositions: 1,
+  walletAllocationPerPosition: 1.00,
+  maxTotalWalletAllocation: 1.00,
   leverage: 5,
 
   broadTimeframe: "5m",
@@ -56,7 +56,7 @@ const CONFIG = Object.freeze({
   deepLimit: 96,
 
   deepCandidates: 30,
-  finalCandidates: 3,
+  finalCandidates: 1,
 
   minScore: 72,
   minEdge: 8,
@@ -1556,7 +1556,10 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
   }
 
   const walletBefore = wallet.walletUsd;
-  const collateralUsd = walletBefore * CONFIG.walletAllocationPerPosition;
+  // A single GMX order can spend one collateral token. "100%" therefore means
+  // 100% of the eligible USDC/USDT balance selected for this market, not a
+  // synthetic sum of different collateral tokens. ETH gas remains separate.
+  const collateralUsd = Number(collateral.usd || 0) * CONFIG.walletAllocationPerPosition;
   const notionalUsd = collateralUsd * CONFIG.leverage;
 
   if (collateralUsd <= 0) {
@@ -1619,6 +1622,7 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
       edge: candidate.edge,
       risk: candidate.risk,
       allocation: CONFIG.walletAllocationPerPosition,
+      allocationMode: "FULL_ELIGIBLE_COLLATERAL_BALANCE",
       leverage: CONFIG.leverage,
       notionalUsd,
       collateralUsd,
@@ -1797,7 +1801,7 @@ async function runCycle(event, env) {
   }
 
   actionable.sort((a, b) => (b.score + b.edge * 0.35) - (a.score + a.edge * 0.35));
-  const selected = actionable.slice(0, CONFIG.finalCandidates);
+  const selected = actionable.slice(0, 1);
 
   const executions = [];
   const failures = [];
@@ -1806,7 +1810,7 @@ async function runCycle(event, env) {
 
   if (executionEnabled(env)) {
     for (const candidate of selected) {
-      if (currentPositions.length >= CONFIG.maxPositions) break;
+      if (currentPositions.length >= 1) break;
 
       const result = await executeCandidate(
         runtime,
