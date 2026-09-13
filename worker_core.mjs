@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V18.1.0-RADAR-RESPONSIVE-CLASSIC-ONE-TP";
+export const BOT_VERSION = "V19.0.0-TRUE-REVERSAL-EXHAUSTION-CLASSIC-ONE-TP";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -61,17 +61,6 @@ const CONFIG = Object.freeze({
   minScore: 72,
   minEdge: 8,
   minTrendConfluence: 3,
-
-  // Responsive radar lanes: trend alignment is preferred, not mandatory,
-  // when a genuine 5m/15m impulse or S/R reversal is present.
-  impulseOverrideMinScore: 78,
-  impulseOverrideMinEdge: 10,
-  impulseOverrideMaxRisk: 45,
-  reversalOverrideMinScore: 75,
-  reversalOverrideMinEdge: 8,
-  reversalOverrideMaxRisk: 50,
-  maxResponsiveCandidates: 3,
-
   maxRisk: 55,
 
   minTpDistancePct: 0.30,
@@ -569,30 +558,53 @@ function recentSwingLevels(candles) {
   };
 }
 
-function reactionScore(candles, direction) {
-  if (candles.length < 8) return { score: 0, evidence: 0 };
-  const recent = candles.slice(-8);
-  const a = recent[recent.length - 1];
-  const body = Math.abs(a.close - a.open);
+function candleRejection(candles) {
+  if (!Array.isArray(candles) || candles.length < 8) return { bull: 0, bear: 0, bodyRatio: 0, upperWickRatio: 0, lowerWickRatio: 0 };
+  const a = candles.at(-1);
   const range = Math.max(a.high - a.low, 1e-12);
-  const upperWick = a.high - Math.max(a.open, a.close);
-  const lowerWick = Math.min(a.open, a.close) - a.low;
+  const body = Math.abs(a.close - a.open);
+  const upper = a.high - Math.max(a.open, a.close);
+  const lower = Math.min(a.open, a.close) - a.low;
+  return {
+    bull: (lower / range >= 0.28 ? 1 : 0) + (a.close > a.open ? 1 : 0),
+    bear: (upper / range >= 0.28 ? 1 : 0) + (a.close < a.open ? 1 : 0),
+    bodyRatio: body / range,
+    upperWickRatio: upper / range,
+    lowerWickRatio: lower / range,
+  };
+}
 
-  let score = 0;
-  let evidence = 0;
-
-  if (direction === "long") {
-    if (lowerWick / range >= 0.30) { score += 12; evidence++; }
-    if (a.close > a.open) { score += 8; evidence++; }
-    if (a.close > recent[0].close) { score += 8; evidence++; }
-    if (body / range >= 0.45) { score += 6; evidence++; }
-  } else {
-    if (upperWick / range >= 0.30) { score += 12; evidence++; }
-    if (a.close < a.open) { score += 8; evidence++; }
-    if (a.close < recent[0].close) { score += 8; evidence++; }
-    if (body / range >= 0.45) { score += 6; evidence++; }
+function nearestZone(price, levels, side) {
+  const xs = Array.isArray(levels) ? levels.filter(Number.isFinite) : [];
+  if (side === "resistance") {
+    const above = xs.filter((x) => x >= price).sort((a,b) => a-b);
+    return above[0] ?? null;
   }
-  return { score: Math.min(34, score), evidence };
+  const below = xs.filter((x) => x <= price).sort((a,b) => b-a);
+  return below[0] ?? null;
+}
+
+function zoneProximity(price, level, atrValue) {
+  if (!Number.isFinite(price) || !Number.isFinite(level) || !Number.isFinite(atrValue) || atrValue <= 0) return 999;
+  return Math.abs(price - level) / atrValue;
+}
+
+function momentumState(candles) {
+  const closes = candles.map((c) => c.close);
+  const current = closes.at(-1) || 0;
+  const prev = closes.at(-2) || current;
+  const rNow = rsi(closes, 14);
+  const rPrev = closes.length >= 2 ? rsi(closes.slice(0, -1), 14) : rNow;
+  const mNow = macd(closes);
+  const mPrev = closes.length >= 2 ? macd(closes.slice(0, -1)) : mNow;
+  return {
+    price: current,
+    move5: pct(current, prev),
+    rsi: rNow,
+    rsiDelta: rNow - rPrev,
+    macd: mNow,
+    macdDelta: mNow.histogram - mPrev.histogram,
+  };
 }
 
 function structureIndicators(candles, direction) {
@@ -606,90 +618,79 @@ function structureIndicators(candles, direction) {
   const a = atr(candles, 14);
   const d = adx(candles, 14);
   const levels = recentSwingLevels(candles);
+  const reject = candleRejection(candles);
+  const mom = momentumState(candles);
 
-  const longTrend =
-    price > e20 && e20 > e50 && e50 >= e200;
-  const shortTrend =
-    price < e20 && e20 < e50 && e50 <= e200;
+  const longTrend = price > e20 && e20 > e50 && e50 >= e200;
+  const shortTrend = price < e20 && e20 < e50 && e50 <= e200;
 
-  const trendConfluence = direction === "long"
-    ? Number(price > e20) + Number(e20 > e50) + Number(m.histogram > 0) + Number(r > 50) + Number(d >= 18)
-    : Number(price < e20) + Number(e20 < e50) + Number(m.histogram < 0) + Number(r < 50) + Number(d >= 18);
+  const resistance = nearestZone(price, levels.resistance, "resistance");
+  const support = nearestZone(price, levels.support, "support");
+  const nearResistance = resistance !== null && zoneProximity(price, resistance, a) <= 1.15;
+  const nearSupport = support !== null && zoneProximity(price, support, a) <= 1.15;
 
-  const reaction = reactionScore(candles, direction);
-  const move5 = candles.length >= 2 ? pct(price, closes.at(-2)) : 0;
-  const move15 = candles.length >= 4 ? pct(price, closes.at(-4)) : 0;
-  const rangePct = price ? (a / price) * 100 : 0;
+  const recentHigh = Math.max(...candles.slice(-12).map((x) => x.high));
+  const recentLow = Math.min(...candles.slice(-12).map((x) => x.low));
+  const extensionUp = a > 0 ? (price - e20) / a : 0;
+  const extensionDown = a > 0 ? (e20 - price) / a : 0;
+
+  // TRUE reversal evidence: location + rejection + momentum deterioration.
+  const reversalShortEvidence =
+    Number(nearResistance) +
+    Number(reject.upperWickRatio >= 0.25) +
+    Number(mom.rsi >= 62) +
+    Number(mom.rsiDelta < 0) +
+    Number(mom.macdDelta < 0) +
+    Number(price < closes.at(-2)) +
+    Number(price < recentHigh * 0.9985) +
+    Number(extensionUp >= 0.8);
+
+  const reversalLongEvidence =
+    Number(nearSupport) +
+    Number(reject.lowerWickRatio >= 0.25) +
+    Number(mom.rsi <= 38) +
+    Number(mom.rsiDelta > 0) +
+    Number(mom.macdDelta > 0) +
+    Number(price > closes.at(-2)) +
+    Number(price > recentLow * 1.0015) +
+    Number(extensionDown >= 0.8);
+
+  const continuationLong =
+    Number(price > e20) + Number(e20 > e50) + Number(m.histogram > 0) + Number(r > 50) + Number(d >= 18);
+  const continuationShort =
+    Number(price < e20) + Number(e20 < e50) + Number(m.histogram < 0) + Number(r < 50) + Number(d >= 18);
+
+  const trendConfluence = direction === "long" ? continuationLong : continuationShort;
+  const reversalConfluence = direction === "long" ? reversalLongEvidence : reversalShortEvidence;
 
   return {
-    price,
-    ema20: e20,
-    ema50: e50,
-    ema200: e200,
-    rsi: r,
-    macd: m,
-    atr: a,
-    adx: d,
-    longTrend,
-    shortTrend,
-    trendConfluence,
-    reaction,
-    move5,
-    move15,
-    rangePct,
+    price, ema20: e20, ema50: e50, ema200: e200, rsi: r, macd: m, atr: a, adx: d,
+    longTrend, shortTrend, trendConfluence, reversalConfluence,
+    reversalLongEvidence, reversalShortEvidence,
+    nearResistance, nearSupport, resistance, support,
+    extensionUp, extensionDown, rejection: reject, momentum: mom,
+    move5: candles.length >= 2 ? pct(price, closes.at(-2)) : 0,
+    move15: candles.length >= 4 ? pct(price, closes.at(-4)) : 0,
+    rangePct: price ? (a / price) * 100 : 0,
     levels,
   };
 }
 
-function oiDeltaScore(ticker, direction) {
-  const candidates = [
-    ticker?.openInterestChange5mPercent,
-    ticker?.oiChange5mPercent,
-    ticker?.openInterestDeltaPercent,
-    ticker?.oiDeltaPercent,
-    ticker?.openInterestChangePercent,
-  ];
-  const delta = candidates.map(num).find((x) => x !== 0) ?? 0;
-  const priceMove = tickerChange5m(ticker);
-
-  // Positive price + rising OI supports long continuation.
-  // Negative price + rising OI supports short continuation.
-  // Falling OI during a sharp move is treated as exhaustion rather than strong
-  // confirmation.
-  const aligned = direction === "long"
-    ? priceMove > 0 && delta > 0
-    : priceMove < 0 && delta > 0;
-  const exhausted = direction === "long"
-    ? priceMove > 0 && delta < 0
-    : priceMove < 0 && delta < 0;
-
-  return {
-    delta,
-    score: aligned ? 12 : exhausted ? -6 : 0,
-    aligned,
-    exhausted,
-  };
-}
-
 function directionFromIndicators(five, fifteen, ticker) {
-  const p5 = five.price;
-  const p15 = fifteen.price;
+  // Reversal has priority only when there is real location + exhaustion evidence
+  // on the 5M chart and corroboration on 15M. This prevents the old behaviour
+  // where an extended uptrend automatically became LONG at resistance.
+  const shortRev = five.reversalShortEvidence >= 5 && (fifteen.reversalShortEvidence >= 3 || five.extensionUp >= 1.15);
+  const longRev = five.reversalLongEvidence >= 5 && (fifteen.reversalLongEvidence >= 3 || five.extensionDown >= 1.15);
+  if (shortRev && !longRev) return "short";
+  if (longRev && !shortRev) return "long";
+
   const bullish =
-    Number(p5 > five.ema20) +
-    Number(p5 > five.ema50) +
-    Number(five.macd.histogram > 0) +
-    Number(five.rsi >= 50) +
-    Number(p15 > p15 ? false : p15 > fifteen.ema20) +
-    Number(five.move15 > 0) +
-    Number(fifteen.move15 > 0);
+    Number(five.price > five.ema20) + Number(five.price > five.ema50) + Number(five.macd.histogram > 0) +
+    Number(five.rsi >= 50) + Number(fifteen.price > fifteen.ema20) + Number(five.move15 > 0) + Number(fifteen.move15 > 0);
   const bearish =
-    Number(p5 < five.ema20) +
-    Number(p5 < five.ema50) +
-    Number(five.macd.histogram < 0) +
-    Number(five.rsi <= 50) +
-    Number(p15 < fifteen.ema20) +
-    Number(five.move15 < 0) +
-    Number(fifteen.move15 < 0);
+    Number(five.price < five.ema20) + Number(five.price < five.ema50) + Number(five.macd.histogram < 0) +
+    Number(five.rsi <= 50) + Number(fifteen.price < fifteen.ema20) + Number(five.move15 < 0) + Number(fifteen.move15 < 0);
 
   if (bullish === bearish) {
     const change = tickerChange5m(ticker);
@@ -699,101 +700,90 @@ function directionFromIndicators(five, fifteen, ticker) {
 }
 
 function scoreCandidate({ market, ticker, candles5, candles15 }) {
-  const five = structureIndicators(candles5, "long");
+  const fiveLong = structureIndicators(candles5, "long");
   const fifteenLong = structureIndicators(candles15, "long");
+  const fiveShort = fiveLong;
   const fifteenShort = structureIndicators(candles15, "short");
-  const direction = directionFromIndicators(five, fifteenLong, ticker);
+  const direction = directionFromIndicators(fiveLong, fifteenLong, ticker);
+  const five = fiveLong;
   const fifteen = direction === "long" ? fifteenLong : fifteenShort;
+
+  const reversal = direction === "long"
+    ? five.reversalLongEvidence + fifteen.reversalLongEvidence * 0.65
+    : five.reversalShortEvidence + fifteen.reversalShortEvidence * 0.65;
+  const reversalMode = reversal >= 8.0;
+  const continuationTrend = direction === "long"
+    ? five.continuationLong ?? five.trendConfluence
+    : five.continuationShort ?? five.trendConfluence;
 
   const oi = oiDeltaScore(ticker, direction);
   const move5 = tickerChange5m(ticker) || five.move5;
   const move15 = five.move15;
   const explosive = Math.abs(move5) >= 0.70 || Math.abs(move15) >= 1.20;
-  const reaction = fifteen.reaction.score + five.reaction.score;
-  const trend = direction === "long"
-    ? Number(five.longTrend) + Number(fifteen.longTrend)
-    : Number(five.shortTrend) + Number(fifteen.shortTrend);
+  const rejectionScore = direction === "long"
+    ? (five.rejection.lowerWickRatio >= 0.28 ? 10 : 0) + (five.rejection.bull >= 2 ? 8 : 0)
+    : (five.rejection.upperWickRatio >= 0.28 ? 10 : 0) + (five.rejection.bear >= 2 ? 8 : 0);
 
-  const momentum = direction === "long"
-    ? clamp(move5 * 8 + move15 * 4, -18, 18)
-    : clamp(-move5 * 8 - move15 * 4, -18, 18);
+  let score;
+  let edge;
+  let risk;
 
-  const rsiQuality = direction === "long"
-    ? (five.rsi >= 48 && five.rsi <= 72 ? 8 : five.rsi > 78 ? -8 : 0)
-    : (five.rsi <= 52 && five.rsi >= 28 ? 8 : five.rsi < 22 ? -8 : 0);
+  if (reversalMode) {
+    const location = direction === "long" ? Number(five.nearSupport) + Number(fifteen.nearSupport) : Number(five.nearResistance) + Number(fifteen.nearResistance);
+    const exhaustion = direction === "long"
+      ? Number(five.extensionDown >= 0.8) + Number(five.rsi <= 40) + Number(five.momentum.rsiDelta > 0) + Number(five.momentum.macdDelta > 0) + Number(oi.exhausted)
+      : Number(five.extensionUp >= 0.8) + Number(five.rsi >= 60) + Number(five.momentum.rsiDelta < 0) + Number(five.momentum.macdDelta < 0) + Number(oi.exhausted);
+    score = 42 + reversal * 3.2 + location * 5 + exhaustion * 4 + rejectionScore + (explosive ? 4 : 0) + (oi.exhausted ? 6 : 0);
+    edge = 18 + reversal * 3.0 + location * 6 + exhaustion * 3.5 + rejectionScore * 0.6;
+    risk = (five.adx < 12 ? 8 : 0) + (Math.abs(move5) > 4.0 ? 12 : 0) + (direction === "long" && five.rsi > 75 ? 10 : 0) + (direction === "short" && five.rsi < 25 ? 10 : 0);
+  } else {
+    const momentum = direction === "long" ? clamp(move5 * 8 + move15 * 4, -18, 18) : clamp(-move5 * 8 - move15 * 4, -18, 18);
+    const rsiQuality = direction === "long" ? (five.rsi >= 48 && five.rsi <= 72 ? 8 : five.rsi > 78 ? -10 : 0) : (five.rsi <= 52 && five.rsi >= 28 ? 8 : five.rsi < 22 ? -10 : 0);
+    const macdQuality = direction === "long" ? (five.macd.histogram > 0 ? 8 : -4) : (five.macd.histogram < 0 ? 8 : -4);
+    const adxQuality = clamp((five.adx - 14) * 0.8, 0, 10);
+    score = 35 + rejectionScore + continuationTrend * 4 + momentum + rsiQuality + macdQuality + adxQuality + (explosive ? 8 : 0) + oi.score;
+    edge = 20 + rejectionScore * 0.7 + continuationTrend * 3 + Math.abs(momentum) * 0.7 + (oi.aligned ? 10 : 0) + (explosive ? 6 : 0);
+    risk = (Math.abs(move5) > 3.5 ? 18 : 0) + (five.rsi > 82 || five.rsi < 18 ? 18 : 0) + (five.adx < 12 ? 10 : 0) + (oi.exhausted ? 10 : 0);
+  }
 
-  const macdQuality = direction === "long"
-    ? (five.macd.histogram > 0 ? 8 : -4)
-    : (five.macd.histogram < 0 ? 8 : -4);
+  // Hard anti-chase rule: do not enter continuation at the exact end of a move.
+  if (!reversalMode && ((direction === "long" && five.nearResistance && five.extensionUp >= 1.35) || (direction === "short" && five.nearSupport && five.extensionDown >= 1.35))) {
+    score -= 22; edge -= 18; risk += 18;
+  }
 
-  const adxQuality = clamp((five.adx - 14) * 0.8, 0, 10);
-  const breakout = explosive ? 10 : 0;
-  const flow = oi.score;
-
-  let score = 35 + reaction + trend * 4 + momentum + rsiQuality + macdQuality + adxQuality + breakout + flow;
   score = clamp(score, 0, 100);
-
-  const risk =
-    (Math.abs(move5) > 3.5 ? 18 : 0) +
-    (five.rsi > 82 || five.rsi < 18 ? 18 : 0) +
-    (five.adx < 12 ? 10 : 0) +
-    (oi.exhausted ? 10 : 0);
-
-  const edge = clamp(
-    20 +
-    reaction * 0.7 +
-    trend * 3 +
-    Math.abs(momentum) * 0.7 +
-    (oi.aligned ? 10 : 0) +
-    (explosive ? 8 : 0) -
-    risk * 0.35,
-    0,
-    100
-  );
+  edge = clamp(edge, 0, 100);
+  risk = clamp(risk, 0, 100);
 
   const entry = five.price;
   const tp = calculateLogicalTp(entry, direction, candles5, candles15, five.atr);
-
   const reason = [];
+  if (reversalMode) reason.push(direction === "long" ? "REVERSAL_LONG" : "REVERSAL_SHORT");
+  else reason.push("TREND_CONTINUATION");
+  if (five.nearResistance) reason.push("RESISTANCE_ZONE");
+  if (five.nearSupport) reason.push("SUPPORT_ZONE");
+  if (rejectionScore >= 10) reason.push("CANDLE_REJECTION");
+  if (five.extensionUp >= 0.8 || five.extensionDown >= 0.8) reason.push("EXHAUSTION");
   if (explosive) reason.push("EXPLOSIVE_MOVE");
-  if (reaction >= 24) reason.push("S/R_REACTION");
-  if (trend >= 3) reason.push("TREND_CONFLUENCE");
   if (oi.aligned) reason.push("OI_ALIGNMENT");
+  if (oi.exhausted) reason.push("OI_EXHAUSTION");
   if (five.macd.histogram !== 0) reason.push("MACD");
   if (five.adx >= 18) reason.push("ADX");
 
   return {
-    symbol: marketDisplaySymbol(market),
-    candleSymbol: candleSymbolFromMarket(market),
-    direction,
-    entry,
-    tp,
-    score: Number(score.toFixed(2)),
-    edge: Number(edge.toFixed(2)),
-    risk: Number(risk.toFixed(2)),
-    trendConfluence: trend,
-    reasons: reason,
+    symbol: marketDisplaySymbol(market), candleSymbol: candleSymbolFromMarket(market), direction, entry, tp,
+    score: Number(score.toFixed(2)), edge: Number(edge.toFixed(2)), risk: Number(risk.toFixed(2)),
+    trendConfluence: reversalMode ? Math.max(five.reversalLongEvidence, five.reversalShortEvidence >= 0 ? five.reversalShortEvidence : 0) >= 5 ? 3 : 2 : continuationTrend,
+    setupMode: reversalMode ? "REVERSAL" : "CONTINUATION",
+    reversalConfluence: Number(reversal.toFixed(2)), reasons: reason,
     indicators: {
-      rsi: Number(five.rsi.toFixed(2)),
-      adx: Number(five.adx.toFixed(2)),
-      ema20: five.ema20,
-      ema50: five.ema50,
-      ema200: five.ema200,
-      macdHistogram: five.macd.histogram,
-      move5m: move5,
-      move15m: move15,
-      oiChange5m: oi.delta,
-      reactionScore: reaction,
-      explosive,
-      volume24h: tickerVolume(ticker),
-      openInterest: tickerOpenInterest(ticker),
-      fundingRate: tickerFunding(ticker),
-      liquidity: marketLiquidity(market),
+      rsi: Number(five.rsi.toFixed(2)), adx: Number(five.adx.toFixed(2)), ema20: five.ema20, ema50: five.ema50, ema200: five.ema200,
+      macdHistogram: five.macd.histogram, move5m: move5, move15m: move15, oiChange5m: oi.delta, reactionScore: rejectionScore,
+      explosive, volume24h: tickerVolume(ticker), openInterest: tickerOpenInterest(ticker), fundingRate: tickerFunding(ticker), liquidity: marketLiquidity(market),
+      nearResistance: five.nearResistance, nearSupport: five.nearSupport, resistance: five.resistance, support: five.support,
+      extensionUpAtr: five.extensionUp, extensionDownAtr: five.extensionDown, reversalLongEvidence: five.reversalLongEvidence, reversalShortEvidence: five.reversalShortEvidence,
     },
-    market,
-    ticker,
-    candles5,
-    candles15,
+    market, ticker, candles5, candles15,
   };
 }
 
@@ -819,44 +809,19 @@ function calculateLogicalTp(entry, direction, candles5, candles15, atr5) {
 }
 
 function candidateIsActionable(candidate) {
-  if (!candidate || !candidate.symbol || !candidate.entry || !candidate.tp) {
-    return { ok: false, reason: "INVALID_PLAN" };
-  }
-  if (candidate.score < CONFIG.minScore) {
-    return { ok: false, reason: `SCORE_${candidate.score.toFixed(1)}_BELOW_${CONFIG.minScore}` };
-  }
-  if (candidate.edge < CONFIG.minEdge) {
-    return { ok: false, reason: `EDGE_${candidate.edge.toFixed(1)}_BELOW_${CONFIG.minEdge}` };
-  }
-  // Responsive selection: keep normal trend confluence as the preferred path,
-  // but allow two tightly bounded alternatives so sharp GMX moves are not missed.
-  // The override never bypasses score, edge, risk or TP validation.
-  const trendReady = candidate.trendConfluence >= CONFIG.minTrendConfluence;
-  const explosive = Boolean(candidate.indicators?.explosive);
-  const reaction = Number(candidate.indicators?.reactionScore || 0);
-  const impulseOverride =
-    explosive &&
-    candidate.score >= CONFIG.impulseOverrideMinScore &&
-    candidate.edge >= CONFIG.impulseOverrideMinEdge &&
-    candidate.risk <= CONFIG.impulseOverrideMaxRisk;
-  const reversalOverride =
-    reaction >= 24 &&
-    candidate.score >= CONFIG.reversalOverrideMinScore &&
-    candidate.edge >= CONFIG.reversalOverrideMinEdge &&
-    candidate.risk <= CONFIG.reversalOverrideMaxRisk;
+  if (!candidate || !candidate.symbol || !candidate.entry || !candidate.tp) return { ok: false, reason: "INVALID_PLAN" };
+  if (candidate.score < CONFIG.minScore) return { ok: false, reason: `SCORE_${candidate.score.toFixed(1)}_BELOW_${CONFIG.minScore}` };
+  if (candidate.edge < CONFIG.minEdge) return { ok: false, reason: `EDGE_${candidate.edge.toFixed(1)}_BELOW_${CONFIG.minEdge}` };
+  if (candidate.risk > CONFIG.maxRisk) return { ok: false, reason: `RISK_${candidate.risk.toFixed(1)}_ABOVE_${CONFIG.maxRisk}` };
 
-  if (!trendReady && !impulseOverride && !reversalOverride) {
+  if (candidate.setupMode === "REVERSAL") {
+    if (candidate.reversalConfluence < 8) return { ok: false, reason: `REVERSAL_CONFLUENCE_${candidate.reversalConfluence.toFixed(1)}` };
+  } else if (candidate.trendConfluence < CONFIG.minTrendConfluence) {
     return { ok: false, reason: `TREND_CONFLUENCE_${candidate.trendConfluence}` };
-  }
-  if (candidate.risk > CONFIG.maxRisk) {
-    return { ok: false, reason: `RISK_${candidate.risk.toFixed(1)}_ABOVE_${CONFIG.maxRisk}` };
   }
 
   const tpDistance = Math.abs(pct(candidate.tp, candidate.entry));
-  if (tpDistance < CONFIG.minTpDistancePct) {
-    return { ok: false, reason: "TP_TOO_CLOSE" };
-  }
-
+  if (tpDistance < CONFIG.minTpDistancePct) return { ok: false, reason: "TP_TOO_CLOSE" };
   return { ok: true, reason: "READY" };
 }
 
