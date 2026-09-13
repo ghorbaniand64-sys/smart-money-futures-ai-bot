@@ -9744,7 +9744,6 @@ const size = toBigIntDecimal(notionalUsd, 30);
 const collateralAmount = toBigIntDecimal(finalCollateralUsd, 6);
 const allowanceInfo=await ensureGmxCollateralAllowance(sdk,signer,account,collateral.symbol,collateralAmount,balances,{rpcUrl:env.ARBITRUM_RPC});
 const tp = toBigIntDecimal(plan.tp1, 30);
-const sl = toBigIntDecimal(plan.stopLoss, 30);
 const signalLike = { symbol, direction: plan.direction, signalTier: "RADAR", tradePlan: { entry: plan.entry, stopLoss: plan.stopLoss, tp1: plan.tp1 } };
 const lock = await acquireLiveExecutionLock(env, signalLike);
 if (!lock.acquired) return { executed:false, mode:"LIVE", lane:"RADAR", reason:lock.reason, executionKey:lock.key };
@@ -9752,7 +9751,7 @@ try {
 const result = await executeGmxOrder(sdk, {
   kind:"increase", symbol:market.symbol, direction:plan.direction === "LONG" ? "long" : "short", orderType:"market",
   size, collateralToken:collateral.symbol, collateralToPay:{amount:collateralAmount,token:collateral.symbol}, mode:"classic", from:account,
-  tpsl:[{type:"take-profit",triggerPrice:tp,size},{type:"stop-loss",triggerPrice:sl,size}]
+  tpsl:[{type:"take-profit",triggerPrice:tp,size}]
 }, signer, {symbol:market.symbol, direction:plan.direction, lane:"RADAR", rpcUrl:env.ARBITRUM_RPC, marketCandidates:findIncreaseMarketCandidates(markets,requestedSymbol,collateral.symbol,market.symbol)});
 ledger[key] = { status:"OPEN", lane:"RADAR", symbol, direction:plan.direction, radarScore:plan.score, radarEdge:Number(candidate?.pumpRadar?.edge || 0), entryPrice:plan.entry, initialStopPrice:plan.stopLoss, tp1:plan.tp1, tp2:plan.tp2, tp3:plan.tp3, leverage, notionalUsd, collateralToken:collateral.symbol, openedAt:Date.now(), requestId:result?.requestId || null };
 await saveRadarLiveLedger(env, ledger);
@@ -10535,17 +10534,14 @@ if (marketMinCollateralUsd>0) {
   if (walletUsd<marketMinCollateralUsd || maxCollateralUsd<marketMinCollateralUsd) throw new Error(`CORE_MARKET_MIN_COLLATERAL_BLOCKED: marketMinimum=$${marketMinCollateralUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, maxCollateral=$${maxCollateralUsd.toFixed(6)}, computedNotional=$${notionalUsd.toFixed(6)}`);
   finalCollateralUsd=Math.max(finalCollateralUsd,marketMinCollateralUsd);
 }
-let size, collateralAmount, tp, sl;
-try { size=toBigIntDecimal(notionalUsd,30); collateralAmount=toBigIntDecimal(finalCollateralUsd,6); tp=toBigIntDecimal(signal.tradePlan.tp1,30); sl=toBigIntDecimal(signal.tradePlan.stopLoss,30); } catch(error) { throw executionStageError("BUILD_BIGINTS", error, {notionalUsd,finalCollateralUsd}); }
+let size, collateralAmount, tp;
+try { size=toBigIntDecimal(notionalUsd,30); collateralAmount=toBigIntDecimal(finalCollateralUsd,6); tp=toBigIntDecimal(signal.tradePlan.tp1,30); } catch(error) { throw executionStageError("BUILD_BIGINTS", error, {notionalUsd,finalCollateralUsd}); }
 let lock;
 try { lock=await acquireLiveExecutionLock(env, signal); } catch(error) { throw executionStageError("ACQUIRE_EXECUTION_LOCK", error); }
 if (!lock.acquired) return {executed:false,mode:"LIVE",reason:lock.reason,executionKey:lock.key};
 
 try {
-const size1=toBigIntDecimal(notionalUsd*0.40,30);
-const size2=toBigIntDecimal(notionalUsd*0.30,30);
-const size3=toBigIntDecimal(notionalUsd*0.30,30);
-const buildOrderRequest = (collateralUsdForOrder) => ({kind:"increase",symbol:sdkSymbol,direction:orderDirection,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:toBigIntDecimal(collateralUsdForOrder,6),token:collateral.symbol},mode:"classic",from:account,tpsl:[{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp1,30),size:size1},{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp2,30),size:size2},{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp3,30),size:size3},{type:"stop-loss",triggerPrice:sl,size}]});
+const buildOrderRequest = (collateralUsdForOrder) => ({kind:"increase",symbol:sdkSymbol,direction:orderDirection,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:toBigIntDecimal(collateralUsdForOrder,6),token:collateral.symbol},mode:"classic",from:account,tpsl:[{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp1,30),size}]});
 
 let allowanceInfo;
 try {
