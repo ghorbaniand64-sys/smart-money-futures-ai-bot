@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V19.0.0-TRUE-REVERSAL-EXHAUSTION-CLASSIC-ONE-TP";
+export const BOT_VERSION = "V19.0.1-DATA-PIPELINE-DEBUG-TRUE-REVERSAL";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -892,22 +892,40 @@ async function fetchCandles(sdk, marketOrSymbol, timeframe, limit) {
   const market = typeof marketOrSymbol === "string" ? null : marketOrSymbol;
   const full = market ? marketDisplaySymbol(market) : String(marketOrSymbol || "");
   const base = full.split("[")[0].trim();
-  const symbols = [...new Set([full, base, market ? candleSymbolFromMarket(market) : full].filter(Boolean))];
+  const symbols = [...new Set([market ? candleSymbolFromMarket(market) : full, full, base].filter(Boolean))];
   const errors = [];
+
+  console.log("[OHLCV][START]", { symbol: symbols[0] || full, timeframe, limit });
+
   if (typeof sdk?.fetchOhlcv === "function") {
     for (const symbol of symbols) {
       try {
-        const candles = cleanCandles(await sdk.fetchOhlcv({symbol, timeframe, limit}));
-        if (candles.length >= 20) return candles;
-        errors.push(`${symbol}:INSUFFICIENT:${candles.length}`);
-      } catch (e) { errors.push(`${symbol}:${safeError(e)}`); }
+        const raw = await sdk.fetchOhlcv({ symbol, timeframe, limit });
+        const candles = cleanCandles(raw);
+        if (candles.length >= 20) {
+          console.log("[OHLCV][SDK_OK]", { symbol, timeframe, candles: candles.length });
+          return candles;
+        }
+        errors.push(`SDK:${symbol}:INSUFFICIENT:${candles.length}`);
+      } catch (e) {
+        errors.push(`SDK:${symbol}:${safeError(e)}`);
+      }
     }
-  } else errors.push("SDK_FETCH_OHLCV_UNAVAILABLE");
-  if (market) {
-    try { return await fetchOracleCandles(market, timeframe, limit); }
-    catch (e) { errors.push(`ORACLE:${safeError(e)}`); }
+  } else {
+    errors.push("SDK_FETCH_OHLCV_UNAVAILABLE");
   }
-  throw new Error(`OHLCV_ALL_SOURCES_FAILED:${errors.slice(0,4).join("|")}`);
+
+  if (market) {
+    try {
+      const candles = await fetchOracleCandles(market, timeframe, limit);
+      console.log("[OHLCV][ORACLE_OK]", { symbol: candleSymbolFromMarket(market), timeframe, candles: candles.length });
+      return candles;
+    } catch (e) {
+      errors.push(`ORACLE:${safeError(e)}`);
+    }
+  }
+
+  throw new Error(`OHLCV_ALL_SOURCES_FAILED:${errors.slice(0,6).join("|")}`);
 }
 
 async function broadScan(sdk, markets, tickers) {
@@ -936,20 +954,25 @@ async function broadScan(sdk, markets, tickers) {
         ).toFixed(3)),
       };
     } catch (error) {
+      const reason = safeError(error);
+      console.log("[MARKET][5M][REJECT]", { symbol: marketDisplaySymbol(market), candleSymbol: symbol, reason });
       return {
         market,
         ticker: findTicker(tickers, market),
         symbol: marketDisplaySymbol(market),
         candleSymbol: symbol,
-        error: safeError(error),
+        error: reason,
       };
     }
   });
 
+  const successful = results.filter((x) => x.candles5).length;
+  const failed = results.filter((x) => x.error).length;
+  console.log("[BROAD][5M][SUMMARY]", { attempted: listed.length, successful, failed });
   return {
     universe: listed.length,
-    successful: results.filter((x) => x.candles5).length,
-    failed: results.filter((x) => x.error).length,
+    successful,
+    failed,
     rows: results
       .filter((x) => x.candles5)
       .sort((a, b) => b.broadRankScore - a.broadRankScore),
