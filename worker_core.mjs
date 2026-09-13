@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V18.0.2-CLEAN-CLASSIC-EXECUTION-DEBUG";
+export const BOT_VERSION = "V18.1.0-RADAR-RESPONSIVE-CLASSIC-ONE-TP";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -55,12 +55,23 @@ const CONFIG = Object.freeze({
   deepTimeframe: "15m",
   deepLimit: 96,
 
-  deepCandidates: 18,
+  deepCandidates: 30,
   finalCandidates: 3,
 
   minScore: 72,
   minEdge: 8,
   minTrendConfluence: 3,
+
+  // Responsive radar lanes: trend alignment is preferred, not mandatory,
+  // when a genuine 5m/15m impulse or S/R reversal is present.
+  impulseOverrideMinScore: 78,
+  impulseOverrideMinEdge: 10,
+  impulseOverrideMaxRisk: 45,
+  reversalOverrideMinScore: 75,
+  reversalOverrideMinEdge: 8,
+  reversalOverrideMaxRisk: 50,
+  maxResponsiveCandidates: 3,
+
   maxRisk: 55,
 
   minTpDistancePct: 0.30,
@@ -817,7 +828,24 @@ function candidateIsActionable(candidate) {
   if (candidate.edge < CONFIG.minEdge) {
     return { ok: false, reason: `EDGE_${candidate.edge.toFixed(1)}_BELOW_${CONFIG.minEdge}` };
   }
-  if (candidate.trendConfluence < CONFIG.minTrendConfluence) {
+  // Responsive selection: keep normal trend confluence as the preferred path,
+  // but allow two tightly bounded alternatives so sharp GMX moves are not missed.
+  // The override never bypasses score, edge, risk or TP validation.
+  const trendReady = candidate.trendConfluence >= CONFIG.minTrendConfluence;
+  const explosive = Boolean(candidate.indicators?.explosive);
+  const reaction = Number(candidate.indicators?.reactionScore || 0);
+  const impulseOverride =
+    explosive &&
+    candidate.score >= CONFIG.impulseOverrideMinScore &&
+    candidate.edge >= CONFIG.impulseOverrideMinEdge &&
+    candidate.risk <= CONFIG.impulseOverrideMaxRisk;
+  const reversalOverride =
+    reaction >= 24 &&
+    candidate.score >= CONFIG.reversalOverrideMinScore &&
+    candidate.edge >= CONFIG.reversalOverrideMinEdge &&
+    candidate.risk <= CONFIG.reversalOverrideMaxRisk;
+
+  if (!trendReady && !impulseOverride && !reversalOverride) {
     return { ok: false, reason: `TREND_CONFLUENCE_${candidate.trendConfluence}` };
   }
   if (candidate.risk > CONFIG.maxRisk) {
@@ -1406,22 +1434,8 @@ function cycleMessage(report) {
   return lines.join("\n");
 }
 
-function executionDebug(stage, payload = {}) {
-  try {
-    console.log(`[EXECUTION][${stage}]`, JSON.stringify(payload, (_, v) => typeof v === "bigint" ? v.toString() : v));
-  } catch (_) {
-    console.log(`[EXECUTION][${stage}]`, String(payload));
-  }
-}
-
 async function executeCandidate(runtime, candidate, wallet, openPositions, env) {
   const { sdk, signer, account } = runtime;
-
-  executionDebug("START", {
-    symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp,
-    score: candidate.score, edge: candidate.edge, walletUsd: wallet?.walletUsd ?? null,
-    allocation: CONFIG.walletAllocationPerPosition, leverage: CONFIG.leverage
-  });
 
   if (openPositions.length >= CONFIG.maxPositions) {
     return { executed: false, symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp, score: candidate.score, edge: candidate.edge, risk: candidate.risk, reason: "MAX_POSITIONS_REACHED", stage: "PORTFOLIO" };
@@ -1431,17 +1445,14 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
     return { executed: false, symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp, score: candidate.score, edge: candidate.edge, risk: candidate.risk, reason: "SYMBOL_ALREADY_OPEN", stage: "PORTFOLIO" };
   }
 
-  executionDebug("BALANCE_CHECK", { symbol: candidate.symbol, walletUsd: wallet?.walletUsd ?? null });
   const collateral = await resolveCollateral(sdk, candidate.market, wallet);
   if (!collateral) {
-    executionDebug("FAIL", { symbol: candidate.symbol, stage: "BALANCE", reason: "NO_USDC_USDT_BALANCE_FOR_MARKET" });
     return { executed: false, symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp, score: candidate.score, edge: candidate.edge, risk: candidate.risk, reason: "NO_USDC_USDT_BALANCE_FOR_MARKET", stage: "BALANCE" };
   }
 
   const walletBefore = wallet.walletUsd;
   const collateralUsd = walletBefore * CONFIG.walletAllocationPerPosition;
   const notionalUsd = collateralUsd * CONFIG.leverage;
-  executionDebug("SIZE", { symbol: candidate.symbol, collateralToken: collateral.symbol, collateralUsd, notionalUsd, walletBefore });
 
   if (collateralUsd <= 0) {
     return { executed: false, symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp, score: candidate.score, edge: candidate.edge, risk: candidate.risk, reason: "ZERO_COLLATERAL", stage: "BALANCE" };
@@ -1449,7 +1460,6 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
 
   let prepared;
   try {
-    executionDebug("PREPARE_START", { symbol: candidate.symbol, direction: candidate.direction, collateralToken: collateral.symbol, collateralUsd, notionalUsd, tp: candidate.tp });
     prepared = await prepareClassicIncrease({
       sdk,
       account,
@@ -1460,18 +1470,23 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
       collateralToken: collateral.symbol,
       tp: candidate.tp,
     });
-    executionDebug("PREPARE_OK", { symbol: candidate.symbol, payloadType: prepared?.payloadType ?? null, hasPayload: !!prepared?.payload, hasValue: prepared?.payload?.value !== undefined });
   } catch (error) {
-    executionDebug("FAIL", { symbol: candidate.symbol, stage: "PREPARE_CLASSIC", error: safeError(error) });
     return {
-      executed: false, symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp,
-      score: candidate.score, edge: candidate.edge, risk: candidate.risk, reason: safeError(error), stage: "PREPARE_CLASSIC",
+      executed: false,
+      symbol: candidate.symbol,
+      direction: candidate.direction,
+      entry: candidate.entry,
+      tp: candidate.tp,
+      score: candidate.score,
+      edge: candidate.edge,
+      risk: candidate.risk,
+      reason: safeError(error),
+      stage: "PREPARE_CLASSIC",
     };
   }
 
   try {
     const tokenAddress = collateral.address || await findTokenAddress(sdk, collateral.symbol);
-    executionDebug("APPROVAL_START", { symbol: candidate.symbol, collateralToken: collateral.symbol, requiredUsd: collateralUsd });
     const allowance = await ensureClassicAllowance({
       sdk,
       signer,
@@ -1482,16 +1497,11 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
       rpcUrl: env.ARBITRUM_RPC,
     });
 
-    executionDebug("APPROVAL_OK", { symbol: candidate.symbol, allowance });
-    executionDebug("BROADCAST_START", { symbol: candidate.symbol, direction: candidate.direction, payloadType: prepared?.payloadType ?? null });
     const txHash = await sendClassicTransaction(signer, prepared);
     if (!txHash) throw new Error("CLASSIC_ORDER_TX_HASH_MISSING");
-    executionDebug("BROADCAST_OK", { symbol: candidate.symbol, txHash });
 
-    executionDebug("VERIFY_START", { symbol: candidate.symbol, txHash });
     const verification = await verifyPosition(sdk, account, candidate);
     const walletAfterSnapshot = await getWalletSnapshot(sdk, account);
-    executionDebug("VERIFY_RESULT", { symbol: candidate.symbol, txHash, verified: verification.verified, walletAfter: walletAfterSnapshot.walletUsd });
 
     return {
       executed: true,
@@ -1515,10 +1525,17 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
       reasons: candidate.reasons,
     };
   } catch (error) {
-    executionDebug("FAIL", { symbol: candidate.symbol, stage: "CLASSIC_BROADCAST", error: safeError(error) });
     return {
-      executed: false, symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp,
-      score: candidate.score, edge: candidate.edge, risk: candidate.risk, reason: safeError(error), stage: "CLASSIC_BROADCAST",
+      executed: false,
+      symbol: candidate.symbol,
+      direction: candidate.direction,
+      entry: candidate.entry,
+      tp: candidate.tp,
+      score: candidate.score,
+      edge: candidate.edge,
+      risk: candidate.risk,
+      reason: safeError(error),
+      stage: "CLASSIC_BROADCAST",
     };
   }
 }
