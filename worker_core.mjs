@@ -1,9 +1,9 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  GMX SMART MONEY FUTURES AI BOT                                             ║
-║  V17.8.8 — LIQUIDITY MAP + REACTION + EARLY IMPULSE ENGINE                                          ║
+║  V17.8.1 — LIQUIDITY MAP + REACTION + EARLY IMPULSE ENGINE                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  RELEASE: V17.8.9-TELEGRAM-HARDENED-CLASSIC-EXECUTION                                   ║
+║  RELEASE: V17.8.7-CLEAN-TELEGRAM-CLASSIC-EXECUTION                                   ║
 ║                                                                              ║
 ║  PURPOSE                                                                     ║
 ║  • Diagnose exactly why EARLY IMPULSE candidates are rejected.              ║
@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.8.9-TELEGRAM-HARDENED-CLASSIC-EXECUTION";
-export const BOT_BUILD = "V17.8.9-TELEGRAM-HARDENED-CLASSIC-EXECUTION";
+export const BOT_VERSION = "V17.8.7-CLEAN-TELEGRAM-CLASSIC-EXECUTION";
+export const BOT_BUILD = "V17.8.7-CLEAN-TELEGRAM-CLASSIC-EXECUTION";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -470,7 +470,7 @@ tightenAfterR: 1.5
 };
  
 const CONFIG = {
-VERSION: "V17.8.9-TELEGRAM-HARDENED-CLASSIC-EXECUTION",
+VERSION: "V17.8.7-CLEAN-TELEGRAM-CLASSIC-EXECUTION",
 MODE: "SIGNAL",
 EXECUTION_ENABLED: true, // LIVE armed by default; explicit ENV EXECUTION_ENABLED=false/0/no still disables execution.
 PAPER_ENABLED: true,
@@ -9494,67 +9494,6 @@ async function resolveLiveCollateralForSignal(sdk, markets, symbol, balances) {
   return null;
 }
  
-// V17.8.8: GMX Classic PREPARE can reject a valid-looking market with
-// "Market does not support increase orders". Do not change `kind:"increase"`:
-// GMX documents Market Increase as the correct open/add-position order. Instead,
-// retry only against another exact same-asset/same-collateral market returned by
-// the live SDK catalog. This is a read-only PREPARE fallback; no transaction is
-// signed or broadcast until PREPARE succeeds.
-function collectErrorText(value, out = [], depth = 0) {
-  if (value == null || depth > 6) return out;
-  if (typeof value === "string" || typeof value === "number") {
-    out.push(String(value));
-    return out;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) collectErrorText(item, out, depth + 1);
-    return out;
-  }
-  if (typeof value === "object") {
-    for (const [key, item] of Object.entries(value)) {
-      if (key === "stack" || key === "cause" || key === "response" || key === "data" || key === "error" || key === "message" || key === "code" || key === "reason" || key === "details") {
-        collectErrorText(item, out, depth + 1);
-      }
-    }
-  }
-  return out;
-}
-
-function isUnsupportedIncreasePrepareError(error) {
-  const text = collectErrorText(error).join(" | ").toLowerCase();
-  return text.includes("market does not support increase orders") ||
-    text.includes("market does not support increase order") ||
-    text.includes("increase orders are not supported") ||
-    text.includes("increase order is not supported") ||
-    text.includes("market_increase_disabled") ||
-    text.includes("increase_not_supported");
-}
-
-function findIncreaseMarketCandidates(markets, requestedSymbol, collateralSymbol, currentSymbol = "") {
-  const wanted = liveNormalizeSymbol(requestedSymbol);
-  const collateral = String(collateralSymbol || "").toUpperCase();
-  const current = String(currentSymbol || "").toLowerCase();
-  const rows = (markets || []).filter(m => {
-    if (!m || m.isSpotOnly) return false;
-    if (!marketMatchesRequestedSymbol(m, wanted) && !marketIndexMatches(m, wanted)) return false;
-    if (collateral && !(marketHasCanonicalCollateral(m, collateral) || marketCollateralSymbols(m).has(collateral))) return false;
-    return Boolean(m.symbol);
-  });
-  const unique = [];
-  const seen = new Set();
-  for (const m of rows) {
-    const symbol = String(m.symbol);
-    const key = symbol.toLowerCase();
-    if (key === current || seen.has(key)) continue;
-    seen.add(key);
-    unique.push({
-      symbol,
-      marketTokenAddress: m.marketTokenAddress || m.marketAddress || m.address || null,
-    });
-  }
-  return unique.slice(0, 6);
-}
-
 function liveExecutionKey(signal) {
 const entry = Number(signal?.tradePlan?.entry ?? signal?.price ?? 0);
 const stop = Number(signal?.tradePlan?.stopLoss ?? 0);
@@ -9744,6 +9683,7 @@ const size = toBigIntDecimal(notionalUsd, 30);
 const collateralAmount = toBigIntDecimal(finalCollateralUsd, 6);
 const allowanceInfo=await ensureGmxCollateralAllowance(sdk,signer,account,collateral.symbol,collateralAmount,balances,{rpcUrl:env.ARBITRUM_RPC});
 const tp = toBigIntDecimal(plan.tp1, 30);
+const sl = toBigIntDecimal(plan.stopLoss, 30);
 const signalLike = { symbol, direction: plan.direction, signalTier: "RADAR", tradePlan: { entry: plan.entry, stopLoss: plan.stopLoss, tp1: plan.tp1 } };
 const lock = await acquireLiveExecutionLock(env, signalLike);
 if (!lock.acquired) return { executed:false, mode:"LIVE", lane:"RADAR", reason:lock.reason, executionKey:lock.key };
@@ -9751,8 +9691,8 @@ try {
 const result = await executeGmxOrder(sdk, {
   kind:"increase", symbol:market.symbol, direction:plan.direction === "LONG" ? "long" : "short", orderType:"market",
   size, collateralToken:collateral.symbol, collateralToPay:{amount:collateralAmount,token:collateral.symbol}, mode:"classic", from:account,
-  tpsl:[{type:"take-profit",triggerPrice:tp,size}]
-}, signer, {symbol:market.symbol, direction:plan.direction, lane:"RADAR", rpcUrl:env.ARBITRUM_RPC, marketCandidates:findIncreaseMarketCandidates(markets,requestedSymbol,collateral.symbol,market.symbol)});
+  tpsl:[{type:"take-profit",triggerPrice:tp,size},{type:"stop-loss",triggerPrice:sl,size}]
+}, signer, {symbol:market.symbol, direction:plan.direction, lane:"RADAR", rpcUrl:env.ARBITRUM_RPC});
 ledger[key] = { status:"OPEN", lane:"RADAR", symbol, direction:plan.direction, radarScore:plan.score, radarEdge:Number(candidate?.pumpRadar?.edge || 0), entryPrice:plan.entry, initialStopPrice:plan.stopLoss, tp1:plan.tp1, tp2:plan.tp2, tp3:plan.tp3, leverage, notionalUsd, collateralToken:collateral.symbol, openedAt:Date.now(), requestId:result?.requestId || null };
 await saveRadarLiveLedger(env, ledger);
 return { executed:true, mode:"LIVE", lane:"RADAR", account, symbol, direction:plan.direction, radarScore:plan.score, radarEdge:Number(candidate?.pumpRadar?.edge || 0), leverage, walletUsd, collateralUsd, collateralToken:collateral.symbol, notionalUsd, riskBasedNotional, hotSizing:isHotRadar, marketMinPositionUsd, marketMinCollateralUsd, allowance:allowanceInfo, requestId:result?.requestId || null, executionKey:lock.key };
@@ -9760,34 +9700,10 @@ return { executed:true, mode:"LIVE", lane:"RADAR", account, symbol, direction:pl
 }
 
 
-function telegramCompactError(value, maxLen = 900) {
-  let s = value === null || value === undefined ? "" : String(value);
-  s = s.replace(/\r/g, "").replace(/\n+/g, " ").replace(/\s{2,}/g, " ").trim();
-  // Preserve the useful API/SDK reason while dropping huge calldata dumps.
-  const markers = [
-    "Market does not support increase orders",
-    "Insufficient liquidity",
-    "INSUFFICIENT_LIQUIDITY",
-    "exceeds the balance of the account",
-    "insufficient funds",
-    "execution reverted",
-    "HTTP 400", "HTTP 401", "HTTP 403", "HTTP 429", "HTTP 500"
-  ];
-  const lower = s.toLowerCase();
-  for (const marker of markers) {
-    const i = lower.indexOf(marker.toLowerCase());
-    if (i >= 0) {
-      const start = Math.max(0, i - 180);
-      return s.slice(start, i + marker.length + 420).slice(0, maxLen);
-    }
-  }
-  return s.slice(0, maxLen) + (s.length > maxLen ? " …[truncated]" : "");
-}
-
 function formatTelegramExecutionFailure(signal, error, result=null) {
   const symbol = telegramTextSafe(signal?.symbol || result?.symbol || "UNKNOWN");
   const direction = String(signal?.direction || result?.direction || "UNKNOWN").toUpperCase();
-  const reason = telegramTextSafe(telegramCompactError(result?.reason || result?.error || error || "UNKNOWN_EXECUTION_ERROR"));
+  const reason = telegramTextSafe(result?.reason || result?.error || error || "UNKNOWN_EXECUTION_ERROR");
   const tier = telegramTextSafe(signal?.signalTier || signal?.hybridSetup?.tier || "EVENT");
   const p=signal?.tradePlan||{};
   const stage=telegramTextSafe(result?.stage || error?.executionStage || "PRE-EXECUTION");
@@ -9862,7 +9778,7 @@ ${icon2} EXECUTED #${i+1} — ${telegramTextSafe(x?.symbol || "UNKNOWN")}`,
     `🎯 Entry ready: ${Number(result?.candidates || 0)}`,
     `🟢 Executed: ${executed}`,
     `🔴 Execution failures: ${failures}`,
-    ...exec.filter(x => x && x.executed === false && (x.error || x.reason)).slice(0,3).map((x,i) => `❌ FAIL #${i+1}: ${telegramTextSafe(x.symbol||"UNKNOWN")} | ${telegramTextSafe(x.direction||x.signalDirection||"?")} | ${telegramTextSafe(x.stage||"?")} | ${telegramCompactError(x.error||x.reason||"UNKNOWN")}`),
+    ...exec.filter(x => x && x.executed === false && (x.error || x.reason)).slice(0,3).map((x,i) => `❌ FAIL #${i+1}: ${telegramTextSafe(x.symbol||"UNKNOWN")} | ${telegramTextSafe(x.direction||x.signalDirection||"?")} | ${telegramTextSafe(x.stage||"?")} | ${telegramTextSafe(x.error||x.reason||"UNKNOWN")}`),
     ...executedDetails,
     `📍 Reactions: S ${Number(stats.supportReactions || 0)} / R ${Number(stats.resistanceReactions || 0)}`,
     `💥 Breakouts: ${Number(stats.breakouts || 0)}`,
@@ -10102,50 +10018,10 @@ function buildObservedWalletAccounting(result) {
 
 async function executeGmxOrder(sdk, request, signer, meta = {}) {
   let prepared;
-  let preparedSymbol = String(request?.symbol || meta?.symbol || "");
   try {
     prepared = await sdk.prepareOrder(request);
   } catch (error) {
-    // Only an increase-order capability error is eligible for market fallback.
-    // Other 400s (size, collateral, liquidity, price, etc.) must remain intact.
-    if (String(request?.kind || "").toLowerCase() === "increase" && isUnsupportedIncreasePrepareError(error) && Array.isArray(meta?.marketCandidates)) {
-      const originalError = error;
-      for (const candidate of meta.marketCandidates) {
-        const candidateSymbol = String(candidate?.symbol || "");
-        if (!candidateSymbol || candidateSymbol.toLowerCase() === preparedSymbol.toLowerCase()) continue;
-        try {
-          // Re-check the candidate's current JIT-aware capacity before prepare.
-          // This prevents moving a valid order onto a second market whose live
-          // capacity is already below the requested size.
-          if (typeof sdk?.getTradingCapacity === "function" && request?.size != null) {
-            const cap = await sdk.getTradingCapacity({symbol:candidateSymbol,direction:request.direction});
-            const available = BigInt(cap?.availableLiquidity ?? 0);
-            if (available > 0n && BigInt(request.size) > available) continue;
-          }
-          const retryRequest = {...request, symbol:candidateSymbol};
-          prepared = await sdk.prepareOrder(retryRequest);
-          preparedSymbol = candidateSymbol;
-          console.warn("[EXECUTION][CLASSIC_MARKET_FALLBACK]", {
-            from: String(request?.symbol || ""),
-            to: candidateSymbol,
-            direction: request?.direction || null,
-            kind: request?.kind || null,
-          });
-          break;
-        } catch (retryError) {
-          if (!isUnsupportedIncreasePrepareError(retryError)) {
-            throw executionStageError("PREPARE", retryError, {...meta, symbol:candidateSymbol, fallbackFrom:String(request?.symbol || "")});
-          }
-        }
-      }
-      if (!prepared) {
-        const e = new Error(`GMX_MARKET_INCREASE_UNSUPPORTED: no executable increase market remained for ${String(request?.symbol || "UNKNOWN")} | candidates=${JSON.stringify(meta.marketCandidates.map(x=>x?.symbol).filter(Boolean))}`);
-        e.cause = originalError;
-        throw executionStageError("PREPARE", e, {...meta, marketIncreaseUnsupported:true, attemptedMarkets:meta.marketCandidates.map(x=>x?.symbol).filter(Boolean)});
-      }
-    } else {
-      throw executionStageError("PREPARE", error, meta);
-    }
+    throw executionStageError("PREPARE", error, meta);
   }
 
   // V17.6.0: CLASSIC is the only live execution transport.
@@ -10534,14 +10410,17 @@ if (marketMinCollateralUsd>0) {
   if (walletUsd<marketMinCollateralUsd || maxCollateralUsd<marketMinCollateralUsd) throw new Error(`CORE_MARKET_MIN_COLLATERAL_BLOCKED: marketMinimum=$${marketMinCollateralUsd.toFixed(6)}, wallet=$${walletUsd.toFixed(6)}, maxCollateral=$${maxCollateralUsd.toFixed(6)}, computedNotional=$${notionalUsd.toFixed(6)}`);
   finalCollateralUsd=Math.max(finalCollateralUsd,marketMinCollateralUsd);
 }
-let size, collateralAmount, tp;
-try { size=toBigIntDecimal(notionalUsd,30); collateralAmount=toBigIntDecimal(finalCollateralUsd,6); tp=toBigIntDecimal(signal.tradePlan.tp1,30); } catch(error) { throw executionStageError("BUILD_BIGINTS", error, {notionalUsd,finalCollateralUsd}); }
+let size, collateralAmount, tp, sl;
+try { size=toBigIntDecimal(notionalUsd,30); collateralAmount=toBigIntDecimal(finalCollateralUsd,6); tp=toBigIntDecimal(signal.tradePlan.tp1,30); sl=toBigIntDecimal(signal.tradePlan.stopLoss,30); } catch(error) { throw executionStageError("BUILD_BIGINTS", error, {notionalUsd,finalCollateralUsd}); }
 let lock;
 try { lock=await acquireLiveExecutionLock(env, signal); } catch(error) { throw executionStageError("ACQUIRE_EXECUTION_LOCK", error); }
 if (!lock.acquired) return {executed:false,mode:"LIVE",reason:lock.reason,executionKey:lock.key};
 
 try {
-const buildOrderRequest = (collateralUsdForOrder) => ({kind:"increase",symbol:sdkSymbol,direction:orderDirection,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:toBigIntDecimal(collateralUsdForOrder,6),token:collateral.symbol},mode:"classic",from:account,tpsl:[{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp1,30),size}]});
+const size1=toBigIntDecimal(notionalUsd*0.40,30);
+const size2=toBigIntDecimal(notionalUsd*0.30,30);
+const size3=toBigIntDecimal(notionalUsd*0.30,30);
+const buildOrderRequest = (collateralUsdForOrder) => ({kind:"increase",symbol:sdkSymbol,direction:orderDirection,orderType:"market",size,collateralToken:collateral.symbol,collateralToPay:{amount:toBigIntDecimal(collateralUsdForOrder,6),token:collateral.symbol},mode:"classic",from:account,tpsl:[{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp1,30),size:size1},{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp2,30),size:size2},{type:"take-profit",triggerPrice:toBigIntDecimal(signal.tradePlan.tp3,30),size:size3},{type:"stop-loss",triggerPrice:sl,size}]});
 
 let allowanceInfo;
 try {
@@ -10555,7 +10434,7 @@ try {
   if (typeof sdk?.prepareOrder !== "function") {
     throw new Error("GMX SDK prepareOrder method is unavailable");
   }
-  result=await executeGmxOrder(sdk,buildOrderRequest(finalCollateralUsd),signer,{symbol:sdkSymbol,direction:orderDirection,rpcUrl:env.ARBITRUM_RPC,marketCandidates:findIncreaseMarketCandidates(markets,signal.symbol,collateral.symbol,sdkSymbol)});
+  result=await executeGmxOrder(sdk,buildOrderRequest(finalCollateralUsd),signer,{symbol:sdkSymbol,direction:orderDirection,rpcUrl:env.ARBITRUM_RPC});
 } catch(error) {
   if (error?.executionStage) throw error;
   throw executionStageError("GMX_ORDER", error, {symbol:sdkSymbol,direction:orderDirection,rpcUrl:env.ARBITRUM_RPC});
@@ -10733,22 +10612,90 @@ const closeSizeUsd = closePercent >= 100 ? sizeUsd : sizeUsd * closePercent / 10
 if (!(closeSizeUsd > 0)) continue;
  
 const size = toBigIntDecimal(closeSizeUsd, 30);
-const result = await executeGmxOrder(sdk, {
+// V17.8.8 — CORE EXIT collateral fix.
+const exitCollateral = String(
+  position?.collateralToken ||
+  position?.collateralSymbol ||
+  position?.collateralTokenSymbol ||
+  position?.collateral?.symbol ||
+  marketSdk?.collateralToken ||
+  marketSdk?.collateralSymbol ||
+  "USDC"
+).toUpperCase();
+
+const exitRequest = {
   kind: "decrease",
   symbol: marketSdk.symbol,
   direction: isLong ? "long" : "short",
   orderType: "market",
   size,
-  collateralToken: positionCollateral || "USDC",
-  receiveToken: positionCollateral || "USDC",
+  collateralToken: exitCollateral,
+  receiveToken: exitCollateral,
   mode: "classic",
   from: account
-}, signer, {symbol:marketSdk.symbol,direction:isLong?"LONG":"SHORT",lane:"CORE_EXIT",action,rpcUrl:env.ARBITRUM_RPC});
+};
+
+console.log("[EXECUTION][CORE_EXIT_REQUEST]", {
+  symbol,
+  sdkSymbol: marketSdk.symbol,
+  direction: side,
+  action,
+  closePercent,
+  positionSizeUsd: sizeUsd,
+  closeSizeUsd,
+  collateralToken: exitCollateral,
+  receiveToken: exitCollateral,
+  positionKey: position?.key || position?.positionKey || null
+});
+
+const result = await executeGmxOrder(
+  sdk,
+  exitRequest,
+  signer,
+  {
+    symbol: marketSdk.symbol,
+    direction: isLong ? "LONG" : "SHORT",
+    lane: "CORE_EXIT",
+    action,
+    rpcUrl: env.ARBITRUM_RPC
+  }
+);
  
 const pnlPercent = entryPrice > 0 && currentPrice > 0
 ? (isLong ? (currentPrice - entryPrice) / entryPrice : (entryPrice - currentPrice) / entryPrice) * 100
 : 0;
  
+// V17.8.8 — verify the position after the decrease transaction.
+let closeVerified = false;
+let closeVerifyPosition = null;
+try {
+  const verifyPositions = await sdk.fetchPositionsInfo({
+    address: account,
+    includeRelatedOrders: true
+  });
+  const targetKey = String(position?.key || position?.positionKey || "");
+  const remaining = (Array.isArray(verifyPositions) ? verifyPositions : []).find(p => {
+    const pKey = String(p?.key || p?.positionKey || "");
+    if (targetKey && pKey && pKey === targetKey) return true;
+    const pSymbol = liveNormalizeSymbol(String(p?.indexName || "").split("/")[0]);
+    return pSymbol === symbol && Boolean(p?.isLong) === isLong;
+  }) || null;
+  closeVerifyPosition = remaining;
+  const remainingSize = Number(remaining?.sizeInUsd || 0);
+  closeVerified = closePercent >= 100
+    ? !(remainingSize > 1)
+    : remainingSize < Math.max(1, sizeUsd - closeSizeUsd + 1);
+  console.log("[EXECUTION][CORE_EXIT_VERIFY]", {
+    symbol, direction: side, requestedClosePercent: closePercent,
+    requestedCloseSizeUsd: closeSizeUsd,
+    remainingSizeUsd: remainingSize, verified: closeVerified
+  });
+} catch (verifyError) {
+  console.warn("[EXECUTION][CORE_EXIT_VERIFY_ERROR]", {
+    symbol, error: safeError(verifyError)
+  });
+}
+
 const actionRecord = {
 symbol,
 direction: side,
@@ -10763,7 +10710,10 @@ leverage: Number(position?.leverage || 1),
 notionalUsd: Number(position?.sizeInUsd || 0),
 exitScore: plan.score,
 components: plan.components,
-requestId: result?.requestId || null
+requestId: result?.requestId || null,
+  txHash: result?.txHash || result?.transactionHash || null,
+  closeVerified,
+  remainingPositionSizeUsd: Number(closeVerifyPosition?.sizeInUsd || 0)
 };
 actions.push(actionRecord);
 await auditLog(env, { type: "LIVE_UNIFIED_EXIT", account, action: actionRecord });
@@ -11242,17 +11192,11 @@ if (!consumeTelegramBudget(env)) {
 return {ok:false,reason:"TELEGRAM_SUBREQUEST_BUDGET"};
 }
 const url = `https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/sendMessage`;
-const telegramText = String(message||"");
-const telegramPayloadText = telegramText.length > 3900 ? telegramText.slice(0, 3890) + "\n…[Telegram message truncated]" : telegramText;
-console.log("[TELEGRAM][SEND_ATTEMPT]", { chars: telegramText.length, sentChars: telegramPayloadText.length });
 try {
 const response = await fetch(url,{
 method:"POST",
 headers:{"content-type":"application/json; charset=UTF-8"},
-body:JSON.stringify({
-  chat_id:env.TELEGRAM_CHAT_ID,
-  text: telegramPayloadText
-})
+body:JSON.stringify({chat_id:env.TELEGRAM_CHAT_ID,text:String(message||"")})
 });
 const body = await response.text();
 if(!response.ok){
