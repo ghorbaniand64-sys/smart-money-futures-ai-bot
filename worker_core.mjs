@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V19.0.3-TRUE-REVERSAL-DEEP-DIAGNOSTIC-CLASSIC-ONE-TP";
+export const BOT_VERSION = "V19.0.4-TRUE-REVERSAL-OI-SCORE-FIX-CLASSIC-ONE-TP";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -673,6 +673,34 @@ function structureIndicators(candles, direction) {
     move15: candles.length >= 4 ? pct(price, closes.at(-4)) : 0,
     rangePct: price ? (a / price) * 100 : 0,
     levels,
+  };
+}
+
+function oiDeltaScore(ticker, direction) {
+  const candidates = [
+    ticker?.openInterestChange5mPercent,
+    ticker?.oiChange5mPercent,
+    ticker?.openInterestDeltaPercent,
+    ticker?.oiDeltaPercent,
+    ticker?.openInterestChangePercent,
+  ];
+  const delta = candidates.map(num).find((x) => x !== 0) ?? 0;
+  const priceMove = tickerChange5m(ticker);
+
+  // OI is additive evidence only: rising OI confirms directional continuation;
+  // falling OI during a sharp move is treated as exhaustion. It never blocks a setup.
+  const aligned = direction === "long"
+    ? priceMove > 0 && delta > 0
+    : priceMove < 0 && delta > 0;
+  const exhausted = direction === "long"
+    ? priceMove > 0 && delta < 0
+    : priceMove < 0 && delta < 0;
+
+  return {
+    delta,
+    score: aligned ? 12 : exhausted ? -6 : 0,
+    aligned,
+    exhausted,
   };
 }
 
