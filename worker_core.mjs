@@ -26,8 +26,8 @@
 
 // V17.3.25: immutable runtime identity. The GitHub runner logs this exact value
 // from the imported worker module so stale/wrong-file deployments are immediately visible.
-export const BOT_VERSION = "V17.8.7-CLEAN-TELEGRAM-CLASSIC-EXECUTION";
-export const BOT_BUILD = "V17.8.7-CLEAN-TELEGRAM-CLASSIC-EXECUTION";
+export const BOT_VERSION = "V17.8.8-EMERGENCY-CLOSE-ATOM";
+export const BOT_BUILD = "V17.8.8-EMERGENCY-CLOSE-ATOM";
 
 // V17.3.25: formatter fallback is intentionally dependency-free and BigInt-safe.
 // Telegram diagnostics must never hide the real GMX execution error.
@@ -5811,7 +5811,17 @@ console.log("[EXECUTION][RUNTIME]", {mode:executionEnabled(env)?"LIVE":"PAPER",s
 let exits = [];
 if (executionEnabled(env)) {
   try {
-    exits = await FUTURES_V6.monitorLivePositions(env);
+    const emergencyClose = await runEmergencyCloseIfRequested(env);
+    if (emergencyClose) {
+      console.log("[EMERGENCY_CLOSE][RESULT]", emergencyClose);
+      exits.push({ lane:"EMERGENCY_CLOSE", ...emergencyClose });
+    }
+  } catch (emergencyError) {
+    console.error("[EMERGENCY_CLOSE][ERROR]", {error:safeError(emergencyError)});
+    exits.push({ lane:"EMERGENCY_CLOSE", ok:false, status:"ERROR", error:safeError(emergencyError) });
+  }
+  try {
+    exits = exits.concat(await FUTURES_V6.monitorLivePositions(env));
   } catch (exitError) {
     console.warn("[EXECUTION][MONITOR_ERROR_CONTINUE_SCAN]", {reason:safeError(exitError),code:exitError?.code || null,detail:exitError?.detail || null});
     exits = [];
@@ -10612,7 +10622,6 @@ const closeSizeUsd = closePercent >= 100 ? sizeUsd : sizeUsd * closePercent / 10
 if (!(closeSizeUsd > 0)) continue;
  
 const size = toBigIntDecimal(closeSizeUsd, 30);
-// V17.8.8 — CORE EXIT collateral fix.
 const exitCollateral = String(
   position?.collateralToken ||
   position?.collateralSymbol ||
@@ -10622,7 +10631,6 @@ const exitCollateral = String(
   marketSdk?.collateralSymbol ||
   "USDC"
 ).toUpperCase();
-
 const exitRequest = {
   kind: "decrease",
   symbol: marketSdk.symbol,
@@ -10634,45 +10642,18 @@ const exitRequest = {
   mode: "classic",
   from: account
 };
-
 console.log("[EXECUTION][CORE_EXIT_REQUEST]", {
-  symbol,
-  sdkSymbol: marketSdk.symbol,
-  direction: side,
-  action,
-  closePercent,
-  positionSizeUsd: sizeUsd,
-  closeSizeUsd,
-  collateralToken: exitCollateral,
-  receiveToken: exitCollateral,
+  symbol, sdkSymbol: marketSdk.symbol, direction: isLong ? "LONG" : "SHORT",
+  action, closePercent, positionSizeUsd: sizeUsd, closeSizeUsd,
+  collateralToken: exitCollateral, receiveToken: exitCollateral,
   positionKey: position?.key || position?.positionKey || null
 });
-
-const result = await executeGmxOrder(
-  sdk,
-  exitRequest,
-  signer,
-  {
-    symbol: marketSdk.symbol,
-    direction: isLong ? "LONG" : "SHORT",
-    lane: "CORE_EXIT",
-    action,
-    rpcUrl: env.ARBITRUM_RPC
-  }
-);
+const result = await executeGmxOrder(sdk, exitRequest, signer, {symbol:marketSdk.symbol,direction:isLong?"LONG":"SHORT",lane:"CORE_EXIT",action,rpcUrl:env.ARBITRUM_RPC});
  
-const pnlPercent = entryPrice > 0 && currentPrice > 0
-? (isLong ? (currentPrice - entryPrice) / entryPrice : (entryPrice - currentPrice) / entryPrice) * 100
-: 0;
- 
-// V17.8.8 — verify the position after the decrease transaction.
 let closeVerified = false;
-let closeVerifyPosition = null;
+let remainingPositionSizeUsd = null;
 try {
-  const verifyPositions = await sdk.fetchPositionsInfo({
-    address: account,
-    includeRelatedOrders: true
-  });
+  const verifyPositions = await sdk.fetchPositionsInfo({ address: account, includeRelatedOrders: true });
   const targetKey = String(position?.key || position?.positionKey || "");
   const remaining = (Array.isArray(verifyPositions) ? verifyPositions : []).find(p => {
     const pKey = String(p?.key || p?.positionKey || "");
@@ -10680,22 +10661,22 @@ try {
     const pSymbol = liveNormalizeSymbol(String(p?.indexName || "").split("/")[0]);
     return pSymbol === symbol && Boolean(p?.isLong) === isLong;
   }) || null;
-  closeVerifyPosition = remaining;
-  const remainingSize = Number(remaining?.sizeInUsd || 0);
-  closeVerified = closePercent >= 100
-    ? !(remainingSize > 1)
-    : remainingSize < Math.max(1, sizeUsd - closeSizeUsd + 1);
+  remainingPositionSizeUsd = Number(remaining?.sizeInUsd || 0);
+  closeVerified = closePercent >= 100 ? !(remainingPositionSizeUsd > 1) :
+    remainingPositionSizeUsd < Math.max(1, sizeUsd - closeSizeUsd + 1);
   console.log("[EXECUTION][CORE_EXIT_VERIFY]", {
     symbol, direction: side, requestedClosePercent: closePercent,
-    requestedCloseSizeUsd: closeSizeUsd,
-    remainingSizeUsd: remainingSize, verified: closeVerified
+    requestedCloseSizeUsd: closeSizeUsd, remainingSizeUsd: remainingPositionSizeUsd,
+    verified: closeVerified
   });
 } catch (verifyError) {
-  console.warn("[EXECUTION][CORE_EXIT_VERIFY_ERROR]", {
-    symbol, error: safeError(verifyError)
-  });
+  console.warn("[EXECUTION][CORE_EXIT_VERIFY_ERROR]", { symbol, error: safeError(verifyError) });
 }
 
+const pnlPercent = entryPrice > 0 && currentPrice > 0
+? (isLong ? (currentPrice - entryPrice) / entryPrice : (entryPrice - currentPrice) / entryPrice) * 100
+: 0;
+ 
 const actionRecord = {
 symbol,
 direction: side,
@@ -10713,7 +10694,8 @@ components: plan.components,
 requestId: result?.requestId || null,
   txHash: result?.txHash || result?.transactionHash || null,
   closeVerified,
-  remainingPositionSizeUsd: Number(closeVerifyPosition?.sizeInUsd || 0)
+  remainingPositionSizeUsd,
+  collateralToken: exitCollateral
 };
 actions.push(actionRecord);
 await auditLog(env, { type: "LIVE_UNIFIED_EXIT", account, action: actionRecord });
@@ -10732,6 +10714,118 @@ error: safeError(error)
 return actions;
 }
  
+async function executeEmergencyFullClose(env, requestedSymbol) {
+  const target = liveNormalizeSymbol(String(requestedSymbol || "").trim().split("/")[0]);
+  if (!target) return { ok:false, status:"INVALID_SYMBOL", reason:"EMERGENCY_CLOSE_SYMBOL_MISSING" };
+  if (!executionEnabled(env)) return { ok:false, status:"DISABLED", reason:"EXECUTION_NOT_ENABLED" };
+
+  if(!GmxApiSdk || !PrivateKeySigner || !getViemChain){
+    const loaded=await loadGmxSdkSafe();
+    if(!loaded) return { ok:false, status:"SDK_UNAVAILABLE", reason:GMX_SDK_LOAD_ERROR || "GMX_SDK_UNAVAILABLE" };
+  }
+
+  const { sdk, signer, account } = await getLiveContext(env);
+  const positions = await sdk.fetchPositionsInfo({ address: account, includeRelatedOrders: true });
+  const position = (Array.isArray(positions) ? positions : []).find(p => {
+    const pSymbol = liveNormalizeSymbol(String(p?.indexName || "").split("/")[0]);
+    return pSymbol === target && Boolean(p?.sizeInUsd);
+  });
+  if (!position) {
+    console.log("[EMERGENCY_CLOSE][NO_POSITION]", { symbol: target, account });
+    return { ok:true, status:"NO_POSITION", symbol:target, account };
+  }
+
+  const markets = await sdk.fetchMarkets();
+  const marketSdk = findSdkMarket(markets, target);
+  if (!marketSdk) return { ok:false, status:"MARKET_NOT_FOUND", symbol:target };
+
+  const sizeUsd = Number(position.sizeInUsd);
+  if (!(sizeUsd > 0)) return { ok:false, status:"ZERO_POSITION", symbol:target };
+
+  const isLong = Boolean(position.isLong);
+  const side = isLong ? "LONG" : "SHORT";
+  const collateral = String(
+    position?.collateralToken || position?.collateralSymbol ||
+    position?.collateralTokenSymbol || position?.collateral?.symbol ||
+    marketSdk?.collateralToken || marketSdk?.collateralSymbol || "USDC"
+  ).toUpperCase();
+  const closeRequest = {
+    kind:"decrease", symbol:marketSdk.symbol, direction:isLong?"long":"short",
+    orderType:"market", size:toBigIntDecimal(sizeUsd,30),
+    collateralToken:collateral, receiveToken:collateral,
+    mode:"classic", from:account
+  };
+  console.log("[EMERGENCY_CLOSE][REQUEST]", {
+    symbol:target, sdkSymbol:marketSdk.symbol, direction:side,
+    sizeUsd, collateralToken:collateral,
+    positionKey:position?.key || position?.positionKey || null
+  });
+
+  const result = await executeGmxOrder(sdk, closeRequest, signer, {
+    symbol:marketSdk.symbol, direction:side, lane:"EMERGENCY_CLOSE",
+    action:"EMERGENCY_FULL_CLOSE", rpcUrl:env.ARBITRUM_RPC
+  });
+
+  let remainingSizeUsd = null;
+  let verified = false;
+  try {
+    const after = await sdk.fetchPositionsInfo({ address:account, includeRelatedOrders:true });
+    const remaining = (Array.isArray(after) ? after : []).find(p => {
+      const pSymbol = liveNormalizeSymbol(String(p?.indexName || "").split("/")[0]);
+      return pSymbol === target && Boolean(p?.isLong) === isLong;
+    }) || null;
+    remainingSizeUsd = Number(remaining?.sizeInUsd || 0);
+    verified = !(remainingSizeUsd > 1);
+    console.log("[EMERGENCY_CLOSE][VERIFY]", {
+      symbol:target, direction:side, remainingSizeUsd, verified,
+      txHash:result?.txHash || result?.transactionHash || null,
+      status:result?.status || null
+    });
+  } catch (verifyError) {
+    console.warn("[EMERGENCY_CLOSE][VERIFY_ERROR]", {symbol:target,error:safeError(verifyError)});
+  }
+
+  const out = {
+    ok:Boolean(result?.status === "classic_confirmed" && verified),
+    status:result?.status || "UNKNOWN",
+    symbol:target, direction:side, sizeUsd, collateralToken:collateral,
+    txHash:result?.txHash || result?.transactionHash || null,
+    requestId:result?.requestId || null, verified, remainingSizeUsd
+  };
+  try { await sendTelegram(env, formatTelegramExit({
+    action: verified ? "EMERGENCY_FULL_CLOSE" : "EMERGENCY_CLOSE_SUBMITTED",
+    symbol:target, direction:side, notionalUsd:sizeUsd,
+    requestId:out.requestId, txHash:out.txHash, closeVerified:verified,
+    exitPrice:null, pnlUsd:null, pnlPercent:null
+  })); } catch (_) {}
+  return out;
+}
+
+async function runEmergencyCloseIfRequested(env) {
+  const requested = String(env?.EMERGENCY_CLOSE_SYMBOL || "").trim();
+  if (!requested) return null;
+  const symbol = liveNormalizeSymbol(requested.split("/")[0]);
+  if (!symbol) return { ok:false, status:"INVALID_SYMBOL" };
+
+  // Prevent duplicate close submissions while the previous transaction is pending.
+  const lockKey = `emergency_close:${symbol}`;
+  if (env.BOT_STATE) {
+    const existing = await env.BOT_STATE.get(lockKey, "json");
+    if (existing?.status === "submitted" && Date.now() - Number(existing.at || 0) < 180000) {
+      return { ok:false, status:"LOCKED", symbol, txHash:existing.txHash || null };
+    }
+  }
+
+  const result = await executeEmergencyFullClose(env, symbol);
+  if (env.BOT_STATE && result?.txHash) {
+    await env.BOT_STATE.put(lockKey, JSON.stringify({
+      status:result.verified ? "completed" : "submitted",
+      at:Date.now(), symbol, txHash:result.txHash
+    }), { expirationTtl: result.verified ? 86400 : 180 });
+  }
+  return result;
+}
+
 async function executeSignal(signal,env) {
 if (!executionEnabled(env)) {
 await auditLog(env,{type:"SIGNAL_ONLY",signal});
