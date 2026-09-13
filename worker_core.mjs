@@ -1,6 +1,6 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ GMX SMART MONEY FUTURES AI BOT — CLEAN V18                                  ║
+║ GMX SMART MONEY FUTURES AI BOT — CLEAN V19                                  ║
 ║ Single pipeline • 5M broad scan • 15M deep scan • Classic GMX only          ║
 ║ 5x leverage • 30% wallet per position • max 3 positions • one TP • no SL    ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V19.0.2-TRUE-REVERSAL-BROADSCAN-FIX-CLASSIC-ONE-TP";
+export const BOT_VERSION = "V19.0.3-TRUE-REVERSAL-DEEP-DIAGNOSTIC-CLASSIC-ONE-TP";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -1057,19 +1057,40 @@ async function deepScan(sdk, broadRows) {
         CONFIG.deepTimeframe,
         CONFIG.deepLimit
       );
-      return scoreCandidate({
+      const candidate = scoreCandidate({
         market: row.market,
         ticker: row.ticker,
         candles5: row.candles5,
         candles15,
       });
+      return { ...candidate, _deep15mCount: candles15.length };
     } catch (error) {
       return { ...row, error: safeError(error) };
     }
   });
 
-  return results
-    .filter((x) => x && !x.error && x.entry > 0)
+  const failed = results.filter((x) => x?.error);
+  const scored = results.filter((x) => x && !x.error && x.entry > 0);
+  console.log("[DEEP][15M][SUMMARY]", {
+    attempted: selected.length,
+    successful: results.length - failed.length,
+    scored: scored.length,
+    failed: failed.length,
+    sampleErrors: failed.slice(0, 5).map((x) => ({
+      symbol: x.symbol,
+      error: x.error,
+    })),
+    sampleScored: scored.slice(0, 5).map((x) => ({
+      symbol: x.symbol,
+      direction: x.direction,
+      score: x.score,
+      edge: x.edge,
+      risk: x.risk,
+      setupMode: x.setupMode,
+    })),
+  });
+
+  return scored
     .sort((a, b) => (b.score + b.edge * 0.35) - (a.score + a.edge * 0.35));
 }
 
