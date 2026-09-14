@@ -2,7 +2,7 @@
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║ GMX SMART MONEY FUTURES AI BOT — V20 SHARP REVERSAL ENGINE                  ║
 ║ Single pipeline • 5M broad scan • 15M deep scan • Classic GMX only          ║
-║ 15x leverage • 100% wallet • max 1 position • one TP • no SL               ║
+║ 20x leverage • 100% wallet • max 1 position • one TP • no SL               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 Architecture:
@@ -10,9 +10,9 @@ GMX MARKET UNIVERSE
   → FULL 5M BROAD SCAN
   → TOP DEEP CANDIDATES
   → 15M STRUCTURE + SMART-MONEY/OI/FLOW + S/R
-  → TOP 3
-  → 30% WALLET COLLATERAL EACH
-  → 5x CLASSIC GMX MARKET INCREASE
+  → TOP 1 ECONOMIC OPPORTUNITY
+  → 100% WALLET COLLATERAL
+  → 20x CLASSIC GMX MARKET INCREASE
   → ONE STRUCTURE TP (attached to the increase)
   → POSITION VERIFICATION
   → TELEGRAM
@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V20.3.0-TRIGGER-FIRST-REVERSAL-CONTINUATION-15X";
+export const BOT_VERSION = "V20.4.0-PROBABILITY-AWARE-TP-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -48,7 +48,7 @@ const CONFIG = Object.freeze({
   maxPositions: 1,
   walletAllocationPerPosition: 1.00,
   maxTotalWalletAllocation: 1.00,
-  leverage: 15,
+  leverage: 20,
 
   broadTimeframe: "5m",
   broadLimit: 72,
@@ -74,8 +74,14 @@ const CONFIG = Object.freeze({
   maxRisk: 55,
 
   minTpDistancePct: 0.30,
-  maxTpDistancePct: 3.50,
-  tpAtrMultiplier: 1.20,
+  maxTpDistancePct: 2.40,
+  tpAtrMultiplier: 1.00,
+  tpNearTermLookback5: 8,
+  tpNearTermLookback15: 6,
+  tpPreferNearTerm: true,
+  tpReversalMaxPct: 1.80,
+  tpContinuationMaxPct: 2.20,
+  tpMinTargetScore: 52,
 
   // Economic gate: estimates round-trip position fees plus a conservative
   // execution-cost buffer. This is deliberately NOT a minimum-notional gate.
@@ -948,7 +954,8 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
   );
 
   const entry = price;
-  const tp = calculateLogicalTp(entry, direction, candles5, candles15, five.atr);
+  const tpPlan = calculateLogicalTp(entry, direction, candles5, candles15, five.atr, setupType, impulse);
+  const tp = tpPlan.tp;
   const reasons = [];
   if (setupType === 'REVERSAL') reasons.push(`REVERSAL_${direction.toUpperCase()}`);
   if (setupType === 'CONTINUATION') reasons.push(`CONTINUATION_${direction.toUpperCase()}`);
@@ -972,8 +979,11 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
     setupDominance: Number(setupDominance.toFixed(1)),
     triggerActive: setupType === 'REVERSAL' || setupType === 'CONTINUATION',
     reversalTrigger, continuationTrigger,
+    tpPlan,
     setupEvidence: {
       setupType, reversalEvidence, reversalConfidence, continuationConfidence, setupDominance,
+      tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
+      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
       zoneState: zone.state, nearSupport: zone.nearSupport, nearResistance: zone.nearResistance,
       nearestSupport: zone.support, nearestResistance: zone.resistance, sharpMove: sharp, lateChase, impulseQuality,
       acceleration: impulse.acceleration, rangeExpansion: impulse.rangeExpansion, volumeRatio: impulse.volumeRatio,
@@ -982,6 +992,8 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
       continuationLong, continuationShort, firstBreakLong, firstBreakShort,
       priorMove: preMove, priorMoveOppositeLong, priorMoveOppositeShort,
       reversalTiming, continuationTiming,
+      tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
+      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
     },
     reasons,
     indicators: {
@@ -989,6 +1001,8 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
       macdHistogram: five.macd.histogram, move5m: move5, move15m: move15, oiChange5m: oi.delta, reactionScore: srReaction,
       explosive: sharp, impulseQuality, acceleration: impulse.acceleration, rangeExpansion: impulse.rangeExpansion, volumeRatio: impulse.volumeRatio,
       earlyTrend, earlyBreak, freshExpansion, earlyTimingBonus: timing, lateChase,
+      tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
+      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
       reversalConfidence, continuationConfidence, setupDominance, triggerActive: setupType === 'REVERSAL' || setupType === 'CONTINUATION',
       volume24h: tickerVolume(ticker), openInterest: tickerOpenInterest(ticker), fundingRate: tickerFunding(ticker), liquidity: marketLiquidity(market)
     },
@@ -996,25 +1010,107 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
   };
 }
 
-function calculateLogicalTp(entry, direction, candles5, candles15, atr5) {
+function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupType = "CONTINUATION", impulse = {}) {
+  const minDist = CONFIG.minTpDistancePct / 100;
+  const maxDistPct = setupType === "REVERSAL" ? CONFIG.tpReversalMaxPct : CONFIG.tpContinuationMaxPct;
+  const maxDist = maxDistPct / 100;
+  const atr = Math.max(num(atr5), entry * 0.0005, 1e-12);
+
   const levels5 = recentSwingLevels(candles5);
   const levels15 = recentSwingLevels(candles15);
+  const completed5 = candles5.slice(0, -1);
+  const completed15 = candles15.slice(0, -1);
+  const n5 = Math.max(3, Number(CONFIG.tpNearTermLookback5) || 8);
+  const n15 = Math.max(3, Number(CONFIG.tpNearTermLookback15) || 6);
+  const near5 = completed5.slice(-n5);
+  const near15 = completed15.slice(-n15);
 
+  const nearHigh5 = near5.length ? Math.max(...near5.map(c => num(c.high)).filter(Number.isFinite)) : NaN;
+  const nearLow5 = near5.length ? Math.min(...near5.map(c => num(c.low)).filter(Number.isFinite)) : NaN;
+  const nearHigh15 = near15.length ? Math.max(...near15.map(c => num(c.high)).filter(Number.isFinite)) : NaN;
+  const nearLow15 = near15.length ? Math.min(...near15.map(c => num(c.low)).filter(Number.isFinite)) : NaN;
+
+  const candidates = [];
+  const add = (price, type, tf, weight = 0) => {
+    const x = num(price);
+    if (!(x > 0)) return;
+    const distancePct = Math.abs(pct(x, entry));
+    const favorable = direction === "long" ? x > entry : x < entry;
+    if (!favorable || distancePct < CONFIG.minTpDistancePct || distancePct > maxDistPct) return;
+
+    // Probability proxy: closer first reaction levels are generally more reachable;
+    // a second confirmation from 15m earns a small bonus. This is deliberately
+    // a ranking proxy, not a statistically calibrated probability.
+    const atrDist = Math.abs(x - entry) / atr;
+    const distanceScore = clamp(88 - atrDist * 18, 25, 88);
+    const tfBonus = tf === "15m" ? 7 : 3;
+    const setupBonus = setupType === "REVERSAL" ? (distancePct <= 1.25 ? 10 : 0) : (distancePct <= 1.80 ? 6 : 0);
+    const weightBonus = Number(weight) || 0;
+    const targetScore = clamp(distanceScore + tfBonus + setupBonus + weightBonus, 0, 100);
+    candidates.push({price:x, type, tf, distancePct, atrDist, targetScore});
+  };
+
+  // First reaction / recent range is considered before older swing structure.
   if (direction === "long") {
-    const candidates = [...levels5.resistance, ...levels15.resistance]
-      .filter((x) => x > entry * (1 + CONFIG.minTpDistancePct / 100))
-      .sort((a, b) => a - b);
-    const structural = candidates[0] || entry + atr5 * CONFIG.tpAtrMultiplier;
-    const cap = entry * (1 + CONFIG.maxTpDistancePct / 100);
-    return Number(Math.min(structural, cap).toPrecision(12));
+    add(nearHigh5, "NEAR_TERM_REACTION", "5m", 10);
+    add(nearHigh15, "NEAR_TERM_STRUCTURE", "15m", 8);
+    for (const x of levels5.resistance) add(x, "SWING_RESISTANCE", "5m", 4);
+    for (const x of levels15.resistance) add(x, "SWING_RESISTANCE", "15m", 6);
+  } else {
+    add(nearLow5, "NEAR_TERM_REACTION", "5m", 10);
+    add(nearLow15, "NEAR_TERM_STRUCTURE", "15m", 8);
+    for (const x of levels5.support) add(x, "SWING_SUPPORT", "5m", 4);
+    for (const x of levels15.support) add(x, "SWING_SUPPORT", "15m", 6);
   }
 
-  const candidates = [...levels5.support, ...levels15.support]
-    .filter((x) => x < entry * (1 - CONFIG.minTpDistancePct / 100))
-    .sort((a, b) => b - a);
-  const structural = candidates[0] || entry - atr5 * CONFIG.tpAtrMultiplier;
-  const floor = entry * (1 - CONFIG.maxTpDistancePct / 100);
-  return Number(Math.max(structural, floor).toPrecision(12));
+  // De-duplicate nearly identical targets while preserving the strongest evidence.
+  const dedup = new Map();
+  for (const c of candidates) {
+    const key = c.price.toPrecision(10);
+    const prior = dedup.get(key);
+    if (!prior || c.targetScore > prior.targetScore) dedup.set(key, c);
+  }
+
+  let pool = [...dedup.values()];
+  pool.sort((a, b) => b.targetScore - a.targetScore || a.distancePct - b.distancePct);
+
+  let selected = pool.find(x => x.targetScore >= CONFIG.tpMinTargetScore);
+  if (!selected) selected = pool[0] || null;
+
+  if (!selected) {
+    const fallbackDistance = Math.min(maxDist, Math.max(minDist, CONFIG.tpAtrMultiplier * atr / entry));
+    const tp = direction === "long" ? entry * (1 + fallbackDistance) : entry * (1 - fallbackDistance);
+    return {
+      tp: Number(tp.toPrecision(12)), method: "ATR_PROBABILITY_FALLBACK", targetType: "ATR_FALLBACK",
+      targetScore: 50, probabilityProxy: 50, distancePct: fallbackDistance * 100,
+      targetPrice: tp, atrDistance: fallbackDistance * entry / atr,
+    };
+  }
+
+  // For reversal trades, never chase a distant major structure when a nearer
+  // reaction target exists. For continuation, allow a little more room only
+  // when the impulse is still expanding.
+  const impulseExpansion = Math.max(num(impulse?.rangeExpansion), num(impulse?.volumeRatio));
+  const expansionSupport = impulseExpansion >= 1.25 || Math.abs(num(impulse?.acceleration)) >= 0.15;
+  if (setupType === "REVERSAL" && selected.distancePct > CONFIG.tpReversalMaxPct) {
+    const nearer = pool.find(x => x.distancePct <= CONFIG.tpReversalMaxPct);
+    if (nearer) selected = nearer;
+  }
+  if (setupType === "CONTINUATION" && !expansionSupport) {
+    const nearer = pool.find(x => x.distancePct <= 1.80);
+    if (nearer && nearer.targetScore >= selected.targetScore - 5) selected = nearer;
+  }
+
+  return {
+    tp: Number(selected.price.toPrecision(12)),
+    method: "PROBABILITY_AWARE_STRUCTURE",
+    targetType: selected.type,
+    targetScore: Number(selected.targetScore.toFixed(1)),
+    probabilityProxy: Number(selected.targetScore.toFixed(1)),
+    distancePct: Number(selected.distancePct.toFixed(3)),
+    targetPrice: selected.price,
+    atrDistance: Number(selected.atrDist.toFixed(2)),
+  };
 }
 
 function estimateEconomicOpportunity(candidate, walletUsd) {
@@ -2043,6 +2139,8 @@ async function runCycle(event, env) {
     expectedGrossPnlUsd: selected[0].expectedGrossPnlUsd, expectedNetPnlUsd: selected[0].expectedNetPnlUsd,
     estimatedTotalCostUsd: selected[0].estimatedTotalCostUsd, netToCostRatio: selected[0].economics?.netToCostRatio,
     tpMovePct: selected[0].economics?.tpMovePct,
+    tpMethod: selected[0].tpPlan?.method, tpTargetType: selected[0].tpPlan?.targetType,
+    tpTargetScore: selected[0].tpPlan?.targetScore, tpProbabilityProxy: selected[0].tpPlan?.probabilityProxy,
     sharpMove: selected[0].setupEvidence?.sharpMove, lateChase: selected[0].setupEvidence?.lateChase,
     zoneState: selected[0].setupEvidence?.zoneState, impulseQuality: selected[0].setupEvidence?.impulseQuality,
     earlyTrend: selected[0].setupEvidence?.earlyTrend, earlyBreak: selected[0].setupEvidence?.earlyBreak, earlyTimingBonus: selected[0].setupEvidence?.earlyTimingBonus,
