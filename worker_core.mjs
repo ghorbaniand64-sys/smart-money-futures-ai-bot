@@ -1,8 +1,8 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ GMX SMART MONEY FUTURES AI BOT — CLEAN V18                                  ║
+║ GMX SMART MONEY FUTURES AI BOT — V20 SHARP REVERSAL ENGINE                  ║
 ║ Single pipeline • 5M broad scan • 15M deep scan • Classic GMX only          ║
-║ 5x leverage • 30% wallet per position • max 3 positions • one TP • no SL    ║
+║ 5x leverage • 100% wallet • max 1 position • one TP • no SL               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 Architecture:
@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V19.1.2-REVERSAL-SETUP-GATE-ONE-POSITION";
+export const BOT_VERSION = "V20.0.0-SHARP-REVERSAL-CLASSIC-ONE-TP";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -696,133 +696,143 @@ function exhaustiveReversalHint(five, fifteen, direction) {
   return Number(five.rsi >= 58) + Number(five.macd.histogram <= 0) + Number(move5 < 0 && move15 > 0);
 }
 
-function scoreCandidate({ market, ticker, candles5, candles15 }) {
-  const five = structureIndicators(candles5, "long");
-  const fifteenLong = structureIndicators(candles15, "long");
-  const fifteenShort = structureIndicators(candles15, "short");
-  const direction = directionFromIndicators(five, fifteenLong, ticker);
-  const fifteen = direction === "long" ? fifteenLong : fifteenShort;
-
-  const oi = oiDeltaScore(ticker, direction);
-  const move5 = tickerChange5m(ticker) || five.move5;
-  const move15 = five.move15;
-  const explosive = Math.abs(move5) >= 0.70 || Math.abs(move15) >= 1.20;
-  const reaction = fifteen.reaction.score + five.reaction.score;
-  const trend = direction === "long"
-    ? Number(five.longTrend) + Number(fifteen.longTrend)
-    : Number(five.shortTrend) + Number(fifteen.shortTrend);
-
-  const momentum = direction === "long"
-    ? clamp(move5 * 8 + move15 * 4, -18, 18)
-    : clamp(-move5 * 8 - move15 * 4, -18, 18);
-
-  const rsiQuality = direction === "long"
-    ? (five.rsi >= 48 && five.rsi <= 72 ? 8 : five.rsi > 78 ? -8 : 0)
-    : (five.rsi <= 52 && five.rsi >= 28 ? 8 : five.rsi < 22 ? -8 : 0);
-
-  const macdQuality = direction === "long"
-    ? (five.macd.histogram > 0 ? 8 : -4)
-    : (five.macd.histogram < 0 ? 8 : -4);
-
-  const adxQuality = clamp((five.adx - 14) * 0.8, 0, 10);
-  const breakout = explosive ? 10 : 0;
-  const flow = oi.score;
-
-  let score = 35 + reaction + trend * 4 + momentum + rsiQuality + macdQuality + adxQuality + breakout + flow;
-  score = clamp(score, 0, 100);
-
-  const risk =
-    (Math.abs(move5) > 3.5 ? 18 : 0) +
-    (five.rsi > 82 || five.rsi < 18 ? 18 : 0) +
-    (five.adx < 12 ? 10 : 0) +
-    (oi.exhausted ? 10 : 0);
-
-  const edge = clamp(
-    20 +
-    reaction * 0.7 +
-    trend * 3 +
-    Math.abs(momentum) * 0.7 +
-    (oi.aligned ? 10 : 0) +
-    (explosive ? 8 : 0) -
-    risk * 0.35,
-    0,
-    100
-  );
-
-  const entry = five.price;
-  const tp = calculateLogicalTp(entry, direction, candles5, candles15, five.atr);
-
-  // Setup classification: a reversal is allowed to qualify without the
-  // continuation-style EMA trend confluence gate, but only when there is
-  // concrete S/R + rejection evidence. Continuation setups keep the
-  // existing trend-confluence requirement.
-  const levels = five.levels || { support: [], resistance: [] };
-  const nearestSupport = [...(levels.support || [])].filter((x) => x < entry).sort((a, b) => b - a)[0] || null;
-  const nearestResistance = [...(levels.resistance || [])].filter((x) => x > entry).sort((a, b) => a - b)[0] || null;
-  const atrSafe = Math.max(Number(five.atr || 0), entry * 0.0001, 1e-12);
-  const nearSupport = direction === "long" && nearestSupport != null && Math.abs(entry - nearestSupport) <= atrSafe * 1.25;
-  const nearResistance = direction === "short" && nearestResistance != null && Math.abs(nearestResistance - entry) <= atrSafe * 1.25;
-  const rejectionEvidence = direction === "long"
-    ? Number(five.reaction?.evidence || 0) + Number(fifteen.reaction?.evidence || 0)
-    : Number(five.reaction?.evidence || 0) + Number(fifteen.reaction?.evidence || 0);
-  const zoneEvidence = nearSupport || nearResistance;
-  const reversalEvidence = Number(zoneEvidence) + Number(rejectionEvidence >= 2) + Number(exhaustiveReversalHint(five, fifteen, direction));
-  const setupType = reversalEvidence >= 2 ? "REVERSAL" : "CONTINUATION";
-
-  const reason = [];
-  if (explosive) reason.push("EXPLOSIVE_MOVE");
-  if (reaction >= 24) reason.push("S/R_REACTION");
-  if (trend >= 3) reason.push("TREND_CONFLUENCE");
-  if (oi.aligned) reason.push("OI_ALIGNMENT");
-  if (five.macd.histogram !== 0) reason.push("MACD");
-  if (five.adx >= 18) reason.push("ADX");
-
-  return {
-    symbol: marketDisplaySymbol(market),
-    candleSymbol: candleSymbolFromMarket(market),
-    direction,
-    entry,
-    tp,
-    score: Number(score.toFixed(2)),
-    edge: Number(edge.toFixed(2)),
-    risk: Number(risk.toFixed(2)),
-    trendConfluence: trend,
-    setupType,
-    reversalEvidence,
-    setupEvidence: {
-      setupType,
-      nearSupport,
-      nearResistance,
-      nearestSupport,
-      nearestResistance,
-      rejectionEvidence,
-      reversalHint: exhaustiveReversalHint(five, fifteen, direction),
-    },
-    reasons: [...reason, setupType === "REVERSAL" ? `REVERSAL_${direction.toUpperCase()}` : "CONTINUATION"],
-    indicators: {
-      rsi: Number(five.rsi.toFixed(2)),
-      adx: Number(five.adx.toFixed(2)),
-      ema20: five.ema20,
-      ema50: five.ema50,
-      ema200: five.ema200,
-      macdHistogram: five.macd.histogram,
-      move5m: move5,
-      move15m: move15,
-      oiChange5m: oi.delta,
-      reactionScore: reaction,
-      explosive,
-      volume24h: tickerVolume(ticker),
-      openInterest: tickerOpenInterest(ticker),
-      fundingRate: tickerFunding(ticker),
-      liquidity: marketLiquidity(market),
-    },
-    market,
-    ticker,
-    candles5,
-    candles15,
-  };
+function candleImpulseMetrics(candles) {
+  const a = Array.isArray(candles) ? candles : [];
+  if (a.length < 8) return { available:false, move3:0, move5:0, acceleration:0, rangeExpansion:0, bodyRatio:0, closeLocation:0, volumeRatio:1 };
+  const last = a.at(-1), prev = a.at(-2), p3 = a.at(-4), p5 = a.at(-6);
+  const close = num(last.close), prevClose = num(prev.close), c3 = num(p3.close), c5 = num(p5.close);
+  const move3 = pct(close, c3), move5 = pct(close, c5);
+  const prev3 = pct(c3, c5);
+  const acceleration = move3 - prev3;
+  const range = Math.max(num(last.high) - num(last.low), 1e-12);
+  const priorRanges = a.slice(-8,-1).map(x => Math.max(num(x.high)-num(x.low),1e-12));
+  const avgRange = priorRanges.reduce((x,y)=>x+y,0)/Math.max(priorRanges.length,1);
+  const rangeExpansion = range / Math.max(avgRange,1e-12);
+  const bodyRatio = Math.abs(num(last.close)-num(last.open))/range;
+  const closeLocation = (num(last.close)-num(last.low))/range;
+  const vols = a.slice(-8).map(x=>num(x.volume));
+  const vAvg = vols.slice(0,-1).filter(x=>x>0).reduce((x,y)=>x+y,0)/Math.max(vols.slice(0,-1).filter(x=>x>0).length,1);
+  const volumeRatio = num(last.volume)>0 && vAvg>0 ? num(last.volume)/vAvg : 1;
+  return { available:true, move3, move5, acceleration, rangeExpansion, bodyRatio, closeLocation, volumeRatio };
 }
 
+function reversalMetrics(candles5, candles15, ticker, direction) {
+  const m5 = candleImpulseMetrics(candles5), m15 = candleImpulseMetrics(candles15);
+  const c = candles5.at(-1), p = candles5.at(-2), p2 = candles5.at(-3);
+  const range = Math.max(num(c?.high)-num(c?.low),1e-12);
+  const upperWick = num(c?.high)-Math.max(num(c?.open),num(c?.close));
+  const lowerWick = Math.min(num(c?.open),num(c?.close))-num(c?.low);
+  const bullishReject = lowerWick/range >= 0.30 && num(c?.close) > num(c?.open);
+  const bearishReject = upperWick/range >= 0.30 && num(c?.close) < num(c?.open);
+  const greenFlip = num(p?.close) < num(p?.open) && num(c?.close) > num(c?.open);
+  const redFlip = num(p?.close) > num(p?.open) && num(c?.close) < num(c?.open);
+  const momentumFlipLong = m5.move3 > 0 && m5.acceleration > 0;
+  const momentumFlipShort = m5.move3 < 0 && m5.acceleration < 0;
+  const rsi5 = rsi(candles5.map(x=>num(x.close)),14);
+  const rsi15 = rsi(candles15.map(x=>num(x.close)),14);
+  const oi = oiDeltaScore(ticker, direction);
+  const longEvidence = [bullishReject, greenFlip, momentumFlipLong, rsi5 <= 45, m5.move5 < 0 && m5.move3 > 0, oi.exhausted && m5.move5 < 0].filter(Boolean).length;
+  const shortEvidence = [bearishReject, redFlip, momentumFlipShort, rsi5 >= 55, m5.move5 > 0 && m5.move3 < 0, oi.exhausted && m5.move5 > 0].filter(Boolean).length;
+  const longScore = clamp(longEvidence*12 + (bullishReject?12:0) + (greenFlip?10:0) + (m5.move3>0&&m5.acceleration>0?10:0) + (rsi5<=45?8:0),0,70);
+  const shortScore = clamp(shortEvidence*12 + (bearishReject?12:0) + (redFlip?10:0) + (m5.move3<0&&m5.acceleration<0?10:0) + (rsi5>=55?8:0),0,70);
+  return {m5,m15,bullishReject,bearishReject,greenFlip,redFlip,rsi5,rsi15,longEvidence,shortEvidence,longScore,shortScore,oi};
+}
+
+function classifyZone(candles, entry, atrValue, direction) {
+  const levels = recentSwingLevels(candles);
+  const atrSafe = Math.max(num(atrValue), entry*0.0001, 1e-12);
+  const supports = (levels.support||[]).filter(x=>x<entry).sort((a,b)=>b-a);
+  const resistances = (levels.resistance||[]).filter(x=>x>entry).sort((a,b)=>a-b);
+  const support = supports[0] ?? null, resistance = resistances[0] ?? null;
+  const nearSupport = support != null && Math.abs(entry-support) <= atrSafe*1.35;
+  const nearResistance = resistance != null && Math.abs(resistance-entry) <= atrSafe*1.35;
+  const state = direction === 'long' ? (nearSupport?'AT_SUPPORT': 'AWAY_FROM_ZONE') : (nearResistance?'AT_RESISTANCE':'AWAY_FROM_ZONE');
+  return {levels,support,resistance,nearSupport,nearResistance,state};
+}
+
+function scoreCandidate({ market, ticker, candles5, candles15 }) {
+  const five = structureIndicators(candles5, 'long');
+  const fifteen = structureIndicators(candles15, 'long');
+  const price = five.price;
+  const impulse = candleImpulseMetrics(candles5);
+  const rLong = reversalMetrics(candles5,candles15,ticker,'long');
+  const rShort = reversalMetrics(candles5,candles15,ticker,'short');
+
+  // Direction is chosen from the current impulse/reversal state first. This is
+  // deliberately different from the old EMA-only continuation direction.
+  const longContext = Number(five.macd.histogram>0)+Number(five.rsi>50)+Number(fifteen.macd.histogram>0)+Number(fifteen.rsi>50);
+  const shortContext = Number(five.macd.histogram<0)+Number(five.rsi<50)+Number(fifteen.macd.histogram<0)+Number(fifteen.rsi<50);
+  const zoneLong = classifyZone(candles5,price,five.atr,'long');
+  const zoneShort = classifyZone(candles5,price,five.atr,'short');
+  const longReversal = rLong.longScore + (zoneLong.nearSupport?20:0);
+  const shortReversal = rShort.shortScore + (zoneShort.nearResistance?20:0);
+  const reversalBias = longReversal - shortReversal;
+  let direction;
+  if (Math.max(longReversal,shortReversal) >= 28 && Math.abs(reversalBias) >= 8) direction = reversalBias>0?'long':'short';
+  else direction = longContext===shortContext ? (tickerChange5m(ticker)>=0?'long':'short') : (longContext>shortContext?'long':'short');
+
+  const r = direction==='long'?rLong:rShort;
+  const zone = direction==='long'?zoneLong:zoneShort;
+  const move5 = tickerChange5m(ticker) || impulse.move3;
+  const move15 = impulse.m15;
+  const absMove3 = Math.abs(impulse.move3), absMove5 = Math.abs(impulse.move5);
+  const sharp = absMove3>=0.75 || absMove5>=1.20 || impulse.rangeExpansion>=1.65 || Math.abs(impulse.acceleration)>=0.45;
+  const directionalMove = direction==='long' ? move5 : -move5;
+  const directional15 = direction==='long' ? move15 : -move15;
+  const extension = Math.max(absMove3,absMove5);
+  const lateChase = extension>=2.5 && impulse.acceleration <= 0;
+  const impulseQuality = clamp(
+    absMove3*12 + Math.max(0,impulse.rangeExpansion-1)*14 + Math.max(0,Math.abs(impulse.acceleration))*10 + Math.max(0,impulse.volumeRatio-1)*8,
+    0,35
+  );
+  const srReaction = direction==='long' ? Number(r.bullishReject)*12 : Number(r.bearishReject)*12;
+  const setupType = ((direction==='long'?longReversal:shortReversal) >= 28 && zone.state!=='AWAY_FROM_ZONE') ? 'REVERSAL' : 'CONTINUATION';
+  const reversalEvidence = direction==='long' ? r.longEvidence + Number(zone.nearSupport) : r.shortEvidence + Number(zone.nearResistance);
+  const trend = direction==='long'
+    ? Number(five.longTrend)+Number(fifteen.longTrend)
+    : Number(five.shortTrend)+Number(fifteen.shortTrend);
+  const oi = oiDeltaScore(ticker,direction);
+  const rsiQuality = direction==='long' ? (five.rsi>=42&&five.rsi<=68?7:five.rsi>78?-7:0) : (five.rsi<=58&&five.rsi>=32?7:five.rsi<22?-7:0);
+  const macdQuality = direction==='long' ? (five.macd.histogram>0?6:-3) : (five.macd.histogram<0?6:-3);
+  const context = direction==='long'?longContext:shortContext;
+  const timing = sharp ? (lateChase?-8:10) : 0;
+  const reversalBonus = setupType==='REVERSAL' ? clamp(reversalEvidence*5 + (zone.nearSupport||zone.nearResistance?10:0),0,28) : 0;
+  let score = 35 + impulseQuality + srReaction + trend*2 + rsiQuality + macdQuality + oi.score + context*2 + timing + reversalBonus;
+  if (setupType==='REVERSAL') score += 5;
+  if (lateChase) score -= 12;
+  score = clamp(score,0,100);
+  const risk = clamp(
+    (lateChase?18:0) + (extension>3.5?15:0) + (five.rsi>82||five.rsi<18?15:0) + (five.adx<12?8:0) + (oi.exhausted?7:0),0,100
+  );
+  const edge = clamp(18 + impulseQuality*0.8 + reversalEvidence*3 + (zone.state!=='AWAY_FROM_ZONE'?10:0) + (oi.aligned?8:0) + (sharp?6:0) - risk*0.45,0,100);
+  const entry = price;
+  const tp = calculateLogicalTp(entry,direction,candles5,candles15,five.atr);
+  const reasons=[];
+  if (sharp) reasons.push('SHARP_MOVE');
+  if (impulse.rangeExpansion>=1.65) reasons.push('RANGE_EXPANSION');
+  if (Math.abs(impulse.acceleration)>=0.45) reasons.push('ACCELERATION');
+  if (impulse.volumeRatio>=1.5) reasons.push('VOLUME_EXPANSION');
+  if (zone.nearSupport||zone.nearResistance) reasons.push('S_R_ZONE');
+  if (setupType==='REVERSAL') reasons.push(`REVERSAL_${direction.toUpperCase()}`);
+  else reasons.push('CONTINUATION');
+  if (oi.aligned) reasons.push('OI_ALIGNMENT');
+  if (lateChase) reasons.push('LATE_CHASE_PENALTY');
+  return {
+    symbol:marketDisplaySymbol(market), candleSymbol:candleSymbolFromMarket(market), direction, entry, tp,
+    score:Number(score.toFixed(2)), edge:Number(edge.toFixed(2)), risk:Number(risk.toFixed(2)), trendConfluence:trend,
+    setupType,reversalEvidence,
+    setupEvidence:{setupType,reversalEvidence,zoneState:zone.state,nearSupport:zone.nearSupport,nearResistance:zone.nearResistance,
+      nearestSupport:zone.support,nearestResistance:zone.resistance,sharpMove:sharp,lateChase,impulseQuality,
+      acceleration:impulse.acceleration,rangeExpansion:impulse.rangeExpansion,volumeRatio:impulse.volumeRatio,
+      reversalLong:rLong.longScore,reversalShort:rShort.shortScore},
+    reasons,
+    indicators:{rsi:Number(five.rsi.toFixed(2)),adx:Number(five.adx.toFixed(2)),ema20:five.ema20,ema50:five.ema50,ema200:five.ema200,
+      macdHistogram:five.macd.histogram,move5m:move5,move15m:move15,oiChange5m:oi.delta,reactionScore:srReaction,
+      explosive:sharp,impulseQuality,acceleration:impulse.acceleration,rangeExpansion:impulse.rangeExpansion,volumeRatio:impulse.volumeRatio,
+      lateChase,volume24h:tickerVolume(ticker),openInterest:tickerOpenInterest(ticker),fundingRate:tickerFunding(ticker),liquidity:marketLiquidity(market)},
+    market,ticker,candles5,candles15,
+  };
+}
 function calculateLogicalTp(entry, direction, candles5, candles15, atr5) {
   const levels5 = recentSwingLevels(candles5);
   const levels15 = recentSwingLevels(candles15);
@@ -855,12 +865,13 @@ function candidateIsActionable(candidate) {
     return { ok: false, reason: `EDGE_${candidate.edge.toFixed(1)}_BELOW_${CONFIG.minEdge}` };
   }
   if (candidate.setupType === "REVERSAL") {
-    if (Number(candidate.reversalEvidence || 0) < 2) {
-      return { ok: false, reason: `REVERSAL_EVIDENCE_${candidate.reversalEvidence || 0}` };
-    }
-  } else if (candidate.trendConfluence < CONFIG.minTrendConfluence) {
+    if (Number(candidate.reversalEvidence || 0) < 2) return { ok: false, reason: `REVERSAL_EVIDENCE_${candidate.reversalEvidence || 0}` };
+    if (candidate.setupEvidence?.zoneState === "AWAY_FROM_ZONE") return { ok: false, reason: "REVERSAL_NOT_AT_S_R_ZONE" };
+  } else if (candidate.trendConfluence < CONFIG.minTrendConfluence && !candidate.setupEvidence?.sharpMove) {
     return { ok: false, reason: `TREND_CONFLUENCE_${candidate.trendConfluence}` };
   }
+  if (candidate.setupEvidence?.lateChase) return { ok: false, reason: "LATE_CHASE" };
+  if (Number(candidate.setupEvidence?.impulseQuality || 0) < 5 && candidate.setupType !== "REVERSAL") return { ok: false, reason: "WEAK_IMPULSE" };
   if (candidate.risk > CONFIG.maxRisk) {
     return { ok: false, reason: `RISK_${candidate.risk.toFixed(1)}_ABOVE_${CONFIG.maxRisk}` };
   }
@@ -1716,6 +1727,8 @@ async function runCycle(event, env) {
     symbol: selected[0].symbol, direction: selected[0].direction, entry: selected[0].entry, tp: selected[0].tp,
     setupType: selected[0].setupType, reversalEvidence: selected[0].reversalEvidence, score: selected[0].score,
     edge: selected[0].edge, risk: selected[0].risk, allocation: CONFIG.walletAllocationPerPosition, leverage: CONFIG.leverage,
+    sharpMove: selected[0].setupEvidence?.sharpMove, lateChase: selected[0].setupEvidence?.lateChase,
+    zoneState: selected[0].setupEvidence?.zoneState, impulseQuality: selected[0].setupEvidence?.impulseQuality,
   } : { selected: 0 });
 
   const executions = [];
