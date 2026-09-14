@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V20.1.0-GMX-OPPORTUNITY-ECONOMIC-EDGE";
+export const BOT_VERSION = "V20.2.0-EARLY-TREND-GMX-OPPORTUNITY-15X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -58,8 +58,14 @@ const CONFIG = Object.freeze({
   deepCandidates: 30,
   finalCandidates: 1,
 
-  minScore: 72,
+  minScore: 68,
   minEdge: 8,
+
+  // Early-trend timing: prefer the first expansion/breakout phase over late confirmation.
+  earlyImpulseMinAccelerationPct: 0.10,
+  earlyImpulseMinMove3Pct: 0.25,
+  earlyBreakLookback: 8,
+  lateChaseExtensionPct: 2.25,
   minTrendConfluence: 3,
   maxRisk: 55,
 
@@ -777,8 +783,22 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
   const longReversal = rLong.longScore + (zoneLong.nearSupport?20:0);
   const shortReversal = rShort.shortScore + (zoneShort.nearResistance?20:0);
   const reversalBias = longReversal - shortReversal;
+
+  // EARLY-TREND DIRECTION: when a fresh expansion/break is appearing,
+  // direction must come from the impulse itself, not from fully-developed
+  // EMA/MACD confirmation. This prevents the score from becoming high only
+  // after most of the move has already happened.
+  const lookback = candles5.slice(-(Number(CONFIG.earlyBreakLookback)||8)-1, -1);
+  const priorHigh = lookback.length ? Math.max(...lookback.map(x=>num(x.high)).filter(Number.isFinite)) : 0;
+  const priorLow = lookback.length ? Math.min(...lookback.map(x=>num(x.low)).filter(Number.isFinite)) : 0;
+  const firstBreakLong = priorHigh > 0 && price > priorHigh;
+  const firstBreakShort = priorLow > 0 && price < priorLow;
+  const earlyLong = (impulse.move3 >= CONFIG.earlyImpulseMinMove3Pct && impulse.acceleration >= CONFIG.earlyImpulseMinAccelerationPct) || firstBreakLong;
+  const earlyShort = (impulse.move3 <= -CONFIG.earlyImpulseMinMove3Pct && impulse.acceleration <= -CONFIG.earlyImpulseMinAccelerationPct) || firstBreakShort;
+
   let direction;
   if (Math.max(longReversal,shortReversal) >= 28 && Math.abs(reversalBias) >= 8) direction = reversalBias>0?'long':'short';
+  else if (earlyLong !== earlyShort) direction = earlyLong ? 'long' : 'short';
   else direction = longContext===shortContext ? (tickerChange5m(ticker)>=0?'long':'short') : (longContext>shortContext?'long':'short');
 
   const r = direction==='long'?rLong:rShort;
@@ -790,10 +810,20 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
   const directionalMove = direction==='long' ? move5 : -move5;
   const directional15 = direction==='long' ? move15 : -move15;
   const extension = Math.max(absMove3,absMove5);
-  const lateChase = extension>=2.5 && impulse.acceleration <= 0;
+  const directionalAcceleration = direction==='long' ? impulse.acceleration : -impulse.acceleration;
+  const directionalMove3 = direction==='long' ? impulse.move3 : -impulse.move3;
+  const freshExpansion = impulse.rangeExpansion >= 1.20 || impulse.volumeRatio >= 1.25;
+  const earlyBreak = direction==='long' ? firstBreakLong : firstBreakShort;
+  const earlyTrend = directionalMove3 >= CONFIG.earlyImpulseMinMove3Pct && directionalAcceleration >= CONFIG.earlyImpulseMinAccelerationPct;
+  const notExtended = extension <= 1.80;
+  const lateChase = extension >= CONFIG.lateChaseExtensionPct && directionalAcceleration <= 0;
+  const earlyTimingBonus = clamp(
+    (earlyTrend ? 8 : 0) + (earlyBreak ? 7 : 0) + (freshExpansion ? 5 : 0) + (notExtended ? 3 : 0),
+    0,23
+  );
   const impulseQuality = clamp(
-    absMove3*12 + Math.max(0,impulse.rangeExpansion-1)*14 + Math.max(0,Math.abs(impulse.acceleration))*10 + Math.max(0,impulse.volumeRatio-1)*8,
-    0,35
+    absMove3*10 + Math.max(0,impulse.rangeExpansion-1)*12 + Math.max(0,Math.abs(impulse.acceleration))*9 + Math.max(0,impulse.volumeRatio-1)*6 + earlyTimingBonus,
+    0,40
   );
   const srReaction = direction==='long' ? Number(r.bullishReject)*12 : Number(r.bearishReject)*12;
   const setupType = ((direction==='long'?longReversal:shortReversal) >= 28 && zone.state!=='AWAY_FROM_ZONE') ? 'REVERSAL' : 'CONTINUATION';
@@ -805,11 +835,16 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
   const rsiQuality = direction==='long' ? (five.rsi>=42&&five.rsi<=68?7:five.rsi>78?-7:0) : (five.rsi<=58&&five.rsi>=32?7:five.rsi<22?-7:0);
   const macdQuality = direction==='long' ? (five.macd.histogram>0?6:-3) : (five.macd.histogram<0?6:-3);
   const context = direction==='long'?longContext:shortContext;
-  const timing = sharp ? (lateChase?-8:10) : 0;
+  const timing = sharp ? (lateChase?-12:earlyTimingBonus) : earlyTimingBonus;
   const reversalBonus = setupType==='REVERSAL' ? clamp(reversalEvidence*5 + (zone.nearSupport||zone.nearResistance?10:0),0,28) : 0;
-  let score = 35 + impulseQuality + srReaction + trend*2 + rsiQuality + macdQuality + oi.score + context*2 + timing + reversalBonus;
-  if (setupType==='REVERSAL') score += 5;
-  if (lateChase) score -= 12;
+  // Score rewards early evidence directly; full trend confluence is no longer
+  // required to make an early move actionable. Mature/extended moves receive
+  // an explicit timing penalty instead of being rewarded for confirmation.
+  let score = 30 + impulseQuality + srReaction + trend*1.5 + rsiQuality + macdQuality + oi.score + context*1.5 + timing + reversalBonus;
+  if (setupType==='REVERSAL') score += 4;
+  if (earlyTrend) score += 4;
+  if (earlyBreak) score += 4;
+  if (lateChase) score -= 18;
   score = clamp(score,0,100);
   const risk = clamp(
     (lateChase?18:0) + (extension>3.5?15:0) + (five.rsi>82||five.rsi<18?15:0) + (five.adx<12?8:0) + (oi.exhausted?7:0),0,100
@@ -834,11 +869,13 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
     setupEvidence:{setupType,reversalEvidence,zoneState:zone.state,nearSupport:zone.nearSupport,nearResistance:zone.nearResistance,
       nearestSupport:zone.support,nearestResistance:zone.resistance,sharpMove:sharp,lateChase,impulseQuality,
       acceleration:impulse.acceleration,rangeExpansion:impulse.rangeExpansion,volumeRatio:impulse.volumeRatio,
+      earlyTrend,earlyBreak,freshExpansion,notExtended,earlyTimingBonus,
       reversalLong:rLong.longScore,reversalShort:rShort.shortScore},
     reasons,
     indicators:{rsi:Number(five.rsi.toFixed(2)),adx:Number(five.adx.toFixed(2)),ema20:five.ema20,ema50:five.ema50,ema200:five.ema200,
       macdHistogram:five.macd.histogram,move5m:move5,move15m:move15,oiChange5m:oi.delta,reactionScore:srReaction,
       explosive:sharp,impulseQuality,acceleration:impulse.acceleration,rangeExpansion:impulse.rangeExpansion,volumeRatio:impulse.volumeRatio,
+      earlyTrend,earlyBreak,freshExpansion,earlyTimingBonus,
       lateChase,volume24h:tickerVolume(ticker),openInterest:tickerOpenInterest(ticker),fundingRate:tickerFunding(ticker),liquidity:marketLiquidity(market)},
     market,ticker,candles5,candles15,
   };
@@ -957,11 +994,11 @@ function candidateIsActionable(candidate) {
   if (candidate.setupType === "REVERSAL") {
     if (Number(candidate.reversalEvidence || 0) < 2) return { ok: false, reason: `REVERSAL_EVIDENCE_${candidate.reversalEvidence || 0}` };
     if (candidate.setupEvidence?.zoneState === "AWAY_FROM_ZONE") return { ok: false, reason: "REVERSAL_NOT_AT_S_R_ZONE" };
-  } else if (candidate.trendConfluence < CONFIG.minTrendConfluence && !candidate.setupEvidence?.sharpMove) {
+  } else if (candidate.trendConfluence < CONFIG.minTrendConfluence && !candidate.setupEvidence?.sharpMove && !candidate.setupEvidence?.earlyTrend && !candidate.setupEvidence?.earlyBreak) {
     return { ok: false, reason: `TREND_CONFLUENCE_${candidate.trendConfluence}` };
   }
   if (candidate.setupEvidence?.lateChase) return { ok: false, reason: "LATE_CHASE" };
-  if (Number(candidate.setupEvidence?.impulseQuality || 0) < 5 && candidate.setupType !== "REVERSAL") return { ok: false, reason: "WEAK_IMPULSE" };
+  if (Number(candidate.setupEvidence?.impulseQuality || 0) < 4 && candidate.setupType !== "REVERSAL" && !candidate.setupEvidence?.earlyTrend && !candidate.setupEvidence?.earlyBreak) return { ok: false, reason: "WEAK_IMPULSE" };
   if (candidate.risk > CONFIG.maxRisk) {
     return { ok: false, reason: `RISK_${candidate.risk.toFixed(1)}_ABOVE_${CONFIG.maxRisk}` };
   }
@@ -1866,6 +1903,7 @@ async function runCycle(event, env) {
     tpMovePct: selected[0].economics?.tpMovePct,
     sharpMove: selected[0].setupEvidence?.sharpMove, lateChase: selected[0].setupEvidence?.lateChase,
     zoneState: selected[0].setupEvidence?.zoneState, impulseQuality: selected[0].setupEvidence?.impulseQuality,
+    earlyTrend: selected[0].setupEvidence?.earlyTrend, earlyBreak: selected[0].setupEvidence?.earlyBreak, earlyTimingBonus: selected[0].setupEvidence?.earlyTimingBonus,
   } : { selected: 0 });
 
   const executions = [];
