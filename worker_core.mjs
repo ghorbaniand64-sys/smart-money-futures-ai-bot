@@ -1037,8 +1037,8 @@ function scoreCandidate({ market, ticker, candles5, candles15, candles1h, candle
   if (liveBreakShort && genuineLongFailure) reversalLong += 8;
   reversalLong = clamp(reversalLong, 0, 100);
   reversalShort = clamp(reversalShort, 0, 100);
-  const continuationLong = clamp(continuationLongRaw + (strongBreakLong ? 10 : 0), 0, 100);
-  const continuationShort = clamp(continuationShortRaw + (strongBreakShort ? 10 : 0), 0, 100);
+  let continuationLong = clamp(continuationLongRaw + (strongBreakLong ? 10 : 0), 0, 100);
+  let continuationShort = clamp(continuationShortRaw + (strongBreakShort ? 10 : 0), 0, 100);
 
   // V20.5: TOP-DOWN CONTROL. The higher timeframe decides the structural
   // side first; 15m/5m are confirmation/entry timing layers, not the source
@@ -1674,7 +1674,7 @@ async function deepScan(sdk, broadRows) {
     attempted: selected.length,
     successful: valid.length,
     failed: failed.length,
-    sampleErrors: failed.slice(0, 5).map(x => ({ symbol: x.symbol, error: x.error })),
+    sampleErrors: failed.slice(0, 5).map(x => ({ symbol: x.symbol || x.item?.symbol || x.item?.market?.symbol || "UNKNOWN", error: x.error })),
   });
 
   return valid.sort((a, b) => (b.score + b.edge * 0.35) - (a.score + a.edge * 0.35));
