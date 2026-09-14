@@ -2,7 +2,7 @@
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║ GMX SMART MONEY FUTURES AI BOT — V20 SHARP REVERSAL ENGINE                  ║
 ║ Single pipeline • 5M broad scan • 15M deep scan • Classic GMX only          ║
-║ 5x leverage • 100% wallet • max 1 position • one TP • no SL               ║
+║ 15x leverage • 100% wallet • max 1 position • one TP • no SL               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 Architecture:
@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V20.0.0-SHARP-REVERSAL-CLASSIC-ONE-TP";
+export const BOT_VERSION = "V20.1.0-GMX-OPPORTUNITY-ECONOMIC-EDGE";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -48,7 +48,7 @@ const CONFIG = Object.freeze({
   maxPositions: 1,
   walletAllocationPerPosition: 1.00,
   maxTotalWalletAllocation: 1.00,
-  leverage: 5,
+  leverage: 15,
 
   broadTimeframe: "5m",
   broadLimit: 72,
@@ -66,6 +66,16 @@ const CONFIG = Object.freeze({
   minTpDistancePct: 0.30,
   maxTpDistancePct: 3.50,
   tpAtrMultiplier: 1.20,
+
+  // Economic gate: estimates round-trip position fees plus a conservative
+  // execution-cost buffer. This is deliberately NOT a minimum-notional gate.
+  // A trade is allowed only when the actual wallet size + realistic TP imply
+  // enough expected net profit to justify the GMX execution overhead.
+  positionFeeBpsPerSide: 6,
+  executionCostBufferUsd: 0.75,
+  fundingBorrowBufferUsd: 0.15,
+  minExpectedNetUsd: 1.00,
+  minNetToCostRatio: 1.50,
 
   ohlcvConcurrency: 8,
   telegramMaxPerCycle: 8,
@@ -854,6 +864,86 @@ function calculateLogicalTp(entry, direction, candles5, candles15, atr5) {
   return Number(Math.max(structural, floor).toPrecision(12));
 }
 
+function estimateEconomicOpportunity(candidate, walletUsd) {
+  const wallet = Math.max(num(walletUsd), 0);
+  const allocation = CONFIG.walletAllocationPerPosition;
+  const collateralUsd = wallet * allocation;
+  const leverage = CONFIG.leverage;
+  const notionalUsd = collateralUsd * leverage;
+  const entry = num(candidate?.entry);
+  const tp = num(candidate?.tp);
+
+  if (!(entry > 0) || !(tp > 0) || !(notionalUsd > 0)) {
+    return {
+      valid: false,
+      collateralUsd,
+      notionalUsd,
+      grossPnlUsd: 0,
+      positionFeesUsd: 0,
+      executionCostUsd: CONFIG.executionCostBufferUsd,
+      fundingBorrowBufferUsd: CONFIG.fundingBorrowBufferUsd,
+      totalCostUsd: CONFIG.executionCostBufferUsd + CONFIG.fundingBorrowBufferUsd,
+      expectedNetUsd: -(CONFIG.executionCostBufferUsd + CONFIG.fundingBorrowBufferUsd),
+      netToCostRatio: 0,
+      tpMovePct: 0,
+    };
+  }
+
+  const tpMovePct = Math.abs(pct(tp, entry));
+  const grossPnlUsd = notionalUsd * tpMovePct / 100;
+  const positionFeesUsd = notionalUsd * (CONFIG.positionFeeBpsPerSide / 10_000) * 2;
+  const executionCostUsd = CONFIG.executionCostBufferUsd;
+  const fundingBorrowBufferUsd = CONFIG.fundingBorrowBufferUsd;
+  const totalCostUsd = positionFeesUsd + executionCostUsd + fundingBorrowBufferUsd;
+  const expectedNetUsd = grossPnlUsd - totalCostUsd;
+  const netToCostRatio = totalCostUsd > 0 ? expectedNetUsd / totalCostUsd : 0;
+
+  return {
+    valid: true,
+    collateralUsd,
+    notionalUsd,
+    grossPnlUsd,
+    positionFeesUsd,
+    executionCostUsd,
+    fundingBorrowBufferUsd,
+    totalCostUsd,
+    expectedNetUsd,
+    netToCostRatio,
+    tpMovePct,
+  };
+}
+
+function economicGate(candidate, walletUsd) {
+  const economics = estimateEconomicOpportunity(candidate, walletUsd);
+  if (!economics.valid) return { ok: false, reason: "ECONOMIC_INVALID", economics };
+  if (economics.expectedNetUsd < CONFIG.minExpectedNetUsd) {
+    return {
+      ok: false,
+      reason: `EXPECTED_NET_${economics.expectedNetUsd.toFixed(2)}_BELOW_${CONFIG.minExpectedNetUsd.toFixed(2)}`,
+      economics,
+    };
+  }
+  if (economics.netToCostRatio < CONFIG.minNetToCostRatio) {
+    return {
+      ok: false,
+      reason: `NET_COST_RATIO_${economics.netToCostRatio.toFixed(2)}_BELOW_${CONFIG.minNetToCostRatio.toFixed(2)}`,
+      economics,
+    };
+  }
+  return { ok: true, reason: "ECONOMIC_EDGE_OK", economics };
+}
+
+function attachEconomicOpportunity(candidate, walletUsd) {
+  const economics = estimateEconomicOpportunity(candidate, walletUsd);
+  return {
+    ...candidate,
+    economics,
+    expectedGrossPnlUsd: economics.grossPnlUsd,
+    expectedNetPnlUsd: economics.expectedNetUsd,
+    estimatedTotalCostUsd: economics.totalCostUsd,
+  };
+}
+
 function candidateIsActionable(candidate) {
   if (!candidate || !candidate.symbol || !candidate.entry || !candidate.tp) {
     return { ok: false, reason: "INVALID_PLAN" };
@@ -1388,6 +1478,7 @@ function tradeMessage(result) {
       `⛓️ Mode: CLASSIC ON-CHAIN`,
       `🔗 Tx: ${result.txHash || "N/A"}`,
       `🧪 Score: ${result.score.toFixed(1)} | Edge: ${result.edge.toFixed(1)} | Risk: ${result.risk.toFixed(1)}`,
+      `💹 Expected gross: ${formatUsd(result.expectedGrossPnlUsd)} | Net: ${formatUsd(result.expectedNetPnlUsd)} | Cost: ${formatUsd(result.estimatedTotalCostUsd)}`,
       `🧠 Reasons: ${result.reasons.join(", ") || "N/A"}`,
       `✅ Position verified: ${result.verified ? "YES" : "PENDING"}`,
       `🕐 ${new Date().toISOString()}`,
@@ -1440,6 +1531,7 @@ function cycleMessage(report) {
       `📦 Notional: ${formatUsd(trade.notionalUsd)} | 💵 Collateral: ${formatUsd(trade.collateralUsd)}`,
       `🔗 Tx: ${trade.txHash || "N/A"}`,
       `🧪 Score ${trade.score.toFixed(1)} | Edge ${trade.edge.toFixed(1)} | Risk ${trade.risk.toFixed(1)}`,
+      `💹 Expected gross: ${formatUsd(trade.expectedGrossPnlUsd)} | Net: ${formatUsd(trade.expectedNetPnlUsd)} | Cost: ${formatUsd(trade.estimatedTotalCostUsd)}`,
       `──────────────────`,
     );
   }
@@ -1449,7 +1541,10 @@ function cycleMessage(report) {
     for (const item of report.topRejected.slice(0, 3)) {
       lines.push(`• ${item.symbol}`);
       lines.push(`  📌 ${String(item.direction || "N/A").toUpperCase()} | Entry ${formatPrice(item.entry)} | TP ${formatPrice(item.tp)}`);
-      lines.push(`  🧠 ${String(item.setupType || "N/A")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)} | ${item.reason}`);
+      const econ = item.economics || {};
+      lines.push(`  🧠 ${String(item.setupType || "N/A")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)}`);
+      lines.push(`  💹 Gross ${formatUsd(econ.grossPnlUsd)} | Cost ${formatUsd(econ.totalCostUsd)} | Net ${formatUsd(econ.expectedNetUsd)} | TP move ${num(econ.tpMovePct).toFixed(2)}%`);
+      lines.push(`  🚫 ${item.reason}`);
     }
   }
 
@@ -1479,9 +1574,19 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
   const walletBefore = wallet.walletUsd;
   const collateralUsd = walletBefore * CONFIG.walletAllocationPerPosition;
   const notionalUsd = collateralUsd * CONFIG.leverage;
+  const economics = estimateEconomicOpportunity(candidate, walletBefore);
 
   if (collateralUsd <= 0) {
     return { executed: false, symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp, score: candidate.score, edge: candidate.edge, risk: candidate.risk, reason: "ZERO_COLLATERAL", stage: "BALANCE" };
+  }
+
+  const economicCheck = economicGate(candidate, walletBefore);
+  if (!economicCheck.ok) {
+    return {
+      executed: false, symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp,
+      score: candidate.score, edge: candidate.edge, risk: candidate.risk, reason: economicCheck.reason, stage: "ECONOMIC_GATE",
+      expectedGrossPnlUsd: economics.grossPnlUsd, expectedNetPnlUsd: economics.expectedNetUsd, estimatedTotalCostUsd: economics.totalCostUsd,
+    };
   }
 
   let prepared;
@@ -1544,6 +1649,9 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
       notionalUsd,
       collateralUsd,
       walletBefore,
+      expectedGrossPnlUsd: economics.grossPnlUsd,
+      expectedNetPnlUsd: economics.expectedNetUsd,
+      estimatedTotalCostUsd: economics.totalCostUsd,
       walletAfter: walletAfterSnapshot.walletUsd,
       txHash,
       allowance,
@@ -1711,22 +1819,51 @@ async function runCycle(event, env) {
 
   const blocked = [];
   const actionable = [];
+  const economicBlocked = [];
   for (const candidate of ranked) {
     const check = candidateIsActionable(candidate);
-    if (check.ok) actionable.push(candidate);
-    else blocked.push({
-      symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp,
-      score: candidate.score, edge: candidate.edge, risk: candidate.risk, setupType: candidate.setupType,
-      reversalEvidence: candidate.reversalEvidence, reason: check.reason, setupEvidence: candidate.setupEvidence,
-    });
+    if (!check.ok) {
+      blocked.push({
+        symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp,
+        score: candidate.score, edge: candidate.edge, risk: candidate.risk, setupType: candidate.setupType,
+        reversalEvidence: candidate.reversalEvidence, reason: check.reason, setupEvidence: candidate.setupEvidence,
+      });
+      continue;
+    }
+
+    const economic = economicGate(candidate, wallet.walletUsd);
+    const enriched = attachEconomicOpportunity(candidate, wallet.walletUsd);
+    if (economic.ok) {
+      actionable.push(enriched);
+    } else {
+      const item = {
+        symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp,
+        score: candidate.score, edge: candidate.edge, risk: candidate.risk, setupType: candidate.setupType,
+        reversalEvidence: candidate.reversalEvidence, reason: economic.reason, setupEvidence: candidate.setupEvidence,
+        economics: enriched.economics,
+      };
+      blocked.push(item);
+      economicBlocked.push(item);
+    }
   }
 
-  actionable.sort((a, b) => (b.score + b.edge * 0.35) - (a.score + a.edge * 0.35));
+  // GMX Opportunity Engine: rank by economic opportunity first, while keeping
+  // signal quality as the tie-breaker. We never manufacture a farther TP just
+  // to make a trade profitable on paper.
+  actionable.sort((a, b) => {
+    const net = num(b.expectedNetPnlUsd) - num(a.expectedNetPnlUsd);
+    if (Math.abs(net) > 0.05) return net;
+    const quality = (b.score + b.edge * 0.35) - (a.score + a.edge * 0.35);
+    return quality;
+  });
   const selected = actionable.slice(0, CONFIG.finalCandidates);
   console.log("[SELECTION][TOP]", selected[0] ? {
     symbol: selected[0].symbol, direction: selected[0].direction, entry: selected[0].entry, tp: selected[0].tp,
     setupType: selected[0].setupType, reversalEvidence: selected[0].reversalEvidence, score: selected[0].score,
     edge: selected[0].edge, risk: selected[0].risk, allocation: CONFIG.walletAllocationPerPosition, leverage: CONFIG.leverage,
+    expectedGrossPnlUsd: selected[0].expectedGrossPnlUsd, expectedNetPnlUsd: selected[0].expectedNetPnlUsd,
+    estimatedTotalCostUsd: selected[0].estimatedTotalCostUsd, netToCostRatio: selected[0].economics?.netToCostRatio,
+    tpMovePct: selected[0].economics?.tpMovePct,
     sharpMove: selected[0].setupEvidence?.sharpMove, lateChase: selected[0].setupEvidence?.lateChase,
     zoneState: selected[0].setupEvidence?.zoneState, impulseQuality: selected[0].setupEvidence?.impulseQuality,
   } : { selected: 0 });
