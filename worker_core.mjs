@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V20.5.0-TOP-DOWN-HTF-SR-REACTION-20X";
+export const BOT_VERSION = "V20.5.1-TOP-DOWN-DEEP-RESCUE-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -1619,30 +1619,65 @@ async function broadScan(sdk, markets, tickers) {
 async function deepScan(sdk, broadRows) {
   const selected = broadRows.slice(0, CONFIG.deepCandidates);
   const results = await mapLimit(selected, Math.min(6, CONFIG.ohlcvConcurrency), async (row) => {
-    try {
-      const [candles1d, candles4h, candles1h, candles15] = await Promise.all([
-        fetchCandles(sdk, row.market, CONFIG.htfTimeframe, CONFIG.htfLimit),
-        fetchCandles(sdk, row.market, CONFIG.contextTimeframe, CONFIG.contextLimit),
-        fetchCandles(sdk, row.market, "1h", CONFIG.contextLimit),
-        fetchCandles(sdk, row.market, CONFIG.deepTimeframe, CONFIG.deepLimit),
-      ]);
-      return scoreCandidate({
-        market: row.market,
-        ticker: row.ticker,
-        candles5: row.candles5,
-        candles15,
-        candles1h,
-        candles4h,
-        candles1d,
-      });
-    } catch (error) {
-      return { ...row, error: safeError(error) };
+    // V20.5.1: never let one missing HTF feed kill the entire deep candidate.
+    // The old Promise.all made a single 1D/4H/1H failure discard the symbol
+    // before scoreCandidate() was even reached, which produced Deep: 0.
+    const [d1, h4, h1, m15] = await Promise.allSettled([
+      fetchCandles(sdk, row.market, CONFIG.htfTimeframe, CONFIG.htfLimit),
+      fetchCandles(sdk, row.market, CONFIG.contextTimeframe, CONFIG.contextLimit),
+      fetchCandles(sdk, row.market, "1h", CONFIG.contextLimit),
+      fetchCandles(sdk, row.market, CONFIG.deepTimeframe, CONFIG.deepLimit),
+    ]);
+
+    const candles1d = d1.status === "fulfilled" ? d1.value : [];
+    const candles4h = h4.status === "fulfilled" ? h4.value : [];
+    const candles1h = h1.status === "fulfilled" ? h1.value : [];
+    const candles15 = m15.status === "fulfilled" ? m15.value : [];
+
+    // 15M is mandatory for deep timing. At least one genuine high-timeframe
+    // layer (1D or 4H) is mandatory for the top-down structural decision.
+    if (candles15.length < 20) {
+      return { ...row, error: `DEEP_15M_UNAVAILABLE:${m15.status === "rejected" ? safeError(m15.reason) : candles15.length}` };
     }
+    if (candles1d.length < 20 && candles4h.length < 20) {
+      const e1 = d1.status === "rejected" ? safeError(d1.reason) : `COUNT:${candles1d.length}`;
+      const e4 = h4.status === "rejected" ? safeError(h4.reason) : `COUNT:${candles4h.length}`;
+      return { ...row, error: `HTF_1D_4H_UNAVAILABLE|1D:${e1}|4H:${e4}` };
+    }
+
+    const candidate = scoreCandidate({
+      market: row.market,
+      ticker: row.ticker,
+      candles5: row.candles5,
+      candles15,
+      candles1h,
+      candles4h,
+      candles1d,
+    });
+
+    candidate.setupEvidence = candidate.setupEvidence || {};
+    candidate.setupEvidence.htfData = {
+      oneD: candles1d.length >= 20,
+      fourH: candles4h.length >= 20,
+      oneH: candles1h.length >= 20,
+      fifteenM: candles15.length >= 20,
+      structuralTf: candles1d.length >= 20 ? "1D" : "4H",
+    };
+    candidate.indicators = candidate.indicators || {};
+    candidate.indicators.htfData = candidate.setupEvidence.htfData;
+    return candidate;
   });
 
-  return results
-    .filter((x) => x && !x.error && x.entry > 0)
-    .sort((a, b) => (b.score + b.edge * 0.35) - (a.score + a.edge * 0.35));
+  const valid = results.filter((x) => x && !x.error && x.entry > 0);
+  const failed = results.filter((x) => x?.error);
+  console.log("[DEEP][15M+HTF][SUMMARY]", {
+    attempted: selected.length,
+    successful: valid.length,
+    failed: failed.length,
+    sampleErrors: failed.slice(0, 5).map(x => ({ symbol: x.symbol, error: x.error })),
+  });
+
+  return valid.sort((a, b) => (b.score + b.edge * 0.35) - (a.score + a.edge * 0.35));
 }
 
 function extractBalanceRows(payload) {
@@ -2006,7 +2041,7 @@ function tradeMessage(result) {
     `📌 Direction: ${String(result.direction || "N/A").toUpperCase()}`,
     `💰 Entry: ${formatPrice(result.entry)}`,
     `🎯 TP: ${formatPrice(result.tp)}`,
-    `⚙️ Leverage: 5.0x`,
+    `⚙️ Leverage: ${CONFIG.leverage.toFixed(1)}x`,
     `📊 Allocation target: ${(CONFIG.walletAllocationPerPosition * 100).toFixed(2)}%`,
     `❌ Stage: ${result.stage || "EXECUTION"}`,
     `❌ Reason: ${result.reason || "Unknown error"}`,
@@ -2041,7 +2076,7 @@ function cycleMessage(report) {
       `📌 Direction: ${trade.direction.toUpperCase()}`,
       `💰 Entry: ${formatPrice(trade.entry)}`,
       `🎯 TP: ${formatPrice(trade.tp)}`,
-      `📊 Allocation: ${(trade.allocation * 100).toFixed(2)}% | ⚙️ Leverage: 5.0x`,
+      `📊 Allocation: ${(trade.allocation * 100).toFixed(2)}% | ⚙️ Leverage: ${CONFIG.leverage.toFixed(1)}x`,
       `📦 Notional: ${formatUsd(trade.notionalUsd)} | 💵 Collateral: ${formatUsd(trade.collateralUsd)}`,
       `🔗 Tx: ${trade.txHash || "N/A"}`,
       `🧪 Score ${trade.score.toFixed(1)} | Edge ${trade.edge.toFixed(1)} | Risk ${trade.risk.toFixed(1)}`,
