@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V20.4.1-REVERSAL-VALIDATION-BREAKOUT-FAILURE-20X";
+export const BOT_VERSION = "V20.5.0-TOP-DOWN-HTF-SR-REACTION-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -56,6 +56,10 @@ const CONFIG = Object.freeze({
   deepLimit: 96,
 
   deepCandidates: 30,
+  htfTimeframe: "1d",
+  contextTimeframe: "4h",
+  htfLimit: 96,
+  contextLimit: 96,
   finalCandidates: 1,
 
   // V20.3: score ranks quality; trigger confidence controls timing.
@@ -69,6 +73,7 @@ const CONFIG = Object.freeze({
   earlyImpulseMinAccelerationPct: 0.10,
   earlyImpulseMinMove3Pct: 0.25,
   earlyBreakLookback: 8,
+  htfBreakLookback15: 4,
   lateChaseExtensionPct: 2.25,
   minTrendConfluence: 3,
   maxRisk: 55,
@@ -776,10 +781,134 @@ function classifyZone(candles, entry, atrValue, direction) {
   return {levels,support,resistance,nearSupport,nearResistance,state};
 }
 
-function scoreCandidate({ market, ticker, candles5, candles15 }) {
+function topDownLevelAnalysis(candles1d, candles4h, candles1h, price) {
+  // V20.5: hierarchy is explicit: 1D -> 4H -> 1H -> 15M -> 5M.
+  // Higher-timeframe S/R determines the structural side. Lower timeframes
+  // are used only to confirm reaction/break and to time the entry.
+  const frames = [
+    { tf: "1D", candles: candles1d || [], weight: 3.4 },
+    { tf: "4H", candles: candles4h || [], weight: 2.4 },
+    { tf: "1H", candles: candles1h || [], weight: 1.5 },
+  ];
+  const levels = [];
+
+  for (const frame of frames) {
+    const c = frame.candles;
+    if (!Array.isArray(c) || c.length < 20) continue;
+    const completed = c.slice(0, -1);
+    if (completed.length < 12) continue;
+    const last = completed.at(-1) || {};
+    const swings = recentSwingLevels(completed);
+    const atrValue = Math.max(atr(completed, 14), price * 0.001, 1e-12);
+    const high = num(last.high), low = num(last.low), open = num(last.open), close = num(last.close);
+    const range = Math.max(high - low, 1e-12);
+    const bodyRatio = Math.abs(close - open) / range;
+    const closeLocation = (close - low) / range;
+
+    for (const resistance of swings.resistance || []) {
+      if (!(resistance > 0)) continue;
+      const distPct = Math.abs(pct(resistance, price));
+      if (distPct <= 5.0) levels.push({ type: "R", price: resistance, tf: frame.tf, weight: frame.weight, atr: atrValue, distPct, bodyRatio, closeLocation, lastHigh: high, lastLow: low, lastClose: close, lastOpen: open });
+    }
+    for (const support of swings.support || []) {
+      if (!(support > 0)) continue;
+      const distPct = Math.abs(pct(support, price));
+      if (distPct <= 5.0) levels.push({ type: "S", price: support, tf: frame.tf, weight: frame.weight, atr: atrValue, distPct, bodyRatio, closeLocation, lastHigh: high, lastLow: low, lastClose: close, lastOpen: open });
+    }
+  }
+
+  const supports = levels.filter(x => x.type === "S" && x.price < price).sort((a,b) => (a.distPct - b.distPct) || (b.weight - a.weight));
+  const resistances = levels.filter(x => x.type === "R" && x.price > price).sort((a,b) => (a.distPct - b.distPct) || (b.weight - a.weight));
+  const support = supports[0] || null;
+  const resistance = resistances[0] || null;
+
+  function interaction(level) {
+    if (!level) return { near:false, reaction:false, break:false, strongBreak:false, failedBreak:false };
+    const atrSafe = Math.max(level.atr, price * 0.001);
+    const near = level.distPct <= (level.tf === "1D" ? 1.10 : level.tf === "4H" ? 0.90 : 0.70);
+    const penetration = atrSafe * 0.12;
+    const strongBody = level.bodyRatio >= 0.55;
+    const strongRange = Math.abs(level.lastHigh - level.lastLow) >= atrSafe * 1.05;
+
+    if (level.type === "S") {
+      const reaction = near && level.lastLow <= level.price + atrSafe * 0.25 && level.lastClose >= level.price && level.lastClose > level.lastOpen;
+      const strongBreak = level.lastClose < level.price - penetration && strongBody && strongRange;
+      const failedBreak = level.lastLow < level.price - penetration && level.lastClose >= level.price;
+      return { near, reaction, break:strongBreak, strongBreak, failedBreak };
+    }
+
+    const reaction = near && level.lastHigh >= level.price - atrSafe * 0.25 && level.lastClose <= level.price && level.lastClose < level.lastOpen;
+    const strongBreak = level.lastClose > level.price + penetration && strongBody && strongRange;
+    const failedBreak = level.lastHigh > level.price + penetration && level.lastClose <= level.price;
+    return { near, reaction, break:strongBreak, strongBreak, failedBreak };
+  }
+
+  const s = interaction(support);
+  const r = interaction(resistance);
+
+  let state = "NEUTRAL";
+  let preferredDirection = null;
+  let confidence = 0;
+  let controllingTimeframe = null;
+  let levelPrice = null;
+
+  // A decisive break of a major support/resistance reverses the expected side.
+  // A genuine reaction from the level takes the opposite side. This ordering
+  // is intentional: BREAK has priority over simple proximity/reaction.
+  if (s.strongBreak) {
+    state = "SUPPORT_BREAK";
+    preferredDirection = "short";
+    confidence = support?.tf === "1D" ? 98 : support?.tf === "4H" ? 94 : 90;
+    controllingTimeframe = support?.tf || null;
+    levelPrice = support?.price || null;
+  } else if (r.strongBreak) {
+    state = "RESISTANCE_BREAK";
+    preferredDirection = "long";
+    confidence = resistance?.tf === "1D" ? 98 : resistance?.tf === "4H" ? 94 : 90;
+    controllingTimeframe = resistance?.tf || null;
+    levelPrice = resistance?.price || null;
+  } else if (s.reaction) {
+    state = "SUPPORT_REACTION";
+    preferredDirection = "long";
+    confidence = support?.tf === "1D" ? 96 : support?.tf === "4H" ? 92 : 86;
+    controllingTimeframe = support?.tf || null;
+    levelPrice = support?.price || null;
+  } else if (r.reaction) {
+    state = "RESISTANCE_REACTION";
+    preferredDirection = "short";
+    confidence = resistance?.tf === "1D" ? 96 : resistance?.tf === "4H" ? 92 : 86;
+    controllingTimeframe = resistance?.tf || null;
+    levelPrice = resistance?.price || null;
+  } else if (s.near) {
+    state = "AT_SUPPORT";
+    preferredDirection = "long";
+    confidence = support?.tf === "1D" ? 72 : support?.tf === "4H" ? 68 : 62;
+    controllingTimeframe = support?.tf || null;
+    levelPrice = support?.price || null;
+  } else if (r.near) {
+    state = "AT_RESISTANCE";
+    preferredDirection = "short";
+    confidence = resistance?.tf === "1D" ? 72 : resistance?.tf === "4H" ? 68 : 62;
+    controllingTimeframe = resistance?.tf || null;
+    levelPrice = resistance?.price || null;
+  }
+
+  return {
+    state, preferredDirection, confidence, controllingTimeframe, levelPrice,
+    support, resistance,
+    nearSupport: s.near, nearResistance: r.near,
+    supportBreak: s.strongBreak, resistanceBreak: r.strongBreak,
+    supportReaction: s.reaction, resistanceReaction: r.reaction,
+    supportFailedBreak: s.failedBreak, resistanceFailedBreak: r.failedBreak,
+    levels,
+  };
+}
+
+function scoreCandidate({ market, ticker, candles5, candles15, candles1h, candles4h, candles1d }) {
   const five = structureIndicators(candles5, 'long');
   const fifteen = structureIndicators(candles15, 'long');
   const price = five.price;
+  const topDown = topDownLevelAnalysis(candles1d, candles4h, candles1h, price);
   const impulse = candleImpulseMetrics(candles5);
   const rLong = reversalMetrics(candles5, candles15, ticker, 'long');
   const rShort = reversalMetrics(candles5, candles15, ticker, 'short');
@@ -801,6 +930,28 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
   const priorLow = lookback.length ? Math.min(...lookback.map(x => num(x.low)).filter(Number.isFinite)) : 0;
   const firstBreakLong = priorHigh > 0 && price > priorHigh;
   const firstBreakShort = priorLow > 0 && price < priorLow;
+
+  // V20.4.2: a 5m-only breakout can disappear after the first few candles.
+  // Keep a higher-timeframe breakout state so a still-live 15m expansion
+  // cannot be mistaken for a reversal merely because the 5m window no longer
+  // sits above its local 8-candle high.
+  const completed15 = candles15.slice(0, -1);
+  const htfLookback = Math.max(3, Number(CONFIG.htfBreakLookback15) || 4);
+  const htfWindow = completed15.slice(-htfLookback);
+  const htfPriorHigh = htfWindow.length ? Math.max(...htfWindow.map(x => num(x.high)).filter(Number.isFinite)) : 0;
+  const htfPriorLow = htfWindow.length ? Math.min(...htfWindow.map(x => num(x.low)).filter(Number.isFinite)) : 0;
+  const htfLast = candles15.at(-1) || {};
+  const htfLastClose = num(htfLast.close);
+  const htfLastHigh = num(htfLast.high);
+  const htfLastLow = num(htfLast.low);
+  const htfRange = Math.max(htfLastHigh - htfLastLow, 1e-12);
+  const htfCloseLocation = (htfLastClose - htfLastLow) / htfRange;
+  const htfBreakLong = htfPriorHigh > 0 && htfLastClose > htfPriorHigh;
+  const htfBreakShort = htfPriorLow > 0 && htfLastClose < htfPriorLow;
+  const htfStrongBreakLong = Boolean(htfBreakLong && (htfCloseLocation >= 0.65 || impulse.m15 > 0.45));
+  const htfStrongBreakShort = Boolean(htfBreakShort && (htfCloseLocation <= 0.35 || impulse.m15 < -0.45));
+  const htfFailedBreakLong = Boolean(htfPriorHigh > 0 && htfLastHigh > htfPriorHigh && htfLastClose < htfPriorHigh);
+  const htfFailedBreakShort = Boolean(htfPriorLow > 0 && htfLastLow < htfPriorLow && htfLastClose > htfPriorLow);
 
   const preMove = pct(num(candles5.at(-2)?.close), num(candles5.at(-Math.min(8, candles5.length))?.close));
   const currentMove = impulse.move3;
@@ -866,22 +1017,53 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
   const strongBreakShort = Boolean(firstBreakShort && (directionalDisplacementShort || closeNearLow || impulse.rangeExpansion >= 1.45));
   const failedBreakLong = Boolean(priorHigh > 0 && lastHigh > priorHigh && close < priorHigh);
   const failedBreakShort = Boolean(priorLow > 0 && lastLow < priorLow && close > priorLow);
-  const genuineShortFailure = Boolean(failedBreakLong || (rShort.bearishReject && rShort.redFlip && impulse.acceleration < 0));
-  const genuineLongFailure = Boolean(failedBreakShort || (rLong.bullishReject && rLong.greenFlip && impulse.acceleration > 0));
+  const genuineShortFailure = Boolean(failedBreakLong || htfFailedBreakLong || (rShort.bearishReject && rShort.redFlip && impulse.acceleration < 0));
+  const genuineLongFailure = Boolean(failedBreakShort || htfFailedBreakShort || (rLong.bullishReject && rLong.greenFlip && impulse.acceleration > 0));
+
+  // V20.4.2: a reversal against a live 15m breakout is invalid until that
+  // breakout fails. This closes the gap that allowed a 5m/local resistance
+  // reading to create a SHORT while the higher-timeframe move was still
+  // expanding.
+  const liveBreakLong = Boolean(strongBreakLong || htfStrongBreakLong);
+  const liveBreakShort = Boolean(strongBreakShort || htfStrongBreakShort);
 
   // Hard penalty against fading a live breakout. Touching resistance/support
-  // alone is not a reversal signal. This is intentionally asymmetric: once a
-  // breakout is strong, we wait for failure rather than guessing the top.
+  // alone is not a reversal signal. Once a breakout is live, wait for failure.
   let reversalLong = reversalLongRaw;
   let reversalShort = reversalShortRaw;
-  if (strongBreakShort && !genuineLongFailure) reversalLong -= 32;
-  if (strongBreakLong && !genuineShortFailure) reversalShort -= 32;
-  if (strongBreakLong && genuineShortFailure) reversalShort += 8;
-  if (strongBreakShort && genuineLongFailure) reversalLong += 8;
+  if (liveBreakShort && !genuineLongFailure) reversalLong -= 40;
+  if (liveBreakLong && !genuineShortFailure) reversalShort -= 40;
+  if (liveBreakLong && genuineShortFailure) reversalShort += 8;
+  if (liveBreakShort && genuineLongFailure) reversalLong += 8;
   reversalLong = clamp(reversalLong, 0, 100);
   reversalShort = clamp(reversalShort, 0, 100);
   const continuationLong = clamp(continuationLongRaw + (strongBreakLong ? 10 : 0), 0, 100);
   const continuationShort = clamp(continuationShortRaw + (strongBreakShort ? 10 : 0), 0, 100);
+
+  // V20.5: TOP-DOWN CONTROL. The higher timeframe decides the structural
+  // side first; 15m/5m are confirmation/entry timing layers, not the source
+  // of a counter-trend reversal.
+  const htfLong = topDown.preferredDirection === "long";
+  const htfShort = topDown.preferredDirection === "short";
+  if (htfLong) {
+    reversalLong += topDown.confidence * 0.12;
+    continuationLong += topDown.confidence * 0.10;
+    reversalShort -= 35;
+    continuationShort -= 20;
+  } else if (htfShort) {
+    reversalShort += topDown.confidence * 0.12;
+    continuationShort += topDown.confidence * 0.10;
+    reversalLong -= 35;
+    continuationLong -= 20;
+  }
+  if (topDown.supportBreak) { reversalLong -= 70; continuationShort += 28; }
+  if (topDown.resistanceBreak) { reversalShort -= 70; continuationLong += 28; }
+  if (topDown.supportReaction) { reversalLong += 28; continuationShort -= 35; }
+  if (topDown.resistanceReaction) { reversalShort += 28; continuationLong -= 35; }
+  reversalLong = clamp(reversalLong, 0, 100);
+  reversalShort = clamp(reversalShort, 0, 100);
+  continuationLong = clamp(continuationLong, 0, 100);
+  continuationShort = clamp(continuationShort, 0, 100);
 
   const bestReversal = Math.max(reversalLong, reversalShort);
   const bestContinuation = Math.max(continuationLong, continuationShort);
@@ -889,14 +1071,16 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
   const continuationDirection = continuationLong >= continuationShort ? 'long' : 'short';
 
   const reversalTrigger = bestReversal >= Number(CONFIG.reversalTriggerMinConfidence || 52) &&
-    ((reversalDirection === 'long' && priorMoveOppositeLong && (zoneLong.nearSupport || rLong.bullishReject) && (!strongBreakShort || genuineLongFailure)) ||
-     (reversalDirection === 'short' && priorMoveOppositeShort && (zoneShort.nearResistance || rShort.bearishReject) && (!strongBreakLong || genuineShortFailure)));
+    !((topDown.supportBreak && reversalDirection === "long") || (topDown.resistanceBreak && reversalDirection === "short")) &&
+    ((reversalDirection === 'long' && priorMoveOppositeLong && (zoneLong.nearSupport || rLong.bullishReject) && (!liveBreakShort || genuineLongFailure)) ||
+     (reversalDirection === 'short' && priorMoveOppositeShort && (zoneShort.nearResistance || rShort.bearishReject) && (!liveBreakLong || genuineShortFailure)));
   const continuationTrigger = bestContinuation >= Number(CONFIG.continuationTriggerMinConfidence || 52) &&
     ((continuationDirection === 'long' && (firstBreakLong || directionalDisplacementLong)) ||
      (continuationDirection === 'short' && (firstBreakShort || directionalDisplacementShort)));
 
   let setupType = 'NONE';
   let direction = continuationDirection;
+  if (topDown.preferredDirection) direction = topDown.preferredDirection;
   if (reversalTrigger && (!continuationTrigger || bestReversal >= bestContinuation + Number(CONFIG.setupDominanceMargin || 6))) {
     setupType = 'REVERSAL';
     direction = reversalDirection;
@@ -990,14 +1174,16 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
   if (reversalTrigger) reasons.push('REVERSAL_TRIGGER');
   if (continuationTrigger) reasons.push('CONTINUATION_TRIGGER');
   if (firstBreakLong || firstBreakShort) reasons.push('FIRST_BREAK');
-  if (strongBreakLong || strongBreakShort) reasons.push('STRONG_BREAKOUT');
-  if (failedBreakLong || failedBreakShort) reasons.push('BREAKOUT_FAILURE');
-  if (strongBreakLong && !genuineShortFailure) reasons.push('NO_SHORT_FADE_ON_LIVE_BREAKOUT');
-  if (strongBreakShort && !genuineLongFailure) reasons.push('NO_LONG_FADE_ON_LIVE_BREAKOUT');
+  if (strongBreakLong || strongBreakShort || htfStrongBreakLong || htfStrongBreakShort) reasons.push('STRONG_BREAKOUT');
+  if (failedBreakLong || failedBreakShort || htfFailedBreakLong || htfFailedBreakShort) reasons.push('BREAKOUT_FAILURE');
+  if (liveBreakLong && !genuineShortFailure) reasons.push('NO_SHORT_FADE_ON_LIVE_BREAKOUT');
+  if (liveBreakShort && !genuineLongFailure) reasons.push('NO_LONG_FADE_ON_LIVE_BREAKOUT');
   if (freshExpansion) reasons.push('FRESH_EXPANSION');
   if (sharp) reasons.push('SHARP_MOVE');
   if (preCompression) reasons.push('PRE_COMPRESSION');
   if (zone.nearSupport || zone.nearResistance) reasons.push('S_R_ZONE');
+  if (topDown.state !== 'NEUTRAL') reasons.push(`HTF_${topDown.state}`);
+  if (topDown.controllingTimeframe) reasons.push(`HTF_TF_${topDown.controllingTimeframe}`);
   if (oi.aligned) reasons.push('OI_ALIGNMENT');
   if (lateChase) reasons.push('LATE_CHASE_PENALTY');
 
@@ -1022,8 +1208,10 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
       earlyTrend, earlyBreak, freshExpansion, notExtended, earlyTimingBonus: timing,
       reversalLong: rLong.longScore, reversalShort: rShort.shortScore,
       continuationLong, continuationShort, firstBreakLong, firstBreakShort,
-      strongBreakLong, strongBreakShort, failedBreakLong, failedBreakShort,
+      strongBreakLong, strongBreakShort, htfBreakLong, htfBreakShort, htfStrongBreakLong, htfStrongBreakShort,
+      liveBreakLong, liveBreakShort, failedBreakLong, failedBreakShort, htfFailedBreakLong, htfFailedBreakShort,
       genuineLongFailure, genuineShortFailure, closeNearHigh, closeNearLow,
+      topDown: { state: topDown.state, preferredDirection: topDown.preferredDirection, confidence: topDown.confidence, controllingTimeframe: topDown.controllingTimeframe, levelPrice: topDown.levelPrice, nearSupport: topDown.nearSupport, nearResistance: topDown.nearResistance, supportBreak: topDown.supportBreak, resistanceBreak: topDown.resistanceBreak, supportReaction: topDown.supportReaction, resistanceReaction: topDown.resistanceReaction, supportFailedBreak: topDown.supportFailedBreak, resistanceFailedBreak: topDown.resistanceFailedBreak, support: topDown.support?.price || null, resistance: topDown.resistance?.price || null },
       priorMove: preMove, priorMoveOppositeLong, priorMoveOppositeShort,
       reversalTiming, continuationTiming,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
@@ -1035,10 +1223,12 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
       macdHistogram: five.macd.histogram, move5m: move5, move15m: move15, oiChange5m: oi.delta, reactionScore: srReaction,
       explosive: sharp, impulseQuality, acceleration: impulse.acceleration, rangeExpansion: impulse.rangeExpansion, volumeRatio: impulse.volumeRatio,
       earlyTrend, earlyBreak, freshExpansion, earlyTimingBonus: timing, lateChase,
-      strongBreakLong, strongBreakShort, failedBreakLong, failedBreakShort, genuineLongFailure, genuineShortFailure,
+      strongBreakLong, strongBreakShort, htfBreakLong, htfBreakShort, htfStrongBreakLong, htfStrongBreakShort,
+      liveBreakLong, liveBreakShort, failedBreakLong, failedBreakShort, htfFailedBreakLong, htfFailedBreakShort, genuineLongFailure, genuineShortFailure,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
       tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
       reversalConfidence, continuationConfidence, setupDominance, triggerActive: setupType === 'REVERSAL' || setupType === 'CONTINUATION',
+      topDownState: topDown.state, topDownDirection: topDown.preferredDirection, topDownConfidence: topDown.confidence, topDownControllingTimeframe: topDown.controllingTimeframe, topDownLevelPrice: topDown.levelPrice, topDownSupport: topDown.support?.price || null, topDownResistance: topDown.resistance?.price || null, topDownSupportBreak: topDown.supportBreak, topDownResistanceBreak: topDown.resistanceBreak, topDownSupportReaction: topDown.supportReaction, topDownResistanceReaction: topDown.resistanceReaction, topDownSupportFailedBreak: topDown.supportFailedBreak, topDownResistanceFailedBreak: topDown.resistanceFailedBreak,
       volume24h: tickerVolume(ticker), openInterest: tickerOpenInterest(ticker), fundingRate: tickerFunding(ticker), liquidity: marketLiquidity(market)
     },
     market, ticker, candles5, candles15,
@@ -1251,6 +1441,17 @@ function candidateIsActionable(candidate) {
     return { ok: false, reason: `EDGE_${candidate.edge.toFixed(1)}_BELOW_${CONFIG.minEdge}` };
   }
 
+  const evTopDown = ev.topDown || {};
+  if (evTopDown.preferredDirection && candidate.direction !== evTopDown.preferredDirection) {
+    return { ok: false, reason: `HTF_DIRECTION_CONFLICT_${evTopDown.preferredDirection.toUpperCase()}` };
+  }
+  if (evTopDown.supportBreak && candidate.direction !== "short") {
+    return { ok: false, reason: "HTF_SUPPORT_BREAK_REQUIRES_SHORT" };
+  }
+  if (evTopDown.resistanceBreak && candidate.direction !== "long") {
+    return { ok: false, reason: "HTF_RESISTANCE_BREAK_REQUIRES_LONG" };
+  }
+
   if (isEarlyReversal) {
     if (Number(candidate.reversalConfidence || 0) < Number(CONFIG.reversalTriggerMinConfidence)) {
       return { ok: false, reason: `REVERSAL_CONFIDENCE_${candidate.reversalConfidence || 0}_BELOW_${CONFIG.reversalTriggerMinConfidence}` };
@@ -1419,17 +1620,20 @@ async function deepScan(sdk, broadRows) {
   const selected = broadRows.slice(0, CONFIG.deepCandidates);
   const results = await mapLimit(selected, Math.min(6, CONFIG.ohlcvConcurrency), async (row) => {
     try {
-      const candles15 = await fetchCandles(
-        sdk,
-        row.market,
-        CONFIG.deepTimeframe,
-        CONFIG.deepLimit
-      );
+      const [candles1d, candles4h, candles1h, candles15] = await Promise.all([
+        fetchCandles(sdk, row.market, CONFIG.htfTimeframe, CONFIG.htfLimit),
+        fetchCandles(sdk, row.market, CONFIG.contextTimeframe, CONFIG.contextLimit),
+        fetchCandles(sdk, row.market, "1h", CONFIG.contextLimit),
+        fetchCandles(sdk, row.market, CONFIG.deepTimeframe, CONFIG.deepLimit),
+      ]);
       return scoreCandidate({
         market: row.market,
         ticker: row.ticker,
         candles5: row.candles5,
         candles15,
+        candles1h,
+        candles4h,
+        candles1d,
       });
     } catch (error) {
       return { ...row, error: safeError(error) };
