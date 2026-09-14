@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V18.0.1-CLEAN-OHLCV-FALLBACK-CLASSIC-ONE-TP";
+export const BOT_VERSION = "V19.1.2-REVERSAL-SETUP-GATE-ONE-POSITION";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -687,6 +687,15 @@ function directionFromIndicators(five, fifteen, ticker) {
   return bullish > bearish ? "long" : "short";
 }
 
+function exhaustiveReversalHint(five, fifteen, direction) {
+  const move5 = Number(five.move5 || 0);
+  const move15 = Number(five.move15 || 0);
+  if (direction === "long") {
+    return Number(five.rsi <= 42) + Number(five.macd.histogram >= 0) + Number(move5 > 0 && move15 < 0);
+  }
+  return Number(five.rsi >= 58) + Number(five.macd.histogram <= 0) + Number(move5 < 0 && move15 > 0);
+}
+
 function scoreCandidate({ market, ticker, candles5, candles15 }) {
   const five = structureIndicators(candles5, "long");
   const fifteenLong = structureIndicators(candles15, "long");
@@ -743,6 +752,23 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
   const entry = five.price;
   const tp = calculateLogicalTp(entry, direction, candles5, candles15, five.atr);
 
+  // Setup classification: a reversal is allowed to qualify without the
+  // continuation-style EMA trend confluence gate, but only when there is
+  // concrete S/R + rejection evidence. Continuation setups keep the
+  // existing trend-confluence requirement.
+  const levels = five.levels || { support: [], resistance: [] };
+  const nearestSupport = [...(levels.support || [])].filter((x) => x < entry).sort((a, b) => b - a)[0] || null;
+  const nearestResistance = [...(levels.resistance || [])].filter((x) => x > entry).sort((a, b) => a - b)[0] || null;
+  const atrSafe = Math.max(Number(five.atr || 0), entry * 0.0001, 1e-12);
+  const nearSupport = direction === "long" && nearestSupport != null && Math.abs(entry - nearestSupport) <= atrSafe * 1.25;
+  const nearResistance = direction === "short" && nearestResistance != null && Math.abs(nearestResistance - entry) <= atrSafe * 1.25;
+  const rejectionEvidence = direction === "long"
+    ? Number(five.reaction?.evidence || 0) + Number(fifteen.reaction?.evidence || 0)
+    : Number(five.reaction?.evidence || 0) + Number(fifteen.reaction?.evidence || 0);
+  const zoneEvidence = nearSupport || nearResistance;
+  const reversalEvidence = Number(zoneEvidence) + Number(rejectionEvidence >= 2) + Number(exhaustiveReversalHint(five, fifteen, direction));
+  const setupType = reversalEvidence >= 2 ? "REVERSAL" : "CONTINUATION";
+
   const reason = [];
   if (explosive) reason.push("EXPLOSIVE_MOVE");
   if (reaction >= 24) reason.push("S/R_REACTION");
@@ -761,7 +787,18 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
     edge: Number(edge.toFixed(2)),
     risk: Number(risk.toFixed(2)),
     trendConfluence: trend,
-    reasons: reason,
+    setupType,
+    reversalEvidence,
+    setupEvidence: {
+      setupType,
+      nearSupport,
+      nearResistance,
+      nearestSupport,
+      nearestResistance,
+      rejectionEvidence,
+      reversalHint: exhaustiveReversalHint(five, fifteen, direction),
+    },
+    reasons: [...reason, setupType === "REVERSAL" ? `REVERSAL_${direction.toUpperCase()}` : "CONTINUATION"],
     indicators: {
       rsi: Number(five.rsi.toFixed(2)),
       adx: Number(five.adx.toFixed(2)),
@@ -817,7 +854,11 @@ function candidateIsActionable(candidate) {
   if (candidate.edge < CONFIG.minEdge) {
     return { ok: false, reason: `EDGE_${candidate.edge.toFixed(1)}_BELOW_${CONFIG.minEdge}` };
   }
-  if (candidate.trendConfluence < CONFIG.minTrendConfluence) {
+  if (candidate.setupType === "REVERSAL") {
+    if (Number(candidate.reversalEvidence || 0) < 2) {
+      return { ok: false, reason: `REVERSAL_EVIDENCE_${candidate.reversalEvidence || 0}` };
+    }
+  } else if (candidate.trendConfluence < CONFIG.minTrendConfluence) {
     return { ok: false, reason: `TREND_CONFLUENCE_${candidate.trendConfluence}` };
   }
   if (candidate.risk > CONFIG.maxRisk) {
@@ -1397,7 +1438,7 @@ function cycleMessage(report) {
     for (const item of report.topRejected.slice(0, 3)) {
       lines.push(`• ${item.symbol}`);
       lines.push(`  📌 ${String(item.direction || "N/A").toUpperCase()} | Entry ${formatPrice(item.entry)} | TP ${formatPrice(item.tp)}`);
-      lines.push(`  🧪 Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)} | ${item.reason}`);
+      lines.push(`  🧠 ${String(item.setupType || "N/A")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)} | ${item.reason}`);
     }
   }
 
@@ -1662,32 +1703,25 @@ async function runCycle(event, env) {
   for (const candidate of ranked) {
     const check = candidateIsActionable(candidate);
     if (check.ok) actionable.push(candidate);
-    else blocked.push({ symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp, score: candidate.score, edge: candidate.edge, risk: candidate.risk, reason: check.reason });
+    else blocked.push({
+      symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp,
+      score: candidate.score, edge: candidate.edge, risk: candidate.risk, setupType: candidate.setupType,
+      reversalEvidence: candidate.reversalEvidence, reason: check.reason, setupEvidence: candidate.setupEvidence,
+    });
   }
 
   actionable.sort((a, b) => (b.score + b.edge * 0.35) - (a.score + a.edge * 0.35));
   const selected = actionable.slice(0, CONFIG.finalCandidates);
+  console.log("[SELECTION][TOP]", selected[0] ? {
+    symbol: selected[0].symbol, direction: selected[0].direction, entry: selected[0].entry, tp: selected[0].tp,
+    setupType: selected[0].setupType, reversalEvidence: selected[0].reversalEvidence, score: selected[0].score,
+    edge: selected[0].edge, risk: selected[0].risk, allocation: CONFIG.walletAllocationPerPosition, leverage: CONFIG.leverage,
+  } : { selected: 0 });
 
   const executions = [];
   const failures = [];
   let currentPositions = [...openPositions];
   let currentWallet = wallet;
-
-  if (selected.length) {
-    for (const candidate of selected) {
-      console.log("[SELECTION][TOP]", {
-        symbol: candidate.symbol,
-        direction: candidate.direction,
-        entry: candidate.entry,
-        tp: candidate.tp,
-        score: candidate.score,
-        edge: candidate.edge,
-        risk: candidate.risk,
-        allocation: CONFIG.walletAllocationPerPosition,
-        leverage: CONFIG.leverage,
-      });
-    }
-  }
 
   if (executionEnabled(env)) {
     for (const candidate of selected) {
