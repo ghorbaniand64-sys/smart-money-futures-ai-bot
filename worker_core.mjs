@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V20.4.0-PROBABILITY-AWARE-TP-20X";
+export const BOT_VERSION = "V20.4.1-REVERSAL-VALIDATION-BREAKOUT-FAILURE-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -850,10 +850,38 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
     (Math.abs(impulse.acceleration) >= 0.10 ? 8 : 0) +
     (shortContext >= 2 ? 8 : 0);
 
-  const reversalLong = clamp(reversalLongRaw, 0, 100);
-  const reversalShort = clamp(reversalShortRaw, 0, 100);
-  const continuationLong = clamp(continuationLongRaw, 0, 100);
-  const continuationShort = clamp(continuationShortRaw, 0, 100);
+  // -----------------------------------------------------------------------
+  // V20.4.1: REVERSAL VALIDATION / BREAKOUT FAILURE FILTER
+  // A strong breakout in the opposite direction must NOT be faded merely
+  // because price is touching resistance/support. A reversal becomes valid
+  // only after the breakout actually fails (close back through the broken
+  // level) or a genuine rejection/momentum flip appears.
+  // -----------------------------------------------------------------------
+  const close = price;
+  const lastHigh = num(candles5.at(-1)?.high);
+  const lastLow = num(candles5.at(-1)?.low);
+  const closeNearHigh = impulse.rangeExpansion >= 1.15 && impulse.closeLocation >= 0.68;
+  const closeNearLow = impulse.rangeExpansion >= 1.15 && impulse.closeLocation <= 0.32;
+  const strongBreakLong = Boolean(firstBreakLong && (directionalDisplacementLong || closeNearHigh || impulse.rangeExpansion >= 1.45));
+  const strongBreakShort = Boolean(firstBreakShort && (directionalDisplacementShort || closeNearLow || impulse.rangeExpansion >= 1.45));
+  const failedBreakLong = Boolean(priorHigh > 0 && lastHigh > priorHigh && close < priorHigh);
+  const failedBreakShort = Boolean(priorLow > 0 && lastLow < priorLow && close > priorLow);
+  const genuineShortFailure = Boolean(failedBreakLong || (rShort.bearishReject && rShort.redFlip && impulse.acceleration < 0));
+  const genuineLongFailure = Boolean(failedBreakShort || (rLong.bullishReject && rLong.greenFlip && impulse.acceleration > 0));
+
+  // Hard penalty against fading a live breakout. Touching resistance/support
+  // alone is not a reversal signal. This is intentionally asymmetric: once a
+  // breakout is strong, we wait for failure rather than guessing the top.
+  let reversalLong = reversalLongRaw;
+  let reversalShort = reversalShortRaw;
+  if (strongBreakShort && !genuineLongFailure) reversalLong -= 32;
+  if (strongBreakLong && !genuineShortFailure) reversalShort -= 32;
+  if (strongBreakLong && genuineShortFailure) reversalShort += 8;
+  if (strongBreakShort && genuineLongFailure) reversalLong += 8;
+  reversalLong = clamp(reversalLong, 0, 100);
+  reversalShort = clamp(reversalShort, 0, 100);
+  const continuationLong = clamp(continuationLongRaw + (strongBreakLong ? 10 : 0), 0, 100);
+  const continuationShort = clamp(continuationShortRaw + (strongBreakShort ? 10 : 0), 0, 100);
 
   const bestReversal = Math.max(reversalLong, reversalShort);
   const bestContinuation = Math.max(continuationLong, continuationShort);
@@ -861,8 +889,8 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
   const continuationDirection = continuationLong >= continuationShort ? 'long' : 'short';
 
   const reversalTrigger = bestReversal >= Number(CONFIG.reversalTriggerMinConfidence || 52) &&
-    ((reversalDirection === 'long' && priorMoveOppositeLong && (zoneLong.nearSupport || rLong.bullishReject)) ||
-     (reversalDirection === 'short' && priorMoveOppositeShort && (zoneShort.nearResistance || rShort.bearishReject)));
+    ((reversalDirection === 'long' && priorMoveOppositeLong && (zoneLong.nearSupport || rLong.bullishReject) && (!strongBreakShort || genuineLongFailure)) ||
+     (reversalDirection === 'short' && priorMoveOppositeShort && (zoneShort.nearResistance || rShort.bearishReject) && (!strongBreakLong || genuineShortFailure)));
   const continuationTrigger = bestContinuation >= Number(CONFIG.continuationTriggerMinConfidence || 52) &&
     ((continuationDirection === 'long' && (firstBreakLong || directionalDisplacementLong)) ||
      (continuationDirection === 'short' && (firstBreakShort || directionalDisplacementShort)));
@@ -962,6 +990,10 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
   if (reversalTrigger) reasons.push('REVERSAL_TRIGGER');
   if (continuationTrigger) reasons.push('CONTINUATION_TRIGGER');
   if (firstBreakLong || firstBreakShort) reasons.push('FIRST_BREAK');
+  if (strongBreakLong || strongBreakShort) reasons.push('STRONG_BREAKOUT');
+  if (failedBreakLong || failedBreakShort) reasons.push('BREAKOUT_FAILURE');
+  if (strongBreakLong && !genuineShortFailure) reasons.push('NO_SHORT_FADE_ON_LIVE_BREAKOUT');
+  if (strongBreakShort && !genuineLongFailure) reasons.push('NO_LONG_FADE_ON_LIVE_BREAKOUT');
   if (freshExpansion) reasons.push('FRESH_EXPANSION');
   if (sharp) reasons.push('SHARP_MOVE');
   if (preCompression) reasons.push('PRE_COMPRESSION');
@@ -990,6 +1022,8 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
       earlyTrend, earlyBreak, freshExpansion, notExtended, earlyTimingBonus: timing,
       reversalLong: rLong.longScore, reversalShort: rShort.shortScore,
       continuationLong, continuationShort, firstBreakLong, firstBreakShort,
+      strongBreakLong, strongBreakShort, failedBreakLong, failedBreakShort,
+      genuineLongFailure, genuineShortFailure, closeNearHigh, closeNearLow,
       priorMove: preMove, priorMoveOppositeLong, priorMoveOppositeShort,
       reversalTiming, continuationTiming,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
@@ -1001,6 +1035,7 @@ function scoreCandidate({ market, ticker, candles5, candles15 }) {
       macdHistogram: five.macd.histogram, move5m: move5, move15m: move15, oiChange5m: oi.delta, reactionScore: srReaction,
       explosive: sharp, impulseQuality, acceleration: impulse.acceleration, rangeExpansion: impulse.rangeExpansion, volumeRatio: impulse.volumeRatio,
       earlyTrend, earlyBreak, freshExpansion, earlyTimingBonus: timing, lateChase,
+      strongBreakLong, strongBreakShort, failedBreakLong, failedBreakShort, genuineLongFailure, genuineShortFailure,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
       tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
       reversalConfidence, continuationConfidence, setupDominance, triggerActive: setupType === 'REVERSAL' || setupType === 'CONTINUATION',
