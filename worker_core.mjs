@@ -1,6 +1,6 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ GMX SMART MONEY FUTURES AI BOT — V21.3 GLOBAL MARKET DATA CENTER      ║
+║ GMX SMART MONEY FUTURES AI BOT — V21.5 GLOBAL MARKET DATA CENTER + ROBUST DEEP DATA      ║
 ║ Single pipeline • 5M broad scan • 15M deep scan • Classic GMX only          ║
 ║ 20x leverage • 100% wallet • max 1 position • one TP • no SL               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V21.3.0-GLOBAL-MARKET-DATA-CENTER-BTC-ETH-20X";
+export const BOT_VERSION = "V21.5.0-GLOBAL-MARKET-DATA-CENTER-ROBUST-DEEP-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -162,6 +162,14 @@ const CONFIG = Object.freeze({
   trendEndRangeExpansion: 1.45,
   trendEndVolumeRatio: 1.45,
   trendEndMinSignals: 2,
+
+  // V21.5: protect the data pipeline from burst/rate-limit failures introduced
+  // by the BTC/ETH market-data center. Never let macro intelligence starve
+  // the individual-market deep scan.
+  marketRegimeFrameConcurrency: 2,
+  deepDataRetryCount: 2,
+  deepDataRetryDelayMs: 450,
+  allowOneHtfFallback: true,
 
   // Economic gate: estimates round-trip position fees plus a conservative
   // execution-cost buffer. This is deliberately NOT a minimum-notional gate.
@@ -2333,6 +2341,22 @@ function marketRegimeFrameScore(candles) {
   };
 }
 
+async function fetchCandlesResilient(sdk, market, timeframe, limit, attempts = Number(CONFIG.deepDataRetryCount || 2)) {
+  let lastError = null;
+  for (let i = 0; i <= attempts; i++) {
+    try {
+      return await fetchCandles(sdk, market, timeframe, limit);
+    } catch (error) {
+      lastError = error;
+      const text = safeError(error);
+      const transient = /429|408|5\d\d|TIMEOUT|timed out|aborted|ECONN|ETIMEDOUT|rate.?limit/i.test(text);
+      if (!transient || i >= attempts) break;
+      await sleep(Number(CONFIG.deepDataRetryDelayMs || 450) * (i + 1));
+    }
+  }
+  throw lastError || new Error(`OHLCV_RETRY_FAILED:${timeframe}`);
+}
+
 async function buildMarketRegimeDataCenter(sdk, markets, broadRows = []) {
   if (!CONFIG.marketRegimeEnabled) {
     return { enabled: false, regime: "NEUTRAL", direction: "neutral", confidence: 0, score: 50, btc: null, eth: null, breadth: null };
@@ -2345,10 +2369,23 @@ async function buildMarketRegimeDataCenter(sdk, markets, broadRows = []) {
 
   async function analyzeRef(market, asset) {
     if (!market) return { asset, available: false, reason: "REFERENCE_MARKET_NOT_FOUND" };
-    const rows = await Promise.all(frames.map(async (tf) => {
-      try { return { tf, candles: await fetchCandles(sdk, market, tf, 96) }; }
-      catch (e) { return { tf, candles: [], error: safeError(e) }; }
-    }));
+    const broadMatch = (Array.isArray(broadRows) ? broadRows : []).find((r) => normalizeAsset(r?.symbol || marketDisplaySymbol(r?.market)) === asset);
+    const rows = [];
+    // 5M is already fetched for the full universe; reuse it instead of issuing
+    // another network request. The remaining macro frames are deliberately
+    // serialized in small batches to avoid starving the deep scan.
+    for (const tf of frames) {
+      if (tf === "5m" && Array.isArray(broadMatch?.candles5) && broadMatch.candles5.length >= 20) {
+        rows.push({ tf, candles: broadMatch.candles5 });
+        continue;
+      }
+      try {
+        const candles = await fetchCandlesResilient(sdk, market, tf, 96);
+        rows.push({ tf, candles });
+      } catch (e) {
+        rows.push({ tf, candles: [], error: safeError(e) });
+      }
+    }
     let weighted = 0, totalWeight = 0;
     const frameScores = {};
     for (const row of rows) {
@@ -2509,10 +2546,10 @@ async function deepScan(sdk, broadRows, marketRegime = null) {
     // The old Promise.all made a single 1D/4H/1H failure discard the symbol
     // before scoreCandidate() was even reached, which produced Deep: 0.
     const [d1, h4, h1, m15] = await Promise.allSettled([
-      fetchCandles(sdk, row.market, CONFIG.htfTimeframe, CONFIG.htfLimit),
-      fetchCandles(sdk, row.market, CONFIG.contextTimeframe, CONFIG.contextLimit),
-      fetchCandles(sdk, row.market, "1h", CONFIG.contextLimit),
-      fetchCandles(sdk, row.market, CONFIG.deepTimeframe, CONFIG.deepLimit),
+      fetchCandlesResilient(sdk, row.market, CONFIG.htfTimeframe, CONFIG.htfLimit),
+      fetchCandlesResilient(sdk, row.market, CONFIG.contextTimeframe, CONFIG.contextLimit),
+      fetchCandlesResilient(sdk, row.market, "1h", CONFIG.contextLimit),
+      fetchCandlesResilient(sdk, row.market, CONFIG.deepTimeframe, CONFIG.deepLimit),
     ]);
 
     const candles1d = d1.status === "fulfilled" ? d1.value : [];
@@ -2520,15 +2557,18 @@ async function deepScan(sdk, broadRows, marketRegime = null) {
     const candles1h = h1.status === "fulfilled" ? h1.value : [];
     const candles15 = m15.status === "fulfilled" ? m15.value : [];
 
-    // 15M is mandatory for deep timing. At least one genuine high-timeframe
-    // layer (1D or 4H) is mandatory for the top-down structural decision.
+    // V21.5: 15M remains the preferred deep-timing source. One genuine HTF
+    // layer (1D/4H/1H) is enough; a single transient HTF failure must not turn
+    // the entire deep scan into zero candidates.
     if (candles15.length < 20) {
       return { ...row, error: `DEEP_15M_UNAVAILABLE:${m15.status === "rejected" ? safeError(m15.reason) : candles15.length}` };
     }
-    if (candles1d.length < 20 && candles4h.length < 20) {
+    const htfAvailable = candles1d.length >= 20 || candles4h.length >= 20 || candles1h.length >= 20;
+    if (!htfAvailable && !CONFIG.allowOneHtfFallback) {
       const e1 = d1.status === "rejected" ? safeError(d1.reason) : `COUNT:${candles1d.length}`;
       const e4 = h4.status === "rejected" ? safeError(h4.reason) : `COUNT:${candles4h.length}`;
-      return { ...row, error: `HTF_1D_4H_UNAVAILABLE|1D:${e1}|4H:${e4}` };
+      const eH = h1.status === "rejected" ? safeError(h1.reason) : `COUNT:${candles1h.length}`;
+      return { ...row, error: `HTF_ALL_UNAVAILABLE|1D:${e1}|4H:${e4}|1H:${eH}` };
     }
 
     const candidate = scoreCandidate({
@@ -2550,7 +2590,8 @@ async function deepScan(sdk, broadRows, marketRegime = null) {
       fourH: candles4h.length >= 20,
       oneH: candles1h.length >= 20,
       fifteenM: candles15.length >= 20,
-      structuralTf: candles1d.length >= 20 ? "1D" : "4H",
+      structuralTf: candles1d.length >= 20 ? "1D" : candles4h.length >= 20 ? "4H" : candles1h.length >= 20 ? "1H" : "15M_FALLBACK",
+      degraded: !htfAvailable,
     };
     candidate.indicators = candidate.indicators || {};
     candidate.indicators.htfData = candidate.setupEvidence.htfData;
@@ -2946,7 +2987,7 @@ function cycleMessage(report) {
     `📡 Status: ${report.status}`,
     `🪙 Universe: ${report.universe}`,
     `🔎 Broad 5M: ${report.broadSuccess}/${report.universe}`,
-    `🧠 Deep: ${report.deepCount}`,
+    `🧠 Deep: ${report.deepCount}/${report.deepAttempted || report.deepCount} | Data failures: ${report.deepFailureCount || 0}`,
     `💧 Capital flow strong: ${report.flowCount} | Smart-money proxy: ${report.smartMoneyCount}`,
     `🧠 5-Layer: Ready ${report.layerReadyCount} | Flow ${report.layerFlowCount} | Reversal ${report.layerReversalCount}`,
     `🌐 Market Data Center: ${report.marketRegime?.regime || "N/A"} | BTC ${num(report.marketRegime?.btcScore).toFixed(0)} | ETH ${num(report.marketRegime?.ethScore).toFixed(0)} | Breadth ${num(report.marketRegime?.breadthScore).toFixed(0)}`,
@@ -3272,6 +3313,8 @@ async function runCycle(event, env) {
     breadth: marketRegime.breadth?.score, agreement: marketRegime.agreement,
   });
   const deep = await deepScan(runtime.sdk, broad.rows, marketRegime);
+  const deepAttempted = Math.min(CONFIG.deepCandidates, broad.rows.length);
+  const deepFailureCount = Math.max(0, deepAttempted - deep.length);
   const intelligence = await fetchOptionalIntelligence(env);
   const ranked = enrichWithIntelligence(deep, intelligence);
 
@@ -3386,6 +3429,8 @@ async function runCycle(event, env) {
     broadSuccess: broad.successful,
     deepCount: deep.length,
     deepSuccess: deep.length,
+    deepAttempted,
+    deepFailureCount,
     actionableCount: actionable.length,
     impulseCount,
     flowCount,
