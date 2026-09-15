@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V21.3.0-DIRECTION-SAFETY-IMPULSE-SR-LOCK-20X";
+export const BOT_VERSION = "V22.0.0-GLOBAL-MARKET-REGIME-BTC-ETH-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -61,6 +61,16 @@ const CONFIG = Object.freeze({
   htfLimit: 96,
   contextLimit: 96,
   finalCandidates: 1,
+
+  // V22: global BTC/ETH regime + GMX breadth, applied before per-market signals.
+  globalRegimeEnabled: true,
+  globalRegimeTimeframes: ["5m", "15m", "1h", "4h", "1d"],
+  globalRegimeLimit: 96,
+  globalRegimeMinConfidence: 60,
+  globalRegimeStrongConfidence: 75,
+  globalCounterTrendReversalMin: 72,
+  globalCounterTrendEdgeMin: 16,
+  globalSRSuppression: 0.45,
 
   // V20.3: score ranks quality; trigger confidence controls timing.
   minScore: 68,
@@ -1288,7 +1298,7 @@ function fiveLayerEngine({ candles5, candles15, candles1h, candles4h, candles1d,
     available: Boolean(capitalFlow?.enabled),
   };
   const reversalRaw = reversalMetrics(candles5, candles15, null, "long");
-  const reversalShortRaw = reversalMetrics(candles5, candles15, null, "short");
+  let reversalShortRaw = reversalMetrics(candles5, candles15, null, "short");
   const reversal = {
     long: Number(clamp(reversalRaw.longScore + (momentum.divergence?.bullish ? 18 : 0) + (location.fibZone?.near ? 5 : 0), 0, 100).toFixed(1)),
     short: Number(clamp(reversalShortRaw.shortScore + (momentum.divergence?.bearish ? 18 : 0) + (location.fibZone?.near ? 5 : 0), 0, 100).toFixed(1)),
@@ -1352,7 +1362,69 @@ function fiveLayerEngine({ candles5, candles15, candles1h, candles4h, candles1d,
   };
 }
 
-function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles5, candles15, candles1h, candles4h, candles1d }) {
+function globalRegimeSeriesStats(candles) {
+  const rows = Array.isArray(candles) ? candles.filter(Boolean) : [];
+  if (rows.length < 20) return { state: "UNKNOWN", score: 50, confidence: 0, return5: 0, return20: 0, slope: 0, impulse: 0 };
+  const closes = rows.map(candleClose).filter((x) => Number.isFinite(x) && x > 0);
+  if (closes.length < 20) return { state: "UNKNOWN", score: 50, confidence: 0, return5: 0, return20: 0, slope: 0, impulse: 0 };
+  const ret = (n) => closes.length > n ? pct(closes.at(-1), closes.at(-1-n)) : 0;
+  const r5 = ret(5), r20 = ret(20);
+  const base = closes.at(-Math.min(21, closes.length));
+  const slope = base > 0 ? pct(closes.at(-1), base) : 0;
+  const last = rows.at(-1), prev = rows.at(-2);
+  const range = Math.max(candleHigh(last) - candleLow(last), 1e-12);
+  const impulse = pct(candleClose(last), candleClose(prev));
+  const loc = (candleClose(last) - candleLow(last)) / range;
+  let score = 50 + clamp(r5 * 3.2, -18, 18) + clamp(r20 * 1.15, -18, 18) + clamp(slope * 1.1, -12, 12);
+  score += loc >= 0.68 ? 8 : loc <= 0.32 ? -8 : 0;
+  score += impulse >= 0.60 ? 8 : impulse <= -0.60 ? -8 : 0;
+  score = clamp(score, 0, 100);
+  const confidence = clamp(Math.abs(score - 50) * 2, 0, 100);
+  return { state: score >= 58 ? "BULLISH" : score <= 42 ? "BEARISH" : "NEUTRAL", score: Number(score.toFixed(1)), confidence: Number(confidence.toFixed(1)), return5: r5, return20: r20, slope, impulse };
+}
+
+function combineGlobalRegime(parts, breadth) {
+  const btc = parts?.btc || { score: 50, confidence: 0 }, eth = parts?.eth || { score: 50, confidence: 0 }, b = breadth || { score: 50 };
+  const score = clamp(num(btc.score) * 0.45 + num(eth.score) * 0.30 + num(b.score) * 0.25, 0, 100);
+  const confidence = clamp(Math.abs(score - 50) * 2, 0, 100);
+  const state = score >= 58 ? "BULLISH" : score <= 42 ? "BEARISH" : "NEUTRAL";
+  return { state, score: Number(score.toFixed(1)), confidence: Number(confidence.toFixed(1)), strength: confidence >= 75 ? "HIGH" : confidence >= 60 ? "MEDIUM" : "LOW", riskMode: state === "BULLISH" ? "RISK_ON" : state === "BEARISH" ? "RISK_OFF" : "BALANCED", btc, eth, breadth: b };
+}
+
+async function fetchGlobalMarketRegime(sdk, broadRows = []) {
+  if (!CONFIG.globalRegimeEnabled) return combineGlobalRegime({}, {});
+  const parts = {};
+  for (const [key, symbol] of [["btc", "BTC/USD"], ["eth", "ETH/USD"]]) {
+    const tf = {};
+    await Promise.all(CONFIG.globalRegimeTimeframes.map(async (timeframe) => {
+      try { tf[timeframe] = globalRegimeSeriesStats(await fetchCandles(sdk, symbol, timeframe, CONFIG.globalRegimeLimit)); }
+      catch (e) { tf[timeframe] = { state: "UNKNOWN", score: 50, confidence: 0, error: safeError(e) }; }
+    }));
+    const weights = { "5m": .10, "15m": .15, "1h": .20, "4h": .25, "1d": .30 };
+    const usable = Object.entries(weights).filter(([x]) => tf[x]?.confidence > 0);
+    const total = usable.reduce((a, [,w]) => a+w, 0) || 1;
+    const score = usable.reduce((a,[x,w]) => a + num(tf[x].score)*w, 0)/total;
+    const confidence = usable.reduce((a,[x,w]) => a + num(tf[x].confidence)*w, 0)/total;
+    parts[key] = { state: score >= 58 ? "BULLISH" : score <= 42 ? "BEARISH" : "NEUTRAL", score: Number(score.toFixed(1)), confidence: Number(confidence.toFixed(1)), timeframes: tf };
+  }
+  const rows = Array.isArray(broadRows) ? broadRows : [];
+  const moves = rows.map(r => num(r?.ticker?.priceChange5mPercent ?? r?.ticker?.change5mPercent)).filter(Number.isFinite);
+  const bull = moves.filter(x => x > .15).length, bear = moves.filter(x => x < -.15).length;
+  const bs = moves.length ? clamp(50 + ((bull-bear)/moves.length)*50, 0, 100) : 50;
+  return combineGlobalRegime(parts, { state: bs >= 58 ? "BULLISH" : bs <= 42 ? "BEARISH" : "NEUTRAL", score: Number(bs.toFixed(1)), confidence: Number((Math.abs(bs-50)*2).toFixed(1)), sample: moves.length, bullish: bull, bearish: bear });
+}
+
+function globalRegimeAdjustment(direction, setupType, regime) {
+  const state = String(regime?.state || "NEUTRAL").toUpperCase(), conf = num(regime?.confidence);
+  const counter = (state === "BEARISH" && direction === "long") || (state === "BULLISH" && direction === "short");
+  let permission = "NORMAL";
+  if (counter && conf >= CONFIG.globalRegimeStrongConfidence && setupType === "CONTINUATION") permission = "BLOCK";
+  else if (counter && conf >= CONFIG.globalRegimeStrongConfidence && setupType === "REVERSAL") permission = "COUNTER_TREND_REVERSAL";
+  else if (counter && conf >= CONFIG.globalRegimeMinConfidence) permission = "REDUCED";
+  return { state, confidence: conf, counterTrend: counter, permission, supportValidity: state === "BEARISH" ? 1-CONFIG.globalSRSuppression : 1, resistanceValidity: state === "BULLISH" ? 1-CONFIG.globalSRSuppression : 1 };
+}
+
+function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles5, candles15, candles1h, candles4h, candles1d, globalRegime }) {
   const five = structureIndicators(candles5, 'long');
   const fifteen = structureIndicators(candles15, 'long');
   const price = five.price;
@@ -1420,7 +1492,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const previousRange = Math.max(0, num(candles5.at(-2)?.high) - num(candles5.at(-2)?.low));
   const preCompression = avgCompressionRange > 0 && previousRange <= avgCompressionRange * 0.95;
 
-  const reversalLongRaw =
+  let reversalLongRaw =
     (zoneLong.nearSupport ? 24 : 0) +
     (rLong.bullishReject ? 22 : 0) +
     (rLong.greenFlip ? 12 : 0) +
@@ -1436,6 +1508,12 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     (directionalDisplacementShort ? 10 : 0) +
     (rShort.oi?.exhausted && impulse.move5 > 0 ? 8 : 0) +
     (rShort.rsi5 >= 55 ? 5 : 0);
+
+  // V22: local S/R is regime-aware before setup selection.
+  if (num(globalRegime?.confidence) >= CONFIG.globalRegimeStrongConfidence) {
+    if (String(globalRegime?.state).toUpperCase() === "BEARISH") { reversalLongRaw *= CONFIG.globalSRSuppression; reversalShortRaw += 8; }
+    if (String(globalRegime?.state).toUpperCase() === "BULLISH") { reversalShortRaw *= CONFIG.globalSRSuppression; reversalLongRaw += 8; }
+  }
 
   const continuationLongRaw =
     (firstBreakLong ? 24 : 0) +
@@ -1770,6 +1848,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
 
   return {
     symbol: marketDisplaySymbol(market), candleSymbol: candleSymbolFromMarket(market), direction, entry, tp,
+    globalMarketRegime: globalRegime,
     score: Number(score.toFixed(2)), edge: Number(edge.toFixed(2)), risk: Number(risk.toFixed(2)), trendConfluence: trend,
     setupType, reversalEvidence,
     setupConfidence: setupType === 'REVERSAL' ? reversalConfidence : continuationConfidence,
@@ -1794,6 +1873,8 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       strongBreakLong, strongBreakShort, htfBreakLong, htfBreakShort, htfStrongBreakLong, htfStrongBreakShort,
       liveBreakLong, liveBreakShort, failedBreakLong, failedBreakShort, htfFailedBreakLong, htfFailedBreakShort,
       genuineLongFailure, genuineShortFailure, closeNearHigh, closeNearLow,
+      globalMarketRegime: globalRegime,
+      globalRegimeAdjustment: globalRegimeAdjustment(direction, setupType, globalRegime),
       directionSafety: {
         nearResistance: safetyNearResistance,
         nearSupport: safetyNearSupport,
@@ -2071,6 +2152,17 @@ function candidateIsActionable(candidate) {
   const evTopDown = ev.topDown || {};
   const layer = ev.fiveLayers || {};
   const safety = ev.directionSafety || {};
+  const global = ev.globalMarketRegime || candidate.globalMarketRegime || {};
+  const globalAdj = ev.globalRegimeAdjustment || globalRegimeAdjustment(candidate.direction, candidate.setupType, global);
+
+  // V22: strong macro trend blocks counter-trend continuation. Counter-trend
+  // reversal requires materially stronger local reversal authority.
+  if (globalAdj.permission === "BLOCK") return { ok: false, reason: `GLOBAL_REGIME_${globalAdj.state}_COUNTER_TREND_CONTINUATION` };
+  if (globalAdj.permission === "COUNTER_TREND_REVERSAL") {
+    const layer = ev.fiveLayers || {}; const side = candidate.direction === "long" ? "long" : "short"; const opp = side === "long" ? "short" : "long";
+    const rev = num(layer.reversal?.[side]), revOpp = num(layer.reversal?.[opp]);
+    if (rev < CONFIG.globalCounterTrendReversalMin || rev-revOpp < CONFIG.globalCounterTrendEdgeMin) return { ok: false, reason: `GLOBAL_REGIME_${globalAdj.state}_COUNTER_TREND_REVERSAL_NOT_STRONG_ENOUGH` };
+  }
 
   // V21.3: final pre-execution side lock. If the setup says continuation,
   // a long cannot be opened directly under resistance and a short cannot be
@@ -2307,7 +2399,7 @@ async function broadScan(sdk, markets, tickers, marketValues = [], previousSnaps
   };
 }
 
-async function deepScan(sdk, broadRows) {
+async function deepScan(sdk, broadRows, globalRegime) {
   const selected = broadRows.slice(0, CONFIG.deepCandidates);
   const results = await mapLimit(selected, Math.min(6, CONFIG.ohlcvConcurrency), async (row) => {
     // V20.5.1: never let one missing HTF feed kill the entire deep candidate.
@@ -2346,6 +2438,7 @@ async function deepScan(sdk, broadRows) {
       candles1h,
       candles4h,
       candles1d,
+      globalRegime,
     });
 
     candidate.setupEvidence = candidate.setupEvidence || {};
@@ -3098,7 +3191,9 @@ async function runCycle(event, env) {
   const tickerRows = Array.isArray(tickers) ? tickers : [];
 
   const broad = await broadScan(runtime.sdk, universe, tickerRows, marketValues, state.marketSnapshots);
-  const deep = await deepScan(runtime.sdk, broad.rows);
+  const globalMarketRegime = await fetchGlobalMarketRegime(runtime.sdk, broad.rows);
+  console.log("[GLOBAL][MARKET_REGIME]", { state: globalMarketRegime.state, confidence: globalMarketRegime.confidence, strength: globalMarketRegime.strength, riskMode: globalMarketRegime.riskMode, btc: globalMarketRegime.btc?.state, eth: globalMarketRegime.eth?.state, breadth: globalMarketRegime.breadth?.state });
+  const deep = await deepScan(runtime.sdk, broad.rows, globalMarketRegime);
   const intelligence = await fetchOptionalIntelligence(env);
   const ranked = enrichWithIntelligence(deep, intelligence);
 
