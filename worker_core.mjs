@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V21.5.1-GLOBAL-MARKET-DATA-CENTER-ROBUST-DEEP-TDZ-FIX-20X";
+export const BOT_VERSION = "V21.5.2-GLOBAL-MARKET-DATA-CENTER-ROBUST-DEEP-TDZ-FIX-LATE-CHASE-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -1673,11 +1673,19 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     ? (rLong.rsi5 > 78 || (impulse.move5 > 0 && impulse.acceleration < 0 && impulse.rangeExpansion < 1.05))
     : (rShort.rsi5 < 22 || (impulse.move5 < 0 && impulse.acceleration > 0 && impulse.rangeExpansion < 1.05));
 
+  // V21.5.2: continuation timing must not depend on `setupType`. The prior
+  // build referenced `lateChase` here before setupType (and therefore lateChase)
+  // existed, creating a TDZ error for the remaining deep candidate. Compute the
+  // continuation-side chase condition directly from direction/timing primitives.
+  const continuationLateChase =
+    extension >= Number(CONFIG.lateChaseExtensionPct || 2.25) &&
+    (continuationDirection === 'long' ? impulse.acceleration <= 0 : impulse.acceleration >= 0);
+
   const continuationStrong = bestContinuation >= Number(CONFIG.continuationAuthorityMin || 66) &&
     Math.abs(continuationLong - continuationShort) >= Number(CONFIG.continuationAuthorityEdge || 10) &&
     continuationBreak && continuationSideTrend >= 52 && continuationSideMomentum >= 50 && continuationSideFlow >= 48 &&
     !continuationExhaustion && !continuationTooLate && !trendEndExhaustion &&
-    !lateChase;
+    !continuationLateChase;
 
   const reversalVsContinuation = bestReversal - bestContinuation;
   const reversalTrigger = reversalStrong &&
@@ -1719,7 +1727,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const earlyBreak = direction === 'long' ? firstBreakLong : firstBreakShort;
   const earlyTrend = directionalMove3 >= CONFIG.earlyImpulseMinMove3Pct && directionalAcceleration >= CONFIG.earlyImpulseMinAccelerationPct;
   const notExtended = extension <= 1.80;
-  const lateChase = setupType === 'CONTINUATION' && extension >= CONFIG.lateChaseExtensionPct && directionalAcceleration <= 0;
+  const lateChase = setupType === 'CONTINUATION' && continuationLateChase;
 
   // Reversal gets timing credit for the FIRST rejection/displacement, not for
   // waiting until the down/up trend is fully confirmed by moving averages.
