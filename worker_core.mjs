@@ -1,6 +1,6 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ GMX SMART MONEY FUTURES AI BOT — V21.2 FIVE-LAYER INTELLIGENCE ENGINE      ║
+║ GMX SMART MONEY FUTURES AI BOT — V21.3 GLOBAL MARKET DATA CENTER      ║
 ║ Single pipeline • 5M broad scan • 15M deep scan • Classic GMX only          ║
 ║ 20x leverage • 100% wallet • max 1 position • one TP • no SL               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V22.1.0-HYBRID-GLOBAL-REGIME-STRUCTURE-20X";
+export const BOT_VERSION = "V21.3.0-GLOBAL-MARKET-DATA-CENTER-BTC-ETH-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -61,22 +61,6 @@ const CONFIG = Object.freeze({
   htfLimit: 96,
   contextLimit: 96,
   finalCandidates: 1,
-
-  // V22: global BTC/ETH regime + GMX breadth, applied before per-market signals.
-  globalRegimeEnabled: true,
-  globalRegimeTimeframes: ["5m", "15m", "1h", "4h", "1d"],
-  globalRegimeLimit: 96,
-  globalRegimeMinConfidence: 60,
-  globalRegimeStrongConfidence: 75,
-  globalCounterTrendReversalMin: 72,
-  globalCounterTrendEdgeMin: 16,
-  globalSRSuppression: 0.45,
-  // V22.1: alternate structure route when early impulse is not yet visible.
-  hybridStructurePathEnabled: true,
-  hybridStructureMinContinuation: 56,
-  hybridStructureMinTrend: 48,
-  hybridStructureMinMomentum: 46,
-  hybridStructureReversalGap: 3,
 
   // V20.3: score ranks quality; trigger confidence controls timing.
   minScore: 68,
@@ -139,6 +123,25 @@ const CONFIG = Object.freeze({
   reversalAuthorityEdge: 10,
   continuationAuthorityMin: 66,
   continuationAuthorityEdge: 10,
+  // V21.3 Global Crypto Market Data Center. BTC/ETH define the market prior
+  // before any individual market signal is authorized. Counter-trend trades
+  // remain possible, but require materially stronger local reversal evidence.
+  marketRegimeEnabled: true,
+  marketRegimeTimeframes: ["5m", "15m", "1h", "4h", "1d"],
+  marketRegimeBtcWeight: 0.60,
+  marketRegimeEthWeight: 0.40,
+  marketRegimeBullThreshold: 62,
+  marketRegimeBearThreshold: 38,
+  marketRegimeStrongThreshold: 72,
+  marketRegimeCounterTrendPenalty: 10,
+  marketRegimeCounterTrendReversalMin: 78,
+  marketRegimeCounterTrendFlowMin: 72,
+  marketRegimeCounterTrendEdgeMin: 14,
+  marketRegimeSupportReliabilityBear: 0.65,
+  marketRegimeResistanceReliabilityBull: 0.65,
+  marketRegimeAlignedBonus: 8,
+  marketRegimeBreadthWeight: 0.20,
+  marketRegimeBtcEthAgreementMin: 60,
   locationConflictBlock: 34,
   momentumConflictBlock: 36,
   flowConflictBlock: 38,
@@ -1304,7 +1307,7 @@ function fiveLayerEngine({ candles5, candles15, candles1h, candles4h, candles1d,
     available: Boolean(capitalFlow?.enabled),
   };
   const reversalRaw = reversalMetrics(candles5, candles15, null, "long");
-  let reversalShortRaw = reversalMetrics(candles5, candles15, null, "short");
+  const reversalShortRaw = reversalMetrics(candles5, candles15, null, "short");
   const reversal = {
     long: Number(clamp(reversalRaw.longScore + (momentum.divergence?.bullish ? 18 : 0) + (location.fibZone?.near ? 5 : 0), 0, 100).toFixed(1)),
     short: Number(clamp(reversalShortRaw.shortScore + (momentum.divergence?.bearish ? 18 : 0) + (location.fibZone?.near ? 5 : 0), 0, 100).toFixed(1)),
@@ -1368,69 +1371,7 @@ function fiveLayerEngine({ candles5, candles15, candles1h, candles4h, candles1d,
   };
 }
 
-function globalRegimeSeriesStats(candles) {
-  const rows = Array.isArray(candles) ? candles.filter(Boolean) : [];
-  if (rows.length < 20) return { state: "UNKNOWN", score: 50, confidence: 0, return5: 0, return20: 0, slope: 0, impulse: 0 };
-  const closes = rows.map(candleClose).filter((x) => Number.isFinite(x) && x > 0);
-  if (closes.length < 20) return { state: "UNKNOWN", score: 50, confidence: 0, return5: 0, return20: 0, slope: 0, impulse: 0 };
-  const ret = (n) => closes.length > n ? pct(closes.at(-1), closes.at(-1-n)) : 0;
-  const r5 = ret(5), r20 = ret(20);
-  const base = closes.at(-Math.min(21, closes.length));
-  const slope = base > 0 ? pct(closes.at(-1), base) : 0;
-  const last = rows.at(-1), prev = rows.at(-2);
-  const range = Math.max(candleHigh(last) - candleLow(last), 1e-12);
-  const impulse = pct(candleClose(last), candleClose(prev));
-  const loc = (candleClose(last) - candleLow(last)) / range;
-  let score = 50 + clamp(r5 * 3.2, -18, 18) + clamp(r20 * 1.15, -18, 18) + clamp(slope * 1.1, -12, 12);
-  score += loc >= 0.68 ? 8 : loc <= 0.32 ? -8 : 0;
-  score += impulse >= 0.60 ? 8 : impulse <= -0.60 ? -8 : 0;
-  score = clamp(score, 0, 100);
-  const confidence = clamp(Math.abs(score - 50) * 2, 0, 100);
-  return { state: score >= 58 ? "BULLISH" : score <= 42 ? "BEARISH" : "NEUTRAL", score: Number(score.toFixed(1)), confidence: Number(confidence.toFixed(1)), return5: r5, return20: r20, slope, impulse };
-}
-
-function combineGlobalRegime(parts, breadth) {
-  const btc = parts?.btc || { score: 50, confidence: 0 }, eth = parts?.eth || { score: 50, confidence: 0 }, b = breadth || { score: 50 };
-  const score = clamp(num(btc.score) * 0.45 + num(eth.score) * 0.30 + num(b.score) * 0.25, 0, 100);
-  const confidence = clamp(Math.abs(score - 50) * 2, 0, 100);
-  const state = score >= 58 ? "BULLISH" : score <= 42 ? "BEARISH" : "NEUTRAL";
-  return { state, score: Number(score.toFixed(1)), confidence: Number(confidence.toFixed(1)), strength: confidence >= 75 ? "HIGH" : confidence >= 60 ? "MEDIUM" : "LOW", riskMode: state === "BULLISH" ? "RISK_ON" : state === "BEARISH" ? "RISK_OFF" : "BALANCED", btc, eth, breadth: b };
-}
-
-async function fetchGlobalMarketRegime(sdk, broadRows = []) {
-  if (!CONFIG.globalRegimeEnabled) return combineGlobalRegime({}, {});
-  const parts = {};
-  for (const [key, symbol] of [["btc", "BTC/USD"], ["eth", "ETH/USD"]]) {
-    const tf = {};
-    await Promise.all(CONFIG.globalRegimeTimeframes.map(async (timeframe) => {
-      try { tf[timeframe] = globalRegimeSeriesStats(await fetchCandles(sdk, symbol, timeframe, CONFIG.globalRegimeLimit)); }
-      catch (e) { tf[timeframe] = { state: "UNKNOWN", score: 50, confidence: 0, error: safeError(e) }; }
-    }));
-    const weights = { "5m": .10, "15m": .15, "1h": .20, "4h": .25, "1d": .30 };
-    const usable = Object.entries(weights).filter(([x]) => tf[x]?.confidence > 0);
-    const total = usable.reduce((a, [,w]) => a+w, 0) || 1;
-    const score = usable.reduce((a,[x,w]) => a + num(tf[x].score)*w, 0)/total;
-    const confidence = usable.reduce((a,[x,w]) => a + num(tf[x].confidence)*w, 0)/total;
-    parts[key] = { state: score >= 58 ? "BULLISH" : score <= 42 ? "BEARISH" : "NEUTRAL", score: Number(score.toFixed(1)), confidence: Number(confidence.toFixed(1)), timeframes: tf };
-  }
-  const rows = Array.isArray(broadRows) ? broadRows : [];
-  const moves = rows.map(r => num(r?.ticker?.priceChange5mPercent ?? r?.ticker?.change5mPercent)).filter(Number.isFinite);
-  const bull = moves.filter(x => x > .15).length, bear = moves.filter(x => x < -.15).length;
-  const bs = moves.length ? clamp(50 + ((bull-bear)/moves.length)*50, 0, 100) : 50;
-  return combineGlobalRegime(parts, { state: bs >= 58 ? "BULLISH" : bs <= 42 ? "BEARISH" : "NEUTRAL", score: Number(bs.toFixed(1)), confidence: Number((Math.abs(bs-50)*2).toFixed(1)), sample: moves.length, bullish: bull, bearish: bear });
-}
-
-function globalRegimeAdjustment(direction, setupType, regime) {
-  const state = String(regime?.state || "NEUTRAL").toUpperCase(), conf = num(regime?.confidence);
-  const counter = (state === "BEARISH" && direction === "long") || (state === "BULLISH" && direction === "short");
-  let permission = "NORMAL";
-  if (counter && conf >= CONFIG.globalRegimeStrongConfidence && setupType === "CONTINUATION") permission = "BLOCK";
-  else if (counter && conf >= CONFIG.globalRegimeStrongConfidence && setupType === "REVERSAL") permission = "COUNTER_TREND_REVERSAL";
-  else if (counter && conf >= CONFIG.globalRegimeMinConfidence) permission = "REDUCED";
-  return { state, confidence: conf, counterTrend: counter, permission, supportValidity: state === "BEARISH" ? 1-CONFIG.globalSRSuppression : 1, resistanceValidity: state === "BULLISH" ? 1-CONFIG.globalSRSuppression : 1 };
-}
-
-function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles5, candles15, candles1h, candles4h, candles1d, globalRegime }) {
+function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles5, candles15, candles1h, candles4h, candles1d, marketRegime }) {
   const five = structureIndicators(candles5, 'long');
   const fifteen = structureIndicators(candles15, 'long');
   const price = five.price;
@@ -1498,7 +1439,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const previousRange = Math.max(0, num(candles5.at(-2)?.high) - num(candles5.at(-2)?.low));
   const preCompression = avgCompressionRange > 0 && previousRange <= avgCompressionRange * 0.95;
 
-  let reversalLongRaw =
+  const reversalLongRaw =
     (zoneLong.nearSupport ? 24 : 0) +
     (rLong.bullishReject ? 22 : 0) +
     (rLong.greenFlip ? 12 : 0) +
@@ -1514,12 +1455,6 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     (directionalDisplacementShort ? 10 : 0) +
     (rShort.oi?.exhausted && impulse.move5 > 0 ? 8 : 0) +
     (rShort.rsi5 >= 55 ? 5 : 0);
-
-  // V22: local S/R is regime-aware before setup selection.
-  if (num(globalRegime?.confidence) >= CONFIG.globalRegimeStrongConfidence) {
-    if (String(globalRegime?.state).toUpperCase() === "BEARISH") { reversalLongRaw *= CONFIG.globalSRSuppression; reversalShortRaw += 8; }
-    if (String(globalRegime?.state).toUpperCase() === "BULLISH") { reversalShortRaw *= CONFIG.globalSRSuppression; reversalLongRaw += 8; }
-  }
 
   const continuationLongRaw =
     (firstBreakLong ? 24 : 0) +
@@ -1602,6 +1537,33 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   continuationLong = clamp(continuationLong, 0, 100);
   continuationShort = clamp(continuationShort, 0, 100);
 
+  // V21.3 GLOBAL MARKET PRIOR: BTC/ETH + market breadth are applied before
+  // REVERSAL/CONTINUATION classification. In a bearish crypto regime, old
+  // support is discounted and short continuation/reversal gets preference;
+  // the inverse applies in a bullish regime. Strong local reversals can still
+  // override the macro prior, but must prove themselves.
+  if (marketRegime?.enabled) {
+    const macro = marketRegime.direction;
+    const macroStrength = clamp(num(marketRegime.confidence, 0) / 30, 0, 1.25);
+    if (macro === "short") {
+      continuationShort += 8 * macroStrength;
+      continuationLong -= 8 * macroStrength;
+      reversalShort += 5 * macroStrength;
+      reversalLong -= 6 * macroStrength;
+      if (marketRegime.supportReliability < 1) reversalLong -= 8 * (1 - marketRegime.supportReliability);
+    } else if (macro === "long") {
+      continuationLong += 8 * macroStrength;
+      continuationShort -= 8 * macroStrength;
+      reversalLong += 5 * macroStrength;
+      reversalShort -= 6 * macroStrength;
+      if (marketRegime.resistanceReliability < 1) reversalShort -= 8 * (1 - marketRegime.resistanceReliability);
+    }
+  }
+  reversalLong = clamp(reversalLong, 0, 100);
+  reversalShort = clamp(reversalShort, 0, 100);
+  continuationLong = clamp(continuationLong, 0, 100);
+  continuationShort = clamp(continuationShort, 0, 100);
+
   const bestReversal = Math.max(reversalLong, reversalShort);
   const bestContinuation = Math.max(continuationLong, continuationShort);
   const reversalDirection = reversalLong >= reversalShort ? 'long' : 'short';
@@ -1622,31 +1584,13 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     !((reversalDirection === 'long' && liveBreakShort && !genuineLongFailure) ||
       (reversalDirection === 'short' && liveBreakLong && !genuineShortFailure));
 
-  // V21.3: calculate chase state BEFORE it is consumed. The previous V21.2
-  // referenced `lateChase` here before its const declaration below, which puts
-  // scoreCandidate() into the temporal-dead-zone and can abort deep scoring.
-  const extensionForChase = Math.max(Math.abs(impulse.move3), Math.abs(impulse.move5));
-  const continuationDirectionalAcceleration =
-    continuationDirection === 'long' ? impulse.acceleration : -impulse.acceleration;
-  const lateChase = extensionForChase >= CONFIG.lateChaseExtensionPct &&
-    continuationDirectionalAcceleration <= 0;
-
   const continuationSideTrend = continuationDirection === 'long' ? fiveLayers.trend.long : fiveLayers.trend.short;
   const continuationSideMomentum = continuationDirection === 'long' ? fiveLayers.momentum.long : fiveLayers.momentum.short;
   const continuationSideFlow = continuationDirection === 'long' ? fiveLayers.flow.long : fiveLayers.flow.short;
-
-  // V21.3 DIRECTION SAFETY: displacement is not itself a breakout. A move can
-  // accelerate directly INTO resistance/support and then reverse. Continuation
-  // is therefore allowed only after a real 5M/15M break, not merely because the
-  // last candles moved quickly.
-  const continuationBreak = continuationDirection === 'long'
-    ? (firstBreakLong || htfBreakLong)
-    : (firstBreakShort || htfBreakShort);
-
+  const continuationBreak = continuationDirection === 'long' ? (firstBreakLong || htfBreakLong || directionalDisplacementLong) : (firstBreakShort || htfBreakShort || directionalDisplacementShort);
   const continuationExhaustion = continuationDirection === 'long'
     ? (rLong.rsi5 > 78 || (impulse.move5 > 0 && impulse.acceleration < 0 && impulse.rangeExpansion < 1.05))
     : (rShort.rsi5 < 22 || (impulse.move5 < 0 && impulse.acceleration > 0 && impulse.rangeExpansion < 1.05));
-
   const continuationStrong = bestContinuation >= Number(CONFIG.continuationAuthorityMin || 66) &&
     Math.abs(continuationLong - continuationShort) >= Number(CONFIG.continuationAuthorityEdge || 10) &&
     continuationBreak && continuationSideTrend >= 52 && continuationSideMomentum >= 50 && continuationSideFlow >= 48 && !continuationExhaustion &&
@@ -1655,101 +1599,15 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const reversalVsContinuation = bestReversal - bestContinuation;
   const reversalTrigger = reversalStrong &&
     (reversalVsContinuation >= -Number(CONFIG.reversalContinuationGap || 5));
-
-  // V22.1 HYBRID STRUCTURE PATH: a genuine S/R break can qualify before the
-  // 5M acceleration/volume impulse has fully registered. Safety locks remain.
-  const structureBreak = continuationBreak &&
-    (firstBreakLong || firstBreakShort || htfBreakLong || htfBreakShort);
-  const structureContinuationStrong = CONFIG.hybridStructurePathEnabled &&
-    structureBreak &&
-    bestContinuation >= Number(CONFIG.hybridStructureMinContinuation || 56) &&
-    continuationSideTrend >= Number(CONFIG.hybridStructureMinTrend || 48) &&
-    continuationSideMomentum >= Number(CONFIG.hybridStructureMinMomentum || 46) &&
-    !continuationExhaustion && !lateChase;
-
-  const continuationTrigger =
-    (continuationStrong && bestContinuation > bestReversal + Number(CONFIG.reversalContinuationGap || 5)) ||
-    (structureContinuationStrong && bestContinuation >= bestReversal - Number(CONFIG.hybridStructureReversalGap || 3));
-
-  // -----------------------------------------------------------------------
-  // V21.3 FINAL DIRECTION SAFETY LOCK
-  // -----------------------------------------------------------------------
-  // The old engine could let a bullish EMA/MACD/trend stack open LONG while
-  // price was sitting under resistance. It also treated a fast displacement as
-  // a continuation breakout. That is exactly the failure mode visible in the
-  // reported EIGEN trade: the position was LONG, then price rejected and fell.
-  //
-  // Rule:
-  //   1) LONG continuation needs an actual breakout/close above resistance.
-  //   2) SHORT continuation needs an actual breakdown/close below support.
-  //   3) A fresh bearish rejection at resistance can authorize SHORT reversal.
-  //   4) A fresh bullish rejection at support can authorize LONG reversal.
-  //   5) If the latest impulse points against the proposed side and there is no
-  //      confirming rejection/flip, do not trade rather than guessing.
-  // -----------------------------------------------------------------------
-  const safetyResistance = topDown.resistance?.price || zoneShort.resistance || null;
-  const safetySupport = topDown.support?.price || zoneLong.support || null;
-  const safetyNearResistance = Boolean(
-    (topDown.nearResistance || zoneShort.nearResistance) &&
-    safetyResistance > price
-  );
-  const safetyNearSupport = Boolean(
-    (topDown.nearSupport || zoneLong.nearSupport) &&
-    safetySupport < price
-  );
-  const latestBearishRejection = Boolean(
-    rShort.bearishReject || rShort.redFlip ||
-    (impulse.move3 < -0.15 && impulse.acceleration < -0.03)
-  );
-  const latestBullishRejection = Boolean(
-    rLong.bullishReject || rLong.greenFlip ||
-    (impulse.move3 > 0.15 && impulse.acceleration > 0.03)
-  );
-
-  const longIntoResistance = safetyNearResistance && !firstBreakLong && !htfBreakLong;
-  const shortIntoSupport = safetyNearSupport && !firstBreakShort && !htfBreakShort;
-
-  const unsafeLongContinuation =
-    continuationDirection === "long" && longIntoResistance;
-  const unsafeShortContinuation =
-    continuationDirection === "short" && shortIntoSupport;
-
-  const directionImpulseMismatchLong =
-    impulse.move3 < -0.15 && impulse.acceleration < -0.03 && !rLong.bullishReject && !rLong.greenFlip;
-  const directionImpulseMismatchShort =
-    impulse.move3 > 0.15 && impulse.acceleration > 0.03 && !rShort.bearishReject && !rShort.redFlip;
-
-  let safeReversalTrigger = reversalTrigger;
-  let safeContinuationTrigger = continuationTrigger;
-
-  // Never allow the continuation lane to buy resistance or short support
-  // without a real break. This is a veto, not a score penalty.
-  if (unsafeLongContinuation || directionImpulseMismatchLong) {
-    safeContinuationTrigger = false;
-  }
-  if (unsafeShortContinuation || directionImpulseMismatchShort) {
-    safeContinuationTrigger = false;
-  }
-
-  // If price has just rejected resistance, prefer the SHORT reversal when its
-  // own reversal evidence is materially present. Symmetric rule at support.
-  if (longIntoResistance && latestBearishRejection &&
-      reversalShort >= Number(CONFIG.reversalTriggerMinConfidence || 52) &&
-      reversalShort > reversalLong + 4) {
-    safeReversalTrigger = true;
-  }
-  if (shortIntoSupport && latestBullishRejection &&
-      reversalLong >= Number(CONFIG.reversalTriggerMinConfidence || 52) &&
-      reversalLong > reversalShort + 4) {
-    safeReversalTrigger = true;
-  }
+  const continuationTrigger = continuationStrong &&
+    (bestContinuation > bestReversal + Number(CONFIG.reversalContinuationGap || 5));
 
   let setupType = 'NONE';
   let direction = fiveLayers.direction || continuationDirection;
-  if (safeReversalTrigger) {
+  if (reversalTrigger) {
     setupType = 'REVERSAL';
     direction = reversalDirection;
-  } else if (safeContinuationTrigger) {
+  } else if (continuationTrigger) {
     setupType = 'CONTINUATION';
     direction = continuationDirection;
   } else {
@@ -1779,9 +1637,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const earlyBreak = direction === 'long' ? firstBreakLong : firstBreakShort;
   const earlyTrend = directionalMove3 >= CONFIG.earlyImpulseMinMove3Pct && directionalAcceleration >= CONFIG.earlyImpulseMinAccelerationPct;
   const notExtended = extension <= 1.80;
-  // `lateChase` was computed above before setup classification; keep the
-  // setup-specific condition here only as a final presentation/risk check.
-  const setupLateChase = setupType === 'CONTINUATION' && lateChase;
+  const lateChase = setupType === 'CONTINUATION' && extension >= CONFIG.lateChaseExtensionPct && directionalAcceleration <= 0;
 
   // Reversal gets timing credit for the FIRST rejection/displacement, not for
   // waiting until the down/up trend is fully confirmed by moving averages.
@@ -1819,7 +1675,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   let score = 28 + impulseQuality + srReaction + trend * 1.2 + rsiQuality + macdQuality + oi.score + context * 1.2 + timing;
   if (setupType === 'REVERSAL') score += Math.min(14, reversalConfidence * 0.14);
   if (setupType === 'CONTINUATION') score += Math.min(12, continuationConfidence * 0.12);
-  if (setupLateChase) score -= 22;
+  if (lateChase) score -= 22;
   const capitalFlowBoost = capitalFlow.enabled
     ? (capitalFlow.direction === direction ? (capitalFlow.score - 50) * CONFIG.capitalFlowWeight : -(capitalFlow.score - 50) * 0.18)
     : 0;
@@ -1828,7 +1684,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   score = clamp(score + capitalFlowBoost + layerBoost, 0, 100);
 
   const risk = clamp(
-    (setupLateChase ? 18 : 0) + (extension > 3.5 ? 15 : 0) + (five.rsi > 82 || five.rsi < 18 ? 15 : 0) + (five.adx < 12 ? 8 : 0) + (oi.exhausted && setupType === 'CONTINUATION' ? 7 : 0),
+    (lateChase ? 18 : 0) + (extension > 3.5 ? 15 : 0) + (five.rsi > 82 || five.rsi < 18 ? 15 : 0) + (five.adx < 12 ? 8 : 0) + (oi.exhausted && setupType === 'CONTINUATION' ? 7 : 0),
     0, 100
   );
   const edge = clamp(
@@ -1842,9 +1698,8 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const reasons = [];
   if (setupType === 'REVERSAL') reasons.push(`REVERSAL_${direction.toUpperCase()}`);
   if (setupType === 'CONTINUATION') reasons.push(`CONTINUATION_${direction.toUpperCase()}`);
-  if (safeReversalTrigger) reasons.push('REVERSAL_TRIGGER');
-  if (safeContinuationTrigger) reasons.push('CONTINUATION_TRIGGER');
-  if (structureContinuationStrong && safeContinuationTrigger) reasons.push('STRUCTURE_BREAK_PATH');
+  if (reversalTrigger) reasons.push('REVERSAL_TRIGGER');
+  if (continuationTrigger) reasons.push('CONTINUATION_TRIGGER');
   if (firstBreakLong || firstBreakShort) reasons.push('FIRST_BREAK');
   if (strongBreakLong || strongBreakShort || htfStrongBreakLong || htfStrongBreakShort) reasons.push('STRONG_BREAKOUT');
   if (failedBreakLong || failedBreakShort || htfFailedBreakLong || htfFailedBreakShort) reasons.push('BREAKOUT_FAILURE');
@@ -1868,7 +1723,6 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
 
   return {
     symbol: marketDisplaySymbol(market), candleSymbol: candleSymbolFromMarket(market), direction, entry, tp,
-    globalMarketRegime: globalRegime,
     score: Number(score.toFixed(2)), edge: Number(edge.toFixed(2)), risk: Number(risk.toFixed(2)), trendConfluence: trend,
     setupType, reversalEvidence,
     setupConfidence: setupType === 'REVERSAL' ? reversalConfidence : continuationConfidence,
@@ -1876,7 +1730,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     continuationConfidence: Number(continuationConfidence.toFixed(1)),
     setupDominance: Number(setupDominance.toFixed(1)),
     triggerActive: setupType === 'REVERSAL' || setupType === 'CONTINUATION',
-    reversalTrigger: safeReversalTrigger, continuationTrigger: safeContinuationTrigger,
+    reversalTrigger, continuationTrigger,
     tpPlan,
     setupEvidence: {
       setupType, reversalEvidence, reversalConfidence, continuationConfidence, setupDominance,
@@ -1893,23 +1747,6 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       strongBreakLong, strongBreakShort, htfBreakLong, htfBreakShort, htfStrongBreakLong, htfStrongBreakShort,
       liveBreakLong, liveBreakShort, failedBreakLong, failedBreakShort, htfFailedBreakLong, htfFailedBreakShort,
       genuineLongFailure, genuineShortFailure, closeNearHigh, closeNearLow,
-      globalMarketRegime: globalRegime,
-      globalRegimeAdjustment: globalRegimeAdjustment(direction, setupType, globalRegime),
-      directionSafety: {
-        nearResistance: safetyNearResistance,
-        nearSupport: safetyNearSupport,
-        resistance: safetyResistance,
-        support: safetySupport,
-        longIntoResistance,
-        shortIntoSupport,
-        latestBearishRejection,
-        latestBullishRejection,
-        directionImpulseMismatchLong,
-        directionImpulseMismatchShort,
-        unsafeLongContinuation,
-        unsafeShortContinuation,
-      },
-      lateChase: setupLateChase,
       topDown: { state: topDown.state, preferredDirection: topDown.preferredDirection, confidence: topDown.confidence, controllingTimeframe: topDown.controllingTimeframe, levelPrice: topDown.levelPrice, nearSupport: topDown.nearSupport, nearResistance: topDown.nearResistance, supportBreak: topDown.supportBreak, resistanceBreak: topDown.resistanceBreak, supportReaction: topDown.supportReaction, resistanceReaction: topDown.resistanceReaction, supportFailedBreak: topDown.supportFailedBreak, resistanceFailedBreak: topDown.resistanceFailedBreak, support: topDown.support?.price || null, resistance: topDown.resistance?.price || null },
       priorMove: preMove, priorMoveOppositeLong, priorMoveOppositeShort,
       reversalTiming, continuationTiming,
@@ -1921,6 +1758,13 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       longOi: capitalFlow.longOi, shortOi: capitalFlow.shortOi, volumeProfileZone: capitalFlow.profile?.zoneState || null,
       volumeProfilePoc: capitalFlow.profile?.poc || null, volumeProfileValueLow: capitalFlow.profile?.valueLow || null, volumeProfileValueHigh: capitalFlow.profile?.valueHigh || null,
       fiveLayers,
+      marketRegime: marketRegime ? {
+        regime: marketRegime.regime, direction: marketRegime.direction, score: marketRegime.score,
+        confidence: marketRegime.confidence, referenceScore: marketRegime.referenceScore, agreement: marketRegime.agreement,
+        btcScore: marketRegime.btc?.score ?? 50, ethScore: marketRegime.eth?.score ?? 50,
+        breadthScore: marketRegime.breadth?.score ?? 50, breadthRatio: marketRegime.breadth?.ratio ?? 0,
+        supportReliability: marketRegime.supportReliability, resistanceReliability: marketRegime.resistanceReliability,
+      } : null,
       layerScores: { trend: direction === "long" ? fiveLayers.trend.long : fiveLayers.trend.short, location: direction === "long" ? fiveLayers.location.long : fiveLayers.location.short, momentum: direction === "long" ? fiveLayers.momentum.long : fiveLayers.momentum.short, flow: direction === "long" ? fiveLayers.flow.long : fiveLayers.flow.short, reversal: direction === "long" ? fiveLayers.reversal.long : fiveLayers.reversal.short },
       fibZone: fiveLayers.location.fibZone,
       bollinger: fiveLayers.location.bollinger,
@@ -1944,6 +1788,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       oiDeltaPct: capitalFlow.oiDeltaPct, volumeDeltaPct: capitalFlow.volumeDeltaPct, volumeRatio5m: capitalFlow.volumeRatio5m, volumeRatio15m: capitalFlow.volumeRatio15m,
       longOi: capitalFlow.longOi, shortOi: capitalFlow.shortOi, sideBias: capitalFlow.sideBias, volumeProfileZone: capitalFlow.profile?.zoneState || null, volumeProfilePoc: capitalFlow.profile?.poc || null,
       fiveLayerConfidence: fiveLayers.confidence, fiveLayerEdge: fiveLayers.edge, fiveLayerDirection: fiveLayers.direction,
+      marketRegime: marketRegime ? { regime: marketRegime.regime, direction: marketRegime.direction, score: marketRegime.score, confidence: marketRegime.confidence, referenceScore: marketRegime.referenceScore, agreement: marketRegime.agreement, btcScore: marketRegime.btc?.score ?? 50, ethScore: marketRegime.eth?.score ?? 50, breadthScore: marketRegime.breadth?.score ?? 50, breadthRatio: marketRegime.breadth?.ratio ?? 0, supportReliability: marketRegime.supportReliability, resistanceReliability: marketRegime.resistanceReliability } : null,
       directionAuthority: fiveLayers.authority, reversalAuthority: fiveLayers.reversalAuthority, continuationAuthority: fiveLayers.continuationAuthority,
       reversalAuthorityEdge: fiveLayers.reversalEdge, continuationAuthorityEdge: fiveLayers.continuationEdge,
       trendLayer: direction === "long" ? fiveLayers.trend.long : fiveLayers.trend.short,
@@ -2171,32 +2016,6 @@ function candidateIsActionable(candidate) {
 
   const evTopDown = ev.topDown || {};
   const layer = ev.fiveLayers || {};
-  const safety = ev.directionSafety || {};
-  const global = ev.globalMarketRegime || candidate.globalMarketRegime || {};
-  const globalAdj = ev.globalRegimeAdjustment || globalRegimeAdjustment(candidate.direction, candidate.setupType, global);
-
-  // V22: strong macro trend blocks counter-trend continuation. Counter-trend
-  // reversal requires materially stronger local reversal authority.
-  if (globalAdj.permission === "BLOCK") return { ok: false, reason: `GLOBAL_REGIME_${globalAdj.state}_COUNTER_TREND_CONTINUATION` };
-  if (globalAdj.permission === "COUNTER_TREND_REVERSAL") {
-    const layer = ev.fiveLayers || {}; const side = candidate.direction === "long" ? "long" : "short"; const opp = side === "long" ? "short" : "long";
-    const rev = num(layer.reversal?.[side]), revOpp = num(layer.reversal?.[opp]);
-    if (rev < CONFIG.globalCounterTrendReversalMin || rev-revOpp < CONFIG.globalCounterTrendEdgeMin) return { ok: false, reason: `GLOBAL_REGIME_${globalAdj.state}_COUNTER_TREND_REVERSAL_NOT_STRONG_ENOUGH` };
-  }
-
-  // V21.3: final pre-execution side lock. If the setup says continuation,
-  // a long cannot be opened directly under resistance and a short cannot be
-  // opened directly above support unless the corresponding break is present.
-  if (candidate.setupType === "CONTINUATION") {
-    if (candidate.direction === "long" &&
-        (safety.unsafeLongContinuation || safety.directionImpulseMismatchLong)) {
-      return { ok: false, reason: "DIRECTION_SAFETY_LONG_REJECTED" };
-    }
-    if (candidate.direction === "short" &&
-        (safety.unsafeShortContinuation || safety.directionImpulseMismatchShort)) {
-      return { ok: false, reason: "DIRECTION_SAFETY_SHORT_REJECTED" };
-    }
-  }
   if (CONFIG.directionAuthorityEnabled && candidate.setupType === "REVERSAL") {
     const revSide = candidate.direction === "long" ? num(layer.reversal?.long) : num(layer.reversal?.short);
     const revOpp = candidate.direction === "long" ? num(layer.reversal?.short) : num(layer.reversal?.long);
@@ -2216,6 +2035,24 @@ function candidateIsActionable(candidate) {
       return { ok: false, reason: "CONTINUATION_DIRECTION_AUTHORITY_NOT_CONFIRMED" };
     }
   }
+  const macro = ev.marketRegime || {};
+  if (macro.regime && macro.direction && macro.direction !== "neutral" && macro.direction !== candidate.direction) {
+    const side = candidate.direction === "long" ? "long" : "short";
+    const five = ev.fiveLayers || {};
+    const reversalSide = num(five.reversal?.[side]);
+    const flowSide = num(five.flow?.[side]);
+    const counterTrendReversal = candidate.setupType === "REVERSAL" &&
+      reversalSide >= CONFIG.marketRegimeCounterTrendReversalMin &&
+      flowSide >= CONFIG.marketRegimeCounterTrendFlowMin &&
+      num(candidate.reversalConfidence) >= CONFIG.marketRegimeCounterTrendReversalMin &&
+      num(candidate.edge) >= CONFIG.marketRegimeCounterTrendEdgeMin;
+    if (!counterTrendReversal) {
+      return { ok: false, reason: `GLOBAL_MARKET_${macro.regime}_COUNTER_TREND_NOT_CONFIRMED` };
+    }
+    candidate.setupEvidence.marketRegimeCounterTrendOverride = true;
+    candidate.setupEvidence.marketRegimeCounterTrendOverrideReason = "STRONG_LOCAL_REVERSAL_AGAINST_BTC_ETH";
+  }
+
   if (evTopDown.preferredDirection && candidate.direction !== evTopDown.preferredDirection) {
     const layers = ev.fiveLayers || {};
     const oppositeReversal = candidate.direction === "long" ? num(layers.reversal?.long) : num(layers.reversal?.short);
@@ -2370,6 +2207,170 @@ function findMarketValue(marketValues, market) {
   }) || null;
 }
 
+function findReferenceMarket(markets, asset) {
+  const target = String(asset || "").toUpperCase();
+  return (Array.isArray(markets) ? markets : []).find((m) => {
+    const a = normalizeAsset(marketDisplaySymbol(m));
+    return a === target;
+  }) || null;
+}
+
+function marketRegimeFrameScore(candles) {
+  const rows = Array.isArray(candles) ? candles : [];
+  if (rows.length < 20) return { available: false, score: 50, direction: "neutral", confidence: 0 };
+  const closes = rows.map(x => num(x.close)).filter(x => x > 0);
+  const last = closes.at(-1);
+  const e20 = ema(closes, 20), e50 = ema(closes, 50), e200 = ema(closes, 200);
+  const m = macd(closes);
+  const ad = adx(rows, 14);
+  const r = rsi(closes, 14);
+  const look3 = closes.at(-4) || last;
+  const look12 = closes.at(-13) || last;
+  const ret3 = pct(last, look3);
+  const ret12 = pct(last, look12);
+  const slope20 = pct(e20, closes.at(-Math.min(8, closes.length)) || e20);
+
+  let bull = 50;
+  if (last > e20) bull += 7; else bull -= 7;
+  if (e20 > e50) bull += 10; else bull -= 10;
+  if (e50 > e200) bull += 10; else bull -= 10;
+  if (m.histogram > 0) bull += 8; else bull -= 8;
+  if (r >= 52) bull += 5; else bull -= 5;
+  if (ret3 > 0.15) bull += 5; else if (ret3 < -0.15) bull -= 5;
+  if (ret12 > 0.75) bull += 8; else if (ret12 < -0.75) bull -= 8;
+  if (slope20 > 0.15) bull += 5; else if (slope20 < -0.15) bull -= 5;
+  if (ad >= 18) bull += (bull >= 50 ? 4 : -4);
+
+  bull = clamp(bull, 0, 100);
+  const direction = bull >= 55 ? "long" : bull <= 45 ? "short" : "neutral";
+  return {
+    available: true, score: Number(bull.toFixed(1)), direction,
+    confidence: Number(Math.abs(bull - 50).toFixed(1)),
+    price: last, ema20: e20, ema50: e50, ema200: e200,
+    macdHistogram: m.histogram, rsi: r, adx: ad, ret3, ret12, slope20,
+  };
+}
+
+async function buildMarketRegimeDataCenter(sdk, markets, broadRows = []) {
+  if (!CONFIG.marketRegimeEnabled) {
+    return { enabled: false, regime: "NEUTRAL", direction: "neutral", confidence: 0, score: 50, btc: null, eth: null, breadth: null };
+  }
+
+  const btcMarket = findReferenceMarket(markets, "BTC");
+  const ethMarket = findReferenceMarket(markets, "ETH");
+  const frames = CONFIG.marketRegimeTimeframes || ["5m", "15m", "1h", "4h", "1d"];
+  const frameWeight = { "5m": 0.6, "15m": 0.9, "1h": 1.3, "4h": 1.8, "1d": 2.4 };
+
+  async function analyzeRef(market, asset) {
+    if (!market) return { asset, available: false, reason: "REFERENCE_MARKET_NOT_FOUND" };
+    const rows = await Promise.all(frames.map(async (tf) => {
+      try { return { tf, candles: await fetchCandles(sdk, market, tf, 96) }; }
+      catch (e) { return { tf, candles: [], error: safeError(e) }; }
+    }));
+    let weighted = 0, totalWeight = 0;
+    const frameScores = {};
+    for (const row of rows) {
+      const x = marketRegimeFrameScore(row.candles);
+      frameScores[row.tf] = x;
+      if (x.available) { const w = frameWeight[row.tf] || 1; weighted += x.score * w; totalWeight += w; }
+    }
+    const score = totalWeight ? weighted / totalWeight : 50;
+    const available = totalWeight > 0;
+    const direction = score >= 55 ? "long" : score <= 45 ? "short" : "neutral";
+    return { asset, available, score: Number(score.toFixed(1)), direction, confidence: Number(Math.abs(score - 50).toFixed(1)), frames: frameScores };
+  }
+
+  const [btc, eth] = await Promise.all([analyzeRef(btcMarket, "BTC"), analyzeRef(ethMarket, "ETH")]);
+  const btcScore = num(btc.score, 50), ethScore = num(eth.score, 50);
+  const refWeight = (btc.available ? CONFIG.marketRegimeBtcWeight : 0) + (eth.available ? CONFIG.marketRegimeEthWeight : 0);
+  const refScore = refWeight > 0
+    ? ((btc.available ? btcScore * CONFIG.marketRegimeBtcWeight : 0) + (eth.available ? ethScore * CONFIG.marketRegimeEthWeight : 0)) / refWeight
+    : 50;
+
+  const rows = Array.isArray(broadRows) ? broadRows : [];
+  const breadthValues = rows.map(r => tickerChange5m(r.ticker)).filter(Number.isFinite);
+  const positive = breadthValues.filter(x => x > 0.08).length;
+  const negative = breadthValues.filter(x => x < -0.08).length;
+  const breadthRatio = breadthValues.length ? (positive - negative) / breadthValues.length : 0;
+  const breadthScore = 50 + breadthRatio * 50;
+  const combinedScore = clamp(refScore * (1 - CONFIG.marketRegimeBreadthWeight) + breadthScore * CONFIG.marketRegimeBreadthWeight, 0, 100);
+
+  const bothBear = btcScore <= 45 && ethScore <= 45;
+  const bothBull = btcScore >= 55 && ethScore >= 55;
+  const agreement = 100 - Math.min(100, Math.abs(btcScore - ethScore) * 2);
+  let regime = "MIXED";
+  let direction = "neutral";
+  if (combinedScore >= CONFIG.marketRegimeBullThreshold && (bothBull || combinedScore >= CONFIG.marketRegimeStrongThreshold)) {
+    regime = combinedScore >= CONFIG.marketRegimeStrongThreshold ? "BULLISH_STRONG" : "BULLISH";
+    direction = "long";
+  } else if (combinedScore <= CONFIG.marketRegimeBearThreshold && (bothBear || combinedScore <= 100 - CONFIG.marketRegimeStrongThreshold)) {
+    regime = combinedScore <= 100 - CONFIG.marketRegimeStrongThreshold ? "BEARISH_STRONG" : "BEARISH";
+    direction = "short";
+  } else if (bothBear && breadthRatio < -0.20) {
+    regime = "BEARISH"; direction = "short";
+  } else if (bothBull && breadthRatio > 0.20) {
+    regime = "BULLISH"; direction = "long";
+  }
+
+  const supportReliability = direction === "short" ? CONFIG.marketRegimeSupportReliabilityBear : 1;
+  const resistanceReliability = direction === "long" ? CONFIG.marketRegimeResistanceReliabilityBull : 1;
+  const confidence = Number(Math.max(Math.abs(combinedScore - 50), Math.abs(refScore - 50)).toFixed(1));
+  return {
+    enabled: true, regime, direction, score: Number(combinedScore.toFixed(1)), referenceScore: Number(refScore.toFixed(1)),
+    confidence, agreement: Number(agreement.toFixed(1)), btc, eth,
+    breadth: { score: Number(breadthScore.toFixed(1)), ratio: Number(breadthRatio.toFixed(3)), positive, negative, total: breadthValues.length },
+    supportReliability, resistanceReliability,
+    timestamp: Date.now(),
+  };
+}
+
+function applyMarketRegimeToCandidate(candidate, marketRegime) {
+  if (!candidate || !marketRegime?.enabled) return candidate;
+  const ev = candidate.setupEvidence || {};
+  const dir = candidate.direction;
+  const macroDir = marketRegime.direction;
+  const counterTrend = macroDir !== "neutral" && dir !== macroDir;
+  const aligned = macroDir !== "neutral" && dir === macroDir;
+  const regimeStrength = num(marketRegime.confidence, 0);
+
+  let score = num(candidate.score), edge = num(candidate.edge);
+  if (aligned) { score += CONFIG.marketRegimeAlignedBonus * Math.min(1, regimeStrength / 30); edge += 3; }
+  if (counterTrend) {
+    score -= CONFIG.marketRegimeCounterTrendPenalty * Math.min(1.25, regimeStrength / 30);
+    edge -= 3;
+  }
+
+  const five = ev.fiveLayers || {};
+  const side = dir === "long" ? "long" : "short";
+  const localReversal = num(five.reversal?.[side]);
+  const localFlow = num(five.flow?.[side]);
+  const reversalConfidence = num(candidate.reversalConfidence);
+  const strongCounterTrendReversal = candidate.setupType === "REVERSAL" && counterTrend &&
+    localReversal >= CONFIG.marketRegimeCounterTrendReversalMin &&
+    localFlow >= CONFIG.marketRegimeCounterTrendFlowMin &&
+    reversalConfidence >= CONFIG.marketRegimeCounterTrendReversalMin &&
+    num(candidate.edge) >= CONFIG.marketRegimeCounterTrendEdgeMin;
+
+  const marketRegimeTag = `${marketRegime.regime}_${dir.toUpperCase()}${counterTrend ? "_COUNTER" : "_ALIGNED"}`;
+  ev.marketRegime = {
+    regime: marketRegime.regime, direction: macroDir, score: marketRegime.score, confidence: marketRegime.confidence,
+    referenceScore: marketRegime.referenceScore, agreement: marketRegime.agreement,
+    btcScore: marketRegime.btc?.score ?? 50, ethScore: marketRegime.eth?.score ?? 50,
+    breadthScore: marketRegime.breadth?.score ?? 50, breadthRatio: marketRegime.breadth?.ratio ?? 0,
+    counterTrend, aligned, strongCounterTrendReversal,
+    supportReliability: marketRegime.supportReliability, resistanceReliability: marketRegime.resistanceReliability,
+  };
+  ev.marketRegimeTag = marketRegimeTag;
+
+  return {
+    ...candidate,
+    score: Number(clamp(score, 0, 100).toFixed(2)),
+    edge: Number(clamp(edge, 0, 100).toFixed(2)),
+    setupEvidence: ev,
+    indicators: { ...(candidate.indicators || {}), marketRegime: ev.marketRegime },
+  };
+}
+
 async function broadScan(sdk, markets, tickers, marketValues = [], previousSnapshots = {}) {
   const listed = markets.filter(isLikelyPerpMarket);
   const results = await mapLimit(listed, CONFIG.ohlcvConcurrency, async (market) => {
@@ -2419,9 +2420,7 @@ async function broadScan(sdk, markets, tickers, marketValues = [], previousSnaps
   };
 }
 
-let LAST_DEEP_DIAGNOSTICS = { attempted: 0, successful: 0, failed: 0, sampleErrors: [] };
-
-async function deepScan(sdk, broadRows, globalRegime) {
+async function deepScan(sdk, broadRows, marketRegime = null) {
   const selected = broadRows.slice(0, CONFIG.deepCandidates);
   const results = await mapLimit(selected, Math.min(6, CONFIG.ohlcvConcurrency), async (row) => {
     // V20.5.1: never let one missing HTF feed kill the entire deep candidate.
@@ -2460,7 +2459,7 @@ async function deepScan(sdk, broadRows, globalRegime) {
       candles1h,
       candles4h,
       candles1d,
-      globalRegime,
+      marketRegime,
     });
 
     candidate.setupEvidence = candidate.setupEvidence || {};
@@ -2473,7 +2472,7 @@ async function deepScan(sdk, broadRows, globalRegime) {
     };
     candidate.indicators = candidate.indicators || {};
     candidate.indicators.htfData = candidate.setupEvidence.htfData;
-    return candidate;
+    return applyMarketRegimeToCandidate(candidate, marketRegime);
   });
 
   const valid = results.filter((x) => x && !x.error && x.entry > 0);
@@ -2865,10 +2864,10 @@ function cycleMessage(report) {
     `📡 Status: ${report.status}`,
     `🪙 Universe: ${report.universe}`,
     `🔎 Broad 5M: ${report.broadSuccess}/${report.universe}`,
-    `🌐 Global: ${String(report.globalRegime?.state || "UNKNOWN")} | Conf ${num(report.globalRegime?.confidence).toFixed(0)} | ${String(report.globalRegime?.strength || "N/A")} | ${String(report.globalRegime?.riskMode || "N/A")}`,
-    `🧠 Deep: ${report.deepCount}/${report.deepAttempted || report.deepCount} | Failed ${report.deepFailed || 0}`,
+    `🧠 Deep: ${report.deepCount}`,
     `💧 Capital flow strong: ${report.flowCount} | Smart-money proxy: ${report.smartMoneyCount}`,
     `🧠 5-Layer: Ready ${report.layerReadyCount} | Flow ${report.layerFlowCount} | Reversal ${report.layerReversalCount}`,
+    `🌐 Market Data Center: ${report.marketRegime?.regime || "N/A"} | BTC ${num(report.marketRegime?.btcScore).toFixed(0)} | ETH ${num(report.marketRegime?.ethScore).toFixed(0)} | Breadth ${num(report.marketRegime?.breadthScore).toFixed(0)}`,
     `⚡ Event candidates: ${report.actionableCount}`,
     ``,
     `🚀 Early impulses: ${report.impulseCount}`,
@@ -2909,6 +2908,8 @@ function cycleMessage(report) {
       const dir = String(item.direction || "").toLowerCase();
       const pick = (x) => dir === "long" ? num(x?.long) : num(x?.short);
       lines.push(`  🧠 5L T${pick(li.trend).toFixed(0)} L${pick(li.location).toFixed(0)} M${pick(li.momentum).toFixed(0)} F${pick(li.flow).toFixed(0)} R${pick(li.reversal).toFixed(0)} | ${String(li.direction || "N/A").toUpperCase()}`);
+      const mr = item.setupEvidence?.marketRegime || {};
+      if (mr.regime) lines.push(`  🌐 ${mr.regime} | BTC ${num(mr.btcScore).toFixed(0)} ETH ${num(mr.ethScore).toFixed(0)} Breadth ${num(mr.breadthScore).toFixed(0)} | ${mr.counterTrend ? "COUNTER" : "ALIGNED"}`);
       lines.push(`  💹 Gross ${formatUsd(econ.grossPnlUsd)} | Cost ${formatUsd(econ.totalCostUsd)} | Net ${formatUsd(econ.expectedNetUsd)} | TP move ${num(econ.tpMovePct).toFixed(2)}%`);
       lines.push(`  🚫 ${item.reason}`);
     }
@@ -2955,17 +2956,6 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
     };
   }
 
-  // V21.3 execution invariant: only the canonical side values are allowed to
-  // reach GMX. This prevents truthy/falsy or boolean coercion from ever
-  // turning a SHORT into a LONG (or vice versa).
-  if (candidate.direction !== "long" && candidate.direction !== "short") {
-    return {
-      executed: false, symbol: candidate.symbol, direction: candidate.direction,
-      entry: candidate.entry, tp: candidate.tp, score: candidate.score, edge: candidate.edge,
-      risk: candidate.risk, reason: "INVALID_DIRECTION_BEFORE_EXECUTION", stage: "DIRECTION_LOCK",
-    };
-  }
-
   let prepared;
   try {
     prepared = await prepareClassicIncrease({
@@ -2990,29 +2980,6 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
       risk: candidate.risk,
       reason: safeError(error),
       stage: "PREPARE_CLASSIC",
-    };
-  }
-
-  // Some SDK versions expose the normalized request on the prepared object.
-  // If present, it must agree with our canonical candidate side.
-  const preparedDirection = String(
-    prepared?.direction ??
-    prepared?.request?.direction ??
-    prepared?.order?.direction ??
-    ""
-  ).toLowerCase();
-  if (preparedDirection && preparedDirection !== candidate.direction) {
-    return {
-      executed: false,
-      symbol: candidate.symbol,
-      direction: candidate.direction,
-      entry: candidate.entry,
-      tp: candidate.tp,
-      score: candidate.score,
-      edge: candidate.edge,
-      risk: candidate.risk,
-      reason: `PREPARED_DIRECTION_MISMATCH_${preparedDirection.toUpperCase()}_EXPECTED_${candidate.direction.toUpperCase()}`,
-      stage: "DIRECTION_LOCK",
     };
   }
 
@@ -3214,9 +3181,15 @@ async function runCycle(event, env) {
   const tickerRows = Array.isArray(tickers) ? tickers : [];
 
   const broad = await broadScan(runtime.sdk, universe, tickerRows, marketValues, state.marketSnapshots);
-  const globalMarketRegime = await fetchGlobalMarketRegime(runtime.sdk, broad.rows);
-  console.log("[GLOBAL][MARKET_REGIME]", { state: globalMarketRegime.state, confidence: globalMarketRegime.confidence, strength: globalMarketRegime.strength, riskMode: globalMarketRegime.riskMode, btc: globalMarketRegime.btc?.state, eth: globalMarketRegime.eth?.state, breadth: globalMarketRegime.breadth?.state });
-  const deep = await deepScan(runtime.sdk, broad.rows, globalMarketRegime);
+  // GLOBAL MARKET DATA CENTER runs before deep signal classification. BTC/ETH
+  // + breadth become the macro prior for every individual market.
+  const marketRegime = await buildMarketRegimeDataCenter(runtime.sdk, universe, broad.rows);
+  console.log("[MARKET_DATA_CENTER]", {
+    regime: marketRegime.regime, direction: marketRegime.direction, score: marketRegime.score,
+    confidence: marketRegime.confidence, btc: marketRegime.btc?.score, eth: marketRegime.eth?.score,
+    breadth: marketRegime.breadth?.score, agreement: marketRegime.agreement,
+  });
+  const deep = await deepScan(runtime.sdk, broad.rows, marketRegime);
   const intelligence = await fetchOptionalIntelligence(env);
   const ranked = enrichWithIntelligence(deep, intelligence);
 
@@ -3331,10 +3304,6 @@ async function runCycle(event, env) {
     broadSuccess: broad.successful,
     deepCount: deep.length,
     deepSuccess: deep.length,
-    deepAttempted: LAST_DEEP_DIAGNOSTICS.attempted,
-    deepFailed: LAST_DEEP_DIAGNOSTICS.failed,
-    deepErrorSample: LAST_DEEP_DIAGNOSTICS.sampleErrors,
-    globalRegime: globalMarketRegime,
     actionableCount: actionable.length,
     impulseCount,
     flowCount,
@@ -3344,6 +3313,7 @@ async function runCycle(event, env) {
     layerReadyCount,
     layerFlowCount,
     layerReversalCount,
+    marketRegime: marketRegime ? { regime: marketRegime.regime, direction: marketRegime.direction, score: marketRegime.score, confidence: marketRegime.confidence, btcScore: marketRegime.btc?.score ?? 50, ethScore: marketRegime.eth?.score ?? 50, breadthScore: marketRegime.breadth?.score ?? 50, agreement: marketRegime.agreement ?? 0 } : null,
     srCount,
     positiveMoveCount,
     pullbackCount,
