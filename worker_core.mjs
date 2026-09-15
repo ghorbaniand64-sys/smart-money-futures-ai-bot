@@ -3457,7 +3457,7 @@ async function runCycle(event, env) {
     const check = candidateIsActionable(candidate);
     if (!check.ok) {
       blocked.push({
-        symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp,
+        symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, sl: candidate.sl, tp: candidate.tp,
         score: candidate.score, edge: candidate.edge, risk: candidate.risk, setupType: candidate.setupType,
         reversalEvidence: candidate.reversalEvidence, reason: check.reason, setupEvidence: candidate.setupEvidence,
       });
@@ -3470,7 +3470,7 @@ async function runCycle(event, env) {
       actionable.push(enriched);
     } else {
       const item = {
-        symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp,
+        symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, sl: candidate.sl, tp: candidate.tp,
         score: candidate.score, edge: candidate.edge, risk: candidate.risk, setupType: candidate.setupType,
         reversalEvidence: candidate.reversalEvidence, reason: economic.reason, setupEvidence: candidate.setupEvidence,
         economics: enriched.economics,
