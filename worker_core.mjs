@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V22.0.0-GLOBAL-MARKET-REGIME-BTC-ETH-20X";
+export const BOT_VERSION = "V22.1.0-HYBRID-GLOBAL-REGIME-STRUCTURE-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -71,6 +71,12 @@ const CONFIG = Object.freeze({
   globalCounterTrendReversalMin: 72,
   globalCounterTrendEdgeMin: 16,
   globalSRSuppression: 0.45,
+  // V22.1: alternate structure route when early impulse is not yet visible.
+  hybridStructurePathEnabled: true,
+  hybridStructureMinContinuation: 56,
+  hybridStructureMinTrend: 48,
+  hybridStructureMinMomentum: 46,
+  hybridStructureReversalGap: 3,
 
   // V20.3: score ranks quality; trigger confidence controls timing.
   minScore: 68,
@@ -1649,8 +1655,21 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const reversalVsContinuation = bestReversal - bestContinuation;
   const reversalTrigger = reversalStrong &&
     (reversalVsContinuation >= -Number(CONFIG.reversalContinuationGap || 5));
-  const continuationTrigger = continuationStrong &&
-    (bestContinuation > bestReversal + Number(CONFIG.reversalContinuationGap || 5));
+
+  // V22.1 HYBRID STRUCTURE PATH: a genuine S/R break can qualify before the
+  // 5M acceleration/volume impulse has fully registered. Safety locks remain.
+  const structureBreak = continuationBreak &&
+    (firstBreakLong || firstBreakShort || htfBreakLong || htfBreakShort);
+  const structureContinuationStrong = CONFIG.hybridStructurePathEnabled &&
+    structureBreak &&
+    bestContinuation >= Number(CONFIG.hybridStructureMinContinuation || 56) &&
+    continuationSideTrend >= Number(CONFIG.hybridStructureMinTrend || 48) &&
+    continuationSideMomentum >= Number(CONFIG.hybridStructureMinMomentum || 46) &&
+    !continuationExhaustion && !lateChase;
+
+  const continuationTrigger =
+    (continuationStrong && bestContinuation > bestReversal + Number(CONFIG.reversalContinuationGap || 5)) ||
+    (structureContinuationStrong && bestContinuation >= bestReversal - Number(CONFIG.hybridStructureReversalGap || 3));
 
   // -----------------------------------------------------------------------
   // V21.3 FINAL DIRECTION SAFETY LOCK
@@ -1825,6 +1844,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   if (setupType === 'CONTINUATION') reasons.push(`CONTINUATION_${direction.toUpperCase()}`);
   if (safeReversalTrigger) reasons.push('REVERSAL_TRIGGER');
   if (safeContinuationTrigger) reasons.push('CONTINUATION_TRIGGER');
+  if (structureContinuationStrong && safeContinuationTrigger) reasons.push('STRUCTURE_BREAK_PATH');
   if (firstBreakLong || firstBreakShort) reasons.push('FIRST_BREAK');
   if (strongBreakLong || strongBreakShort || htfStrongBreakLong || htfStrongBreakShort) reasons.push('STRONG_BREAKOUT');
   if (failedBreakLong || failedBreakShort || htfFailedBreakLong || htfFailedBreakShort) reasons.push('BREAKOUT_FAILURE');
@@ -2399,6 +2419,8 @@ async function broadScan(sdk, markets, tickers, marketValues = [], previousSnaps
   };
 }
 
+let LAST_DEEP_DIAGNOSTICS = { attempted: 0, successful: 0, failed: 0, sampleErrors: [] };
+
 async function deepScan(sdk, broadRows, globalRegime) {
   const selected = broadRows.slice(0, CONFIG.deepCandidates);
   const results = await mapLimit(selected, Math.min(6, CONFIG.ohlcvConcurrency), async (row) => {
@@ -2843,7 +2865,8 @@ function cycleMessage(report) {
     `📡 Status: ${report.status}`,
     `🪙 Universe: ${report.universe}`,
     `🔎 Broad 5M: ${report.broadSuccess}/${report.universe}`,
-    `🧠 Deep: ${report.deepCount}`,
+    `🌐 Global: ${String(report.globalRegime?.state || "UNKNOWN")} | Conf ${num(report.globalRegime?.confidence).toFixed(0)} | ${String(report.globalRegime?.strength || "N/A")} | ${String(report.globalRegime?.riskMode || "N/A")}`,
+    `🧠 Deep: ${report.deepCount}/${report.deepAttempted || report.deepCount} | Failed ${report.deepFailed || 0}`,
     `💧 Capital flow strong: ${report.flowCount} | Smart-money proxy: ${report.smartMoneyCount}`,
     `🧠 5-Layer: Ready ${report.layerReadyCount} | Flow ${report.layerFlowCount} | Reversal ${report.layerReversalCount}`,
     `⚡ Event candidates: ${report.actionableCount}`,
@@ -3308,6 +3331,10 @@ async function runCycle(event, env) {
     broadSuccess: broad.successful,
     deepCount: deep.length,
     deepSuccess: deep.length,
+    deepAttempted: LAST_DEEP_DIAGNOSTICS.attempted,
+    deepFailed: LAST_DEEP_DIAGNOSTICS.failed,
+    deepErrorSample: LAST_DEEP_DIAGNOSTICS.sampleErrors,
+    globalRegime: globalMarketRegime,
     actionableCount: actionable.length,
     impulseCount,
     flowCount,
