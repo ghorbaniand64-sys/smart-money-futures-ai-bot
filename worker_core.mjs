@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V21.5.0-GLOBAL-MARKET-DATA-CENTER-ROBUST-DEEP-20X";
+export const BOT_VERSION = "V21.5.1-GLOBAL-MARKET-DATA-CENTER-ROBUST-DEEP-TDZ-FIX-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -1612,6 +1612,11 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const continuationSideMomentum = continuationDirection === 'long' ? fiveLayers.momentum.long : fiveLayers.momentum.short;
   const continuationSideFlow = continuationDirection === 'long' ? fiveLayers.flow.long : fiveLayers.flow.short;
 
+  // V21.5.1: define extension before continuation timing uses it.
+  // The previous build declared this const later in the same function, which
+  // caused a temporal-dead-zone ReferenceError for every deep candidate.
+  const extension = Math.max(Math.abs(impulse.move3), Math.abs(impulse.move5));
+
   // V21.4: a directional displacement is NOT, by itself, a continuation
   // entry. That was the exact failure mode behind late SHORTs at the bottom
   // of a dump. Continuation now needs either an early breakout or a genuine
@@ -1709,7 +1714,6 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const absMove3 = Math.abs(impulse.move3);
   const absMove5 = Math.abs(impulse.move5);
   const sharp = absMove3 >= 0.75 || absMove5 >= 1.20 || impulse.rangeExpansion >= 1.65 || Math.abs(impulse.acceleration) >= 0.45;
-  const extension = Math.max(absMove3, absMove5);
   const directionalAcceleration = direction === 'long' ? impulse.acceleration : -impulse.acceleration;
   const directionalMove3 = direction === 'long' ? impulse.move3 : -impulse.move3;
   const earlyBreak = direction === 'long' ? firstBreakLong : firstBreakShort;
