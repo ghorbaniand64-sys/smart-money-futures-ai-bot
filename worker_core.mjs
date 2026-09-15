@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V21.2.0-DIRECTION-AUTHORITY-REVERSAL-CONTINUATION-20X";
+export const BOT_VERSION = "V21.3.0-DIRECTION-SAFETY-IMPULSE-SR-LOCK-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -1538,13 +1538,31 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     !((reversalDirection === 'long' && liveBreakShort && !genuineLongFailure) ||
       (reversalDirection === 'short' && liveBreakLong && !genuineShortFailure));
 
+  // V21.3: calculate chase state BEFORE it is consumed. The previous V21.2
+  // referenced `lateChase` here before its const declaration below, which puts
+  // scoreCandidate() into the temporal-dead-zone and can abort deep scoring.
+  const extensionForChase = Math.max(Math.abs(impulse.move3), Math.abs(impulse.move5));
+  const continuationDirectionalAcceleration =
+    continuationDirection === 'long' ? impulse.acceleration : -impulse.acceleration;
+  const lateChase = extensionForChase >= CONFIG.lateChaseExtensionPct &&
+    continuationDirectionalAcceleration <= 0;
+
   const continuationSideTrend = continuationDirection === 'long' ? fiveLayers.trend.long : fiveLayers.trend.short;
   const continuationSideMomentum = continuationDirection === 'long' ? fiveLayers.momentum.long : fiveLayers.momentum.short;
   const continuationSideFlow = continuationDirection === 'long' ? fiveLayers.flow.long : fiveLayers.flow.short;
-  const continuationBreak = continuationDirection === 'long' ? (firstBreakLong || htfBreakLong || directionalDisplacementLong) : (firstBreakShort || htfBreakShort || directionalDisplacementShort);
+
+  // V21.3 DIRECTION SAFETY: displacement is not itself a breakout. A move can
+  // accelerate directly INTO resistance/support and then reverse. Continuation
+  // is therefore allowed only after a real 5M/15M break, not merely because the
+  // last candles moved quickly.
+  const continuationBreak = continuationDirection === 'long'
+    ? (firstBreakLong || htfBreakLong)
+    : (firstBreakShort || htfBreakShort);
+
   const continuationExhaustion = continuationDirection === 'long'
     ? (rLong.rsi5 > 78 || (impulse.move5 > 0 && impulse.acceleration < 0 && impulse.rangeExpansion < 1.05))
     : (rShort.rsi5 < 22 || (impulse.move5 < 0 && impulse.acceleration > 0 && impulse.rangeExpansion < 1.05));
+
   const continuationStrong = bestContinuation >= Number(CONFIG.continuationAuthorityMin || 66) &&
     Math.abs(continuationLong - continuationShort) >= Number(CONFIG.continuationAuthorityEdge || 10) &&
     continuationBreak && continuationSideTrend >= 52 && continuationSideMomentum >= 50 && continuationSideFlow >= 48 && !continuationExhaustion &&
@@ -1556,12 +1574,85 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const continuationTrigger = continuationStrong &&
     (bestContinuation > bestReversal + Number(CONFIG.reversalContinuationGap || 5));
 
+  // -----------------------------------------------------------------------
+  // V21.3 FINAL DIRECTION SAFETY LOCK
+  // -----------------------------------------------------------------------
+  // The old engine could let a bullish EMA/MACD/trend stack open LONG while
+  // price was sitting under resistance. It also treated a fast displacement as
+  // a continuation breakout. That is exactly the failure mode visible in the
+  // reported EIGEN trade: the position was LONG, then price rejected and fell.
+  //
+  // Rule:
+  //   1) LONG continuation needs an actual breakout/close above resistance.
+  //   2) SHORT continuation needs an actual breakdown/close below support.
+  //   3) A fresh bearish rejection at resistance can authorize SHORT reversal.
+  //   4) A fresh bullish rejection at support can authorize LONG reversal.
+  //   5) If the latest impulse points against the proposed side and there is no
+  //      confirming rejection/flip, do not trade rather than guessing.
+  // -----------------------------------------------------------------------
+  const safetyResistance = topDown.resistance?.price || zoneShort.resistance || null;
+  const safetySupport = topDown.support?.price || zoneLong.support || null;
+  const safetyNearResistance = Boolean(
+    (topDown.nearResistance || zoneShort.nearResistance) &&
+    safetyResistance > price
+  );
+  const safetyNearSupport = Boolean(
+    (topDown.nearSupport || zoneLong.nearSupport) &&
+    safetySupport < price
+  );
+  const latestBearishRejection = Boolean(
+    rShort.bearishReject || rShort.redFlip ||
+    (impulse.move3 < -0.15 && impulse.acceleration < -0.03)
+  );
+  const latestBullishRejection = Boolean(
+    rLong.bullishReject || rLong.greenFlip ||
+    (impulse.move3 > 0.15 && impulse.acceleration > 0.03)
+  );
+
+  const longIntoResistance = safetyNearResistance && !firstBreakLong && !htfBreakLong;
+  const shortIntoSupport = safetyNearSupport && !firstBreakShort && !htfBreakShort;
+
+  const unsafeLongContinuation =
+    continuationDirection === "long" && longIntoResistance;
+  const unsafeShortContinuation =
+    continuationDirection === "short" && shortIntoSupport;
+
+  const directionImpulseMismatchLong =
+    impulse.move3 < -0.15 && impulse.acceleration < -0.03 && !rLong.bullishReject && !rLong.greenFlip;
+  const directionImpulseMismatchShort =
+    impulse.move3 > 0.15 && impulse.acceleration > 0.03 && !rShort.bearishReject && !rShort.redFlip;
+
+  let safeReversalTrigger = reversalTrigger;
+  let safeContinuationTrigger = continuationTrigger;
+
+  // Never allow the continuation lane to buy resistance or short support
+  // without a real break. This is a veto, not a score penalty.
+  if (unsafeLongContinuation || directionImpulseMismatchLong) {
+    safeContinuationTrigger = false;
+  }
+  if (unsafeShortContinuation || directionImpulseMismatchShort) {
+    safeContinuationTrigger = false;
+  }
+
+  // If price has just rejected resistance, prefer the SHORT reversal when its
+  // own reversal evidence is materially present. Symmetric rule at support.
+  if (longIntoResistance && latestBearishRejection &&
+      reversalShort >= Number(CONFIG.reversalTriggerMinConfidence || 52) &&
+      reversalShort > reversalLong + 4) {
+    safeReversalTrigger = true;
+  }
+  if (shortIntoSupport && latestBullishRejection &&
+      reversalLong >= Number(CONFIG.reversalTriggerMinConfidence || 52) &&
+      reversalLong > reversalShort + 4) {
+    safeReversalTrigger = true;
+  }
+
   let setupType = 'NONE';
   let direction = fiveLayers.direction || continuationDirection;
-  if (reversalTrigger) {
+  if (safeReversalTrigger) {
     setupType = 'REVERSAL';
     direction = reversalDirection;
-  } else if (continuationTrigger) {
+  } else if (safeContinuationTrigger) {
     setupType = 'CONTINUATION';
     direction = continuationDirection;
   } else {
@@ -1591,7 +1682,9 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const earlyBreak = direction === 'long' ? firstBreakLong : firstBreakShort;
   const earlyTrend = directionalMove3 >= CONFIG.earlyImpulseMinMove3Pct && directionalAcceleration >= CONFIG.earlyImpulseMinAccelerationPct;
   const notExtended = extension <= 1.80;
-  const lateChase = setupType === 'CONTINUATION' && extension >= CONFIG.lateChaseExtensionPct && directionalAcceleration <= 0;
+  // `lateChase` was computed above before setup classification; keep the
+  // setup-specific condition here only as a final presentation/risk check.
+  const setupLateChase = setupType === 'CONTINUATION' && lateChase;
 
   // Reversal gets timing credit for the FIRST rejection/displacement, not for
   // waiting until the down/up trend is fully confirmed by moving averages.
@@ -1629,7 +1722,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   let score = 28 + impulseQuality + srReaction + trend * 1.2 + rsiQuality + macdQuality + oi.score + context * 1.2 + timing;
   if (setupType === 'REVERSAL') score += Math.min(14, reversalConfidence * 0.14);
   if (setupType === 'CONTINUATION') score += Math.min(12, continuationConfidence * 0.12);
-  if (lateChase) score -= 22;
+  if (setupLateChase) score -= 22;
   const capitalFlowBoost = capitalFlow.enabled
     ? (capitalFlow.direction === direction ? (capitalFlow.score - 50) * CONFIG.capitalFlowWeight : -(capitalFlow.score - 50) * 0.18)
     : 0;
@@ -1638,7 +1731,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   score = clamp(score + capitalFlowBoost + layerBoost, 0, 100);
 
   const risk = clamp(
-    (lateChase ? 18 : 0) + (extension > 3.5 ? 15 : 0) + (five.rsi > 82 || five.rsi < 18 ? 15 : 0) + (five.adx < 12 ? 8 : 0) + (oi.exhausted && setupType === 'CONTINUATION' ? 7 : 0),
+    (setupLateChase ? 18 : 0) + (extension > 3.5 ? 15 : 0) + (five.rsi > 82 || five.rsi < 18 ? 15 : 0) + (five.adx < 12 ? 8 : 0) + (oi.exhausted && setupType === 'CONTINUATION' ? 7 : 0),
     0, 100
   );
   const edge = clamp(
@@ -1652,8 +1745,8 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const reasons = [];
   if (setupType === 'REVERSAL') reasons.push(`REVERSAL_${direction.toUpperCase()}`);
   if (setupType === 'CONTINUATION') reasons.push(`CONTINUATION_${direction.toUpperCase()}`);
-  if (reversalTrigger) reasons.push('REVERSAL_TRIGGER');
-  if (continuationTrigger) reasons.push('CONTINUATION_TRIGGER');
+  if (safeReversalTrigger) reasons.push('REVERSAL_TRIGGER');
+  if (safeContinuationTrigger) reasons.push('CONTINUATION_TRIGGER');
   if (firstBreakLong || firstBreakShort) reasons.push('FIRST_BREAK');
   if (strongBreakLong || strongBreakShort || htfStrongBreakLong || htfStrongBreakShort) reasons.push('STRONG_BREAKOUT');
   if (failedBreakLong || failedBreakShort || htfFailedBreakLong || htfFailedBreakShort) reasons.push('BREAKOUT_FAILURE');
@@ -1684,7 +1777,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     continuationConfidence: Number(continuationConfidence.toFixed(1)),
     setupDominance: Number(setupDominance.toFixed(1)),
     triggerActive: setupType === 'REVERSAL' || setupType === 'CONTINUATION',
-    reversalTrigger, continuationTrigger,
+    reversalTrigger: safeReversalTrigger, continuationTrigger: safeContinuationTrigger,
     tpPlan,
     setupEvidence: {
       setupType, reversalEvidence, reversalConfidence, continuationConfidence, setupDominance,
@@ -1701,6 +1794,21 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       strongBreakLong, strongBreakShort, htfBreakLong, htfBreakShort, htfStrongBreakLong, htfStrongBreakShort,
       liveBreakLong, liveBreakShort, failedBreakLong, failedBreakShort, htfFailedBreakLong, htfFailedBreakShort,
       genuineLongFailure, genuineShortFailure, closeNearHigh, closeNearLow,
+      directionSafety: {
+        nearResistance: safetyNearResistance,
+        nearSupport: safetyNearSupport,
+        resistance: safetyResistance,
+        support: safetySupport,
+        longIntoResistance,
+        shortIntoSupport,
+        latestBearishRejection,
+        latestBullishRejection,
+        directionImpulseMismatchLong,
+        directionImpulseMismatchShort,
+        unsafeLongContinuation,
+        unsafeShortContinuation,
+      },
+      lateChase: setupLateChase,
       topDown: { state: topDown.state, preferredDirection: topDown.preferredDirection, confidence: topDown.confidence, controllingTimeframe: topDown.controllingTimeframe, levelPrice: topDown.levelPrice, nearSupport: topDown.nearSupport, nearResistance: topDown.nearResistance, supportBreak: topDown.supportBreak, resistanceBreak: topDown.resistanceBreak, supportReaction: topDown.supportReaction, resistanceReaction: topDown.resistanceReaction, supportFailedBreak: topDown.supportFailedBreak, resistanceFailedBreak: topDown.resistanceFailedBreak, support: topDown.support?.price || null, resistance: topDown.resistance?.price || null },
       priorMove: preMove, priorMoveOppositeLong, priorMoveOppositeShort,
       reversalTiming, continuationTiming,
@@ -1962,6 +2070,21 @@ function candidateIsActionable(candidate) {
 
   const evTopDown = ev.topDown || {};
   const layer = ev.fiveLayers || {};
+  const safety = ev.directionSafety || {};
+
+  // V21.3: final pre-execution side lock. If the setup says continuation,
+  // a long cannot be opened directly under resistance and a short cannot be
+  // opened directly above support unless the corresponding break is present.
+  if (candidate.setupType === "CONTINUATION") {
+    if (candidate.direction === "long" &&
+        (safety.unsafeLongContinuation || safety.directionImpulseMismatchLong)) {
+      return { ok: false, reason: "DIRECTION_SAFETY_LONG_REJECTED" };
+    }
+    if (candidate.direction === "short" &&
+        (safety.unsafeShortContinuation || safety.directionImpulseMismatchShort)) {
+      return { ok: false, reason: "DIRECTION_SAFETY_SHORT_REJECTED" };
+    }
+  }
   if (CONFIG.directionAuthorityEnabled && candidate.setupType === "REVERSAL") {
     const revSide = candidate.direction === "long" ? num(layer.reversal?.long) : num(layer.reversal?.short);
     const revOpp = candidate.direction === "long" ? num(layer.reversal?.short) : num(layer.reversal?.long);
@@ -2716,6 +2839,17 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
     };
   }
 
+  // V21.3 execution invariant: only the canonical side values are allowed to
+  // reach GMX. This prevents truthy/falsy or boolean coercion from ever
+  // turning a SHORT into a LONG (or vice versa).
+  if (candidate.direction !== "long" && candidate.direction !== "short") {
+    return {
+      executed: false, symbol: candidate.symbol, direction: candidate.direction,
+      entry: candidate.entry, tp: candidate.tp, score: candidate.score, edge: candidate.edge,
+      risk: candidate.risk, reason: "INVALID_DIRECTION_BEFORE_EXECUTION", stage: "DIRECTION_LOCK",
+    };
+  }
+
   let prepared;
   try {
     prepared = await prepareClassicIncrease({
@@ -2740,6 +2874,29 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
       risk: candidate.risk,
       reason: safeError(error),
       stage: "PREPARE_CLASSIC",
+    };
+  }
+
+  // Some SDK versions expose the normalized request on the prepared object.
+  // If present, it must agree with our canonical candidate side.
+  const preparedDirection = String(
+    prepared?.direction ??
+    prepared?.request?.direction ??
+    prepared?.order?.direction ??
+    ""
+  ).toLowerCase();
+  if (preparedDirection && preparedDirection !== candidate.direction) {
+    return {
+      executed: false,
+      symbol: candidate.symbol,
+      direction: candidate.direction,
+      entry: candidate.entry,
+      tp: candidate.tp,
+      score: candidate.score,
+      edge: candidate.edge,
+      risk: candidate.risk,
+      reason: `PREPARED_DIRECTION_MISMATCH_${preparedDirection.toUpperCase()}_EXPECTED_${candidate.direction.toUpperCase()}`,
+      stage: "DIRECTION_LOCK",
     };
   }
 
