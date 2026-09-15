@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V21.6.0-DYNAMIC-STRUCTURE-SL-20X";
+export const BOT_VERSION = "V21.7.0-EARLY-MOVE-MATURITY-DYNAMIC-SL-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -175,6 +175,21 @@ const CONFIG = Object.freeze({
   trendEndRangeExpansion: 1.45,
   trendEndVolumeRatio: 1.45,
   trendEndMinSignals: 2,
+
+  // V21.7: move-maturity filter. The bot is optimized for the FIRST
+  // actionable part of a sharp move, not for joining an already mature
+  // impulse. This filter is intentionally applied to CONTINUATION entries;
+  // confirmed REVERSAL entries may occur after a large prior move because
+  // that prior move is the setup itself.
+  moveMaturityEarlyPct: 0.45,
+  moveMaturityHealthyPct: 0.85,
+  moveMaturityLatePct: 1.35,
+  moveMaturityExhaustedPct: 2.00,
+  moveMaturityAtrHealthy: 1.25,
+  moveMaturityAtrLate: 1.90,
+  moveMaturityRejectScore: 70,
+  moveMaturitySoftRejectScore: 60,
+  moveMaturitySoftRejectDeceleration: 0,
 
   // V21.5: protect the data pipeline from burst/rate-limit failures introduced
   // by the BTC/ETH market-data center. Never let macro intelligence starve
@@ -1742,6 +1757,50 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const notExtended = extension <= 1.80;
   const lateChase = setupType === 'CONTINUATION' && continuationLateChase;
 
+  // V21.7: measure how mature the current move is before allowing a
+  // continuation entry. A high score means the market has already travelled
+  // too far, is stretched from its short-term mean, is losing directional
+  // acceleration, or is approaching the opposing structural level.
+  // This deliberately does NOT block a confirmed reversal: catching the first
+  // reversal after a mature impulse is one of the bot's intended behaviors.
+  const opposingZoneNear = direction === 'short'
+    ? Boolean(zone.nearSupport)
+    : Boolean(zone.nearResistance);
+  const directionalDecelerating = directionalAcceleration <= Number(CONFIG.moveMaturitySoftRejectDeceleration || 0);
+  const extensionPct = Math.max(extension, Math.abs(num(impulse.m15)));
+  const extensionComponent = extensionPct <= CONFIG.moveMaturityEarlyPct
+    ? 0
+    : extensionPct >= CONFIG.moveMaturityExhaustedPct
+      ? 100
+      : ((extensionPct - CONFIG.moveMaturityEarlyPct) / (CONFIG.moveMaturityExhaustedPct - CONFIG.moveMaturityEarlyPct)) * 100;
+  const atrComponent = atrDistance <= CONFIG.moveMaturityAtrHealthy
+    ? 0
+    : atrDistance >= CONFIG.moveMaturityAtrLate
+      ? 100
+      : ((atrDistance - CONFIG.moveMaturityAtrHealthy) / (CONFIG.moveMaturityAtrLate - CONFIG.moveMaturityAtrHealthy)) * 100;
+  const decelerationComponent = directionalDecelerating ? (directionalAcceleration < -0.15 ? 24 : 15) : 0;
+  const zoneComponent = opposingZoneNear ? 18 : 0;
+  const rsiExhaustionComponent = direction === 'short'
+    ? (rShort.rsi5 <= 24 ? 14 : 0)
+    : (rLong.rsi5 >= 76 ? 14 : 0);
+  const moveMaturity = Number(clamp(
+    extensionComponent * 0.50 +
+    atrComponent * 0.22 +
+    decelerationComponent +
+    zoneComponent +
+    rsiExhaustionComponent,
+    0, 100
+  ).toFixed(1));
+  const moveMaturityLabel = moveMaturity >= 85 ? 'EXHAUSTED'
+    : moveMaturity >= CONFIG.moveMaturityRejectScore ? 'LATE'
+    : moveMaturity >= 55 ? 'MATURE'
+    : moveMaturity >= 35 ? 'HEALTHY'
+    : 'EARLY';
+  const lateMove = setupType === 'CONTINUATION' && (
+    moveMaturity >= Number(CONFIG.moveMaturityRejectScore) ||
+    (moveMaturity >= Number(CONFIG.moveMaturitySoftRejectScore) && (directionalDecelerating || opposingZoneNear))
+  );
+
   // Reversal gets timing credit for the FIRST rejection/displacement, not for
   // waiting until the down/up trend is fully confirmed by moving averages.
   const reversalTiming = setupType.startsWith('REVERSAL')
@@ -1824,6 +1883,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   if (topDown.controllingTimeframe) reasons.push(`HTF_TF_${topDown.controllingTimeframe}`);
   if (oi.aligned) reasons.push('OI_ALIGNMENT');
   if (lateChase) reasons.push('LATE_CHASE_PENALTY');
+  if (lateMove) reasons.push(`MOVE_MATURITY_${moveMaturityLabel}`);
   if (fiveLayers.direction === direction) reasons.push(`5L_${direction.toUpperCase()}_${fiveLayers.confidence.toFixed(0)}`);
   if (fiveLayers.authority === "REVERSAL") reasons.push(`DIRECTION_AUTHORITY_REVERSAL_${direction.toUpperCase()}`);
   if (fiveLayers.authority === "CONTINUATION") reasons.push(`DIRECTION_AUTHORITY_CONTINUATION_${direction.toUpperCase()}`);
@@ -1834,6 +1894,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
 
   return {
     symbol: marketDisplaySymbol(market), candleSymbol: candleSymbolFromMarket(market), direction, entry, tp, sl,
+    moveMaturity, moveMaturityLabel, lateMove,
     score: Number(score.toFixed(2)), edge: Number(edge.toFixed(2)), risk: Number(risk.toFixed(2)), trendConfluence: trend,
     setupType, reversalEvidence,
     setupConfidence: setupType === 'REVERSAL' ? reversalConfidence : continuationConfidence,
@@ -1848,6 +1909,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       directionAuthority: fiveLayers.authority, reversalAuthority: fiveLayers.reversalAuthority, continuationAuthority: fiveLayers.continuationAuthority,
       reversalEdge: fiveLayers.reversalEdge, continuationEdge: fiveLayers.continuationEdge,
       trendEndExhaustion, trendEndSignals, continuationEarly, continuationRetest, continuationTooLate, continuationBreak,
+      moveMaturity, moveMaturityLabel, lateMove, extensionPct, atrDistance, opposingZoneNear, directionalDecelerating,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
       tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
       sl: slPlan.sl, slDistancePct: slPlan.distancePct, slMethod: slPlan.method, slValid: slPlan.valid,
@@ -1889,6 +1951,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       rsi: Number(five.rsi.toFixed(2)), adx: Number(five.adx.toFixed(2)), ema20: five.ema20, ema50: five.ema50, ema200: five.ema200,
       macdHistogram: five.macd.histogram, move5m: move5, move15m: move15, oiChange5m: oi.delta, reactionScore: srReaction,
       explosive: sharp, impulseQuality, acceleration: impulse.acceleration, rangeExpansion: impulse.rangeExpansion, volumeRatio: impulse.volumeRatio,
+      moveMaturity, moveMaturityLabel, lateMove, extensionPct, atrDistance, opposingZoneNear, directionalDecelerating,
       earlyTrend, earlyBreak, freshExpansion, earlyTimingBonus: timing, lateChase,
       strongBreakLong, strongBreakShort, htfBreakLong, htfBreakShort, htfStrongBreakLong, htfStrongBreakShort,
       liveBreakLong, liveBreakShort, failedBreakLong, failedBreakShort, htfFailedBreakLong, htfFailedBreakShort, genuineLongFailure, genuineShortFailure,
@@ -2302,6 +2365,7 @@ function candidateIsActionable(candidate) {
   // chase. A reversal is allowed to appear after a large prior move because
   // that extension is part of the reversal setup rather than a chase entry.
   if (ev.lateChase) return { ok: false, reason: "LATE_CHASE" };
+  if (ev.lateMove) return { ok: false, reason: `MOVE_MATURITY_${ev.moveMaturityLabel || "LATE"}_${num(ev.moveMaturity).toFixed(1)}` };
   if (candidate.risk > CONFIG.maxRisk) return { ok: false, reason: `RISK_${candidate.risk.toFixed(1)}_ABOVE_${CONFIG.maxRisk}` };
 
   const tpDistance = Math.abs(pct(candidate.tp, candidate.entry));
@@ -3135,6 +3199,7 @@ function cycleMessage(report) {
       `📌 Direction: ${trade.direction.toUpperCase()}`,
       `💰 Entry: ${formatPrice(trade.entry)}`,
       `🎯 TP: ${formatPrice(trade.tp)}`,
+      `🛡️ SL: ${formatPrice(trade.sl)}`,
       `📊 Allocation: ${(trade.allocation * 100).toFixed(2)}% | ⚙️ Leverage: ${CONFIG.leverage.toFixed(1)}x`,
       `📦 Notional: ${formatUsd(trade.notionalUsd)} | 💵 Collateral: ${formatUsd(trade.collateralUsd)}`,
       `🔗 Tx: ${trade.txHash || "N/A"}`,
@@ -3151,6 +3216,8 @@ function cycleMessage(report) {
       lines.push(`  📌 ${String(item.direction || "N/A").toUpperCase()} | Entry ${formatPrice(item.entry)} | SL ${formatPrice(item.sl)} | TP ${formatPrice(item.tp)}`);
       const econ = item.economics || {};
       lines.push(`  🧠 ${String(item.setupType || "N/A")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)}`);
+      const tm = item.setupEvidence || {};
+      lines.push(`  ⏱️ Move maturity ${num(tm.moveMaturity).toFixed(1)} | ${String(tm.moveMaturityLabel || "N/A")} | Extension ${num(tm.extensionPct).toFixed(2)}% | ATR dist ${num(tm.atrDistance).toFixed(2)}x`);
       const cf = item.setupEvidence?.capitalFlow || {};
       lines.push(`  💧 Flow ${num(cf.score).toFixed(1)} | ${String(cf.state || "N/A")} | Smart ${num(cf.smartMoneyProxy).toFixed(1)} | OI Δ ${num(cf.oiDeltaPct).toFixed(2)}% | Vol5 ${num(cf.volumeRatio5m).toFixed(2)}x`);
       const li = item.setupEvidence?.fiveLayers || {};
@@ -3500,6 +3567,7 @@ async function runCycle(event, env) {
     tpMethod: selected[0].tpPlan?.method, tpTargetType: selected[0].tpPlan?.targetType,
     tpTargetScore: selected[0].tpPlan?.targetScore, tpProbabilityProxy: selected[0].tpPlan?.probabilityProxy,
     sharpMove: selected[0].setupEvidence?.sharpMove, lateChase: selected[0].setupEvidence?.lateChase,
+    moveMaturity: selected[0].setupEvidence?.moveMaturity, moveMaturityLabel: selected[0].setupEvidence?.moveMaturityLabel, lateMove: selected[0].setupEvidence?.lateMove,
     zoneState: selected[0].setupEvidence?.zoneState, impulseQuality: selected[0].setupEvidence?.impulseQuality,
     earlyTrend: selected[0].setupEvidence?.earlyTrend, earlyBreak: selected[0].setupEvidence?.earlyBreak, earlyTimingBonus: selected[0].setupEvidence?.earlyTimingBonus,
     reversalConfidence: selected[0].reversalConfidence, continuationConfidence: selected[0].continuationConfidence, setupDominance: selected[0].setupDominance,
