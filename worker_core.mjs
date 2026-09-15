@@ -147,6 +147,22 @@ const CONFIG = Object.freeze({
   flowConflictBlock: 38,
   reversalContinuationGap: 5,
 
+  // V21.4: continuation must be early or retested; never chase the final
+  // leg of an already-extended impulse. Trend-end exhaustion is a no-trade
+  // state until a real reversal trigger appears.
+  continuationMaxExtensionPct: 1.35,
+  continuationMaxMove5Pct: 1.60,
+  continuationMaxMove15Pct: 2.40,
+  continuationMaxDistanceEmaAtr: 2.20,
+  continuationRetestLookback: 3,
+  continuationRetestAtr: 0.55,
+  trendEndRsiLong: 24,
+  trendEndRsiShort: 76,
+  trendEndAtrDistance: 2.00,
+  trendEndRangeExpansion: 1.45,
+  trendEndVolumeRatio: 1.45,
+  trendEndMinSignals: 2,
+
   // Economic gate: estimates round-trip position fees plus a conservative
   // execution-cost buffer. This is deliberately NOT a minimum-notional gate.
   // A trade is allowed only when the actual wallet size + realistic TP imply
@@ -1587,13 +1603,67 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const continuationSideTrend = continuationDirection === 'long' ? fiveLayers.trend.long : fiveLayers.trend.short;
   const continuationSideMomentum = continuationDirection === 'long' ? fiveLayers.momentum.long : fiveLayers.momentum.short;
   const continuationSideFlow = continuationDirection === 'long' ? fiveLayers.flow.long : fiveLayers.flow.short;
-  const continuationBreak = continuationDirection === 'long' ? (firstBreakLong || htfBreakLong || directionalDisplacementLong) : (firstBreakShort || htfBreakShort || directionalDisplacementShort);
+
+  // V21.4: a directional displacement is NOT, by itself, a continuation
+  // entry. That was the exact failure mode behind late SHORTs at the bottom
+  // of a dump. Continuation now needs either an early breakout or a genuine
+  // breakout-retest. A mature impulse without a retest becomes NO TRADE.
+  const retestLookback = Math.max(2, Number(CONFIG.continuationRetestLookback || 3));
+  const retestRows = candles5.slice(-retestLookback - 1, -1);
+  const retestAtr = Math.max(num(five.atr), price * 0.0005, 1e-12);
+  const shortRetest = Boolean(
+    (firstBreakShort || htfBreakShort) &&
+    retestRows.length >= 2 &&
+    retestRows.some(x => num(x.high) >= (firstBreakShort ? priorLow : htfPriorLow) - retestAtr * Number(CONFIG.continuationRetestAtr || 0.55)) &&
+    price < (firstBreakShort ? priorLow : htfPriorLow)
+  );
+  const longRetest = Boolean(
+    (firstBreakLong || htfBreakLong) &&
+    retestRows.length >= 2 &&
+    retestRows.some(x => num(x.low) <= (firstBreakLong ? priorHigh : htfPriorHigh) + retestAtr * Number(CONFIG.continuationRetestAtr || 0.55)) &&
+    price > (firstBreakLong ? priorHigh : htfPriorHigh)
+  );
+  const continuationEarly = continuationDirection === 'long'
+    ? (firstBreakLong && !htfFailedBreakLong && extension <= Number(CONFIG.continuationMaxExtensionPct || 1.35))
+    : (firstBreakShort && !htfFailedBreakShort && extension <= Number(CONFIG.continuationMaxExtensionPct || 1.35));
+  const continuationRetest = continuationDirection === 'long' ? longRetest : shortRetest;
+  const continuationBreak = continuationEarly || continuationRetest;
+
+  // Trend-end / exhaustion detector. Two independent exhaustion signals are
+  // required so a normal strong candle is not incorrectly labelled a top/bottom.
+  const ema20 = ema(candles5.map(x => num(x.close)), 20);
+  const atrDistance = Math.abs(price - ema20) / Math.max(retestAtr, 1e-12);
+  const trendEndSignals = continuationDirection === 'short'
+    ? [
+        rShort.rsi5 <= Number(CONFIG.trendEndRsiLong || 24),
+        atrDistance >= Number(CONFIG.trendEndAtrDistance || 2.0),
+        Math.abs(impulse.move5) >= Number(CONFIG.continuationMaxMove5Pct || 1.60),
+        Math.abs(impulse.m15) >= Number(CONFIG.continuationMaxMove15Pct || 2.40),
+        impulse.rangeExpansion >= Number(CONFIG.trendEndRangeExpansion || 1.45) && impulse.volumeRatio >= Number(CONFIG.trendEndVolumeRatio || 1.45),
+        zoneLong.nearSupport || fiveLayers.location.long >= 64,
+      ].filter(Boolean).length
+    : [
+        rLong.rsi5 >= Number(CONFIG.trendEndRsiShort || 76),
+        atrDistance >= Number(CONFIG.trendEndAtrDistance || 2.0),
+        Math.abs(impulse.move5) >= Number(CONFIG.continuationMaxMove5Pct || 1.60),
+        Math.abs(impulse.m15) >= Number(CONFIG.continuationMaxMove15Pct || 2.40),
+        impulse.rangeExpansion >= Number(CONFIG.trendEndRangeExpansion || 1.45) && impulse.volumeRatio >= Number(CONFIG.trendEndVolumeRatio || 1.45),
+        zoneShort.nearResistance || fiveLayers.location.short >= 64,
+      ].filter(Boolean).length;
+  const trendEndExhaustion = trendEndSignals >= Number(CONFIG.trendEndMinSignals || 2);
+
+  const continuationExtension = Math.max(extension, Math.abs(impulse.m15));
+  const continuationTooLate =
+    continuationExtension >= Number(CONFIG.continuationMaxExtensionPct || 1.35) ||
+    atrDistance >= Number(CONFIG.continuationMaxDistanceEmaAtr || 2.20);
   const continuationExhaustion = continuationDirection === 'long'
     ? (rLong.rsi5 > 78 || (impulse.move5 > 0 && impulse.acceleration < 0 && impulse.rangeExpansion < 1.05))
     : (rShort.rsi5 < 22 || (impulse.move5 < 0 && impulse.acceleration > 0 && impulse.rangeExpansion < 1.05));
+
   const continuationStrong = bestContinuation >= Number(CONFIG.continuationAuthorityMin || 66) &&
     Math.abs(continuationLong - continuationShort) >= Number(CONFIG.continuationAuthorityEdge || 10) &&
-    continuationBreak && continuationSideTrend >= 52 && continuationSideMomentum >= 50 && continuationSideFlow >= 48 && !continuationExhaustion &&
+    continuationBreak && continuationSideTrend >= 52 && continuationSideMomentum >= 50 && continuationSideFlow >= 48 &&
+    !continuationExhaustion && !continuationTooLate && !trendEndExhaustion &&
     !lateChase;
 
   const reversalVsContinuation = bestReversal - bestContinuation;
@@ -1700,6 +1770,10 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   if (setupType === 'CONTINUATION') reasons.push(`CONTINUATION_${direction.toUpperCase()}`);
   if (reversalTrigger) reasons.push('REVERSAL_TRIGGER');
   if (continuationTrigger) reasons.push('CONTINUATION_TRIGGER');
+  if (trendEndExhaustion) reasons.push(`TREND_END_EXHAUSTION_${trendEndSignals}`);
+  if (continuationRetest) reasons.push('CONTINUATION_RETEST');
+  if (continuationEarly) reasons.push('CONTINUATION_EARLY_BREAK');
+  if (continuationTooLate) reasons.push('CONTINUATION_TOO_LATE');
   if (firstBreakLong || firstBreakShort) reasons.push('FIRST_BREAK');
   if (strongBreakLong || strongBreakShort || htfStrongBreakLong || htfStrongBreakShort) reasons.push('STRONG_BREAKOUT');
   if (failedBreakLong || failedBreakShort || htfFailedBreakLong || htfFailedBreakShort) reasons.push('BREAKOUT_FAILURE');
@@ -1736,6 +1810,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       setupType, reversalEvidence, reversalConfidence, continuationConfidence, setupDominance,
       directionAuthority: fiveLayers.authority, reversalAuthority: fiveLayers.reversalAuthority, continuationAuthority: fiveLayers.continuationAuthority,
       reversalEdge: fiveLayers.reversalEdge, continuationEdge: fiveLayers.continuationEdge,
+      trendEndExhaustion, trendEndSignals, continuationEarly, continuationRetest, continuationTooLate, continuationBreak,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
       tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
       zoneState: zone.state, nearSupport: zone.nearSupport, nearResistance: zone.nearResistance,
@@ -2025,6 +2100,13 @@ function candidateIsActionable(candidate) {
       return { ok: false, reason: "REVERSAL_DIRECTION_AUTHORITY_NOT_CONFIRMED" };
     }
   }
+  if (candidate.setupType === "CONTINUATION" && ev.continuationTooLate) {
+    return { ok: false, reason: "CONTINUATION_TOO_LATE_AFTER_IMPULSE" };
+  }
+  if (candidate.setupType === "CONTINUATION" && ev.trendEndExhaustion) {
+    return { ok: false, reason: "CONTINUATION_BLOCKED_TREND_END_EXHAUSTION" };
+  }
+
   if (CONFIG.directionAuthorityEnabled && candidate.setupType === "CONTINUATION") {
     const side = candidate.direction === "long" ? "long" : "short";
     const trendSide = num(layer.trend?.[side]);
