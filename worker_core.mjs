@@ -2,7 +2,7 @@
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║ GMX SMART MONEY FUTURES AI BOT — V21.5 GLOBAL MARKET DATA CENTER + ROBUST DEEP DATA      ║
 ║ Single pipeline • 5M broad scan • 15M deep scan • Classic GMX only          ║
-║ 20x leverage • 100% wallet • max 1 position • one TP • no SL               ║
+║ 20x leverage • 100% wallet • max 1 position • dynamic TP + structure SL               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 Architecture:
@@ -19,8 +19,8 @@ GMX MARKET UNIVERSE
 
 Important:
 - Execution is direct on-chain Classic GMX only.
-- No stop-loss orders.
-- Exactly one TP.
+- Dynamic structure-based stop-loss + one TP.
+- Stop-loss is attached to the opening increase via GMX TP/SL.
 - No legacy radar lane.
 - No parallel eligibility engine.
 - Telegram is diagnostic/notification only.
@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V21.5.2-GLOBAL-MARKET-DATA-CENTER-ROBUST-DEEP-TDZ-FIX-LATE-CHASE-20X";
+export const BOT_VERSION = "V21.6.0-DYNAMIC-STRUCTURE-SL-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -87,6 +87,19 @@ const CONFIG = Object.freeze({
   tpReversalMaxPct: 1.80,
   tpContinuationMaxPct: 2.20,
   tpMinTargetScore: 52,
+
+  // V21.6 Dynamic structure-based stop loss. The stop is derived from the
+  // nearest structural swing/support/resistance plus an ATR volatility buffer.
+  // Reversal trades use a tighter invalidation; continuation trades get a bit
+  // more room. The stop must remain comfortably before the theoretical
+  // liquidation zone; a trade with an excessive stop distance is rejected.
+  stopLossEnabled: true,
+  slAtrMultiplierReversal: 0.45,
+  slAtrMultiplierContinuation: 0.65,
+  slMinDistancePct: 0.35,
+  slMaxDistancePct: 1.80,
+  slCounterTrendMaxDistancePct: 1.25,
+  slSafetyBufferPct: 0.35,
 
   // V21 Capital Flow Engine. Flow is a quality/ranking layer, not a hard
   // direction gate. True wallet-labelled smart-money data is not available
@@ -1785,6 +1798,10 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const entry = price;
   const tpPlan = calculateLogicalTp(entry, direction, candles5, candles15, five.atr, setupType, impulse);
   const tp = tpPlan.tp;
+  const slPlan = CONFIG.stopLossEnabled
+    ? calculateDynamicSl(entry, direction, candles5, candles15, five.atr, setupType, { ...topDown, nearestSupport: zone.support, nearestResistance: zone.resistance }, marketRegime)
+    : { sl: 0, distancePct: 0, method: "DISABLED", valid: true };
+  const sl = slPlan.sl;
   const reasons = [];
   if (setupType === 'REVERSAL') reasons.push(`REVERSAL_${direction.toUpperCase()}`);
   if (setupType === 'CONTINUATION') reasons.push(`CONTINUATION_${direction.toUpperCase()}`);
@@ -1816,7 +1833,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   if (fiveLayers.reversal.reasons.length) reasons.push(...fiveLayers.reversal.reasons.slice(0, 3).map(x => `REV5:${x}`));
 
   return {
-    symbol: marketDisplaySymbol(market), candleSymbol: candleSymbolFromMarket(market), direction, entry, tp,
+    symbol: marketDisplaySymbol(market), candleSymbol: candleSymbolFromMarket(market), direction, entry, tp, sl,
     score: Number(score.toFixed(2)), edge: Number(edge.toFixed(2)), risk: Number(risk.toFixed(2)), trendConfluence: trend,
     setupType, reversalEvidence,
     setupConfidence: setupType === 'REVERSAL' ? reversalConfidence : continuationConfidence,
@@ -1833,6 +1850,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       trendEndExhaustion, trendEndSignals, continuationEarly, continuationRetest, continuationTooLate, continuationBreak,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
       tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
+      sl: slPlan.sl, slDistancePct: slPlan.distancePct, slMethod: slPlan.method, slValid: slPlan.valid,
       zoneState: zone.state, nearSupport: zone.nearSupport, nearResistance: zone.nearResistance,
       nearestSupport: zone.support, nearestResistance: zone.resistance, sharpMove: sharp, lateChase, impulseQuality,
       acceleration: impulse.acceleration, rangeExpansion: impulse.rangeExpansion, volumeRatio: impulse.volumeRatio,
@@ -1876,6 +1894,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       liveBreakLong, liveBreakShort, failedBreakLong, failedBreakShort, htfFailedBreakLong, htfFailedBreakShort, genuineLongFailure, genuineShortFailure,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
       tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
+      sl: slPlan.sl, slDistancePct: slPlan.distancePct, slMethod: slPlan.method,
       reversalConfidence, continuationConfidence, setupDominance, triggerActive: setupType === 'REVERSAL' || setupType === 'CONTINUATION',
       topDownState: topDown.state, topDownDirection: topDown.preferredDirection, topDownConfidence: topDown.confidence, topDownControllingTimeframe: topDown.controllingTimeframe, topDownLevelPrice: topDown.levelPrice, topDownSupport: topDown.support?.price || null, topDownResistance: topDown.resistance?.price || null, topDownSupportBreak: topDown.supportBreak, topDownResistanceBreak: topDown.resistanceBreak, topDownSupportReaction: topDown.supportReaction, topDownResistanceReaction: topDown.resistanceReaction, topDownSupportFailedBreak: topDown.supportFailedBreak, topDownResistanceFailedBreak: topDown.resistanceFailedBreak,
       volume24h: tickerVolume(ticker), openInterest: tickerOpenInterest(ticker), fundingRate: tickerFunding(ticker), liquidity: marketLiquidity(market),
@@ -1900,6 +1919,84 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       rsiBearDivergence: Boolean(fiveLayers.momentum?.divergence?.bearish),
     },
     market, ticker, candles5, candles15,
+  };
+}
+
+
+function calculateDynamicSl(entry, direction, candles5, candles15, atr5, setupType = "CONTINUATION", setupEvidence = {}, marketRegime = null) {
+  const price = Number(entry || 0);
+  if (!(price > 0)) return { sl: 0, distancePct: 0, method: "INVALID_ENTRY", valid: false };
+
+  const a5 = Math.max(Number(atr5 || 0), price * 0.0015, 1e-12);
+  const a15 = Math.max(Number(atr(candles15 || [], 14) || 0), price * 0.0018, 1e-12);
+  const volatilityAtr = Math.max(a5, a15 * 0.55);
+  const atrMult = setupType === "REVERSAL" ? CONFIG.slAtrMultiplierReversal : CONFIG.slAtrMultiplierContinuation;
+  const buffer = volatilityAtr * atrMult;
+
+  const supports = [
+    num(setupEvidence?.nearestSupport),
+    ...recentSwingLevels(candles5 || []).support,
+    ...recentSwingLevels(candles15 || []).support,
+  ].filter(x => x > 0 && x < price);
+  const resistances = [
+    num(setupEvidence?.nearestResistance),
+    ...recentSwingLevels(candles5 || []).resistance,
+    ...recentSwingLevels(candles15 || []).resistance,
+  ].filter(x => x > price);
+
+  let structural = 0;
+  let method = "ATR_ONLY";
+  if (direction === "long") {
+    structural = supports.length ? Math.max(...supports) : 0;
+    if (structural > 0) {
+      // Put the trigger just beyond the structural low/support.
+      const candidate = structural - buffer;
+      const minSl = price * (1 - CONFIG.slMaxDistancePct / 100);
+      const sl = Math.max(candidate, minSl);
+      structural = sl;
+      method = "STRUCTURE_SUPPORT_ATR";
+    } else {
+      structural = price - buffer;
+      method = "ATR_FALLBACK";
+    }
+  } else {
+    structural = resistances.length ? Math.min(...resistances) : 0;
+    if (structural > 0) {
+      const candidate = structural + buffer;
+      const maxSl = price * (1 + CONFIG.slMaxDistancePct / 100);
+      structural = Math.min(candidate, maxSl);
+      method = "STRUCTURE_RESISTANCE_ATR";
+    } else {
+      structural = price + buffer;
+      method = "ATR_FALLBACK";
+    }
+  }
+
+  // Enforce a minimum distance so normal oracle noise does not immediately
+  // trigger the stop, while respecting the hard maximum risk envelope.
+  const minDist = price * (CONFIG.slMinDistancePct / 100);
+  if (direction === "long") structural = Math.min(structural, price - minDist);
+  else structural = Math.max(structural, price + minDist);
+
+  const macro = String(marketRegime?.direction || "neutral");
+  const counterTrend = macro !== "neutral" && macro !== direction;
+  const maxPct = counterTrend ? Math.min(CONFIG.slMaxDistancePct, CONFIG.slCounterTrendMaxDistancePct) : CONFIG.slMaxDistancePct;
+  const maxDist = price * (maxPct / 100);
+  if (direction === "long") structural = Math.max(structural, price - maxDist);
+  else structural = Math.min(structural, price + maxDist);
+
+  const sl = Number(structural.toPrecision(12));
+  const distancePct = Math.abs(pct(sl, price));
+  const validSide = direction === "long" ? sl < price : sl > price;
+  const valid = validSide && distancePct >= CONFIG.slMinDistancePct * 0.95 && distancePct <= maxPct + 0.05;
+  return {
+    sl,
+    distancePct: Number(distancePct.toFixed(3)),
+    method,
+    valid,
+    counterTrend,
+    maxDistancePct: maxPct,
+    bufferPct: Number((buffer / price * 100).toFixed(3)),
   };
 }
 
@@ -2209,6 +2306,17 @@ function candidateIsActionable(candidate) {
 
   const tpDistance = Math.abs(pct(candidate.tp, candidate.entry));
   if (tpDistance < CONFIG.minTpDistancePct) return { ok: false, reason: "TP_TOO_CLOSE" };
+
+  if (CONFIG.stopLossEnabled) {
+    const sl = num(candidate.sl);
+    if (!(sl > 0)) return { ok: false, reason: "SL_NOT_CALCULATED" };
+    if (candidate.direction === "long" && !(sl < candidate.entry)) return { ok: false, reason: "SL_WRONG_SIDE_LONG" };
+    if (candidate.direction === "short" && !(sl > candidate.entry)) return { ok: false, reason: "SL_WRONG_SIDE_SHORT" };
+    const slDistance = Math.abs(pct(sl, candidate.entry));
+    const maxSl = candidate.setupEvidence?.marketRegime?.counterTrend ? CONFIG.slCounterTrendMaxDistancePct : CONFIG.slMaxDistancePct;
+    if (slDistance > maxSl + 0.05) return { ok: false, reason: `SL_TOO_FAR_${slDistance.toFixed(2)}PCT` };
+    if (slDistance < CONFIG.slMinDistancePct * 0.95) return { ok: false, reason: `SL_TOO_CLOSE_${slDistance.toFixed(2)}PCT` };
+  }
 
   return { ok: true, reason: isEarlyReversal ? "EARLY_REVERSAL_READY" : "EARLY_CONTINUATION_READY" };
 }
@@ -2881,6 +2989,7 @@ async function prepareClassicIncrease({
   collateralUsd,
   collateralToken,
   tp,
+  sl,
 }) {
   const size = toUnits(sizeUsd.toFixed(6), 30);
   const collateral = toUnits(collateralUsd.toFixed(6), 6);
@@ -2907,6 +3016,11 @@ async function prepareClassicIncrease({
         triggerPrice: trigger,
         size,
       },
+      ...(CONFIG.stopLossEnabled && Number(sl) > 0 ? [{
+        type: "stop-loss",
+        triggerPrice: toUnits(Number(sl).toFixed(12), 30),
+        size,
+      }] : []),
     ],
   });
 }
@@ -3034,7 +3148,7 @@ function cycleMessage(report) {
     lines.push(`ℹ️ TOP BLOCKED`);
     for (const item of report.topRejected.slice(0, 3)) {
       lines.push(`• ${item.symbol}`);
-      lines.push(`  📌 ${String(item.direction || "N/A").toUpperCase()} | Entry ${formatPrice(item.entry)} | TP ${formatPrice(item.tp)}`);
+      lines.push(`  📌 ${String(item.direction || "N/A").toUpperCase()} | Entry ${formatPrice(item.entry)} | SL ${formatPrice(item.sl)} | TP ${formatPrice(item.tp)}`);
       const econ = item.economics || {};
       lines.push(`  🧠 ${String(item.setupType || "N/A")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)}`);
       const cf = item.setupEvidence?.capitalFlow || {};
@@ -3045,6 +3159,8 @@ function cycleMessage(report) {
       lines.push(`  🧠 5L T${pick(li.trend).toFixed(0)} L${pick(li.location).toFixed(0)} M${pick(li.momentum).toFixed(0)} F${pick(li.flow).toFixed(0)} R${pick(li.reversal).toFixed(0)} | ${String(li.direction || "N/A").toUpperCase()}`);
       const mr = item.setupEvidence?.marketRegime || {};
       if (mr.regime) lines.push(`  🌐 ${mr.regime} | BTC ${num(mr.btcScore).toFixed(0)} ETH ${num(mr.ethScore).toFixed(0)} Breadth ${num(mr.breadthScore).toFixed(0)} | ${mr.counterTrend ? "COUNTER" : "ALIGNED"}`);
+      const slInfo = item.setupEvidence || {};
+      lines.push(`  🛡️ SL ${formatPrice(item.sl)} | ${num(slInfo.slDistancePct).toFixed(2)}% | ${String(slInfo.slMethod || "N/A")}`);
       lines.push(`  💹 Gross ${formatUsd(econ.grossPnlUsd)} | Cost ${formatUsd(econ.totalCostUsd)} | Net ${formatUsd(econ.expectedNetUsd)} | TP move ${num(econ.tpMovePct).toFixed(2)}%`);
       lines.push(`  🚫 ${item.reason}`);
     }
@@ -3052,7 +3168,7 @@ function cycleMessage(report) {
 
   lines.push(`🆔 Scan: ${report.scanId}`);
   lines.push(`🕐 ${new Date().toISOString()}`);
-  lines.push(`ℹ️ مسیر: Scan → Selection → Classic Execution → Verification`);
+  lines.push(`ℹ️ مسیر: Scan → Selection → Dynamic SL/TP → Classic Execution → Verification`);
 
   return lines.join("\n");
 }
@@ -3102,6 +3218,7 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
       collateralUsd,
       collateralToken: collateral.symbol,
       tp: candidate.tp,
+      sl: candidate.sl,
     });
   } catch (error) {
     return {
@@ -3110,6 +3227,7 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
       direction: candidate.direction,
       entry: candidate.entry,
       tp: candidate.tp,
+      sl: candidate.sl,
       score: candidate.score,
       edge: candidate.edge,
       risk: candidate.risk,
@@ -3143,6 +3261,7 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
       direction: candidate.direction,
       entry: candidate.entry,
       tp: candidate.tp,
+      sl: candidate.sl,
       score: candidate.score,
       edge: candidate.edge,
       risk: candidate.risk,
@@ -3167,6 +3286,7 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
       direction: candidate.direction,
       entry: candidate.entry,
       tp: candidate.tp,
+      sl: candidate.sl,
       score: candidate.score,
       edge: candidate.edge,
       risk: candidate.risk,
