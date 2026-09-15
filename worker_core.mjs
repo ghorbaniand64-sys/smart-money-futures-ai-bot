@@ -1,6 +1,6 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ GMX SMART MONEY FUTURES AI BOT — V21.1 FIVE-LAYER INTELLIGENCE ENGINE      ║
+║ GMX SMART MONEY FUTURES AI BOT — V21.2 FIVE-LAYER INTELLIGENCE ENGINE      ║
 ║ Single pipeline • 5M broad scan • 15M deep scan • Classic GMX only          ║
 ║ 20x leverage • 100% wallet • max 1 position • one TP • no SL               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V21.1.0-FIVE-LAYER-INTELLIGENCE-20X";
+export const BOT_VERSION = "V21.2.0-DIRECTION-AUTHORITY-REVERSAL-CONTINUATION-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -103,7 +103,7 @@ const CONFIG = Object.freeze({
   volumeProfileValueAreaPct: 0.70,
   capitalFlowStatePersistMs: 30 * 60 * 1000,
 
-  // V21.1 Five-Layer Market Intelligence.
+  // V21.2 Five-Layer Market Intelligence.
   // These are scoring/ranking inputs, not blanket hard gates.
   fiveLayerEnabled: true,
   trendLayerWeight: 0.22,
@@ -115,6 +115,18 @@ const CONFIG = Object.freeze({
   htfConflictOverrideMinReversal: 72,
   htfConflictOverrideMinFlow: 68,
   htfConflictOverrideMinLayerEdge: 62,
+
+  // V21.2: direction authority. The five layers now decide the side;
+  // HTF is context, not an unconditional direction override.
+  directionAuthorityEnabled: true,
+  reversalAuthorityMin: 68,
+  reversalAuthorityEdge: 10,
+  continuationAuthorityMin: 66,
+  continuationAuthorityEdge: 10,
+  locationConflictBlock: 34,
+  momentumConflictBlock: 36,
+  flowConflictBlock: 38,
+  reversalContinuationGap: 5,
 
   // Economic gate: estimates round-trip position fees plus a conservative
   // execution-cost buffer. This is deliberately NOT a minimum-notional gate.
@@ -1292,14 +1304,50 @@ function fiveLayerEngine({ candles5, candles15, candles1h, candles4h, candles1d,
   };
   const long = trend.long * weights.trend + location.long * weights.location + momentum.long * weights.momentum + flow.long * weights.flow + reversal.long * weights.reversal;
   const short = trend.short * weights.trend + location.short * weights.location + momentum.short * weights.momentum + flow.short * weights.flow + reversal.short * weights.reversal;
-  const direction = long === short ? (capitalFlow?.direction || trend.direction || location.direction) : long > short ? "long" : "short";
-  const confidence = Number(clamp(Math.max(long, short), 0, 100).toFixed(1));
-  const edge = Number(clamp(Math.abs(long - short), 0, 100).toFixed(1));
+  const weightedLong = Number(clamp(long, 0, 100).toFixed(1));
+  const weightedShort = Number(clamp(short, 0, 100).toFixed(1));
+  const weightedDirection = weightedLong === weightedShort ? null : weightedLong > weightedShort ? "long" : "short";
+
+  // V21.2 DIRECTION AUTHORITY:
+  // A strong, confirmed reversal is allowed to beat a stale trend score.
+  // A continuation is allowed only when breakout/momentum/flow agree.
+  // This prevents the exact failure where a resistance rejection was still
+  // forced LONG because the higher-timeframe trend happened to be bullish.
+  const reversalLong = Number(reversal.long);
+  const reversalShort = Number(reversal.short);
+  const reversalDirection = reversalLong === reversalShort ? null : reversalLong > reversalShort ? "long" : "short";
+  const reversalEdge = Math.abs(reversalLong - reversalShort);
+  const continuationLong = Number(clamp((trend.long * 0.45) + (momentum.long * 0.25) + (flow.long * 0.30), 0, 100));
+  const continuationShort = Number(clamp((trend.short * 0.45) + (momentum.short * 0.25) + (flow.short * 0.30), 0, 100));
+  const continuationDirection = continuationLong === continuationShort ? null : continuationLong > continuationShort ? "long" : "short";
+  const continuationEdge = Math.abs(continuationLong - continuationShort);
+
+  const reversalStrongLong = reversalLong >= CONFIG.reversalAuthorityMin && reversalDirection === "long" && reversalEdge >= CONFIG.reversalAuthorityEdge;
+  const reversalStrongShort = reversalShort >= CONFIG.reversalAuthorityMin && reversalDirection === "short" && reversalEdge >= CONFIG.reversalAuthorityEdge;
+  const reversalAuthority = reversalStrongLong ? "long" : reversalStrongShort ? "short" : null;
+  const continuationStrongLong = continuationLong >= CONFIG.continuationAuthorityMin && continuationDirection === "long" && continuationEdge >= CONFIG.continuationAuthorityEdge;
+  const continuationStrongShort = continuationShort >= CONFIG.continuationAuthorityMin && continuationDirection === "short" && continuationEdge >= CONFIG.continuationAuthorityEdge;
+  const continuationAuthority = continuationStrongLong ? "long" : continuationStrongShort ? "short" : null;
+
+  let direction = weightedDirection;
+  let authority = "WEIGHTED";
+  if (CONFIG.directionAuthorityEnabled) {
+    if (reversalAuthority && (!continuationAuthority || (reversalAuthority === continuationAuthority ? reversalEdge >= continuationEdge : reversalEdge >= continuationEdge - CONFIG.reversalContinuationGap))) {
+      direction = reversalAuthority;
+      authority = "REVERSAL";
+    } else if (continuationAuthority) {
+      direction = continuationAuthority;
+      authority = "CONTINUATION";
+    }
+  }
+  const confidence = Number(clamp(Math.max(weightedLong, weightedShort), 0, 100).toFixed(1));
+  const edge = Number(clamp(Math.abs(weightedLong - weightedShort), 0, 100).toFixed(1));
   return {
     enabled: CONFIG.fiveLayerEnabled,
-    direction, confidence, edge,
-    long: Number(clamp(long, 0, 100).toFixed(1)),
-    short: Number(clamp(short, 0, 100).toFixed(1)),
+    direction, confidence, edge, authority,
+    long: weightedLong, short: weightedShort,
+    reversalAuthority, reversalEdge: Number(reversalEdge.toFixed(1)),
+    continuationAuthority, continuationLong: Number(continuationLong.toFixed(1)), continuationShort: Number(continuationShort.toFixed(1)), continuationEdge: Number(continuationEdge.toFixed(1)),
     weights, trend, location, momentum, flow, reversal,
   };
 }
@@ -1445,21 +1493,21 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   let continuationLong = clamp(continuationLongRaw + (strongBreakLong ? 10 : 0), 0, 100);
   let continuationShort = clamp(continuationShortRaw + (strongBreakShort ? 10 : 0), 0, 100);
 
-  // V20.5: TOP-DOWN CONTROL. The higher timeframe decides the structural
-  // side first; 15m/5m are confirmation/entry timing layers, not the source
-  // of a counter-trend reversal.
+  // V21.2: HTF remains structural context, but it no longer forcibly sets
+  // direction. A confirmed reversal may legitimately trade against the HTF.
+  // HTF only penalizes weak counter-trend ideas; strong layer authority wins.
   const htfLong = topDown.preferredDirection === "long";
   const htfShort = topDown.preferredDirection === "short";
   if (htfLong) {
-    reversalLong += topDown.confidence * 0.12;
-    continuationLong += topDown.confidence * 0.10;
-    reversalShort -= 35;
-    continuationShort -= 20;
+    reversalLong += topDown.confidence * 0.05;
+    continuationLong += topDown.confidence * 0.08;
+    reversalShort -= 10;
+    continuationShort -= 8;
   } else if (htfShort) {
-    reversalShort += topDown.confidence * 0.12;
-    continuationShort += topDown.confidence * 0.10;
-    reversalLong -= 35;
-    continuationLong -= 20;
+    reversalShort += topDown.confidence * 0.05;
+    continuationShort += topDown.confidence * 0.08;
+    reversalLong -= 10;
+    continuationLong -= 8;
   }
   if (topDown.supportBreak) { reversalLong -= 70; continuationShort += 28; }
   if (topDown.resistanceBreak) { reversalShort -= 70; continuationLong += 28; }
@@ -1475,26 +1523,49 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const reversalDirection = reversalLong >= reversalShort ? 'long' : 'short';
   const continuationDirection = continuationLong >= continuationShort ? 'long' : 'short';
 
-  const reversalTrigger = bestReversal >= Number(CONFIG.reversalTriggerMinConfidence || 52) &&
-    !((topDown.supportBreak && reversalDirection === "long") || (topDown.resistanceBreak && reversalDirection === "short")) &&
-    ((reversalDirection === 'long' && priorMoveOppositeLong && (zoneLong.nearSupport || rLong.bullishReject) && (!liveBreakShort || genuineLongFailure)) ||
-     (reversalDirection === 'short' && priorMoveOppositeShort && (zoneShort.nearResistance || rShort.bearishReject) && (!liveBreakLong || genuineShortFailure)));
-  const continuationTrigger = bestContinuation >= Number(CONFIG.continuationTriggerMinConfidence || 52) &&
-    ((continuationDirection === 'long' && (firstBreakLong || directionalDisplacementLong)) ||
-     (continuationDirection === 'short' && (firstBreakShort || directionalDisplacementShort)));
+  // V21.2: setup classification is independent of HTF direction.
+  // REVERSAL requires prior displacement + reaction/zone + directional flip.
+  // CONTINUATION requires fresh expansion/breakout and layer agreement.
+  const reversalSideLayer = reversalDirection === 'long' ? fiveLayers.reversal.long : fiveLayers.reversal.short;
+  const reversalSideMomentum = reversalDirection === 'long' ? fiveLayers.momentum.long : fiveLayers.momentum.short;
+  const reversalSideLocation = reversalDirection === 'long' ? fiveLayers.location.long : fiveLayers.location.short;
+  const reversalSideFlow = reversalDirection === 'long' ? fiveLayers.flow.long : fiveLayers.flow.short;
+  const reversalStrong = bestReversal >= Number(CONFIG.reversalAuthorityMin || 68) &&
+    Math.abs(reversalLong - reversalShort) >= Number(CONFIG.reversalAuthorityEdge || 10) &&
+    reversalSideMomentum >= 45 && reversalSideLocation >= 45 &&
+    ((reversalDirection === 'long' && priorMoveOppositeLong && (zoneLong.nearSupport || rLong.bullishReject || fiveLayers.momentum.divergence?.bullish)) ||
+     (reversalDirection === 'short' && priorMoveOppositeShort && (zoneShort.nearResistance || rShort.bearishReject || fiveLayers.momentum.divergence?.bearish))) &&
+    !((reversalDirection === 'long' && liveBreakShort && !genuineLongFailure) ||
+      (reversalDirection === 'short' && liveBreakLong && !genuineShortFailure));
+
+  const continuationSideTrend = continuationDirection === 'long' ? fiveLayers.trend.long : fiveLayers.trend.short;
+  const continuationSideMomentum = continuationDirection === 'long' ? fiveLayers.momentum.long : fiveLayers.momentum.short;
+  const continuationSideFlow = continuationDirection === 'long' ? fiveLayers.flow.long : fiveLayers.flow.short;
+  const continuationBreak = continuationDirection === 'long' ? (firstBreakLong || htfBreakLong || directionalDisplacementLong) : (firstBreakShort || htfBreakShort || directionalDisplacementShort);
+  const continuationExhaustion = continuationDirection === 'long'
+    ? (rLong.rsi5 > 78 || (impulse.move5 > 0 && impulse.acceleration < 0 && impulse.rangeExpansion < 1.05))
+    : (rShort.rsi5 < 22 || (impulse.move5 < 0 && impulse.acceleration > 0 && impulse.rangeExpansion < 1.05));
+  const continuationStrong = bestContinuation >= Number(CONFIG.continuationAuthorityMin || 66) &&
+    Math.abs(continuationLong - continuationShort) >= Number(CONFIG.continuationAuthorityEdge || 10) &&
+    continuationBreak && continuationSideTrend >= 52 && continuationSideMomentum >= 50 && continuationSideFlow >= 48 && !continuationExhaustion &&
+    !lateChase;
+
+  const reversalVsContinuation = bestReversal - bestContinuation;
+  const reversalTrigger = reversalStrong &&
+    (reversalVsContinuation >= -Number(CONFIG.reversalContinuationGap || 5));
+  const continuationTrigger = continuationStrong &&
+    (bestContinuation > bestReversal + Number(CONFIG.reversalContinuationGap || 5));
 
   let setupType = 'NONE';
-  let direction = continuationDirection;
-  if (topDown.preferredDirection) direction = topDown.preferredDirection;
-  if (reversalTrigger && (!continuationTrigger || bestReversal >= bestContinuation + Number(CONFIG.setupDominanceMargin || 6))) {
+  let direction = fiveLayers.direction || continuationDirection;
+  if (reversalTrigger) {
     setupType = 'REVERSAL';
     direction = reversalDirection;
   } else if (continuationTrigger) {
     setupType = 'CONTINUATION';
     direction = continuationDirection;
   } else {
-    // No trigger: use the stronger side for diagnostics/ranking only.
-    if (bestReversal > bestContinuation + 4) {
+    if (reversalVsContinuation > 0) {
       setupType = 'REVERSAL_WATCH';
       direction = reversalDirection;
     } else {
@@ -1597,6 +1668,8 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   if (oi.aligned) reasons.push('OI_ALIGNMENT');
   if (lateChase) reasons.push('LATE_CHASE_PENALTY');
   if (fiveLayers.direction === direction) reasons.push(`5L_${direction.toUpperCase()}_${fiveLayers.confidence.toFixed(0)}`);
+  if (fiveLayers.authority === "REVERSAL") reasons.push(`DIRECTION_AUTHORITY_REVERSAL_${direction.toUpperCase()}`);
+  if (fiveLayers.authority === "CONTINUATION") reasons.push(`DIRECTION_AUTHORITY_CONTINUATION_${direction.toUpperCase()}`);
   if (fiveLayers.location.reasons.length) reasons.push(...fiveLayers.location.reasons.slice(0, 4).map(x => `LOC:${x}`));
   if (fiveLayers.momentum.reasons.length) reasons.push(...fiveLayers.momentum.reasons.slice(0, 4).map(x => `MOM:${x}`));
   if (fiveLayers.flow.reasons.length) reasons.push(...fiveLayers.flow.reasons.slice(0, 4).map(x => `FLOW5:${x}`));
@@ -1615,6 +1688,8 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     tpPlan,
     setupEvidence: {
       setupType, reversalEvidence, reversalConfidence, continuationConfidence, setupDominance,
+      directionAuthority: fiveLayers.authority, reversalAuthority: fiveLayers.reversalAuthority, continuationAuthority: fiveLayers.continuationAuthority,
+      reversalEdge: fiveLayers.reversalEdge, continuationEdge: fiveLayers.continuationEdge,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
       tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
       zoneState: zone.state, nearSupport: zone.nearSupport, nearResistance: zone.nearResistance,
@@ -1660,6 +1735,8 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       oiDeltaPct: capitalFlow.oiDeltaPct, volumeDeltaPct: capitalFlow.volumeDeltaPct, volumeRatio5m: capitalFlow.volumeRatio5m, volumeRatio15m: capitalFlow.volumeRatio15m,
       longOi: capitalFlow.longOi, shortOi: capitalFlow.shortOi, sideBias: capitalFlow.sideBias, volumeProfileZone: capitalFlow.profile?.zoneState || null, volumeProfilePoc: capitalFlow.profile?.poc || null,
       fiveLayerConfidence: fiveLayers.confidence, fiveLayerEdge: fiveLayers.edge, fiveLayerDirection: fiveLayers.direction,
+      directionAuthority: fiveLayers.authority, reversalAuthority: fiveLayers.reversalAuthority, continuationAuthority: fiveLayers.continuationAuthority,
+      reversalAuthorityEdge: fiveLayers.reversalEdge, continuationAuthorityEdge: fiveLayers.continuationEdge,
       trendLayer: direction === "long" ? fiveLayers.trend.long : fiveLayers.trend.short,
       locationLayer: direction === "long" ? fiveLayers.location.long : fiveLayers.location.short,
       momentumLayer: direction === "long" ? fiveLayers.momentum.long : fiveLayers.momentum.short,
@@ -1884,6 +1961,26 @@ function candidateIsActionable(candidate) {
   }
 
   const evTopDown = ev.topDown || {};
+  const layer = ev.fiveLayers || {};
+  if (CONFIG.directionAuthorityEnabled && candidate.setupType === "REVERSAL") {
+    const revSide = candidate.direction === "long" ? num(layer.reversal?.long) : num(layer.reversal?.short);
+    const revOpp = candidate.direction === "long" ? num(layer.reversal?.short) : num(layer.reversal?.long);
+    const momSide = candidate.direction === "long" ? num(layer.momentum?.long) : num(layer.momentum?.short);
+    const locSide = candidate.direction === "long" ? num(layer.location?.long) : num(layer.location?.short);
+    if (revSide < CONFIG.reversalAuthorityMin || (revSide - revOpp) < CONFIG.reversalAuthorityEdge || momSide < CONFIG.momentumConflictBlock || locSide < CONFIG.locationConflictBlock) {
+      return { ok: false, reason: "REVERSAL_DIRECTION_AUTHORITY_NOT_CONFIRMED" };
+    }
+  }
+  if (CONFIG.directionAuthorityEnabled && candidate.setupType === "CONTINUATION") {
+    const side = candidate.direction === "long" ? "long" : "short";
+    const trendSide = num(layer.trend?.[side]);
+    const momSide = num(layer.momentum?.[side]);
+    const flowSide = num(layer.flow?.[side]);
+    const opp = side === "long" ? "short" : "long";
+    if (trendSide < 52 || momSide < 50 || flowSide < 48 || (num(layer.momentum?.[side]) - num(layer.momentum?.[opp]) < -CONFIG.momentumConflictBlock)) {
+      return { ok: false, reason: "CONTINUATION_DIRECTION_AUTHORITY_NOT_CONFIRMED" };
+    }
+  }
   if (evTopDown.preferredDirection && candidate.direction !== evTopDown.preferredDirection) {
     const layers = ev.fiveLayers || {};
     const oppositeReversal = candidate.direction === "long" ? num(layers.reversal?.long) : num(layers.reversal?.short);
