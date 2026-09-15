@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V20.5.1-TOP-DOWN-DEEP-RESCUE-20X";
+export const BOT_VERSION = "V21.0.0-HTF-CAPITAL-FLOW-EXPANSION-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -87,6 +87,21 @@ const CONFIG = Object.freeze({
   tpReversalMaxPct: 1.80,
   tpContinuationMaxPct: 2.20,
   tpMinTargetScore: 52,
+
+  // V21 Capital Flow Engine. Flow is a quality/ranking layer, not a hard
+  // direction gate. True wallet-labelled smart-money data is not available
+  // from GMX market snapshots, so smart-money is represented as a market-flow
+  // proxy using price/OI/side-OI/volume response.
+  capitalFlowEnabled: true,
+  capitalFlowWeight: 0.34,
+  capitalFlowMinScore: 55,
+  volumeExpansionMinRatio: 1.25,
+  oiExpansionMinPct: 0.50,
+  flowLookback: 24,
+  volumeProfileLookback: 72,
+  volumeProfileBuckets: 24,
+  volumeProfileValueAreaPct: 0.70,
+  capitalFlowStatePersistMs: 30 * 60 * 1000,
 
   // Economic gate: estimates round-trip position fees plus a conservative
   // execution-cost buffer. This is deliberately NOT a minimum-notional gate.
@@ -344,8 +359,10 @@ async function loadState() {
     lastScanId: null,
     lastExecution: null,
     executionHistory: [],
+    marketSnapshots: {},
   });
   if (!Array.isArray(state.executionHistory)) state.executionHistory = [];
+  if (!state.marketSnapshots || typeof state.marketSnapshots !== "object") state.marketSnapshots = {};
   return state;
 }
 
@@ -486,6 +503,7 @@ function cleanCandles(rows) {
       high: candleHigh(c),
       low: candleLow(c),
       close: candleClose(c),
+      volume: num(c?.volume ?? c?.v ?? c?.[5], 0),
     }))
     .filter((c) => c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0)
     .sort((a, b) => a.timestamp - b.timestamp);
@@ -904,12 +922,124 @@ function topDownLevelAnalysis(candles1d, candles4h, candles1h, price) {
   };
 }
 
-function scoreCandidate({ market, ticker, candles5, candles15, candles1h, candles4h, candles1d }) {
+
+function numericFieldByKeys(obj, keys) {
+  for (const key of keys) {
+    const value = num(obj?.[key], NaN);
+    if (Number.isFinite(value) && value !== 0) return value;
+  }
+  return 0;
+}
+
+function extractSideOpenInterest(source) {
+  const o = source || {};
+  const longA = numericFieldByKeys(o, ["longInterestUsdUsingLongToken", "longInterestUsdUsingShortToken"]);
+  const shortA = numericFieldByKeys(o, ["shortInterestUsdUsingLongToken", "shortInterestUsdUsingShortToken"]);
+  const longB = numericFieldByKeys(o, ["longOpenInterest", "longOpenInterestUsd", "longOi", "longOI", "longInterestUsd"]);
+  const shortB = numericFieldByKeys(o, ["shortOpenInterest", "shortOpenInterestUsd", "shortOi", "shortOI", "shortInterestUsd"]);
+  return { longOi: longA || longB, shortOi: shortA || shortB };
+}
+
+function marketFlowSnapshot(ticker, marketValue, previous) {
+  const source = { ...(ticker || {}), ...(marketValue || {}) };
+  const oi = tickerOpenInterest(source);
+  const sides = extractSideOpenInterest(source);
+  const volume24h = tickerVolume(source);
+  const price = tickerPrice(source);
+  const prevOi = num(previous?.openInterest);
+  const prevVolume = num(previous?.volume24h);
+  const prevPrice = num(previous?.price);
+  const oiDeltaPct = prevOi > 0 ? pct(oi, prevOi) : 0;
+  const volumeDeltaPct = prevVolume > 0 ? pct(volume24h, prevVolume) : 0;
+  const priceDeltaPct = prevPrice > 0 ? pct(price, prevPrice) : tickerChange5m(source);
+  const total = sides.longOi + sides.shortOi;
+  const longShare = total > 0 ? sides.longOi / total : 0.5;
+  const shortShare = total > 0 ? sides.shortOi / total : 0.5;
+  const sideBias = (longShare - shortShare) * 100;
+  let smartMoneyProxy = 50;
+  let flowState = "NEUTRAL";
+  let flowDirection = priceDeltaPct >= 0 ? "long" : "short";
+  const evidence = [];
+
+  if (priceDeltaPct > 0 && oiDeltaPct > 0) {
+    smartMoneyProxy += 18; flowState = "ACCUMULATION_BUILD"; flowDirection = "long"; evidence.push("PRICE_UP_OI_UP");
+  } else if (priceDeltaPct < 0 && oiDeltaPct > 0) {
+    smartMoneyProxy += 18; flowState = "DISTRIBUTION_SHORT_BUILD"; flowDirection = "short"; evidence.push("PRICE_DOWN_OI_UP");
+  } else if (priceDeltaPct > 0 && oiDeltaPct < 0) {
+    smartMoneyProxy -= 4; flowState = "SHORT_COVERING"; flowDirection = "long"; evidence.push("PRICE_UP_OI_DOWN");
+  } else if (priceDeltaPct < 0 && oiDeltaPct < 0) {
+    smartMoneyProxy -= 4; flowState = "LONG_UNWIND"; flowDirection = "short"; evidence.push("PRICE_DOWN_OI_DOWN");
+  }
+  if (Math.abs(volumeDeltaPct) >= 5) { smartMoneyProxy += 8; evidence.push("VOLUME_FLOW_EXPANDING"); }
+  if (sides.longOi > 0 && sides.shortOi > 0) {
+    if (flowDirection === "long" && sideBias >= 8) { smartMoneyProxy += 10; evidence.push("LONG_OI_DOMINANT"); }
+    if (flowDirection === "short" && sideBias <= -8) { smartMoneyProxy += 10; evidence.push("SHORT_OI_DOMINANT"); }
+    if (flowDirection === "long" && sideBias <= -12) { smartMoneyProxy -= 8; evidence.push("SHORT_OI_AGAINST_LONG"); }
+    if (flowDirection === "short" && sideBias >= 12) { smartMoneyProxy -= 8; evidence.push("LONG_OI_AGAINST_SHORT"); }
+  }
+  return {
+    price, openInterest: oi, volume24h,
+    oiDeltaPct: Number(oiDeltaPct.toFixed(3)), volumeDeltaPct: Number(volumeDeltaPct.toFixed(3)), priceDeltaPct: Number(priceDeltaPct.toFixed(3)),
+    longOi: sides.longOi, shortOi: sides.shortOi, longShare: Number(longShare.toFixed(4)), shortShare: Number(shortShare.toFixed(4)), sideBias: Number(sideBias.toFixed(2)),
+    smartMoneyProxy: Number(clamp(smartMoneyProxy, 0, 100).toFixed(1)), flowState, flowDirection, evidence,
+  };
+}
+
+function volumeProfile(candles, currentPrice) {
+  const rows = (candles || []).slice(-CONFIG.volumeProfileLookback).filter(c => num(c.volume) > 0 && c.high >= c.low && c.close > 0);
+  if (rows.length < 12) return { available: false, reason: "NO_CANDLE_VOLUME" };
+  const low = Math.min(...rows.map(c => c.low)), high = Math.max(...rows.map(c => c.high));
+  if (!(high > low)) return { available: false, reason: "FLAT_PRICE_RANGE" };
+  const buckets = Math.max(8, Number(CONFIG.volumeProfileBuckets) || 24), width = (high - low) / buckets;
+  const bins = Array.from({length:buckets},(_,i)=>({index:i,low:low+i*width,high:i===buckets-1?high:low+(i+1)*width,volume:0}));
+  for (const c of rows) {
+    const typical = (c.high + c.low + c.close) / 3;
+    const idx = clamp(Math.floor((typical-low)/width),0,buckets-1);
+    bins[idx].volume += num(c.volume);
+  }
+  const total = bins.reduce((a,b)=>a+b.volume,0); if (!(total>0)) return {available:false,reason:"ZERO_PROFILE_VOLUME"};
+  const poc = bins.reduce((a,b)=>b.volume>a.volume?b:a,bins[0]);
+  const sorted=[...bins].sort((a,b)=>b.volume-a.volume); const target=total*CONFIG.volumeProfileValueAreaPct; let acc=0; const value=[];
+  for (const b of sorted){if(acc>=target)break;acc+=b.volume;value.push(b);}
+  const valueLow=Math.min(...value.map(b=>b.low)), valueHigh=Math.max(...value.map(b=>b.high));
+  const maxVol=poc.volume, hvn=bins.filter(b=>b.volume>=maxVol*0.65).map(b=>(b.low+b.high)/2), lvn=bins.filter(b=>b.volume<=maxVol*0.18).map(b=>(b.low+b.high)/2);
+  const p=num(currentPrice), pocPrice=(poc.low+poc.high)/2; let zoneState="AWAY";
+  if(p>=valueLow&&p<=valueHigh)zoneState="VALUE_AREA";
+  if(Math.abs(p-pocPrice)<=width)zoneState="POC";
+  if(hvn.some(x=>Math.abs(pct(p,x))<=0.35))zoneState="HVN";
+  if(lvn.some(x=>Math.abs(pct(p,x))<=0.35))zoneState="LVN";
+  return {available:true,poc:pocPrice,valueLow,valueHigh,hvn,lvn,zoneState,pocDistancePct:Number(Math.abs(pct(p,pocPrice)).toFixed(3)),totalVolume:total,binWidth:width};
+}
+
+function candleVolumeFlow(candles) {
+  const rows=(candles||[]).filter(c=>num(c.volume)>0); if(rows.length<8)return {available:false,ratio:0,lastVolume:0};
+  const recent=rows.slice(-3).reduce((a,c)=>a+num(c.volume),0)/3, baseRows=rows.slice(-21,-3), base=baseRows.length?baseRows.reduce((a,c)=>a+num(c.volume),0)/baseRows.length:recent;
+  return {available:true,ratio:base>0?recent/base:0,lastVolume:num(rows.at(-1).volume)};
+}
+
+function capitalFlowEngine({ticker,marketValue,previousSnapshot,candles5,candles15,price}) {
+  if(!CONFIG.capitalFlowEnabled)return {enabled:false,score:50,direction:null,state:"DISABLED",reasons:[]};
+  const flow=marketFlowSnapshot(ticker,marketValue,previousSnapshot), v5=candleVolumeFlow(candles5), v15=candleVolumeFlow(candles15), profile=volumeProfile(candles15,price);
+  let longScore=50, shortScore=50; const reasons=[];
+  if(flow.flowDirection==="long")longScore+=16; if(flow.flowDirection==="short")shortScore+=16;
+  if(flow.smartMoneyProxy>=65){if(flow.flowDirection==="long")longScore+=10;if(flow.flowDirection==="short")shortScore+=10;}
+  if(v5.available&&v5.ratio>=CONFIG.volumeExpansionMinRatio){if(flow.priceDeltaPct>=0)longScore+=10;else shortScore+=10;reasons.push("5M_VOLUME_EXPANSION");}
+  if(v15.available&&v15.ratio>=CONFIG.volumeExpansionMinRatio){if(flow.priceDeltaPct>=0)longScore+=8;else shortScore+=8;reasons.push("15M_VOLUME_EXPANSION");}
+  if(Math.abs(flow.oiDeltaPct)>=CONFIG.oiExpansionMinPct){if(flow.priceDeltaPct>0&&flow.oiDeltaPct>0)longScore+=10;if(flow.priceDeltaPct<0&&flow.oiDeltaPct>0)shortScore+=10;reasons.push("OI_EXPANSION");}
+  if(flow.longOi>0&&flow.shortOi>0){if(flow.sideBias>=10)longScore+=7;if(flow.sideBias<=-10)shortScore+=7;}
+  if(profile.available){if(profile.zoneState==="LVN")reasons.push("LOW_VOLUME_NODE");if(profile.zoneState==="HVN"||profile.zoneState==="POC")reasons.push("HIGH_VOLUME_NODE");}
+  const direction=longScore===shortScore?flow.flowDirection:longScore>shortScore?"long":"short", score=Number(clamp(direction==="long"?longScore:shortScore,0,100).toFixed(1));
+  if(score>=CONFIG.capitalFlowMinScore)reasons.push(`FLOW_${score.toFixed(0)}`);
+  return {enabled:true,score,longScore:Number(clamp(longScore,0,100).toFixed(1)),shortScore:Number(clamp(shortScore,0,100).toFixed(1)),direction,state:flow.flowState,smartMoneyProxy:flow.smartMoneyProxy,oiDeltaPct:flow.oiDeltaPct,volumeDeltaPct:flow.volumeDeltaPct,priceDeltaPct:flow.priceDeltaPct,longOi:flow.longOi,shortOi:flow.shortOi,sideBias:flow.sideBias,volumeRatio5m:v5.ratio,volumeRatio15m:v15.ratio,profile,reasons:[...flow.evidence,...reasons]};
+}
+
+function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles5, candles15, candles1h, candles4h, candles1d }) {
   const five = structureIndicators(candles5, 'long');
   const fifteen = structureIndicators(candles15, 'long');
   const price = five.price;
   const topDown = topDownLevelAnalysis(candles1d, candles4h, candles1h, price);
   const impulse = candleImpulseMetrics(candles5);
+  const capitalFlow = capitalFlowEngine({ ticker, marketValue, previousSnapshot, candles5, candles15, price });
   const rLong = reversalMetrics(candles5, candles15, ticker, 'long');
   const rShort = reversalMetrics(candles5, candles15, ticker, 'short');
 
@@ -1154,14 +1284,17 @@ function scoreCandidate({ market, ticker, candles5, candles15, candles1h, candle
   if (setupType === 'REVERSAL') score += Math.min(14, reversalConfidence * 0.14);
   if (setupType === 'CONTINUATION') score += Math.min(12, continuationConfidence * 0.12);
   if (lateChase) score -= 22;
-  score = clamp(score, 0, 100);
+  const capitalFlowBoost = capitalFlow.enabled
+    ? (capitalFlow.direction === direction ? (capitalFlow.score - 50) * CONFIG.capitalFlowWeight : -(capitalFlow.score - 50) * 0.18)
+    : 0;
+  score = clamp(score + capitalFlowBoost, 0, 100);
 
   const risk = clamp(
     (lateChase ? 18 : 0) + (extension > 3.5 ? 15 : 0) + (five.rsi > 82 || five.rsi < 18 ? 15 : 0) + (five.adx < 12 ? 8 : 0) + (oi.exhausted && setupType === 'CONTINUATION' ? 7 : 0),
     0, 100
   );
   const edge = clamp(
-    16 + impulseQuality * 0.8 + reversalEvidence * 2.5 + (zone.state !== 'AWAY_FROM_ZONE' ? 10 : 0) + (oi.aligned ? 8 : 0) + (sharp ? 6 : 0) + Math.max(0, setupDominance) * 0.08 - risk * 0.45,
+    16 + impulseQuality * 0.8 + reversalEvidence * 2.5 + (zone.state !== 'AWAY_FROM_ZONE' ? 10 : 0) + (oi.aligned ? 8 : 0) + (sharp ? 6 : 0) + Math.max(0, setupDominance) * 0.08 + (capitalFlow.enabled ? (capitalFlow.score - 50) * 0.12 : 0) - risk * 0.45,
     0, 100
   );
 
@@ -1216,8 +1349,13 @@ function scoreCandidate({ market, ticker, candles5, candles15, candles1h, candle
       reversalTiming, continuationTiming,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
       tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
+      capitalFlow, smartMoneyProxy: capitalFlow.smartMoneyProxy, capitalFlowScore: capitalFlow.score,
+      capitalFlowDirection: capitalFlow.direction, capitalFlowState: capitalFlow.state,
+      volumeRatio5m: capitalFlow.volumeRatio5m, volumeRatio15m: capitalFlow.volumeRatio15m, oiDeltaPct: capitalFlow.oiDeltaPct,
+      longOi: capitalFlow.longOi, shortOi: capitalFlow.shortOi, volumeProfileZone: capitalFlow.profile?.zoneState || null,
+      volumeProfilePoc: capitalFlow.profile?.poc || null, volumeProfileValueLow: capitalFlow.profile?.valueLow || null, volumeProfileValueHigh: capitalFlow.profile?.valueHigh || null,
     },
-    reasons,
+    reasons: [...reasons, ...capitalFlow.reasons.map(x => `FLOW:${x}`)],
     indicators: {
       rsi: Number(five.rsi.toFixed(2)), adx: Number(five.adx.toFixed(2)), ema20: five.ema20, ema50: five.ema50, ema200: five.ema200,
       macdHistogram: five.macd.histogram, move5m: move5, move15m: move15, oiChange5m: oi.delta, reactionScore: srReaction,
@@ -1229,7 +1367,10 @@ function scoreCandidate({ market, ticker, candles5, candles15, candles1h, candle
       tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
       reversalConfidence, continuationConfidence, setupDominance, triggerActive: setupType === 'REVERSAL' || setupType === 'CONTINUATION',
       topDownState: topDown.state, topDownDirection: topDown.preferredDirection, topDownConfidence: topDown.confidence, topDownControllingTimeframe: topDown.controllingTimeframe, topDownLevelPrice: topDown.levelPrice, topDownSupport: topDown.support?.price || null, topDownResistance: topDown.resistance?.price || null, topDownSupportBreak: topDown.supportBreak, topDownResistanceBreak: topDown.resistanceBreak, topDownSupportReaction: topDown.supportReaction, topDownResistanceReaction: topDown.resistanceReaction, topDownSupportFailedBreak: topDown.supportFailedBreak, topDownResistanceFailedBreak: topDown.resistanceFailedBreak,
-      volume24h: tickerVolume(ticker), openInterest: tickerOpenInterest(ticker), fundingRate: tickerFunding(ticker), liquidity: marketLiquidity(market)
+      volume24h: tickerVolume(ticker), openInterest: tickerOpenInterest(ticker), fundingRate: tickerFunding(ticker), liquidity: marketLiquidity(market),
+      capitalFlowScore: capitalFlow.score, capitalFlowDirection: capitalFlow.direction, capitalFlowState: capitalFlow.state, smartMoneyProxy: capitalFlow.smartMoneyProxy,
+      oiDeltaPct: capitalFlow.oiDeltaPct, volumeDeltaPct: capitalFlow.volumeDeltaPct, volumeRatio5m: capitalFlow.volumeRatio5m, volumeRatio15m: capitalFlow.volumeRatio15m,
+      longOi: capitalFlow.longOi, shortOi: capitalFlow.shortOi, sideBias: capitalFlow.sideBias, volumeProfileZone: capitalFlow.profile?.zoneState || null, volumeProfilePoc: capitalFlow.profile?.poc || null
     },
     market, ticker, candles5, candles15,
   };
@@ -1570,13 +1711,25 @@ async function fetchCandles(sdk, marketOrSymbol, timeframe, limit) {
   throw new Error(`OHLCV_ALL_SOURCES_FAILED:${errors.slice(0,4).join("|")}`);
 }
 
-async function broadScan(sdk, markets, tickers) {
+function findMarketValue(marketValues, market) {
+  const rows = Array.isArray(marketValues) ? marketValues : [];
+  const addr = String(market?.marketTokenAddress || market?.marketAddress || market?.address || market?.marketToken || "").toLowerCase();
+  const symbol = marketDisplaySymbol(market).toUpperCase();
+  return rows.find(x => {
+    const xa = String(x?.marketTokenAddress || x?.marketAddress || x?.address || x?.marketToken || "").toLowerCase();
+    const xs = String(x?.symbol || x?.marketSymbol || x?.name || "").toUpperCase();
+    return (addr && xa && addr === xa) || (symbol && xs && xs === symbol);
+  }) || null;
+}
+
+async function broadScan(sdk, markets, tickers, marketValues = [], previousSnapshots = {}) {
   const listed = markets.filter(isLikelyPerpMarket);
   const results = await mapLimit(listed, CONFIG.ohlcvConcurrency, async (market) => {
     const symbol = candleSymbolFromMarket(market);
     try {
       const candles5 = await fetchCandles(sdk, market, CONFIG.broadTimeframe, CONFIG.broadLimit);
       const ticker = findTicker(tickers, market);
+      const marketValue = findMarketValue(marketValues, market);
       const five = structureIndicators(candles5, "long");
       const short = structureIndicators(candles5, "short");
       const change = tickerChange5m(ticker);
@@ -1588,6 +1741,8 @@ async function broadScan(sdk, markets, tickers) {
         symbol: marketDisplaySymbol(market),
         candleSymbol: symbol,
         candles5,
+        marketValue,
+        previousSnapshot: previousSnapshots[marketDisplaySymbol(market)] || null,
         broadRankScore: Number((
           impulse * 10 +
           Math.max(five.adx, short.adx) * 0.7 +
@@ -1648,6 +1803,8 @@ async function deepScan(sdk, broadRows) {
     const candidate = scoreCandidate({
       market: row.market,
       ticker: row.ticker,
+      marketValue: row.marketValue,
+      previousSnapshot: row.previousSnapshot,
       candles5: row.candles5,
       candles15,
       candles1h,
@@ -2058,6 +2215,7 @@ function cycleMessage(report) {
     `🪙 Universe: ${report.universe}`,
     `🔎 Broad 5M: ${report.broadSuccess}/${report.universe}`,
     `🧠 Deep: ${report.deepCount}`,
+    `💧 Capital flow strong: ${report.flowCount} | Smart-money proxy: ${report.smartMoneyCount}`,
     `⚡ Event candidates: ${report.actionableCount}`,
     ``,
     `🚀 Early impulses: ${report.impulseCount}`,
@@ -2092,6 +2250,8 @@ function cycleMessage(report) {
       lines.push(`  📌 ${String(item.direction || "N/A").toUpperCase()} | Entry ${formatPrice(item.entry)} | TP ${formatPrice(item.tp)}`);
       const econ = item.economics || {};
       lines.push(`  🧠 ${String(item.setupType || "N/A")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)}`);
+      const cf = item.setupEvidence?.capitalFlow || {};
+      lines.push(`  💧 Flow ${num(cf.score).toFixed(1)} | ${String(cf.state || "N/A")} | Smart ${num(cf.smartMoneyProxy).toFixed(1)} | OI Δ ${num(cf.oiDeltaPct).toFixed(2)}% | Vol5 ${num(cf.volumeRatio5m).toFixed(2)}x`);
       lines.push(`  💹 Gross ${formatUsd(econ.grossPnlUsd)} | Cost ${formatUsd(econ.totalCostUsd)} | Net ${formatUsd(econ.expectedNetUsd)} | TP move ${num(econ.tpMovePct).toFixed(2)}%`);
       lines.push(`  🚫 ${item.reason}`);
     }
@@ -2351,17 +2511,18 @@ async function runCycle(event, env) {
     chainId: CHAIN_ID,
   });
 
-  const [markets, tickers, wallet, openPositions] = await Promise.all([
+  const [markets, tickers, wallet, openPositions, marketValues] = await Promise.all([
     runtime.sdk.fetchMarkets(),
     runtime.sdk.fetchMarketsTickers(),
     getWalletSnapshot(runtime.sdk, runtime.account),
     getOpenPositions(runtime.sdk, runtime.account),
+    typeof runtime.sdk.fetchMarketsValues === "function" ? runtime.sdk.fetchMarketsValues().catch(() => []) : Promise.resolve([]),
   ]);
 
   const universe = Array.isArray(markets) ? markets.filter(isLikelyPerpMarket) : [];
   const tickerRows = Array.isArray(tickers) ? tickers : [];
 
-  const broad = await broadScan(runtime.sdk, universe, tickerRows);
+  const broad = await broadScan(runtime.sdk, universe, tickerRows, marketValues, state.marketSnapshots);
   const deep = await deepScan(runtime.sdk, broad.rows);
   const intelligence = await fetchOptionalIntelligence(env);
   const ranked = enrichWithIntelligence(deep, intelligence);
@@ -2420,6 +2581,9 @@ async function runCycle(event, env) {
     earlyTrend: selected[0].setupEvidence?.earlyTrend, earlyBreak: selected[0].setupEvidence?.earlyBreak, earlyTimingBonus: selected[0].setupEvidence?.earlyTimingBonus,
     reversalConfidence: selected[0].reversalConfidence, continuationConfidence: selected[0].continuationConfidence, setupDominance: selected[0].setupDominance,
     triggerActive: selected[0].triggerActive, reversalTrigger: selected[0].reversalTrigger, continuationTrigger: selected[0].continuationTrigger,
+    capitalFlowScore: selected[0].indicators?.capitalFlowScore, capitalFlowDirection: selected[0].indicators?.capitalFlowDirection, capitalFlowState: selected[0].indicators?.capitalFlowState,
+    smartMoneyProxy: selected[0].indicators?.smartMoneyProxy, oiDeltaPct: selected[0].indicators?.oiDeltaPct, volumeRatio5m: selected[0].indicators?.volumeRatio5m,
+    volumeRatio15m: selected[0].indicators?.volumeRatio15m, volumeProfileZone: selected[0].indicators?.volumeProfileZone,
   } : { selected: 0 });
 
   const executions = [];
@@ -2454,7 +2618,8 @@ async function runCycle(event, env) {
   }
 
   const impulseCount = broad.rows.filter((x) => Math.abs(tickerChange5m(x.ticker) || 0) >= 0.70).length;
-  const flowCount = ranked.filter((x) => Math.abs(x.indicators?.oiChange5m || 0) > 0).length;
+  const flowCount = ranked.filter((x) => num(x.indicators?.capitalFlowScore) >= CONFIG.capitalFlowMinScore).length;
+  const smartMoneyCount = ranked.filter((x) => num(x.indicators?.smartMoneyProxy) >= 65).length;
   const maCount = ranked.filter((x) => x.trendConfluence >= 3).length;
   const adxCount = ranked.filter((x) => x.indicators?.adx >= 18).length;
   const srCount = ranked.filter((x) => x.indicators?.reactionScore >= 24).length;
@@ -2473,6 +2638,7 @@ async function runCycle(event, env) {
     actionableCount: actionable.length,
     impulseCount,
     flowCount,
+    smartMoneyCount,
     maCount,
     adxCount,
     srCount,
@@ -2495,6 +2661,14 @@ async function runCycle(event, env) {
     executions,
     topRejected: blocked,
   };
+
+  state.marketSnapshots = state.marketSnapshots || {};
+  for (const row of broad.rows) {
+    const symbol = row.symbol;
+    const t = row.ticker || {};
+    const mv = row.marketValue || {};
+    state.marketSnapshots[symbol] = { at: Date.now(), price: tickerPrice(t), openInterest: tickerOpenInterest({ ...(t || {}), ...(mv || {}) }), volume24h: tickerVolume({ ...(t || {}), ...(mv || {}) }) };
+  }
 
   state.scans += 1;
   state.lastScanId = scanId;
