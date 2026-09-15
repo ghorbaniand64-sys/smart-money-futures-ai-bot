@@ -1,6 +1,6 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ GMX SMART MONEY FUTURES AI BOT — V20 SHARP REVERSAL ENGINE                  ║
+║ GMX SMART MONEY FUTURES AI BOT — V21.1 FIVE-LAYER INTELLIGENCE ENGINE      ║
 ║ Single pipeline • 5M broad scan • 15M deep scan • Classic GMX only          ║
 ║ 20x leverage • 100% wallet • max 1 position • one TP • no SL               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V21.0.0-HTF-CAPITAL-FLOW-EXPANSION-20X";
+export const BOT_VERSION = "V21.1.0-FIVE-LAYER-INTELLIGENCE-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -102,6 +102,19 @@ const CONFIG = Object.freeze({
   volumeProfileBuckets: 24,
   volumeProfileValueAreaPct: 0.70,
   capitalFlowStatePersistMs: 30 * 60 * 1000,
+
+  // V21.1 Five-Layer Market Intelligence.
+  // These are scoring/ranking inputs, not blanket hard gates.
+  fiveLayerEnabled: true,
+  trendLayerWeight: 0.22,
+  locationLayerWeight: 0.20,
+  momentumLayerWeight: 0.18,
+  flowLayerWeight: 0.24,
+  reversalLayerWeight: 0.16,
+  htfConflictSoft: true,
+  htfConflictOverrideMinReversal: 72,
+  htfConflictOverrideMinFlow: 68,
+  htfConflictOverrideMinLayerEdge: 62,
 
   // Economic gate: estimates round-trip position fees plus a conservative
   // execution-cost buffer. This is deliberately NOT a minimum-notional gate.
@@ -1033,6 +1046,264 @@ function capitalFlowEngine({ticker,marketValue,previousSnapshot,candles5,candles
   return {enabled:true,score,longScore:Number(clamp(longScore,0,100).toFixed(1)),shortScore:Number(clamp(shortScore,0,100).toFixed(1)),direction,state:flow.flowState,smartMoneyProxy:flow.smartMoneyProxy,oiDeltaPct:flow.oiDeltaPct,volumeDeltaPct:flow.volumeDeltaPct,priceDeltaPct:flow.priceDeltaPct,longOi:flow.longOi,shortOi:flow.shortOi,sideBias:flow.sideBias,volumeRatio5m:v5.ratio,volumeRatio15m:v15.ratio,profile,reasons:[...flow.evidence,...reasons]};
 }
 
+
+function stochastic(candles, kPeriod = 14, dPeriod = 3) {
+  const rows = Array.isArray(candles) ? candles : [];
+  if (rows.length < kPeriod) return { k: 50, d: 50, available: false };
+  const ks = [];
+  for (let i = kPeriod - 1; i < rows.length; i++) {
+    const w = rows.slice(i - kPeriod + 1, i + 1);
+    const hi = Math.max(...w.map(x => num(x.high)));
+    const lo = Math.min(...w.map(x => num(x.low)));
+    const close = num(rows[i].close);
+    ks.push(hi > lo ? ((close - lo) / (hi - lo)) * 100 : 50);
+  }
+  const k = ks.at(-1) ?? 50;
+  const d = sma(ks.slice(-dPeriod), dPeriod);
+  return { k, d, available: true, history: ks };
+}
+
+function bollingerBands(values, period = 20, multiplier = 2) {
+  const a = Array.isArray(values) ? values : [];
+  if (a.length < period) return { available: false, mid: 0, upper: 0, lower: 0, widthPct: 0, position: 0.5 };
+  const window = a.slice(-period);
+  const mid = sma(window, period);
+  const variance = window.reduce((sum, x) => sum + (x - mid) ** 2, 0) / window.length;
+  const sd = Math.sqrt(Math.max(variance, 0));
+  const upper = mid + multiplier * sd;
+  const lower = mid - multiplier * sd;
+  const price = a.at(-1);
+  const widthPct = mid > 0 ? ((upper - lower) / mid) * 100 : 0;
+  const position = upper > lower ? clamp((price - lower) / (upper - lower), 0, 1) : 0.5;
+  return { available: true, mid, upper, lower, widthPct, position };
+}
+
+function ichimoku(candles, conversionPeriod = 9, basePeriod = 26, spanPeriod = 52) {
+  const rows = Array.isArray(candles) ? candles : [];
+  if (rows.length < spanPeriod) return { available: false, conversion: 0, base: 0, spanA: 0, spanB: 0, cloudTop: 0, cloudBottom: 0 };
+  const mid = (period) => {
+    const w = rows.slice(-period);
+    const hi = Math.max(...w.map(x => num(x.high)));
+    const lo = Math.min(...w.map(x => num(x.low)));
+    return (hi + lo) / 2;
+  };
+  const conversion = mid(conversionPeriod);
+  const base = mid(basePeriod);
+  const spanA = (conversion + base) / 2;
+  const spanB = mid(spanPeriod);
+  const cloudTop = Math.max(spanA, spanB);
+  const cloudBottom = Math.min(spanA, spanB);
+  const price = num(rows.at(-1)?.close);
+  return {
+    available: true, conversion, base, spanA, spanB, cloudTop, cloudBottom,
+    bullish: price > cloudTop && conversion > base,
+    bearish: price < cloudBottom && conversion < base,
+    inCloud: price >= cloudBottom && price <= cloudTop,
+  };
+}
+
+function rsiDivergence(candles, period = 14, lookback = 30) {
+  const rows = Array.isArray(candles) ? candles : [];
+  if (rows.length < period + 8) return { available: false, bullish: false, bearish: false, strength: 0 };
+  const recent = rows.slice(-Math.max(lookback, period + 8));
+  const closes = recent.map(x => num(x.close));
+  const rsis = closes.map((_, i) => i < period ? 50 : rsi(closes.slice(0, i + 1), period));
+  const split = Math.max(3, Math.floor(recent.length / 2));
+  const first = recent.slice(0, split), second = recent.slice(-split);
+  const firstClose = first.at(-1)?.close ?? 0, secondClose = second.at(-1)?.close ?? 0;
+  const firstRsi = rsis[Math.max(0, split - 1)] ?? 50, secondRsi = rsis.at(-1) ?? 50;
+  const firstLow = Math.min(...first.map(x => num(x.low)));
+  const secondLow = Math.min(...second.map(x => num(x.low)));
+  const firstHigh = Math.max(...first.map(x => num(x.high)));
+  const secondHigh = Math.max(...second.map(x => num(x.high)));
+  // Price lower-low + RSI higher-low = bullish divergence.
+  // Price higher-high + RSI lower-high = bearish divergence.
+  const bullish = secondLow < firstLow && secondRsi > firstRsi + 2;
+  const bearish = secondHigh > firstHigh && secondRsi < firstRsi - 2;
+  const strength = bullish ? clamp((secondRsi - firstRsi) * 5, 0, 25)
+    : bearish ? clamp((firstRsi - secondRsi) * 5, 0, 25) : 0;
+  return { available: true, bullish, bearish, strength, firstRsi, secondRsi, firstClose, secondClose };
+}
+
+function fibonacciLevels(candles, lookback = 72) {
+  const rows = (Array.isArray(candles) ? candles : []).slice(-lookback);
+  if (rows.length < 12) return { available: false, swingHigh: 0, swingLow: 0, retracement: {}, extension: {} };
+  const swingHigh = Math.max(...rows.map(x => num(x.high)));
+  const swingLow = Math.min(...rows.map(x => num(x.low)));
+  const range = swingHigh - swingLow;
+  if (!(range > 0)) return { available: false, swingHigh, swingLow, retracement: {}, extension: {} };
+  const retracement = {
+    r236: swingHigh - range * 0.236,
+    r382: swingHigh - range * 0.382,
+    r500: swingHigh - range * 0.500,
+    r618: swingHigh - range * 0.618,
+    r786: swingHigh - range * 0.786,
+  };
+  const extension = {
+    e1272Long: swingHigh + range * 0.272,
+    e1618Long: swingHigh + range * 0.618,
+    e1272Short: swingLow - range * 0.272,
+    e1618Short: swingLow - range * 0.618,
+  };
+  return { available: true, swingHigh, swingLow, range, retracement, extension };
+}
+
+function nearestFibZone(price, fib, atrValue) {
+  if (!fib?.available || !(price > 0)) return { near: false, level: null, type: null, distancePct: 0 };
+  const values = [
+    ["R23.6", fib.retracement.r236], ["R38.2", fib.retracement.r382],
+    ["R50", fib.retracement.r500], ["R61.8", fib.retracement.r618], ["R78.6", fib.retracement.r786],
+  ].filter(([, x]) => Number.isFinite(x) && x > 0);
+  const tolerance = Math.max(num(atrValue) * 0.45, price * 0.0025);
+  let best = null;
+  for (const [type, level] of values) {
+    const d = Math.abs(price - level);
+    if (!best || d < best.d) best = { type, level, d };
+  }
+  return best && best.d <= tolerance
+    ? { near: true, level: best.level, type: best.type, distancePct: Math.abs(pct(price, best.level)) }
+    : { near: false, level: best?.level ?? null, type: best?.type ?? null, distancePct: best ? Math.abs(pct(price, best.level)) : 0 };
+}
+
+function trendLayer(candles5, candles15, candles1h, candles4h, candles1d) {
+  const frames = [
+    ["5M", candles5, 1],
+    ["15M", candles15, 1.4],
+    ["1H", candles1h, 1.8],
+    ["4H", candles4h, 2.2],
+    ["1D", candles1d, 2.8],
+  ];
+  let long = 50, short = 50, weight = 0, evidence = [];
+  for (const [tf, rows, w] of frames) {
+    if (!Array.isArray(rows) || rows.length < 30) continue;
+    const closes = rows.map(x => num(x.close));
+    const price = closes.at(-1);
+    const e20 = ema(closes, 20), e50 = ema(closes, 50), e200 = ema(closes, 200);
+    const m = macd(closes), a = adx(rows, 14), ichi = ichimoku(rows), r = rsi(closes, 14);
+    const votesLong = Number(price > e20) + Number(e20 > e50) + Number(e50 >= e200) + Number(m.histogram > 0) + Number(r > 50) + Number(a >= 18) + Number(ichi.bullish);
+    const votesShort = Number(price < e20) + Number(e20 < e50) + Number(e50 <= e200) + Number(m.histogram < 0) + Number(r < 50) + Number(a >= 18) + Number(ichi.bearish);
+    long += (votesLong - 3.5) * w * 2.0;
+    short += (votesShort - 3.5) * w * 2.0;
+    weight += w;
+    if (votesLong >= 5) evidence.push(`${tf}_LONG`);
+    if (votesShort >= 5) evidence.push(`${tf}_SHORT`);
+  }
+  return {
+    long: Number(clamp(long, 0, 100).toFixed(1)),
+    short: Number(clamp(short, 0, 100).toFixed(1)),
+    direction: long === short ? null : long > short ? "long" : "short",
+    evidence,
+    available: weight > 0,
+  };
+}
+
+function locationLayer(candles5, candles15, candles1h, candles4h, candles1d, price, atrValue) {
+  const frames = [candles5, candles15, candles1h, candles4h, candles1d].filter(x => Array.isArray(x) && x.length >= 20);
+  const fib5 = fibonacciLevels(candles5), fib15 = fibonacciLevels(candles15);
+  const fib = fib15.available ? fib15 : fib5;
+  const fibZone = nearestFibZone(price, fib, atrValue);
+  const bb = bollingerBands((candles5 || []).map(x => num(x.close)), 20, 2);
+  const topDown = topDownLevelAnalysis(candles1d, candles4h, candles1h, price);
+  let long = 50, short = 50, reasons = [];
+  if (topDown.supportReaction || topDown.nearSupport) { long += 18; reasons.push("HTF_SUPPORT"); }
+  if (topDown.resistanceReaction || topDown.nearResistance) { short += 18; reasons.push("HTF_RESISTANCE"); }
+  if (fibZone.near) {
+    if (fibZone.type === "R61.8" || fibZone.type === "R78.6") { long += 8; short += 8; }
+    else { long += 5; short += 5; }
+    reasons.push(`FIB_${fibZone.type}`);
+  }
+  if (bb.available) {
+    if (bb.position <= 0.15) { long += 10; reasons.push("BB_LOWER_EXTREME"); }
+    if (bb.position >= 0.85) { short += 10; reasons.push("BB_UPPER_EXTREME"); }
+    if (bb.widthPct <= 1.2) reasons.push("BB_SQUEEZE");
+  }
+  const sr5 = recentSwingLevels(candles5 || []);
+  const nearestSupport = (sr5.support || []).filter(x => x < price).sort((a,b) => b-a)[0];
+  const nearestResistance = (sr5.resistance || []).filter(x => x > price).sort((a,b) => a-b)[0];
+  if (nearestSupport && Math.abs(price - nearestSupport) <= Math.max(atrValue * 1.35, price * 0.003)) long += 12;
+  if (nearestResistance && Math.abs(nearestResistance - price) <= Math.max(atrValue * 1.35, price * 0.003)) short += 12;
+  return {
+    long: Number(clamp(long, 0, 100).toFixed(1)), short: Number(clamp(short, 0, 100).toFixed(1)),
+    direction: long === short ? null : long > short ? "long" : "short",
+    fib, fibZone, bollinger: bb, topDown, reasons, available: frames.length > 0,
+  };
+}
+
+function momentumLayer(candles5, candles15) {
+  const c5 = candles5 || [], c15 = candles15 || [];
+  const closes5 = c5.map(x => num(x.close)), closes15 = c15.map(x => num(x.close));
+  const r5 = rsi(closes5, 14), r15 = rsi(closes15, 14);
+  const s5 = stochastic(c5), s15 = stochastic(c15);
+  const b5 = bollingerBands(closes5, 20, 2);
+  const m5 = macd(closes5);
+  const div5 = rsiDivergence(c5);
+  let long = 50, short = 50, reasons = [];
+  if (r5 < 38) { long += 14; reasons.push("RSI_OVERSOLD"); }
+  if (r5 > 62) { short += 14; reasons.push("RSI_OVERBOUGHT"); }
+  if (s5.available && s5.k < 20 && s5.k > s5.d) { long += 14; reasons.push("STOCH_BULL_CROSS_LOW"); }
+  if (s5.available && s5.k > 80 && s5.k < s5.d) { short += 14; reasons.push("STOCH_BEAR_CROSS_HIGH"); }
+  if (s15.available && s15.k < 25) long += 6;
+  if (s15.available && s15.k > 75) short += 6;
+  if (m5.histogram > 0) long += 8;
+  if (m5.histogram < 0) short += 8;
+  if (div5.bullish) { long += 18; reasons.push("RSI_BULL_DIV"); }
+  if (div5.bearish) { short += 18; reasons.push("RSI_BEAR_DIV"); }
+  if (b5.available && b5.position <= 0.12) long += 8;
+  if (b5.available && b5.position >= 0.88) short += 8;
+  // Avoid treating extreme RSI as automatic entry: it is exhaustion context.
+  if (r5 > 78) long -= 8;
+  if (r5 < 22) short -= 8;
+  return {
+    long: Number(clamp(long, 0, 100).toFixed(1)), short: Number(clamp(short, 0, 100).toFixed(1)),
+    direction: long === short ? null : long > short ? "long" : "short",
+    rsi5: r5, rsi15: r15, stochastic5: s5, stochastic15: s15, bollinger: b5,
+    macd: m5, divergence: div5, reasons, available: closes5.length >= 20,
+  };
+}
+
+function fiveLayerEngine({ candles5, candles15, candles1h, candles4h, candles1d, capitalFlow, price, atrValue }) {
+  const trend = trendLayer(candles5, candles15, candles1h, candles4h, candles1d);
+  const location = locationLayer(candles5, candles15, candles1h, candles4h, candles1d, price, atrValue);
+  const momentum = momentumLayer(candles5, candles15);
+  const flowScoreLong = num(capitalFlow?.longScore, 50);
+  const flowScoreShort = num(capitalFlow?.shortScore, 50);
+  const flow = {
+    long: flowScoreLong, short: flowScoreShort,
+    direction: flowScoreLong === flowScoreShort ? capitalFlow?.direction : flowScoreLong > flowScoreShort ? "long" : "short",
+    state: capitalFlow?.state || "NEUTRAL",
+    smartMoneyProxy: num(capitalFlow?.smartMoneyProxy, 50),
+    reasons: capitalFlow?.reasons || [],
+    available: Boolean(capitalFlow?.enabled),
+  };
+  const reversalRaw = reversalMetrics(candles5, candles15, null, "long");
+  const reversalShortRaw = reversalMetrics(candles5, candles15, null, "short");
+  const reversal = {
+    long: Number(clamp(reversalRaw.longScore + (momentum.divergence?.bullish ? 18 : 0) + (location.fibZone?.near ? 5 : 0), 0, 100).toFixed(1)),
+    short: Number(clamp(reversalShortRaw.shortScore + (momentum.divergence?.bearish ? 18 : 0) + (location.fibZone?.near ? 5 : 0), 0, 100).toFixed(1)),
+    direction: null,
+    reasons: [...reversalRaw.longEvidence ? ["REVERSAL_PRICE_ACTION"] : [], ...reversalShortRaw.shortEvidence ? ["REVERSAL_PRICE_ACTION"] : []],
+    available: true,
+  };
+  reversal.direction = reversal.long === reversal.short ? null : reversal.long > reversal.short ? "long" : "short";
+
+  const weights = {
+    trend: CONFIG.trendLayerWeight, location: CONFIG.locationLayerWeight,
+    momentum: CONFIG.momentumLayerWeight, flow: CONFIG.flowLayerWeight, reversal: CONFIG.reversalLayerWeight,
+  };
+  const long = trend.long * weights.trend + location.long * weights.location + momentum.long * weights.momentum + flow.long * weights.flow + reversal.long * weights.reversal;
+  const short = trend.short * weights.trend + location.short * weights.location + momentum.short * weights.momentum + flow.short * weights.flow + reversal.short * weights.reversal;
+  const direction = long === short ? (capitalFlow?.direction || trend.direction || location.direction) : long > short ? "long" : "short";
+  const confidence = Number(clamp(Math.max(long, short), 0, 100).toFixed(1));
+  const edge = Number(clamp(Math.abs(long - short), 0, 100).toFixed(1));
+  return {
+    enabled: CONFIG.fiveLayerEnabled,
+    direction, confidence, edge,
+    long: Number(clamp(long, 0, 100).toFixed(1)),
+    short: Number(clamp(short, 0, 100).toFixed(1)),
+    weights, trend, location, momentum, flow, reversal,
+  };
+}
+
 function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles5, candles15, candles1h, candles4h, candles1d }) {
   const five = structureIndicators(candles5, 'long');
   const fifteen = structureIndicators(candles15, 'long');
@@ -1040,6 +1311,10 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const topDown = topDownLevelAnalysis(candles1d, candles4h, candles1h, price);
   const impulse = candleImpulseMetrics(candles5);
   const capitalFlow = capitalFlowEngine({ ticker, marketValue, previousSnapshot, candles5, candles15, price });
+  const fiveLayers = fiveLayerEngine({
+    candles5, candles15, candles1h, candles4h, candles1d,
+    capitalFlow, price, atrValue: five.atr,
+  });
   const rLong = reversalMetrics(candles5, candles15, ticker, 'long');
   const rShort = reversalMetrics(candles5, candles15, ticker, 'short');
 
@@ -1287,14 +1562,16 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const capitalFlowBoost = capitalFlow.enabled
     ? (capitalFlow.direction === direction ? (capitalFlow.score - 50) * CONFIG.capitalFlowWeight : -(capitalFlow.score - 50) * 0.18)
     : 0;
-  score = clamp(score + capitalFlowBoost, 0, 100);
+  const layerScore = direction === "long" ? fiveLayers.long : fiveLayers.short;
+  const layerBoost = fiveLayers.enabled ? (layerScore - 50) * 0.22 : 0;
+  score = clamp(score + capitalFlowBoost + layerBoost, 0, 100);
 
   const risk = clamp(
     (lateChase ? 18 : 0) + (extension > 3.5 ? 15 : 0) + (five.rsi > 82 || five.rsi < 18 ? 15 : 0) + (five.adx < 12 ? 8 : 0) + (oi.exhausted && setupType === 'CONTINUATION' ? 7 : 0),
     0, 100
   );
   const edge = clamp(
-    16 + impulseQuality * 0.8 + reversalEvidence * 2.5 + (zone.state !== 'AWAY_FROM_ZONE' ? 10 : 0) + (oi.aligned ? 8 : 0) + (sharp ? 6 : 0) + Math.max(0, setupDominance) * 0.08 + (capitalFlow.enabled ? (capitalFlow.score - 50) * 0.12 : 0) - risk * 0.45,
+    16 + impulseQuality * 0.8 + reversalEvidence * 2.5 + (zone.state !== 'AWAY_FROM_ZONE' ? 10 : 0) + (oi.aligned ? 8 : 0) + (sharp ? 6 : 0) + Math.max(0, setupDominance) * 0.08 + (capitalFlow.enabled ? (capitalFlow.score - 50) * 0.12 : 0) + (fiveLayers.enabled ? fiveLayers.edge * 0.10 : 0) - risk * 0.45,
     0, 100
   );
 
@@ -1319,6 +1596,11 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   if (topDown.controllingTimeframe) reasons.push(`HTF_TF_${topDown.controllingTimeframe}`);
   if (oi.aligned) reasons.push('OI_ALIGNMENT');
   if (lateChase) reasons.push('LATE_CHASE_PENALTY');
+  if (fiveLayers.direction === direction) reasons.push(`5L_${direction.toUpperCase()}_${fiveLayers.confidence.toFixed(0)}`);
+  if (fiveLayers.location.reasons.length) reasons.push(...fiveLayers.location.reasons.slice(0, 4).map(x => `LOC:${x}`));
+  if (fiveLayers.momentum.reasons.length) reasons.push(...fiveLayers.momentum.reasons.slice(0, 4).map(x => `MOM:${x}`));
+  if (fiveLayers.flow.reasons.length) reasons.push(...fiveLayers.flow.reasons.slice(0, 4).map(x => `FLOW5:${x}`));
+  if (fiveLayers.reversal.reasons.length) reasons.push(...fiveLayers.reversal.reasons.slice(0, 3).map(x => `REV5:${x}`));
 
   return {
     symbol: marketDisplaySymbol(market), candleSymbol: candleSymbolFromMarket(market), direction, entry, tp,
@@ -1354,6 +1636,12 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       volumeRatio5m: capitalFlow.volumeRatio5m, volumeRatio15m: capitalFlow.volumeRatio15m, oiDeltaPct: capitalFlow.oiDeltaPct,
       longOi: capitalFlow.longOi, shortOi: capitalFlow.shortOi, volumeProfileZone: capitalFlow.profile?.zoneState || null,
       volumeProfilePoc: capitalFlow.profile?.poc || null, volumeProfileValueLow: capitalFlow.profile?.valueLow || null, volumeProfileValueHigh: capitalFlow.profile?.valueHigh || null,
+      fiveLayers,
+      layerScores: { trend: direction === "long" ? fiveLayers.trend.long : fiveLayers.trend.short, location: direction === "long" ? fiveLayers.location.long : fiveLayers.location.short, momentum: direction === "long" ? fiveLayers.momentum.long : fiveLayers.momentum.short, flow: direction === "long" ? fiveLayers.flow.long : fiveLayers.flow.short, reversal: direction === "long" ? fiveLayers.reversal.long : fiveLayers.reversal.short },
+      fibZone: fiveLayers.location.fibZone,
+      bollinger: fiveLayers.location.bollinger,
+      stochastic5: fiveLayers.momentum.stochastic5,
+      rsiDivergence: fiveLayers.momentum.divergence,
     },
     reasons: [...reasons, ...capitalFlow.reasons.map(x => `FLOW:${x}`)],
     indicators: {
@@ -1370,7 +1658,20 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       volume24h: tickerVolume(ticker), openInterest: tickerOpenInterest(ticker), fundingRate: tickerFunding(ticker), liquidity: marketLiquidity(market),
       capitalFlowScore: capitalFlow.score, capitalFlowDirection: capitalFlow.direction, capitalFlowState: capitalFlow.state, smartMoneyProxy: capitalFlow.smartMoneyProxy,
       oiDeltaPct: capitalFlow.oiDeltaPct, volumeDeltaPct: capitalFlow.volumeDeltaPct, volumeRatio5m: capitalFlow.volumeRatio5m, volumeRatio15m: capitalFlow.volumeRatio15m,
-      longOi: capitalFlow.longOi, shortOi: capitalFlow.shortOi, sideBias: capitalFlow.sideBias, volumeProfileZone: capitalFlow.profile?.zoneState || null, volumeProfilePoc: capitalFlow.profile?.poc || null
+      longOi: capitalFlow.longOi, shortOi: capitalFlow.shortOi, sideBias: capitalFlow.sideBias, volumeProfileZone: capitalFlow.profile?.zoneState || null, volumeProfilePoc: capitalFlow.profile?.poc || null,
+      fiveLayerConfidence: fiveLayers.confidence, fiveLayerEdge: fiveLayers.edge, fiveLayerDirection: fiveLayers.direction,
+      trendLayer: direction === "long" ? fiveLayers.trend.long : fiveLayers.trend.short,
+      locationLayer: direction === "long" ? fiveLayers.location.long : fiveLayers.location.short,
+      momentumLayer: direction === "long" ? fiveLayers.momentum.long : fiveLayers.momentum.short,
+      flowLayer: direction === "long" ? fiveLayers.flow.long : fiveLayers.flow.short,
+      reversalLayer: direction === "long" ? fiveLayers.reversal.long : fiveLayers.reversal.short,
+      ichimokuBullish: Boolean(fiveLayers.trend?.direction === "long"),
+      fibNear: Boolean(fiveLayers.location?.fibZone?.near),
+      stochasticK: fiveLayers.momentum?.stochastic5?.k || 50,
+      stochasticD: fiveLayers.momentum?.stochastic5?.d || 50,
+      bollingerPosition: fiveLayers.momentum?.bollinger?.position ?? 0.5,
+      rsiBullDivergence: Boolean(fiveLayers.momentum?.divergence?.bullish),
+      rsiBearDivergence: Boolean(fiveLayers.momentum?.divergence?.bearish),
     },
     market, ticker, candles5, candles15,
   };
@@ -1584,7 +1885,22 @@ function candidateIsActionable(candidate) {
 
   const evTopDown = ev.topDown || {};
   if (evTopDown.preferredDirection && candidate.direction !== evTopDown.preferredDirection) {
-    return { ok: false, reason: `HTF_DIRECTION_CONFLICT_${evTopDown.preferredDirection.toUpperCase()}` };
+    const layers = ev.fiveLayers || {};
+    const oppositeReversal = candidate.direction === "long" ? num(layers.reversal?.long) : num(layers.reversal?.short);
+    const matchingFlow = candidate.direction === "long" ? num(layers.flow?.long) : num(layers.flow?.short);
+    const layerConfidence = num(layers.confidence);
+    const override =
+      CONFIG.htfConflictSoft &&
+      candidate.setupType === "REVERSAL" &&
+      oppositeReversal >= CONFIG.htfConflictOverrideMinReversal &&
+      matchingFlow >= CONFIG.htfConflictOverrideMinFlow &&
+      layerConfidence >= CONFIG.htfConflictOverrideMinLayerEdge &&
+      Number(candidate.reversalConfidence || 0) >= Number(CONFIG.reversalTriggerMinConfidence) + 8;
+    if (!override) {
+      return { ok: false, reason: `HTF_DIRECTION_CONFLICT_${evTopDown.preferredDirection.toUpperCase()}` };
+    }
+    candidate.setupEvidence.htfOverride = true;
+    candidate.setupEvidence.htfOverrideReason = "STRONG_5L_REVERSAL_FLOW_OVERRIDE";
   }
   if (evTopDown.supportBreak && candidate.direction !== "short") {
     return { ok: false, reason: "HTF_SUPPORT_BREAK_REQUIRES_SHORT" };
@@ -2216,6 +2532,7 @@ function cycleMessage(report) {
     `🔎 Broad 5M: ${report.broadSuccess}/${report.universe}`,
     `🧠 Deep: ${report.deepCount}`,
     `💧 Capital flow strong: ${report.flowCount} | Smart-money proxy: ${report.smartMoneyCount}`,
+    `🧠 5-Layer: Ready ${report.layerReadyCount} | Flow ${report.layerFlowCount} | Reversal ${report.layerReversalCount}`,
     `⚡ Event candidates: ${report.actionableCount}`,
     ``,
     `🚀 Early impulses: ${report.impulseCount}`,
@@ -2252,6 +2569,10 @@ function cycleMessage(report) {
       lines.push(`  🧠 ${String(item.setupType || "N/A")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)}`);
       const cf = item.setupEvidence?.capitalFlow || {};
       lines.push(`  💧 Flow ${num(cf.score).toFixed(1)} | ${String(cf.state || "N/A")} | Smart ${num(cf.smartMoneyProxy).toFixed(1)} | OI Δ ${num(cf.oiDeltaPct).toFixed(2)}% | Vol5 ${num(cf.volumeRatio5m).toFixed(2)}x`);
+      const li = item.setupEvidence?.fiveLayers || {};
+      const dir = String(item.direction || "").toLowerCase();
+      const pick = (x) => dir === "long" ? num(x?.long) : num(x?.short);
+      lines.push(`  🧠 5L T${pick(li.trend).toFixed(0)} L${pick(li.location).toFixed(0)} M${pick(li.momentum).toFixed(0)} F${pick(li.flow).toFixed(0)} R${pick(li.reversal).toFixed(0)} | ${String(li.direction || "N/A").toUpperCase()}`);
       lines.push(`  💹 Gross ${formatUsd(econ.grossPnlUsd)} | Cost ${formatUsd(econ.totalCostUsd)} | Net ${formatUsd(econ.expectedNetUsd)} | TP move ${num(econ.tpMovePct).toFixed(2)}%`);
       lines.push(`  🚫 ${item.reason}`);
     }
@@ -2622,6 +2943,9 @@ async function runCycle(event, env) {
   const smartMoneyCount = ranked.filter((x) => num(x.indicators?.smartMoneyProxy) >= 65).length;
   const maCount = ranked.filter((x) => x.trendConfluence >= 3).length;
   const adxCount = ranked.filter((x) => x.indicators?.adx >= 18).length;
+  const layerReadyCount = ranked.filter((x) => num(x.indicators?.fiveLayerConfidence) >= 62).length;
+  const layerFlowCount = ranked.filter((x) => num(x.indicators?.flowLayer) >= 68).length;
+  const layerReversalCount = ranked.filter((x) => num(x.indicators?.reversalLayer) >= 72).length;
   const srCount = ranked.filter((x) => x.indicators?.reactionScore >= 24).length;
   const positiveMoveCount = ranked.filter((x) => x.indicators?.move5m * (x.direction === "long" ? 1 : -1) > 0).length;
   const pullbackCount = ranked.filter((x) => x.indicators?.reactionScore >= 12).length;
@@ -2641,6 +2965,9 @@ async function runCycle(event, env) {
     smartMoneyCount,
     maCount,
     adxCount,
+    layerReadyCount,
+    layerFlowCount,
+    layerReversalCount,
     srCount,
     positiveMoveCount,
     pullbackCount,
