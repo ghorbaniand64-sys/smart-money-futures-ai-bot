@@ -1,6 +1,6 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ GMX SMART MONEY FUTURES AI BOT — V21.5 GLOBAL MARKET DATA CENTER + ROBUST DEEP DATA      ║
+║ GMX SMART MONEY FUTURES AI BOT — V21.9 HTF TREND-END + EARLY ENTRY + STRUCTURE TARGET      ║
 ║ Single pipeline • 5M broad scan • 15M deep scan • Classic GMX only          ║
 ║ 20x leverage • 100% wallet • max 1 position • dynamic TP + structure SL               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -202,6 +202,18 @@ const CONFIG = Object.freeze({
   moveMaturityRejectScore: 70,
   moveMaturitySoftRejectScore: 60,
   moveMaturitySoftRejectDeceleration: 0,
+
+  // V21.9: short-term 5m/15m extension alone is not enough. A continuation
+  // can look "early" on 5m while actually being very late inside a large 1h/4h
+  // trend. Block continuation when the higher-timeframe move is already mature
+  // or price is sitting near the terminal HTF extreme.
+  htfTrendMaturity1hLookback: 24,
+  htfTrendMaturity4hLookback: 12,
+  htfContinuationMaxMove1hPct: 3.50,
+  htfContinuationMaxMove4hPct: 6.00,
+  htfContinuationNearExtremePct: 1.00,
+  htfContinuationNearExtreme4hPct: 1.50,
+  htfContinuationMaturityRejectScore: 70,
 
   // V21.5: protect the data pipeline from burst/rate-limit failures introduced
   // by the BTC/ETH market-data center. Never let macro intelligence starve
@@ -1725,7 +1737,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     Math.abs(continuationLong - continuationShort) >= Number(CONFIG.continuationAuthorityEdge || 10) &&
     continuationBreak && continuationSideTrend >= 52 && continuationSideMomentum >= 50 && continuationSideFlow >= 48 &&
     !continuationExhaustion && !continuationTooLate && !trendEndExhaustion &&
-    !continuationLateChase;
+    !continuationLateChase && !htfContinuationTooLate;
 
   const reversalVsContinuation = bestReversal - bestContinuation;
   const reversalTrigger = reversalStrong &&
@@ -1770,6 +1782,68 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const notExtended = extension <= 1.80;
   const lateChase = setupType === 'CONTINUATION' && continuationLateChase;
 
+  // V21.9: higher-timeframe trend-end protection. The prior V21.8 filter
+  // measured the immediate 5m/15m leg. That misses the exact failure mode seen
+  // on GMX: price can be only ~1% from the 5m/15m move start while already being
+  // ~8-10% down from the 1h swing high. For a continuation SHORT that is a late
+  // entry near the bottom of the larger trend; the inverse applies to LONG.
+  const completed1h = Array.isArray(candles1h) ? candles1h.slice(0, -1) : [];
+  const completed4h = Array.isArray(candles4h) ? candles4h.slice(0, -1) : [];
+  const htf1hLookback = Math.max(6, Number(CONFIG.htfTrendMaturity1hLookback || 24));
+  const htf4hLookback = Math.max(4, Number(CONFIG.htfTrendMaturity4hLookback || 12));
+  const htf1h = completed1h.slice(-htf1hLookback);
+  const htf4h = completed4h.slice(-htf4hLookback);
+  const htf1hHigh = htf1h.length ? Math.max(...htf1h.map(c => num(c.high)).filter(Number.isFinite)) : NaN;
+  const htf1hLow = htf1h.length ? Math.min(...htf1h.map(c => num(c.low)).filter(Number.isFinite)) : NaN;
+  const htf4hHigh = htf4h.length ? Math.max(...htf4h.map(c => num(c.high)).filter(Number.isFinite)) : NaN;
+  const htf4hLow = htf4h.length ? Math.min(...htf4h.map(c => num(c.low)).filter(Number.isFinite)) : NaN;
+  const htf1hMovePct = direction === 'short' && Number.isFinite(htf1hHigh)
+    ? Math.max(0, pct(htf1hHigh, price))
+    : direction === 'long' && Number.isFinite(htf1hLow)
+      ? Math.max(0, pct(price, htf1hLow))
+      : 0;
+  const htf4hMovePct = direction === 'short' && Number.isFinite(htf4hHigh)
+    ? Math.max(0, pct(htf4hHigh, price))
+    : direction === 'long' && Number.isFinite(htf4hLow)
+      ? Math.max(0, pct(price, htf4hLow))
+      : 0;
+  const htf1hExtremeDistancePct = direction === 'short' && Number.isFinite(htf1hLow)
+    ? Math.max(0, pct(price, htf1hLow))
+    : direction === 'long' && Number.isFinite(htf1hHigh)
+      ? Math.max(0, pct(htf1hHigh, price))
+      : 999;
+  const htf4hExtremeDistancePct = direction === 'short' && Number.isFinite(htf4hLow)
+    ? Math.max(0, pct(price, htf4hLow))
+    : direction === 'long' && Number.isFinite(htf4hHigh)
+      ? Math.max(0, pct(htf4hHigh, price))
+      : 999;
+  const htf1hMaturityComponent = Math.min(100, (htf1hMovePct / Number(CONFIG.htfContinuationMaxMove1hPct || 3.5)) * 100);
+  const htf4hMaturityComponent = Math.min(100, (htf4hMovePct / Number(CONFIG.htfContinuationMaxMove4hPct || 6.0)) * 100);
+  const htfExtremeComponent = Math.min(100,
+    htf1hExtremeDistancePct <= Number(CONFIG.htfContinuationNearExtremePct || 1.0) ? 100 :
+    htf1hExtremeDistancePct <= 2.0 ? 55 : 0);
+  const htf4hExtremeComponent = Math.min(100,
+    htf4hExtremeDistancePct <= Number(CONFIG.htfContinuationNearExtreme4hPct || 1.5) ? 100 : 0);
+  const htfTrendMaturity = Number(clamp(
+    htf1hMaturityComponent * 0.45 +
+    htf4hMaturityComponent * 0.25 +
+    htfExtremeComponent * 0.20 +
+    htf4hExtremeComponent * 0.10,
+    0, 100
+  ).toFixed(1));
+  const htfTrendMaturityLabel = htfTrendMaturity >= 85 ? 'EXHAUSTED'
+    : htfTrendMaturity >= Number(CONFIG.htfContinuationMaturityRejectScore || 70) ? 'LATE'
+    : htfTrendMaturity >= 55 ? 'MATURE'
+    : htfTrendMaturity >= 35 ? 'HEALTHY' : 'EARLY';
+  const htfContinuationTooLate = setupType === 'CONTINUATION' && (
+    htf1hMovePct >= Number(CONFIG.htfContinuationMaxMove1hPct || 3.5) ||
+    htf4hMovePct >= Number(CONFIG.htfContinuationMaxMove4hPct || 6.0) ||
+    htf1hExtremeDistancePct <= Number(CONFIG.htfContinuationNearExtremePct || 1.0) ||
+    htf4hExtremeDistancePct <= Number(CONFIG.htfContinuationNearExtreme4hPct || 1.5) ||
+    htfTrendMaturity >= Number(CONFIG.htfContinuationMaturityRejectScore || 70)
+  );
+  const htfTrendEnd = htfContinuationTooLate;
+
   // V21.8: measure how mature the current move is before allowing a
   // continuation entry. A high score means the market has already travelled
   // too far, is stretched from its short-term mean, is losing directional
@@ -1811,7 +1885,8 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     : 'EARLY';
   const lateMove = setupType === 'CONTINUATION' && (
     moveMaturity >= Number(CONFIG.moveMaturityRejectScore) ||
-    (moveMaturity >= Number(CONFIG.moveMaturitySoftRejectScore) && (directionalDecelerating || opposingZoneNear))
+    (moveMaturity >= Number(CONFIG.moveMaturitySoftRejectScore) && (directionalDecelerating || opposingZoneNear)) ||
+    htfContinuationTooLate
   );
 
   // V21.8: distinguish the large PRIOR impulse (which can be desirable for a
@@ -1893,6 +1968,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   if (continuationRetest) reasons.push('CONTINUATION_RETEST');
   if (continuationEarly) reasons.push('CONTINUATION_EARLY_BREAK');
   if (continuationTooLate) reasons.push('CONTINUATION_TOO_LATE');
+  if (htfContinuationTooLate) reasons.push(`HTF_CONTINUATION_TOO_LATE_${htfTrendMaturity.toFixed(1)}`);
   if (firstBreakLong || firstBreakShort) reasons.push('FIRST_BREAK');
   if (strongBreakLong || strongBreakShort || htfStrongBreakLong || htfStrongBreakShort) reasons.push('STRONG_BREAKOUT');
   if (failedBreakLong || failedBreakShort || htfFailedBreakLong || htfFailedBreakShort) reasons.push('BREAKOUT_FAILURE');
@@ -1931,7 +2007,8 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       setupType, reversalEvidence, reversalConfidence, continuationConfidence, setupDominance,
       directionAuthority: fiveLayers.authority, reversalAuthority: fiveLayers.reversalAuthority, continuationAuthority: fiveLayers.continuationAuthority,
       reversalEdge: fiveLayers.reversalEdge, continuationEdge: fiveLayers.continuationEdge,
-      trendEndExhaustion, trendEndSignals, continuationEarly, continuationRetest, continuationTooLate, continuationBreak,
+      trendEndExhaustion, trendEndSignals, continuationEarly, continuationRetest, continuationTooLate, continuationBreak, htfContinuationTooLate, htfTrendEnd,
+      htfTrendMaturity, htfTrendMaturityLabel, htf1hMovePct, htf4hMovePct, htf1hExtremeDistancePct, htf4hExtremeDistancePct,
       moveMaturity, moveMaturityLabel, lateMove, extensionPct, atrDistance, opposingZoneNear, directionalDecelerating,
       reversalLegMovePct, reversalLegAtr, reversalEntryLate,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
@@ -1976,6 +2053,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       macdHistogram: five.macd.histogram, move5m: move5, move15m: move15, oiChange5m: oi.delta, reactionScore: srReaction,
       explosive: sharp, impulseQuality, acceleration: impulse.acceleration, rangeExpansion: impulse.rangeExpansion, volumeRatio: impulse.volumeRatio,
       moveMaturity, moveMaturityLabel, lateMove, extensionPct, atrDistance, opposingZoneNear, directionalDecelerating,
+      htfTrendMaturity, htfTrendMaturityLabel, htf1hMovePct, htf4hMovePct, htf1hExtremeDistancePct, htf4hExtremeDistancePct, htfContinuationTooLate,
       earlyTrend, earlyBreak, freshExpansion, earlyTimingBonus: timing, lateChase,
       strongBreakLong, strongBreakShort, htfBreakLong, htfBreakShort, htfStrongBreakLong, htfStrongBreakShort,
       liveBreakLong, liveBreakShort, failedBreakLong, failedBreakShort, htfFailedBreakLong, htfFailedBreakShort, genuineLongFailure, genuineShortFailure,
@@ -2312,6 +2390,7 @@ function candidateIsActionable(candidate) {
   // chase. A reversal is allowed to appear after a large prior move because
   // that extension is part of the reversal setup rather than a chase entry.
   if (ev.lateChase) return { ok: false, reason: "LATE_CHASE" };
+  if (ev.htfContinuationTooLate && candidate.setupType === "CONTINUATION") return { ok: false, reason: `HTF_TREND_END_${ev.htfTrendMaturityLabel || "LATE"}_${num(ev.htfTrendMaturity).toFixed(1)}` };
   if (ev.lateMove) return { ok: false, reason: `MOVE_MATURITY_${ev.moveMaturityLabel || "LATE"}_${num(ev.moveMaturity).toFixed(1)}` };
   if (ev.reversalEntryLate) return { ok: false, reason: `REVERSAL_ENTRY_LATE_${num(ev.reversalLegMovePct).toFixed(2)}PCT_${num(ev.reversalLegAtr).toFixed(2)}ATR` };
   if (candidate.risk > CONFIG.maxRisk) return { ok: false, reason: `RISK_${candidate.risk.toFixed(1)}_ABOVE_${CONFIG.maxRisk}` };
@@ -3173,6 +3252,7 @@ function cycleMessage(report) {
       lines.push(`  🧠 ${String(item.setupType || "N/A")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)}`);
       const tm = item.setupEvidence || {};
       lines.push(`  ⏱️ Move maturity ${num(tm.moveMaturity).toFixed(1)} | ${String(tm.moveMaturityLabel || "N/A")} | Extension ${num(tm.extensionPct).toFixed(2)}% | ATR dist ${num(tm.atrDistance).toFixed(2)}x`);
+      if (Number.isFinite(num(tm.htfTrendMaturity))) lines.push(`  🕐 HTF maturity ${num(tm.htfTrendMaturity).toFixed(1)} | ${String(tm.htfTrendMaturityLabel || "N/A")} | 1H move ${num(tm.htf1hMovePct).toFixed(2)}% | 4H move ${num(tm.htf4hMovePct).toFixed(2)}% | 1H extreme ${num(tm.htf1hExtremeDistancePct).toFixed(2)}%`);
       lines.push(`  🎯 TP ${formatPrice(item.tp)} | ${String(tm.tpMethod || "N/A")} | Structure ${formatPrice(tm.tpStructurePrice)} | Buffer ${num(tm.tpBufferPct).toFixed(2)}%`);
       if (tm.reversalEntryLate) lines.push(`  ⏱️ Reversal leg ${num(tm.reversalLegMovePct).toFixed(2)}% | ${num(tm.reversalLegAtr).toFixed(2)} ATR | LATE`);
       const cf = item.setupEvidence?.capitalFlow || {};
