@@ -1,6 +1,6 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ GMX SMART MONEY FUTURES AI BOT — V21.5 GLOBAL MARKET DATA CENTER + ROBUST DEEP DATA      ║
+║ GMX SMART MONEY FUTURES AI BOT — V21.10 R:R GUARD + PROFIT LOCK      ║
 ║ Single pipeline • 5M broad scan • 15M deep scan • Classic GMX only          ║
 ║ 20x leverage • 100% wallet • max 1 position • dynamic TP + profit-lock SL            ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V21.9.0-PROFIT-LOCK-10ROI-20X";
+export const BOT_VERSION = "V21.10.0-RR-GUARD-PROFIT-LOCK-10ROI";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -56,6 +56,10 @@ const CONFIG = Object.freeze({
   profitLockEnabled: true,
   profitLockTriggerRoiPct: 10.00,
   profitLockTargetRoiPct: 10.00,
+
+  // V21.10: no new position is allowed unless the planned TP offers
+  // at least this much reward for each unit of initial SL risk.
+  minRiskReward: 1.50,
 
   broadTimeframe: "5m",
   broadLimit: 72,
@@ -1862,12 +1866,18 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   );
 
   const entry = price;
-  const tpPlan = calculateLogicalTp(entry, direction, candles5, candles15, five.atr, setupType, impulse);
-  const tp = tpPlan.tp;
+  // Build the initial SL first, then force TP selection to respect the
+  // configured minimum R:R. This prevents a close TP from being paired
+  // with a much wider structural stop.
   const slPlan = CONFIG.stopLossEnabled
     ? calculateDynamicSl(entry, direction, candles5, candles15, five.atr, setupType, { ...topDown, nearestSupport: zone.support, nearestResistance: zone.resistance }, marketRegime)
     : { sl: 0, distancePct: 0, method: "DISABLED", valid: true };
   const sl = slPlan.sl;
+  const tpPlan = calculateLogicalTp(entry, direction, candles5, candles15, five.atr, setupType, impulse, slPlan.distancePct, CONFIG.minRiskReward);
+  const tp = tpPlan.tp;
+  const riskReward = slPlan.distancePct > 0 && tp > 0
+    ? Number((tpPlan.distancePct / slPlan.distancePct).toFixed(3))
+    : 0;
   const reasons = [];
   if (setupType === 'REVERSAL') reasons.push(`REVERSAL_${direction.toUpperCase()}`);
   if (setupType === 'CONTINUATION') reasons.push(`CONTINUATION_${direction.toUpperCase()}`);
@@ -1903,7 +1913,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     symbol: marketDisplaySymbol(market), candleSymbol: candleSymbolFromMarket(market), direction, entry, tp, sl,
     moveMaturity, moveMaturityLabel, lateMove,
     score: Number(score.toFixed(2)), edge: Number(edge.toFixed(2)), risk: Number(risk.toFixed(2)), trendConfluence: trend,
-    setupType, reversalEvidence,
+    riskReward, setupType, reversalEvidence,
     setupConfidence: setupType === 'REVERSAL' ? reversalConfidence : continuationConfidence,
     reversalConfidence: Number(reversalConfidence.toFixed(1)),
     continuationConfidence: Number(continuationConfidence.toFixed(1)),
@@ -1920,6 +1930,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
       tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
       sl: slPlan.sl, slDistancePct: slPlan.distancePct, slMethod: slPlan.method, slValid: slPlan.valid,
+      riskReward, minRiskReward: CONFIG.minRiskReward,
       zoneState: zone.state, nearSupport: zone.nearSupport, nearResistance: zone.nearResistance,
       nearestSupport: zone.support, nearestResistance: zone.resistance, sharpMove: sharp, lateChase, impulseQuality,
       acceleration: impulse.acceleration, rangeExpansion: impulse.rangeExpansion, volumeRatio: impulse.volumeRatio,
@@ -2070,7 +2081,7 @@ function calculateDynamicSl(entry, direction, candles5, candles15, atr5, setupTy
   };
 }
 
-function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupType = "CONTINUATION", impulse = {}) {
+function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupType = "CONTINUATION", impulse = {}, slDistancePct = 0, minRiskReward = 0) {
   const minDist = CONFIG.minTpDistancePct / 100;
   const maxDistPct = setupType === "REVERSAL" ? CONFIG.tpReversalMaxPct : CONFIG.tpContinuationMaxPct;
   const maxDist = maxDistPct / 100;
@@ -2097,6 +2108,8 @@ function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupTy
     const distancePct = Math.abs(pct(x, entry));
     const favorable = direction === "long" ? x > entry : x < entry;
     if (!favorable || distancePct < CONFIG.minTpDistancePct || distancePct > maxDistPct) return;
+    const rr = Number(slDistancePct) > 0 ? distancePct / Number(slDistancePct) : Infinity;
+    if (Number(minRiskReward) > 0 && rr + 1e-9 < Number(minRiskReward)) return;
 
     // Probability proxy: closer first reaction levels are generally more reachable;
     // a second confirmation from 15m earns a small bonus. This is deliberately
@@ -2138,11 +2151,26 @@ function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupTy
   if (!selected) selected = pool[0] || null;
 
   if (!selected) {
-    const fallbackDistance = Math.min(maxDist, Math.max(minDist, CONFIG.tpAtrMultiplier * atr / entry));
+    const rrDistance = Number(slDistancePct) > 0 && Number(minRiskReward) > 0
+      ? Number(slDistancePct) * Number(minRiskReward)
+      : 0;
+    const fallbackDistancePct = Math.max(
+      CONFIG.minTpDistancePct,
+      rrDistance,
+      CONFIG.tpAtrMultiplier * atr / entry * 100
+    );
+    if (fallbackDistancePct > maxDistPct + 1e-9) {
+      return {
+        tp: 0, method: "NO_RR_TARGET", targetType: "RR_UNAVAILABLE",
+        targetScore: 0, probabilityProxy: 0, distancePct: 0,
+        targetPrice: 0, atrDistance: 0,
+      };
+    }
+    const fallbackDistance = fallbackDistancePct / 100;
     const tp = direction === "long" ? entry * (1 + fallbackDistance) : entry * (1 - fallbackDistance);
     return {
-      tp: Number(tp.toPrecision(12)), method: "ATR_PROBABILITY_FALLBACK", targetType: "ATR_FALLBACK",
-      targetScore: 50, probabilityProxy: 50, distancePct: fallbackDistance * 100,
+      tp: Number(tp.toPrecision(12)), method: "ATR_PROBABILITY_RR_FALLBACK", targetType: "ATR_FALLBACK",
+      targetScore: 50, probabilityProxy: 50, distancePct: fallbackDistancePct,
       targetPrice: tp, atrDistance: fallbackDistance * entry / atr,
     };
   }
@@ -2170,6 +2198,7 @@ function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupTy
     distancePct: Number(selected.distancePct.toFixed(3)),
     targetPrice: selected.price,
     atrDistance: Number(selected.atrDist.toFixed(2)),
+    riskReward: Number(slDistancePct) > 0 ? Number((selected.distancePct / Number(slDistancePct)).toFixed(3)) : null,
   };
 }
 
@@ -2294,6 +2323,21 @@ function candidateIsActionable(candidate) {
     return { ok: false, reason: "CONTINUATION_BLOCKED_TREND_END_EXHAUSTION" };
   }
 
+  // V21.10: do not open a continuation into the opposing structural wall.
+  // A short ending at support (or long ending at resistance) must first show
+  // a fresh break/retest of that level; otherwise the remaining reward is
+  // asymmetric even when the directional score is high.
+  if (candidate.setupType === "CONTINUATION" && ev.opposingZoneNear) {
+    const freshOppositeBreak = candidate.direction === "short"
+      ? Boolean(ev.firstBreakShort || ev.continuationRetest || ev.topDown?.supportBreak)
+      : Boolean(ev.firstBreakLong || ev.continuationRetest || ev.topDown?.resistanceBreak);
+    if (!freshOppositeBreak) {
+      return { ok: false, reason: candidate.direction === "short"
+        ? "SHORT_INTO_SUPPORT_WITHOUT_BREAK_RETEST"
+        : "LONG_INTO_RESISTANCE_WITHOUT_BREAK_RETEST" };
+    }
+  }
+
   if (CONFIG.directionAuthorityEnabled && candidate.setupType === "CONTINUATION") {
     const side = candidate.direction === "long" ? "long" : "short";
     const trendSide = num(layer.trend?.[side]);
@@ -2376,7 +2420,14 @@ function candidateIsActionable(candidate) {
   if (candidate.risk > CONFIG.maxRisk) return { ok: false, reason: `RISK_${candidate.risk.toFixed(1)}_ABOVE_${CONFIG.maxRisk}` };
 
   const tpDistance = Math.abs(pct(candidate.tp, candidate.entry));
+  if (!(candidate.tp > 0)) return { ok: false, reason: "NO_RR_TARGET_AVAILABLE" };
   if (tpDistance < CONFIG.minTpDistancePct) return { ok: false, reason: "TP_TOO_CLOSE" };
+  const initialRiskPct = Math.abs(pct(candidate.sl, candidate.entry));
+  const riskReward = initialRiskPct > 0 ? tpDistance / initialRiskPct : 0;
+  candidate.riskReward = Number(riskReward.toFixed(3));
+  if (riskReward < Number(CONFIG.minRiskReward || 0)) {
+    return { ok: false, reason: `RR_${riskReward.toFixed(2)}_BELOW_${Number(CONFIG.minRiskReward).toFixed(2)}` };
+  }
 
   if (CONFIG.stopLossEnabled) {
     const sl = num(candidate.sl);
