@@ -1379,12 +1379,36 @@ function positionSizeUsd(position) {
 }
 
 async function getOpenPositions(sdk, account) {
-  const positions = await sdk.fetchPositionsInfo({
-    address: account,
-    includeRelatedOrders: true,
-  });
-  return (Array.isArray(positions) ? positions : [])
-    .filter((p) => positionSizeUsd(p) > 0);
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const positions = await sdk.fetchPositionsInfo({
+        address: account,
+        // Related orders are not used by the bot for position detection.
+        // Keep this request minimal to avoid unnecessary API-side failures.
+        includeRelatedOrders: false,
+      });
+
+      return (Array.isArray(positions) ? positions : [])
+        .filter((p) => positionSizeUsd(p) > 0);
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) {
+        console.warn('[POSITIONS][RETRY]', {
+          attempt,
+          nextAttempt: attempt + 1,
+          error: safeError(error),
+        });
+        await sleep(750 * attempt);
+      }
+    }
+  }
+
+  // Do not silently return [] here: an unavailable position read must never
+  // be interpreted as "no open positions", otherwise max-position protection
+  // could be bypassed. Fail closed after the bounded retries.
+  throw lastError || new Error('GMX_POSITIONS_READ_FAILED');
 }
 
 function findPositionForCandidate(positions, candidate) {
