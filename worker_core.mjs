@@ -1,6 +1,6 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ GMX SMART MONEY FUTURES AI BOT — V21.8 PROFESSIONAL S/R + VOLUME/FLOW + R:R ENGINE      ║
+║ GMX SMART MONEY FUTURES AI BOT — V21.5 GLOBAL MARKET DATA CENTER + ROBUST DEEP DATA      ║
 ║ Single pipeline • 5M broad scan • 15M deep scan • Classic GMX only          ║
 ║ 20x leverage • 100% wallet • max 1 position • dynamic TP + structure SL               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V21.8.0-PRO-SR-VOLUME-FLOW-RR";
+export const BOT_VERSION = "V21.8.0-PROFESSIONAL-SR-RR-DYNAMIC-PLAN";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -88,6 +88,16 @@ const CONFIG = Object.freeze({
   tpContinuationMaxPct: 2.20,
   tpMinTargetScore: 52,
 
+  // V21.8 Professional risk/reward plan. SL is structural/ATR; TP must
+  // respect the actual stop distance instead of being selected independently.
+  // This prevents valid setups from reaching Entry with an undefined/invalid plan.
+  rrEnabled: true,
+  rrMin: 1.50,
+  rrBase: 2.00,
+  rrStrong: 2.50,
+  rrExtreme: 3.00,
+  rrStructureTolerance: 0.12,
+
   // V21.6 Dynamic structure-based stop loss. The stop is derived from the
   // nearest structural swing/support/resistance plus an ATR volatility buffer.
   // Reversal trades use a tighter invalidation; continuation trades get a bit
@@ -100,30 +110,6 @@ const CONFIG = Object.freeze({
   slMaxDistancePct: 1.80,
   slCounterTrendMaxDistancePct: 1.25,
   slSafetyBufferPct: 0.35,
-
-  // V21.8 PROFESSIONAL LOCATION + RISK/REWARD ENTRY ENGINE.
-  // Entry is allowed only close to a validated S/R level with confirming
-  // volume expansion and the directional capital-flow proxy. TP is placed
-  // BEFORE the opposing structure and SL is placed beyond the entry structure.
-  // A trade with insufficient structural R:R is rejected instead of forcing
-  // an artificial TP or an overly tight SL.
-  entryZoneAtrMax: 0.85,
-  entryZonePctMax: 0.75,
-  entryConfirmationVolumeRatio: 1.20,
-  entryConfirmationVolumeRatioStrong: 1.35,
-  entrySmartMoneyProxyMin: 60,
-  entryFlowScoreMin: 60,
-  entryFlowOiMinPct: 0.50,
-  entryStructureMinStrength: 1,
-  slStructureBufferAtr: 0.18,
-  slStructureBufferPct: 0.08,
-  tpBeforeResistanceAtr: 0.18,
-  tpBeforeSupportAtr: 0.18,
-  tpBeforeStructurePct: 0.08,
-  minRiskReward: 1.50,
-  preferredRiskReward: 2.00,
-  maxRiskReward: 6.00,
-  allowAtrTpFallback: false,
 
   // V21 Capital Flow Engine. Flow is a quality/ranking layer, not a hard
   // direction gate. True wallet-labelled smart-money data is not available
@@ -1879,59 +1865,16 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   );
 
   const entry = price;
-  const entryEvidence = {
-    ...topDown,
-    nearestSupport: zone.support || topDown.support?.price || null,
-    nearestResistance: zone.resistance || topDown.resistance?.price || null,
-  };
-  const professionalPlan = calculateProfessionalTradePlan({
-    entry,
-    direction,
-    candles5,
-    candles15,
-    atr5: five.atr,
-    setupType,
-    setupEvidence: entryEvidence,
-    capitalFlow,
-    marketRegime,
-  });
-  const tpPlan = professionalPlan.valid
-    ? {
-        tp: professionalPlan.tp,
-        method: professionalPlan.method,
-        targetType: professionalPlan.targetType,
-        targetScore: professionalPlan.confirmation?.flowScore || 0,
-        probabilityProxy: professionalPlan.confirmation?.volumeRatio ? Math.min(100, professionalPlan.confirmation.volumeRatio * 50) : 0,
-        distancePct: professionalPlan.rewardPct,
-        targetPrice: professionalPlan.targetLevel,
-        atrDistance: Math.abs(professionalPlan.tp - entry) / Math.max(num(five.atr), entry * 0.0005, 1e-12),
-        riskReward: professionalPlan.riskReward,
-      }
-    : calculateLogicalTp(entry, direction, candles5, candles15, five.atr, setupType, impulse, entryEvidence, capitalFlow, marketRegime);
-  const tp = professionalPlan.valid ? professionalPlan.tp : 0;
+  // V21.8: calculate SL first, then TP from the actual risk distance.
+  // This makes R:R deterministic and prevents TP/SL from becoming detached.
   const slPlan = CONFIG.stopLossEnabled
-    ? {
-        sl: professionalPlan.sl,
-        distancePct: professionalPlan.riskPct,
-        method: professionalPlan.method,
-        valid: professionalPlan.valid,
-        riskReward: professionalPlan.riskReward,
-        rejection: professionalPlan.rejection || null,
-      }
-    : { sl: 0, distancePct: 0, method: "DISABLED", valid: true, riskReward: 0 };
-  const sl = professionalPlan.valid ? professionalPlan.sl : 0;
+    ? calculateDynamicSl(entry, direction, candles5, candles15, five.atr, setupType, { ...topDown, nearestSupport: zone.support, nearestResistance: zone.resistance }, marketRegime)
+    : { sl: 0, distancePct: 0, method: "DISABLED", valid: true };
+  const sl = slPlan.sl;
+  const tpPlan = calculateLogicalTp(entry, direction, candles5, candles15, five.atr, setupType, impulse, sl, score);
+  const tp = tpPlan.tp;
+  const actualRR = sl > 0 && tp > 0 ? Math.abs(tp - entry) / Math.abs(entry - sl) : 0;
   const reasons = [];
-  if (professionalPlan.valid) {
-    reasons.push("PRO_SR_ENTRY");
-    reasons.push(`ENTRY_${direction === "long" ? "ABOVE_SUPPORT" : "BELOW_RESISTANCE"}`);
-    reasons.push("VOLUME_EXPANSION_CONFIRMED");
-    reasons.push("SMART_MONEY_FLOW_CONFIRMED");
-    reasons.push(`TP_${direction === "long" ? "BEFORE_RESISTANCE" : "BEFORE_SUPPORT"}`);
-    reasons.push(`SL_${direction === "long" ? "BELOW_SUPPORT" : "ABOVE_RESISTANCE"}`);
-    reasons.push(`RR_${professionalPlan.riskReward.toFixed(2)}`);
-  } else {
-    reasons.push(`PRO_TRADE_PLAN_REJECTED:${professionalPlan.rejection || "INVALID"}`);
-  }
   if (setupType === 'REVERSAL') reasons.push(`REVERSAL_${direction.toUpperCase()}`);
   if (setupType === 'CONTINUATION') reasons.push(`CONTINUATION_${direction.toUpperCase()}`);
   if (reversalTrigger) reasons.push('REVERSAL_TRIGGER');
@@ -1963,7 +1906,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   if (fiveLayers.reversal.reasons.length) reasons.push(...fiveLayers.reversal.reasons.slice(0, 3).map(x => `REV5:${x}`));
 
   return {
-    symbol: marketDisplaySymbol(market), candleSymbol: candleSymbolFromMarket(market), direction, entry, tp, sl,
+    symbol: marketDisplaySymbol(market), candleSymbol: candleSymbolFromMarket(market), direction, entry, tp, sl, rr: Number(actualRR.toFixed(2)),
     moveMaturity, moveMaturityLabel, lateMove,
     score: Number(score.toFixed(2)), edge: Number(edge.toFixed(2)), risk: Number(risk.toFixed(2)), trendConfluence: trend,
     setupType, reversalEvidence,
@@ -1974,10 +1917,6 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     triggerActive: setupType === 'REVERSAL' || setupType === 'CONTINUATION',
     reversalTrigger, continuationTrigger,
     tpPlan,
-    riskReward: Number((professionalPlan.riskReward || 0).toFixed(3)),
-    rewardPct: Number((professionalPlan.rewardPct || 0).toFixed(3)),
-    slRiskPct: Number((professionalPlan.riskPct || 0).toFixed(3)),
-    professionalPlan,
     setupEvidence: {
       setupType, reversalEvidence, reversalConfidence, continuationConfidence, setupDominance,
       directionAuthority: fiveLayers.authority, reversalAuthority: fiveLayers.reversalAuthority, continuationAuthority: fiveLayers.continuationAuthority,
@@ -1985,21 +1924,8 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       trendEndExhaustion, trendEndSignals, continuationEarly, continuationRetest, continuationTooLate, continuationBreak,
       moveMaturity, moveMaturityLabel, lateMove, extensionPct, atrDistance, opposingZoneNear, directionalDecelerating,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
-      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
+      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy, tpRR: Number((tpPlan.rr || actualRR).toFixed(2)), tpRRPass: Boolean(tpPlan.rrPass ?? (actualRR >= CONFIG.rrMin)),
       sl: slPlan.sl, slDistancePct: slPlan.distancePct, slMethod: slPlan.method, slValid: slPlan.valid,
-      riskReward: professionalPlan.riskReward, rewardPct: professionalPlan.rewardPct, slRiskPct: professionalPlan.riskPct,
-      professionalEntryLevel: professionalPlan.entryLevel || null,
-      professionalTargetLevel: professionalPlan.targetLevel || null,
-      professionalSupport: professionalPlan.support || null,
-      professionalResistance: professionalPlan.resistance || null,
-      entryDistancePct: professionalPlan.distanceToEntryLevelPct || 0,
-      entryDistanceAtr: professionalPlan.distanceToEntryLevelAtr || 0,
-      entryVolumeRatio: professionalPlan.confirmation?.volumeRatio || 0,
-      entryVolumeAtLevelRatio: professionalPlan.confirmation?.volumeAtLevelRatio || 0,
-      entryVolumeConfirmed: Boolean(professionalPlan.confirmation?.volumeExpanded),
-      entrySmartMoneyConfirmed: Boolean(professionalPlan.confirmation?.smartMoneyConfirmed),
-      entryFlowConfirmed: Boolean(professionalPlan.confirmation?.flowConfirmed),
-      entryOiConfirmed: Boolean(professionalPlan.confirmation?.oiConfirmed),
       zoneState: zone.state, nearSupport: zone.nearSupport, nearResistance: zone.nearResistance,
       nearestSupport: zone.support, nearestResistance: zone.resistance, sharpMove: sharp, lateChase, impulseQuality,
       acceleration: impulse.acceleration, rangeExpansion: impulse.rangeExpansion, volumeRatio: impulse.volumeRatio,
@@ -2043,16 +1969,8 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       strongBreakLong, strongBreakShort, htfBreakLong, htfBreakShort, htfStrongBreakLong, htfStrongBreakShort,
       liveBreakLong, liveBreakShort, failedBreakLong, failedBreakShort, htfFailedBreakLong, htfFailedBreakShort, genuineLongFailure, genuineShortFailure,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
-      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
+      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy, tpRR: Number((tpPlan.rr || actualRR).toFixed(2)), tpRRPass: Boolean(tpPlan.rrPass ?? (actualRR >= CONFIG.rrMin)),
       sl: slPlan.sl, slDistancePct: slPlan.distancePct, slMethod: slPlan.method,
-      riskReward: professionalPlan.riskReward, rewardPct: professionalPlan.rewardPct, slRiskPct: professionalPlan.riskPct,
-      professionalEntryLevel: professionalPlan.entryLevel || null, professionalTargetLevel: professionalPlan.targetLevel || null,
-      entryVolumeRatio: professionalPlan.confirmation?.volumeRatio || 0,
-      entryVolumeAtLevelRatio: professionalPlan.confirmation?.volumeAtLevelRatio || 0,
-      entryVolumeConfirmed: Boolean(professionalPlan.confirmation?.volumeExpanded),
-      entrySmartMoneyConfirmed: Boolean(professionalPlan.confirmation?.smartMoneyConfirmed),
-      entryFlowConfirmed: Boolean(professionalPlan.confirmation?.flowConfirmed),
-      entryOiConfirmed: Boolean(professionalPlan.confirmation?.oiConfirmed),
       reversalConfidence, continuationConfidence, setupDominance, triggerActive: setupType === 'REVERSAL' || setupType === 'CONTINUATION',
       topDownState: topDown.state, topDownDirection: topDown.preferredDirection, topDownConfidence: topDown.confidence, topDownControllingTimeframe: topDown.controllingTimeframe, topDownLevelPrice: topDown.levelPrice, topDownSupport: topDown.support?.price || null, topDownResistance: topDown.resistance?.price || null, topDownSupportBreak: topDown.supportBreak, topDownResistanceBreak: topDown.resistanceBreak, topDownSupportReaction: topDown.supportReaction, topDownResistanceReaction: topDown.resistanceReaction, topDownSupportFailedBreak: topDown.supportFailedBreak, topDownResistanceFailedBreak: topDown.resistanceFailedBreak,
       volume24h: tickerVolume(ticker), openInterest: tickerOpenInterest(ticker), fundingRate: tickerFunding(ticker), liquidity: marketLiquidity(market),
@@ -2081,313 +1999,195 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
 }
 
 
-function structureVolumeConfirmation({ candles5, candles15, direction, level, flow }) {
-  const v5 = candleVolumeFlow(candles5 || []);
-  const v15 = candleVolumeFlow(candles15 || []);
+function calculateDynamicSl(entry, direction, candles5, candles15, atr5, setupType = "CONTINUATION", setupEvidence = {}, marketRegime = null) {
+  const price = Number(entry || 0);
+  if (!(price > 0)) return { sl: 0, distancePct: 0, method: "INVALID_ENTRY", valid: false };
 
-  const levelVolumeRatio = (candles, levelPrice) => {
-    const rows = (candles || []).filter(c => num(c.volume) > 0 && num(c.high) >= num(c.low));
-    if (rows.length < 12 || !(levelPrice > 0)) return 1;
-    const atrLocal = Math.max(atr(rows, 14), levelPrice * 0.001, 1e-12);
-    const tolerance = atrLocal * 0.35;
-    const touched = rows.slice(-12).filter(c =>
-      num(c.low) <= levelPrice + tolerance && num(c.high) >= levelPrice - tolerance
-    );
-    const baseRows = rows.slice(-36, -12);
-    const base = baseRows.length
-      ? baseRows.reduce((a, c) => a + num(c.volume), 0) / baseRows.length
-      : rows.slice(0, -12).reduce((a, c) => a + num(c.volume), 0) / Math.max(rows.length - 12, 1);
-    const touchAvg = touched.length
-      ? touched.reduce((a, c) => a + num(c.volume), 0) / touched.length
-      : 0;
-    return base > 0 && touchAvg > 0 ? touchAvg / base : 1;
-  };
+  const a5 = Math.max(Number(atr5 || 0), price * 0.0015, 1e-12);
+  const a15 = Math.max(Number(atr(candles15 || [], 14) || 0), price * 0.0018, 1e-12);
+  const volatilityAtr = Math.max(a5, a15 * 0.55);
+  const atrMult = setupType === "REVERSAL" ? CONFIG.slAtrMultiplierReversal : CONFIG.slAtrMultiplierContinuation;
+  const buffer = volatilityAtr * atrMult;
 
-  const levelVolume5 = levelVolumeRatio(candles5, level);
-  const levelVolume15 = levelVolumeRatio(candles15, level);
-  const ratios = [v5.ratio, v15.ratio, levelVolume5, levelVolume15].filter(x => Number.isFinite(x) && x > 0);
-  const volumeRatio = ratios.length ? Math.max(...ratios) : 1;
-  const volumeAtLevelRatio = Math.max(levelVolume5, levelVolume15);
-  const smartMoneyProxy = num(flow?.smartMoneyProxy, 50);
-  const flowScore = direction === "long" ? num(flow?.longScore, flow?.score ?? 50) : num(flow?.shortScore, flow?.score ?? 50);
-  const flowDirection = String(flow?.direction || "").toLowerCase();
-  const oiDelta = num(flow?.oiDeltaPct);
-  const directionalFlow = flowDirection === direction;
-  const volumeExpanded = volumeRatio >= Number(CONFIG.entryConfirmationVolumeRatio || 1.20);
-  const strongVolume = volumeRatio >= Number(CONFIG.entryConfirmationVolumeRatioStrong || 1.35);
-  const smartMoneyConfirmed = smartMoneyProxy >= Number(CONFIG.entrySmartMoneyProxyMin || 60);
-  const flowConfirmed = flowScore >= Number(CONFIG.entryFlowScoreMin || 60) && directionalFlow;
-  const oiConfirmed = oiDelta >= Number(CONFIG.entryFlowOiMinPct || 0.50);
-  const levelValid = Number(level) > 0;
-  return {
-    levelValid, volumeRatio: Number(volumeRatio.toFixed(3)),
-    volumeAtLevelRatio: Number(volumeAtLevelRatio.toFixed(3)),
-    volume5mRatio: Number(v5.ratio.toFixed(3)),
-    volume15mRatio: Number(v15.ratio.toFixed(3)),
-    volumeExpanded, strongVolume, smartMoneyConfirmed, flowConfirmed, oiConfirmed,
-    smartMoneyProxy, flowScore, flowDirection, oiDelta,
-    confirmed: levelValid && volumeExpanded && volumeAtLevelRatio >= Number(CONFIG.entryConfirmationVolumeRatio || 1.20) && smartMoneyConfirmed && flowConfirmed,
-    strongConfirmed: levelValid && strongVolume && volumeAtLevelRatio >= Number(CONFIG.entryConfirmationVolumeRatioStrong || 1.35) && smartMoneyConfirmed && flowConfirmed && oiConfirmed,
-  };
-}
-
-function findEntryStructures(candles5, candles15, direction, price, setupEvidence = {}) {
-  const s5 = recentSwingLevels(candles5 || []);
-  const s15 = recentSwingLevels(candles15 || []);
   const supports = [
     num(setupEvidence?.nearestSupport),
-    ...((s5.support || [])),
-    ...((s15.support || [])),
-  ].filter(x => x > 0 && x < price).sort((a,b) => b-a);
+    ...recentSwingLevels(candles5 || []).support,
+    ...recentSwingLevels(candles15 || []).support,
+  ].filter(x => x > 0 && x < price);
   const resistances = [
     num(setupEvidence?.nearestResistance),
-    ...((s5.resistance || [])),
-    ...((s15.resistance || [])),
-  ].filter(x => x > price).sort((a,b) => a-b);
+    ...recentSwingLevels(candles5 || []).resistance,
+    ...recentSwingLevels(candles15 || []).resistance,
+  ].filter(x => x > price);
 
-  const support = supports[0] || null;
-  const resistance = resistances[0] || null;
-  const supportCandidates = [...new Set(supports.map(x => Number(x.toPrecision(12))))];
-  const resistanceCandidates = [...new Set(resistances.map(x => Number(x.toPrecision(12))))];
-
-  return {
-    support,
-    resistance,
-    supportCandidates,
-    resistanceCandidates,
-    entryLevel: direction === "long" ? support : resistance,
-    targetLevel: direction === "long" ? resistance : support,
-  };
-}
-
-function calculateProfessionalTradePlan({
-  entry, direction, candles5, candles15, atr5, setupType = "CONTINUATION",
-  setupEvidence = {}, capitalFlow = {}, marketRegime = null
-}) {
-  const price = Number(entry || 0);
-  if (!(price > 0)) {
-    return {
-      valid: false, entry: price, tp: 0, sl: 0, riskPct: 0, rewardPct: 0,
-      riskReward: 0, method: "INVALID_ENTRY", rejection: "INVALID_ENTRY",
-    };
-  }
-
-  const a5 = Math.max(num(atr5), price * 0.0015, 1e-12);
-  const a15 = Math.max(num(atr(candles15 || [], 14)), price * 0.0018, 1e-12);
-  const atrValue = Math.max(a5, a15 * 0.55);
-  const structures = findEntryStructures(candles5, candles15, direction, price, setupEvidence);
-  const entryLevel = structures.entryLevel;
-  const targetLevel = structures.targetLevel;
-
-  if (!(entryLevel > 0)) {
-    return {
-      valid: false, entry: price, tp: 0, sl: 0, riskPct: 0, rewardPct: 0,
-      riskReward: 0, method: "NO_ENTRY_STRUCTURE", rejection: "NO_VALID_ENTRY_STRUCTURE",
-      support: structures.support, resistance: structures.resistance,
-    };
-  }
-
-  const distanceToEntryLevelPct = Math.abs(pct(price, entryLevel));
-  const distanceToEntryLevelAtr = Math.abs(price - entryLevel) / atrValue;
-  const withinZone =
-    distanceToEntryLevelAtr <= Number(CONFIG.entryZoneAtrMax || 0.85) ||
-    distanceToEntryLevelPct <= Number(CONFIG.entryZonePctMax || 0.75);
-
-  const confirmation = structureVolumeConfirmation({
-    candles5, candles15, direction, level: entryLevel, flow: capitalFlow,
-  });
-
-  // The current market price is the actual executable entry. We do not
-  // invent a future limit-entry price: price must already be just beyond
-  // the validated support/resistance and flow must be confirming.
-  if (!withinZone) {
-    return {
-      valid: false, entry: price, tp: 0, sl: 0, riskPct: 0, rewardPct: 0,
-      riskReward: 0, method: "STRUCTURE_ENTRY_TOO_FAR", rejection: "ENTRY_TOO_FAR_FROM_STRUCTURE",
-      support: structures.support, resistance: structures.resistance,
-      entryLevel, targetLevel, distanceToEntryLevelPct, distanceToEntryLevelAtr,
-      confirmation,
-    };
-  }
-
-  if (!confirmation.confirmed) {
-    return {
-      valid: false, entry: price, tp: 0, sl: 0, riskPct: 0, rewardPct: 0,
-      riskReward: 0, method: "FLOW_CONFIRMATION_REQUIRED", rejection: "ENTRY_FLOW_CONFIRMATION_MISSING",
-      support: structures.support, resistance: structures.resistance,
-      entryLevel, targetLevel, distanceToEntryLevelPct, distanceToEntryLevelAtr,
-      confirmation,
-    };
-  }
-
-  // For LONG: SL is behind the same support used for the entry.
-  // For SHORT: SL is above the same resistance used for the entry.
-  const structureBuffer = Math.max(
-    atrValue * Number(CONFIG.slStructureBufferAtr || 0.18),
-    price * (Number(CONFIG.slStructureBufferPct || 0.08) / 100)
-  );
-  let sl = direction === "long"
-    ? entryLevel - structureBuffer
-    : entryLevel + structureBuffer;
-
-  // TP is placed BEFORE the opposing structure. Never manufacture a farther
-  // target merely to satisfy R:R; if structure cannot provide enough reward,
-  // the trade is invalid.
-  if (!(targetLevel > 0)) {
-    return {
-      valid: false, entry: price, tp: 0, sl: Number(sl.toPrecision(12)),
-      riskPct: Math.abs(pct(sl, price)), rewardPct: 0, riskReward: 0,
-      method: "NO_OPPOSING_STRUCTURE", rejection: "NO_VALID_TARGET_STRUCTURE",
-      support: structures.support, resistance: structures.resistance,
-      entryLevel, targetLevel, distanceToEntryLevelPct, distanceToEntryLevelAtr,
-      confirmation,
-    };
-  }
-
-  const tpBuffer = Math.max(
-    atrValue * Number(direction === "long" ? CONFIG.tpBeforeResistanceAtr : CONFIG.tpBeforeSupportAtr),
-    price * (Number(CONFIG.tpBeforeStructurePct || 0.08) / 100)
-  );
-  let tp = direction === "long"
-    ? targetLevel - tpBuffer
-    : targetLevel + tpBuffer;
-
-  // Safety: TP must remain favorable and genuinely before the opposing level.
+  let structural = 0;
+  let method = "ATR_ONLY";
   if (direction === "long") {
-    tp = Math.min(tp, targetLevel - tpBuffer);
+    structural = supports.length ? Math.max(...supports) : 0;
+    if (structural > 0) {
+      // Put the trigger just beyond the structural low/support.
+      const candidate = structural - buffer;
+      const minSl = price * (1 - CONFIG.slMaxDistancePct / 100);
+      const sl = Math.max(candidate, minSl);
+      structural = sl;
+      method = "STRUCTURE_SUPPORT_ATR";
+    } else {
+      structural = price - buffer;
+      method = "ATR_FALLBACK";
+    }
   } else {
-    tp = Math.max(tp, targetLevel + tpBuffer);
+    structural = resistances.length ? Math.min(...resistances) : 0;
+    if (structural > 0) {
+      const candidate = structural + buffer;
+      const maxSl = price * (1 + CONFIG.slMaxDistancePct / 100);
+      structural = Math.min(candidate, maxSl);
+      method = "STRUCTURE_RESISTANCE_ATR";
+    } else {
+      structural = price + buffer;
+      method = "ATR_FALLBACK";
+    }
   }
 
-  const riskAbs = Math.abs(price - sl);
-  const rewardAbs = Math.abs(tp - price);
-  const riskPct = Math.abs(pct(sl, price));
-  const rewardPct = Math.abs(pct(tp, price));
-  const riskReward = riskAbs > 0 ? rewardAbs / riskAbs : 0;
+  // Enforce a minimum distance so normal oracle noise does not immediately
+  // trigger the stop, while respecting the hard maximum risk envelope.
+  const minDist = price * (CONFIG.slMinDistancePct / 100);
+  if (direction === "long") structural = Math.min(structural, price - minDist);
+  else structural = Math.max(structural, price + minDist);
 
   const macro = String(marketRegime?.direction || "neutral");
   const counterTrend = macro !== "neutral" && macro !== direction;
-  const maxSlPct = counterTrend
-    ? Math.min(Number(CONFIG.slMaxDistancePct), Number(CONFIG.slCounterTrendMaxDistancePct))
-    : Number(CONFIG.slMaxDistancePct);
+  const maxPct = counterTrend ? Math.min(CONFIG.slMaxDistancePct, CONFIG.slCounterTrendMaxDistancePct) : CONFIG.slMaxDistancePct;
+  const maxDist = price * (maxPct / 100);
+  if (direction === "long") structural = Math.max(structural, price - maxDist);
+  else structural = Math.min(structural, price + maxDist);
 
-  if (riskPct < Number(CONFIG.slMinDistancePct || 0.35) * 0.95) {
-    return {
-      valid: false, entry: price, tp: Number(tp.toPrecision(12)), sl: Number(sl.toPrecision(12)),
-      riskPct, rewardPct, riskReward, method: "STRUCTURAL_SL_TOO_TIGHT",
-      rejection: "SL_TOO_CLOSE_TO_ENTRY", support: structures.support, resistance: structures.resistance,
-      entryLevel, targetLevel, distanceToEntryLevelPct, distanceToEntryLevelAtr, confirmation,
-    };
-  }
-  if (riskPct > maxSlPct + 0.05) {
-    return {
-      valid: false, entry: price, tp: Number(tp.toPrecision(12)), sl: Number(sl.toPrecision(12)),
-      riskPct, rewardPct, riskReward, method: "STRUCTURAL_SL_TOO_WIDE",
-      rejection: "SL_TOO_FAR_FROM_ENTRY", support: structures.support, resistance: structures.resistance,
-      entryLevel, targetLevel, distanceToEntryLevelPct, distanceToEntryLevelAtr, confirmation,
-    };
-  }
-
-  if (direction === "long" && !(sl < price && tp > price && tp < targetLevel)) {
-    return {
-      valid: false, entry: price, tp, sl, riskPct, rewardPct, riskReward,
-      method: "LONG_STRUCTURE_INVALID", rejection: "LONG_TP_SL_GEOMETRY_INVALID",
-      support: structures.support, resistance: structures.resistance, entryLevel, targetLevel, confirmation,
-    };
-  }
-  if (direction === "short" && !(sl > price && tp < price && tp > targetLevel)) {
-    return {
-      valid: false, entry: price, tp, sl, riskPct, rewardPct, riskReward,
-      method: "SHORT_STRUCTURE_INVALID", rejection: "SHORT_TP_SL_GEOMETRY_INVALID",
-      support: structures.support, resistance: structures.resistance, entryLevel, targetLevel, confirmation,
-    };
-  }
-
-  const minRR = Number(CONFIG.minRiskReward || 1.5);
-  if (riskReward < minRR) {
-    return {
-      valid: false, entry: price, tp: Number(tp.toPrecision(12)), sl: Number(sl.toPrecision(12)),
-      riskPct, rewardPct, riskReward: Number(riskReward.toFixed(3)),
-      method: "STRUCTURAL_RR_REJECT", rejection: `RISK_REWARD_${riskReward.toFixed(2)}_BELOW_${minRR.toFixed(2)}`,
-      support: structures.support, resistance: structures.resistance,
-      entryLevel, targetLevel, distanceToEntryLevelPct, distanceToEntryLevelAtr, confirmation,
-    };
-  }
-
+  const sl = Number(structural.toPrecision(12));
+  const distancePct = Math.abs(pct(sl, price));
+  const validSide = direction === "long" ? sl < price : sl > price;
+  const valid = validSide && distancePct >= CONFIG.slMinDistancePct * 0.95 && distancePct <= maxPct + 0.05;
   return {
-    valid: true,
-    entry: price,
-    tp: Number(tp.toPrecision(12)),
-    sl: Number(sl.toPrecision(12)),
-    riskPct: Number(riskPct.toFixed(3)),
-    rewardPct: Number(rewardPct.toFixed(3)),
-    riskReward: Number(Math.min(riskReward, Number(CONFIG.maxRiskReward || 6)).toFixed(3)),
-    method: "PROFESSIONAL_SR_VOLUME_FLOW",
-    targetType: direction === "long" ? "BEFORE_RESISTANCE" : "BEFORE_SUPPORT",
-    support: structures.support,
-    resistance: structures.resistance,
-    entryLevel,
-    targetLevel,
-    distanceToEntryLevelPct: Number(distanceToEntryLevelPct.toFixed(3)),
-    distanceToEntryLevelAtr: Number(distanceToEntryLevelAtr.toFixed(3)),
-    confirmation,
+    sl,
+    distancePct: Number(distancePct.toFixed(3)),
+    method,
+    valid,
     counterTrend,
-    maxSlPct,
+    maxDistancePct: maxPct,
+    bufferPct: Number((buffer / price * 100).toFixed(3)),
   };
 }
 
-function calculateDynamicSl(entry, direction, candles5, candles15, atr5, setupType = "CONTINUATION", setupEvidence = {}, marketRegime = null) {
-  const plan = calculateProfessionalTradePlan({
-    entry, direction, candles5, candles15, atr5, setupType, setupEvidence, marketRegime,
-    capitalFlow: setupEvidence?.capitalFlow || {},
-  });
-  return {
-    sl: plan.sl,
-    distancePct: plan.riskPct,
-    method: plan.method,
-    valid: plan.valid,
-    counterTrend: plan.counterTrend,
-    maxDistancePct: plan.maxSlPct,
-    bufferPct: plan.entryLevel && plan.sl ? Number(Math.abs(pct(plan.sl, plan.entryLevel)).toFixed(3)) : 0,
-    riskReward: plan.riskReward,
-    rejection: plan.rejection || null,
-  };
-}
+function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupType = "CONTINUATION", impulse = {}, slPrice = 0, signalScore = 0) {
+  const minDist = CONFIG.minTpDistancePct / 100;
+  const maxDistPct = setupType === "REVERSAL" ? CONFIG.tpReversalMaxPct : CONFIG.tpContinuationMaxPct;
+  const maxDist = maxDistPct / 100;
+  const atr = Math.max(num(atr5), entry * 0.0005, 1e-12);
+  const slDistance = slPrice > 0 ? Math.abs(entry - slPrice) : 0;
+  const rrTarget = signalScore >= 90 ? CONFIG.rrExtreme : signalScore >= 80 ? CONFIG.rrStrong : CONFIG.rrBase;
+  const requiredTpDistancePct = slDistance > 0 ? (slDistance / entry) * 100 * (CONFIG.rrEnabled ? rrTarget : 1) : CONFIG.minTpDistancePct;
 
-function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupType = "CONTINUATION", impulse = {}, setupEvidence = {}, capitalFlow = {}, marketRegime = null) {
-  const plan = calculateProfessionalTradePlan({
-    entry, direction, candles5, candles15, atr5, setupType, setupEvidence, capitalFlow, marketRegime,
-  });
-  if (plan.valid) {
+  const levels5 = recentSwingLevels(candles5);
+  const levels15 = recentSwingLevels(candles15);
+  const completed5 = candles5.slice(0, -1);
+  const completed15 = candles15.slice(0, -1);
+  const n5 = Math.max(3, Number(CONFIG.tpNearTermLookback5) || 8);
+  const n15 = Math.max(3, Number(CONFIG.tpNearTermLookback15) || 6);
+  const near5 = completed5.slice(-n5);
+  const near15 = completed15.slice(-n15);
+
+  const nearHigh5 = near5.length ? Math.max(...near5.map(c => num(c.high)).filter(Number.isFinite)) : NaN;
+  const nearLow5 = near5.length ? Math.min(...near5.map(c => num(c.low)).filter(Number.isFinite)) : NaN;
+  const nearHigh15 = near15.length ? Math.max(...near15.map(c => num(c.high)).filter(Number.isFinite)) : NaN;
+  const nearLow15 = near15.length ? Math.min(...near15.map(c => num(c.low)).filter(Number.isFinite)) : NaN;
+
+  const candidates = [];
+  const add = (price, type, tf, weight = 0) => {
+    const x = num(price);
+    if (!(x > 0)) return;
+    const distancePct = Math.abs(pct(x, entry));
+    const favorable = direction === "long" ? x > entry : x < entry;
+    if (!favorable || distancePct < CONFIG.minTpDistancePct || distancePct > maxDistPct) return;
+    const rr = slDistance > 0 ? distancePct / ((slDistance / entry) * 100) : rrTarget;
+    const rrPass = !CONFIG.rrEnabled || slDistance <= 0 || rr >= CONFIG.rrMin - CONFIG.rrStructureTolerance;
+
+    // Probability proxy: closer first reaction levels are generally more reachable;
+    // a second confirmation from 15m earns a small bonus. This is deliberately
+    // a ranking proxy, not a statistically calibrated probability.
+    const atrDist = Math.abs(x - entry) / atr;
+    const distanceScore = clamp(88 - atrDist * 18, 25, 88);
+    const tfBonus = tf === "15m" ? 7 : 3;
+    const setupBonus = setupType === "REVERSAL" ? (distancePct <= 1.25 ? 10 : 0) : (distancePct <= 1.80 ? 6 : 0);
+    const weightBonus = Number(weight) || 0;
+    const rrBonus = slDistance > 0 ? clamp((rr - CONFIG.rrMin) * 10, -20, 15) : 0;
+    const rrPenalty = rrPass ? 0 : -35;
+    const targetScore = clamp(distanceScore + tfBonus + setupBonus + weightBonus + rrBonus + rrPenalty, 0, 100);
+    candidates.push({price:x, type, tf, distancePct, atrDist, targetScore, rr, rrPass});
+  };
+
+  // First reaction / recent range is considered before older swing structure.
+  if (direction === "long") {
+    add(nearHigh5, "NEAR_TERM_REACTION", "5m", 10);
+    add(nearHigh15, "NEAR_TERM_STRUCTURE", "15m", 8);
+    for (const x of levels5.resistance) add(x, "SWING_RESISTANCE", "5m", 4);
+    for (const x of levels15.resistance) add(x, "SWING_RESISTANCE", "15m", 6);
+  } else {
+    add(nearLow5, "NEAR_TERM_REACTION", "5m", 10);
+    add(nearLow15, "NEAR_TERM_STRUCTURE", "15m", 8);
+    for (const x of levels5.support) add(x, "SWING_SUPPORT", "5m", 4);
+    for (const x of levels15.support) add(x, "SWING_SUPPORT", "15m", 6);
+  }
+
+  // De-duplicate nearly identical targets while preserving the strongest evidence.
+  const dedup = new Map();
+  for (const c of candidates) {
+    const key = c.price.toPrecision(10);
+    const prior = dedup.get(key);
+    if (!prior || c.targetScore > prior.targetScore) dedup.set(key, c);
+  }
+
+  let pool = [...dedup.values()];
+  pool.sort((a, b) => b.targetScore - a.targetScore || a.distancePct - b.distancePct);
+
+  let selected = pool.find(x => x.rrPass && x.targetScore >= CONFIG.tpMinTargetScore);
+  if (!selected) selected = pool.find(x => x.rrPass) || pool.find(x => x.targetScore >= CONFIG.tpMinTargetScore) || pool[0] || null;
+
+  if (!selected) {
+    const rrDistance = slDistance > 0 ? (slDistance / entry) * rrTarget : (CONFIG.tpAtrMultiplier * atr / entry);
+    const fallbackDistance = Math.min(maxDist, Math.max(minDist, requiredTpDistancePct / 100, rrDistance));
+    const tp = direction === "long" ? entry * (1 + fallbackDistance) : entry * (1 - fallbackDistance);
     return {
-      tp: plan.tp,
-      method: plan.method,
-      targetType: plan.targetType,
-      targetScore: plan.confirmation?.flowScore || 0,
-      probabilityProxy: plan.confirmation?.volumeRatio ? Math.min(100, plan.confirmation.volumeRatio * 50) : 0,
-      distancePct: plan.rewardPct,
-      targetPrice: plan.targetLevel,
-      atrDistance: Math.abs(plan.tp - entry) / Math.max(num(atr5), entry * 0.0005, 1e-12),
-      riskReward: plan.riskReward,
-      support: plan.support,
-      resistance: plan.resistance,
-      entryLevel: plan.entryLevel,
+      tp: Number(tp.toPrecision(12)), method: "ATR_PROBABILITY_FALLBACK", targetType: "ATR_FALLBACK",
+      targetScore: 60, probabilityProxy: 60, distancePct: fallbackDistance * 100,
+      rr: slDistance > 0 ? (fallbackDistance * entry) / slDistance : rrTarget,
+      rrPass: slDistance <= 0 || (fallbackDistance * entry) / slDistance >= CONFIG.rrMin,
+      targetPrice: tp, atrDistance: fallbackDistance * entry / atr,
     };
   }
+
+  // For reversal trades, never chase a distant major structure when a nearer
+  // reaction target exists. For continuation, allow a little more room only
+  // when the impulse is still expanding.
+  const impulseExpansion = Math.max(num(impulse?.rangeExpansion), num(impulse?.volumeRatio));
+  const expansionSupport = impulseExpansion >= 1.25 || Math.abs(num(impulse?.acceleration)) >= 0.15;
+  if (setupType === "REVERSAL" && selected.distancePct > CONFIG.tpReversalMaxPct) {
+    const nearer = pool.find(x => x.distancePct <= CONFIG.tpReversalMaxPct);
+    if (nearer) selected = nearer;
+  }
+  if (setupType === "CONTINUATION" && !expansionSupport) {
+    const nearer = pool.find(x => x.distancePct <= 1.80);
+    if (nearer && nearer.targetScore >= selected.targetScore - 5) selected = nearer;
+  }
+
   return {
-    tp: 0,
-    method: plan.method || "PROFESSIONAL_TP_REJECTED",
-    targetType: plan.targetType || "NO_TARGET",
-    targetScore: plan.confirmation?.flowScore || 0,
-    probabilityProxy: 0,
-    distancePct: plan.rewardPct || 0,
-    targetPrice: plan.targetLevel || 0,
-    atrDistance: 0,
-    riskReward: plan.riskReward || 0,
-    support: plan.support || null,
-    resistance: plan.resistance || null,
-    entryLevel: plan.entryLevel || 0,
-    rejection: plan.rejection || "TP_PLAN_INVALID",
+    tp: Number(selected.price.toPrecision(12)),
+    method: "PROBABILITY_AWARE_STRUCTURE",
+    targetType: selected.type,
+    targetScore: Number(selected.targetScore.toFixed(1)),
+    probabilityProxy: Number(selected.targetScore.toFixed(1)),
+    distancePct: Number(selected.distancePct.toFixed(3)),
+    rr: Number((selected.rr || 0).toFixed(2)),
+    rrPass: Boolean(selected.rrPass),
+    targetPrice: selected.price,
+    atrDistance: Number(selected.atrDist.toFixed(2)),
   };
 }
 
@@ -2472,9 +2272,15 @@ function attachEconomicOpportunity(candidate, walletUsd) {
 }
 
 function candidateIsActionable(candidate) {
-  if (!candidate || !candidate.symbol || !candidate.entry || !candidate.tp) {
+  if (!candidate || !candidate.symbol || !candidate.entry || !candidate.tp || (CONFIG.stopLossEnabled && !(num(candidate.sl) > 0))) {
     return { ok: false, reason: "INVALID_PLAN" };
   }
+
+  // V21.8: Entry is never considered ready without a real, direction-correct
+  // SL/TP pair and a measurable minimum R:R. Flow remains a quality signal;
+  // it is not allowed to turn a valid risk plan into an undefined plan.
+  const rr = num(candidate.rr) || (num(candidate.sl) > 0 ? Math.abs(num(candidate.tp) - num(candidate.entry)) / Math.abs(num(candidate.entry) - num(candidate.sl)) : 0);
+  if (!(rr >= CONFIG.rrMin)) return { ok: false, reason: `RR_${rr.toFixed(2)}_BELOW_${CONFIG.rrMin.toFixed(2)}` };
 
   const ev = candidate.setupEvidence || {};
   const isEarlyReversal = candidate.setupType === "REVERSAL" && candidate.reversalTrigger;
@@ -2592,24 +2398,6 @@ function candidateIsActionable(candidate) {
   if (ev.lateChase) return { ok: false, reason: "LATE_CHASE" };
   if (ev.lateMove) return { ok: false, reason: `MOVE_MATURITY_${ev.moveMaturityLabel || "LATE"}_${num(ev.moveMaturity).toFixed(1)}` };
   if (candidate.risk > CONFIG.maxRisk) return { ok: false, reason: `RISK_${candidate.risk.toFixed(1)}_ABOVE_${CONFIG.maxRisk}` };
-
-  const professionalPlan = ev.professionalPlan || candidate.professionalPlan || {};
-  if (!professionalPlan.valid) {
-    return { ok: false, reason: professionalPlan.rejection || ev.proTradePlanRejection || "PROFESSIONAL_TRADE_PLAN_INVALID" };
-  }
-  const rr = num(candidate.riskReward ?? professionalPlan.riskReward);
-  if (!(rr >= Number(CONFIG.minRiskReward || 1.5))) {
-    return { ok: false, reason: `RISK_REWARD_${rr.toFixed(2)}_BELOW_${Number(CONFIG.minRiskReward || 1.5).toFixed(2)}` };
-  }
-  if (!professionalPlan.confirmation?.volumeExpanded) {
-    return { ok: false, reason: "ENTRY_VOLUME_NOT_EXPANDED" };
-  }
-  if (!professionalPlan.confirmation?.smartMoneyConfirmed) {
-    return { ok: false, reason: "ENTRY_SMART_MONEY_FLOW_NOT_CONFIRMED" };
-  }
-  if (!professionalPlan.confirmation?.flowConfirmed) {
-    return { ok: false, reason: "ENTRY_DIRECTIONAL_FLOW_NOT_CONFIRMED" };
-  }
 
   const tpDistance = Math.abs(pct(candidate.tp, candidate.entry));
   if (tpDistance < CONFIG.minTpDistancePct) return { ok: false, reason: "TP_TOO_CLOSE" };
@@ -3769,7 +3557,6 @@ async function runCycle(event, env) {
       blocked.push({
         symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, sl: candidate.sl, tp: candidate.tp,
         score: candidate.score, edge: candidate.edge, risk: candidate.risk, setupType: candidate.setupType,
-        riskReward: candidate.riskReward, rewardPct: candidate.rewardPct, slRiskPct: candidate.slRiskPct,
         reversalEvidence: candidate.reversalEvidence, reason: check.reason, setupEvidence: candidate.setupEvidence,
       });
       continue;
