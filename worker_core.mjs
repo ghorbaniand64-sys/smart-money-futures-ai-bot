@@ -1,6 +1,6 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ GMX SMART MONEY FUTURES AI BOT — V21.9.1 HTF TREND-END + STRICT CONTINUATION + STRUCTURE TARGET      ║
+║ GMX SMART MONEY FUTURES AI BOT — V21.9.2 HTF STRUCTURE TP + TREND-END + STRICT CONTINUATION      ║
 ║ Single pipeline • 5M broad scan • 15M deep scan • Classic GMX only          ║
 ║ 20x leverage • 100% wallet • max 1 position • dynamic TP + structure SL               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V21.8.0-STRUCTURE-TARGET-EARLY-ENTRY-DYNAMIC-SL-20X";
+export const BOT_VERSION = "V21.9.2-HTF-STRUCTURE-TP-ROBUST-EARLY-ENTRY-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -93,6 +93,10 @@ const CONFIG = Object.freeze({
   tpStructureBufferAtr: 0.18,
   tpStructureBufferMaxPct: 0.22,
   tpRejectIfStructureTooClose: true,
+  tpUseHtfStructure: true,
+  tpHtfLookback1h: 48,
+  tpHtfLookback4h: 24,
+  tpHtfLookback1d: 30,
 
   // V21.8: a reversal is only tradable while the reversal leg itself is still
   // fresh. The prior impulse may be large (that is the setup), but the new
@@ -1953,7 +1957,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   );
 
   const entry = price;
-  const tpPlan = calculateLogicalTp(entry, direction, candles5, candles15, five.atr, setupType, impulse, { nearestSupport: zone.support, nearestResistance: zone.resistance });
+  const tpPlan = calculateLogicalTp(entry, direction, candles5, candles15, five.atr, setupType, impulse, { nearestSupport: zone.support, nearestResistance: zone.resistance }, candles1h, candles4h, candles1d);
   const tp = tpPlan.tp;
   const slPlan = CONFIG.stopLossEnabled
     ? calculateDynamicSl(entry, direction, candles5, candles15, five.atr, setupType, { ...topDown, nearestSupport: zone.support, nearestResistance: zone.resistance }, marketRegime)
@@ -2012,7 +2016,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       moveMaturity, moveMaturityLabel, lateMove, extensionPct, atrDistance, opposingZoneNear, directionalDecelerating,
       reversalLegMovePct, reversalLegAtr, reversalEntryLate,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
-      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy, tpStructurePrice: tpPlan.structurePrice, tpBufferPct: tpPlan.bufferPct, tpValid: tpPlan.valid,
+      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy, tpStructurePrice: tpPlan.structurePrice, tpStructureTf: tpPlan.structureTf, tpBufferPct: tpPlan.bufferPct, tpValid: tpPlan.valid,
       sl: slPlan.sl, slDistancePct: slPlan.distancePct, slMethod: slPlan.method, slValid: slPlan.valid,
       zoneState: zone.state, nearSupport: zone.nearSupport, nearResistance: zone.nearResistance,
       nearestSupport: zone.support, nearestResistance: zone.resistance, sharpMove: sharp, lateChase, impulseQuality,
@@ -2027,7 +2031,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       priorMove: preMove, priorMoveOppositeLong, priorMoveOppositeShort,
       reversalTiming, continuationTiming,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
-      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
+      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy, tpStructureTf: tpPlan.structureTf,
       capitalFlow, smartMoneyProxy: capitalFlow.smartMoneyProxy, capitalFlowScore: capitalFlow.score,
       capitalFlowDirection: capitalFlow.direction, capitalFlowState: capitalFlow.state,
       volumeRatio5m: capitalFlow.volumeRatio5m, volumeRatio15m: capitalFlow.volumeRatio15m, oiDeltaPct: capitalFlow.oiDeltaPct,
@@ -2165,23 +2169,33 @@ function calculateDynamicSl(entry, direction, candles5, candles15, atr5, setupTy
   };
 }
 
-function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupType = "CONTINUATION", impulse = {}, setupEvidence = {}) {
+function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupType = "CONTINUATION", impulse = {}, setupEvidence = {}, candles1h = [], candles4h = [], candles1d = []) {
   const minDistPct = Number(CONFIG.minTpDistancePct || 0.30);
   const maxDistPct = setupType === "REVERSAL" ? Number(CONFIG.tpReversalMaxPct || 1.80) : Number(CONFIG.tpContinuationMaxPct || 2.20);
   const atr = Math.max(num(atr5), entry * 0.0005, 1e-12);
 
   const levels5 = recentSwingLevels(candles5 || []);
   const levels15 = recentSwingLevels(candles15 || []);
-  const supports = [
-    num(setupEvidence?.nearestSupport),
-    ...(levels5.support || []),
-    ...(levels15.support || []),
-  ].filter(x => x > 0 && x < entry).sort((a,b) => b-a);
-  const resistances = [
-    num(setupEvidence?.nearestResistance),
-    ...(levels5.resistance || []),
-    ...(levels15.resistance || []),
-  ].filter(x => x > entry).sort((a,b) => a-b);
+  const levels1h = CONFIG.tpUseHtfStructure ? recentSwingLevels((candles1h || []).slice(-Number(CONFIG.tpHtfLookback1h || 48))) : { support: [], resistance: [] };
+  const levels4h = CONFIG.tpUseHtfStructure ? recentSwingLevels((candles4h || []).slice(-Number(CONFIG.tpHtfLookback4h || 24))) : { support: [], resistance: [] };
+  const levels1d = CONFIG.tpUseHtfStructure ? recentSwingLevels((candles1d || []).slice(-Number(CONFIG.tpHtfLookback1d || 30))) : { support: [], resistance: [] };
+
+  const supportEntries = [
+    [num(setupEvidence?.nearestSupport), "ZONE"],
+    ...(levels5.support || []).map(x => [x, "5m"]),
+    ...(levels15.support || []).map(x => [x, "15m"]),
+    ...(levels1h.support || []).map(x => [x, "1h"]),
+    ...(levels4h.support || []).map(x => [x, "4h"]),
+    ...(levels1d.support || []).map(x => [x, "1d"]),
+  ].filter(([x]) => x > 0 && x < entry).sort((a,b) => b[0]-a[0]);
+  const resistanceEntries = [
+    [num(setupEvidence?.nearestResistance), "ZONE"],
+    ...(levels5.resistance || []).map(x => [x, "5m"]),
+    ...(levels15.resistance || []).map(x => [x, "15m"]),
+    ...(levels1h.resistance || []).map(x => [x, "1h"]),
+    ...(levels4h.resistance || []).map(x => [x, "4h"]),
+    ...(levels1d.resistance || []).map(x => [x, "1d"]),
+  ].filter(([x]) => x > entry).sort((a,b) => a[0]-b[0]);
 
   // The target is not the support/resistance itself. It is deliberately placed
   // a little BEFORE that level, because the bot's objective is a reachable
@@ -2215,31 +2229,37 @@ function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupTy
   // Do not select a deeper support / higher resistance merely because it scores
   // better; that was the source of the overly distant TP behavior.
   let selected = null;
+  let nearestStructure = 0;
+  let nearestStructureTf = "N/A";
   if (direction === "short") {
-    const level = supports[0];
-    if (level) {
-      selected = makeTarget(level, "NEAREST_VALID_SUPPORT_BEFORE", "5m/15m");
-      if (!selected && CONFIG.tpRejectIfStructureTooClose) {
-        return {
-          tp: 0, method: "NO_REACHABLE_SUPPORT_BEFORE_STRUCTURE", targetType: "SUPPORT_TOO_CLOSE",
-          targetScore: 0, probabilityProxy: 0, distancePct: 0, targetPrice: 0,
-          atrDistance: 0, structurePrice: level, bufferPct,
-          valid: false,
-        };
-      }
+    nearestStructure = supportEntries[0]?.[0] || 0;
+    nearestStructureTf = supportEntries[0]?.[1] || "N/A";
+    for (const [level, tf] of supportEntries) {
+      const candidate = makeTarget(level, "NEAREST_REACHABLE_SUPPORT_BEFORE", tf);
+      if (candidate) { selected = candidate; break; }
+    }
+    if (!selected && nearestStructure && CONFIG.tpRejectIfStructureTooClose) {
+      return {
+        tp: 0, method: "NO_REACHABLE_SUPPORT_BEFORE_STRUCTURE", targetType: "SUPPORT_TOO_CLOSE",
+        targetScore: 0, probabilityProxy: 0, distancePct: 0, targetPrice: 0,
+        atrDistance: 0, structurePrice: nearestStructure, structureTf: nearestStructureTf, bufferPct,
+        valid: false,
+      };
     }
   } else {
-    const level = resistances[0];
-    if (level) {
-      selected = makeTarget(level, "NEAREST_VALID_RESISTANCE_BEFORE", "5m/15m");
-      if (!selected && CONFIG.tpRejectIfStructureTooClose) {
-        return {
-          tp: 0, method: "NO_REACHABLE_RESISTANCE_BEFORE_STRUCTURE", targetType: "RESISTANCE_TOO_CLOSE",
-          targetScore: 0, probabilityProxy: 0, distancePct: 0, targetPrice: 0,
-          atrDistance: 0, structurePrice: level, bufferPct,
-          valid: false,
-        };
-      }
+    nearestStructure = resistanceEntries[0]?.[0] || 0;
+    nearestStructureTf = resistanceEntries[0]?.[1] || "N/A";
+    for (const [level, tf] of resistanceEntries) {
+      const candidate = makeTarget(level, "NEAREST_REACHABLE_RESISTANCE_BEFORE", tf);
+      if (candidate) { selected = candidate; break; }
+    }
+    if (!selected && nearestStructure && CONFIG.tpRejectIfStructureTooClose) {
+      return {
+        tp: 0, method: "NO_REACHABLE_RESISTANCE_BEFORE_STRUCTURE", targetType: "RESISTANCE_TOO_CLOSE",
+        targetScore: 0, probabilityProxy: 0, distancePct: 0, targetPrice: 0,
+        atrDistance: 0, structurePrice: nearestStructure, structureTf: nearestStructureTf, bufferPct,
+        valid: false,
+      };
     }
   }
 
@@ -2265,6 +2285,7 @@ function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupTy
     distancePct: selected.distancePct,
     targetPrice: selected.tp,
     structurePrice: selected.structure,
+    structureTf: selected.tf,
     bufferPct: selected.bufferPct,
     atrDistance: Number(selected.atrDistance.toFixed(2)),
     valid: true,
