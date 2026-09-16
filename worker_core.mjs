@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V21.7.0-EARLY-MOVE-MATURITY-DYNAMIC-SL-20X";
+export const BOT_VERSION = "V21.8.0-STRUCTURE-TARGET-EARLY-ENTRY-DYNAMIC-SL-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -87,6 +87,18 @@ const CONFIG = Object.freeze({
   tpReversalMaxPct: 1.80,
   tpContinuationMaxPct: 2.20,
   tpMinTargetScore: 52,
+  // V21.8: targets must be placed BEFORE the nearest valid opposing structure,
+  // not on/through it. This is especially important for small, fast markets.
+  tpStructureBufferPct: 0.10,
+  tpStructureBufferAtr: 0.18,
+  tpStructureBufferMaxPct: 0.22,
+  tpRejectIfStructureTooClose: true,
+
+  // V21.8: a reversal is only tradable while the reversal leg itself is still
+  // fresh. The prior impulse may be large (that is the setup), but the new
+  // directional leg must not already have travelled too far.
+  reversalEntryMaxMovePct: 0.85,
+  reversalEntryMaxAtr: 1.60,
 
   // V21.6 Dynamic structure-based stop loss. The stop is derived from the
   // nearest structural swing/support/resistance plus an ATR volatility buffer.
@@ -176,7 +188,7 @@ const CONFIG = Object.freeze({
   trendEndVolumeRatio: 1.45,
   trendEndMinSignals: 2,
 
-  // V21.7: move-maturity filter. The bot is optimized for the FIRST
+  // V21.8: move-maturity filter. The bot is optimized for the FIRST
   // actionable part of a sharp move, not for joining an already mature
   // impulse. This filter is intentionally applied to CONTINUATION entries;
   // confirmed REVERSAL entries may occur after a large prior move because
@@ -1757,7 +1769,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const notExtended = extension <= 1.80;
   const lateChase = setupType === 'CONTINUATION' && continuationLateChase;
 
-  // V21.7: measure how mature the current move is before allowing a
+  // V21.8: measure how mature the current move is before allowing a
   // continuation entry. A high score means the market has already travelled
   // too far, is stretched from its short-term mean, is losing directional
   // acceleration, or is approaching the opposing structural level.
@@ -1799,6 +1811,16 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const lateMove = setupType === 'CONTINUATION' && (
     moveMaturity >= Number(CONFIG.moveMaturityRejectScore) ||
     (moveMaturity >= Number(CONFIG.moveMaturitySoftRejectScore) && (directionalDecelerating || opposingZoneNear))
+  );
+
+  // V21.8: distinguish the large PRIOR impulse (which can be desirable for a
+  // reversal) from the NEW reversal leg. We want the first reversal push, not
+  // a reversal signal after that push has already travelled too far.
+  const reversalLegMovePct = Math.max(0, directionalMove3, directionalMove5);
+  const reversalLegAtr = reversalLegMovePct > 0 ? (reversalLegMovePct / 100) * price / Math.max(retestAtr, 1e-12) : 0;
+  const reversalEntryLate = setupType === 'REVERSAL' && (
+    reversalLegMovePct >= Number(CONFIG.reversalEntryMaxMovePct || 0.85) ||
+    reversalLegAtr >= Number(CONFIG.reversalEntryMaxAtr || 1.60)
   );
 
   // Reversal gets timing credit for the FIRST rejection/displacement, not for
@@ -1855,7 +1877,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   );
 
   const entry = price;
-  const tpPlan = calculateLogicalTp(entry, direction, candles5, candles15, five.atr, setupType, impulse);
+  const tpPlan = calculateLogicalTp(entry, direction, candles5, candles15, five.atr, setupType, impulse, { nearestSupport: zone.support, nearestResistance: zone.resistance });
   const tp = tpPlan.tp;
   const slPlan = CONFIG.stopLossEnabled
     ? calculateDynamicSl(entry, direction, candles5, candles15, five.atr, setupType, { ...topDown, nearestSupport: zone.support, nearestResistance: zone.resistance }, marketRegime)
@@ -1894,7 +1916,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
 
   return {
     symbol: marketDisplaySymbol(market), candleSymbol: candleSymbolFromMarket(market), direction, entry, tp, sl,
-    moveMaturity, moveMaturityLabel, lateMove,
+    moveMaturity, moveMaturityLabel, lateMove, reversalLegMovePct, reversalLegAtr, reversalEntryLate,
     score: Number(score.toFixed(2)), edge: Number(edge.toFixed(2)), risk: Number(risk.toFixed(2)), trendConfluence: trend,
     setupType, reversalEvidence,
     setupConfidence: setupType === 'REVERSAL' ? reversalConfidence : continuationConfidence,
@@ -1910,8 +1932,9 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       reversalEdge: fiveLayers.reversalEdge, continuationEdge: fiveLayers.continuationEdge,
       trendEndExhaustion, trendEndSignals, continuationEarly, continuationRetest, continuationTooLate, continuationBreak,
       moveMaturity, moveMaturityLabel, lateMove, extensionPct, atrDistance, opposingZoneNear, directionalDecelerating,
+      reversalLegMovePct, reversalLegAtr, reversalEntryLate,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
-      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
+      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy, tpStructurePrice: tpPlan.structurePrice, tpBufferPct: tpPlan.bufferPct, tpValid: tpPlan.valid,
       sl: slPlan.sl, slDistancePct: slPlan.distancePct, slMethod: slPlan.method, slValid: slPlan.valid,
       zoneState: zone.state, nearSupport: zone.nearSupport, nearResistance: zone.nearResistance,
       nearestSupport: zone.support, nearestResistance: zone.resistance, sharpMove: sharp, lateChase, impulseQuality,
@@ -2063,186 +2086,109 @@ function calculateDynamicSl(entry, direction, candles5, candles15, atr5, setupTy
   };
 }
 
-function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupType = "CONTINUATION", impulse = {}) {
-  const minDist = CONFIG.minTpDistancePct / 100;
-  const maxDistPct = setupType === "REVERSAL" ? CONFIG.tpReversalMaxPct : CONFIG.tpContinuationMaxPct;
-  const maxDist = maxDistPct / 100;
+function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupType = "CONTINUATION", impulse = {}, setupEvidence = {}) {
+  const minDistPct = Number(CONFIG.minTpDistancePct || 0.30);
+  const maxDistPct = setupType === "REVERSAL" ? Number(CONFIG.tpReversalMaxPct || 1.80) : Number(CONFIG.tpContinuationMaxPct || 2.20);
   const atr = Math.max(num(atr5), entry * 0.0005, 1e-12);
 
-  const levels5 = recentSwingLevels(candles5);
-  const levels15 = recentSwingLevels(candles15);
-  const completed5 = candles5.slice(0, -1);
-  const completed15 = candles15.slice(0, -1);
-  const n5 = Math.max(3, Number(CONFIG.tpNearTermLookback5) || 8);
-  const n15 = Math.max(3, Number(CONFIG.tpNearTermLookback15) || 6);
-  const near5 = completed5.slice(-n5);
-  const near15 = completed15.slice(-n15);
+  const levels5 = recentSwingLevels(candles5 || []);
+  const levels15 = recentSwingLevels(candles15 || []);
+  const supports = [
+    num(setupEvidence?.nearestSupport),
+    ...(levels5.support || []),
+    ...(levels15.support || []),
+  ].filter(x => x > 0 && x < entry).sort((a,b) => b-a);
+  const resistances = [
+    num(setupEvidence?.nearestResistance),
+    ...(levels5.resistance || []),
+    ...(levels15.resistance || []),
+  ].filter(x => x > entry).sort((a,b) => a-b);
 
-  const nearHigh5 = near5.length ? Math.max(...near5.map(c => num(c.high)).filter(Number.isFinite)) : NaN;
-  const nearLow5 = near5.length ? Math.min(...near5.map(c => num(c.low)).filter(Number.isFinite)) : NaN;
-  const nearHigh15 = near15.length ? Math.max(...near15.map(c => num(c.high)).filter(Number.isFinite)) : NaN;
-  const nearLow15 = near15.length ? Math.min(...near15.map(c => num(c.low)).filter(Number.isFinite)) : NaN;
+  // The target is not the support/resistance itself. It is deliberately placed
+  // a little BEFORE that level, because the bot's objective is a reachable
+  // reaction rather than requiring price to touch/break a structure.
+  const bufferPct = Math.min(
+    Number(CONFIG.tpStructureBufferMaxPct || 0.22),
+    Math.max(Number(CONFIG.tpStructureBufferPct || 0.10), (atr / entry) * Number(CONFIG.tpStructureBufferAtr || 0.18) * 100)
+  );
 
-  const candidates = [];
-  const add = (price, type, tf, weight = 0) => {
-    const x = num(price);
-    if (!(x > 0)) return;
-    const distancePct = Math.abs(pct(x, entry));
-    const favorable = direction === "long" ? x > entry : x < entry;
-    if (!favorable || distancePct < CONFIG.minTpDistancePct || distancePct > maxDistPct) return;
-
-    // Probability proxy: closer first reaction levels are generally more reachable;
-    // a second confirmation from 15m earns a small bonus. This is deliberately
-    // a ranking proxy, not a statistically calibrated probability.
-    const atrDist = Math.abs(x - entry) / atr;
-    const distanceScore = clamp(88 - atrDist * 18, 25, 88);
-    const tfBonus = tf === "15m" ? 7 : 3;
-    const setupBonus = setupType === "REVERSAL" ? (distancePct <= 1.25 ? 10 : 0) : (distancePct <= 1.80 ? 6 : 0);
-    const weightBonus = Number(weight) || 0;
-    const targetScore = clamp(distanceScore + tfBonus + setupBonus + weightBonus, 0, 100);
-    candidates.push({price:x, type, tf, distancePct, atrDist, targetScore});
+  const makeTarget = (level, type, tf) => {
+    if (!(level > 0)) return null;
+    const rawTp = direction === "short"
+      ? level * (1 + bufferPct / 100)
+      : level * (1 - bufferPct / 100);
+    const distancePct = Math.abs(pct(rawTp, entry));
+    if (!(rawTp > 0) || distancePct < minDistPct || distancePct > maxDistPct) return null;
+    return {
+      tp: Number(rawTp.toPrecision(12)),
+      structure: Number(level.toPrecision(12)),
+      distancePct: Number(distancePct.toFixed(3)),
+      bufferPct: Number(bufferPct.toFixed(3)),
+      type,
+      tf,
+      atrDistance: Math.abs(rawTp - entry) / atr,
+      targetScore: clamp(92 - (Math.abs(rawTp - entry) / atr) * 18 + (tf === "15m" ? 6 : 3), 25, 98),
+    };
   };
 
-  // First reaction / recent range is considered before older swing structure.
-  if (direction === "long") {
-    add(nearHigh5, "NEAR_TERM_REACTION", "5m", 10);
-    add(nearHigh15, "NEAR_TERM_STRUCTURE", "15m", 8);
-    for (const x of levels5.resistance) add(x, "SWING_RESISTANCE", "5m", 4);
-    for (const x of levels15.resistance) add(x, "SWING_RESISTANCE", "15m", 6);
+  // Pick the NEAREST valid opposing structure in price terms:
+  // short -> highest support below entry; long -> lowest resistance above entry.
+  // Do not select a deeper support / higher resistance merely because it scores
+  // better; that was the source of the overly distant TP behavior.
+  let selected = null;
+  if (direction === "short") {
+    const level = supports[0];
+    if (level) {
+      selected = makeTarget(level, "NEAREST_VALID_SUPPORT_BEFORE", "5m/15m");
+      if (!selected && CONFIG.tpRejectIfStructureTooClose) {
+        return {
+          tp: 0, method: "NO_REACHABLE_SUPPORT_BEFORE_STRUCTURE", targetType: "SUPPORT_TOO_CLOSE",
+          targetScore: 0, probabilityProxy: 0, distancePct: 0, targetPrice: 0,
+          atrDistance: 0, structurePrice: level, bufferPct,
+          valid: false,
+        };
+      }
+    }
   } else {
-    add(nearLow5, "NEAR_TERM_REACTION", "5m", 10);
-    add(nearLow15, "NEAR_TERM_STRUCTURE", "15m", 8);
-    for (const x of levels5.support) add(x, "SWING_SUPPORT", "5m", 4);
-    for (const x of levels15.support) add(x, "SWING_SUPPORT", "15m", 6);
+    const level = resistances[0];
+    if (level) {
+      selected = makeTarget(level, "NEAREST_VALID_RESISTANCE_BEFORE", "5m/15m");
+      if (!selected && CONFIG.tpRejectIfStructureTooClose) {
+        return {
+          tp: 0, method: "NO_REACHABLE_RESISTANCE_BEFORE_STRUCTURE", targetType: "RESISTANCE_TOO_CLOSE",
+          targetScore: 0, probabilityProxy: 0, distancePct: 0, targetPrice: 0,
+          atrDistance: 0, structurePrice: level, bufferPct,
+          valid: false,
+        };
+      }
+    }
   }
-
-  // De-duplicate nearly identical targets while preserving the strongest evidence.
-  const dedup = new Map();
-  for (const c of candidates) {
-    const key = c.price.toPrecision(10);
-    const prior = dedup.get(key);
-    if (!prior || c.targetScore > prior.targetScore) dedup.set(key, c);
-  }
-
-  let pool = [...dedup.values()];
-  pool.sort((a, b) => b.targetScore - a.targetScore || a.distancePct - b.distancePct);
-
-  let selected = pool.find(x => x.targetScore >= CONFIG.tpMinTargetScore);
-  if (!selected) selected = pool[0] || null;
 
   if (!selected) {
-    const fallbackDistance = Math.min(maxDist, Math.max(minDist, CONFIG.tpAtrMultiplier * atr / entry));
+    // ATR fallback is only used when there is genuinely no opposing structure.
+    // It is never allowed to override a known nearby structure.
+    const fallbackDistance = Math.min(maxDistPct / 100, Math.max(minDistPct / 100, Number(CONFIG.tpAtrMultiplier || 1) * atr / entry));
     const tp = direction === "long" ? entry * (1 + fallbackDistance) : entry * (1 - fallbackDistance);
     return {
-      tp: Number(tp.toPrecision(12)), method: "ATR_PROBABILITY_FALLBACK", targetType: "ATR_FALLBACK",
+      tp: Number(tp.toPrecision(12)), method: "ATR_ONLY_NO_STRUCTURE", targetType: "ATR_FALLBACK",
       targetScore: 50, probabilityProxy: 50, distancePct: fallbackDistance * 100,
-      targetPrice: tp, atrDistance: fallbackDistance * entry / atr,
+      targetPrice: tp, atrDistance: fallbackDistance * entry / atr, structurePrice: 0,
+      bufferPct: 0, valid: true,
     };
   }
 
-  // For reversal trades, never chase a distant major structure when a nearer
-  // reaction target exists. For continuation, allow a little more room only
-  // when the impulse is still expanding.
-  const impulseExpansion = Math.max(num(impulse?.rangeExpansion), num(impulse?.volumeRatio));
-  const expansionSupport = impulseExpansion >= 1.25 || Math.abs(num(impulse?.acceleration)) >= 0.15;
-  if (setupType === "REVERSAL" && selected.distancePct > CONFIG.tpReversalMaxPct) {
-    const nearer = pool.find(x => x.distancePct <= CONFIG.tpReversalMaxPct);
-    if (nearer) selected = nearer;
-  }
-  if (setupType === "CONTINUATION" && !expansionSupport) {
-    const nearer = pool.find(x => x.distancePct <= 1.80);
-    if (nearer && nearer.targetScore >= selected.targetScore - 5) selected = nearer;
-  }
-
   return {
-    tp: Number(selected.price.toPrecision(12)),
-    method: "PROBABILITY_AWARE_STRUCTURE",
+    tp: selected.tp,
+    method: "NEAREST_STRUCTURE_BEFORE_LEVEL",
     targetType: selected.type,
     targetScore: Number(selected.targetScore.toFixed(1)),
     probabilityProxy: Number(selected.targetScore.toFixed(1)),
-    distancePct: Number(selected.distancePct.toFixed(3)),
-    targetPrice: selected.price,
-    atrDistance: Number(selected.atrDist.toFixed(2)),
-  };
-}
-
-function estimateEconomicOpportunity(candidate, walletUsd) {
-  const wallet = Math.max(num(walletUsd), 0);
-  const allocation = CONFIG.walletAllocationPerPosition;
-  const collateralUsd = wallet * allocation;
-  const leverage = CONFIG.leverage;
-  const notionalUsd = collateralUsd * leverage;
-  const entry = num(candidate?.entry);
-  const tp = num(candidate?.tp);
-
-  if (!(entry > 0) || !(tp > 0) || !(notionalUsd > 0)) {
-    return {
-      valid: false,
-      collateralUsd,
-      notionalUsd,
-      grossPnlUsd: 0,
-      positionFeesUsd: 0,
-      executionCostUsd: CONFIG.executionCostBufferUsd,
-      fundingBorrowBufferUsd: CONFIG.fundingBorrowBufferUsd,
-      totalCostUsd: CONFIG.executionCostBufferUsd + CONFIG.fundingBorrowBufferUsd,
-      expectedNetUsd: -(CONFIG.executionCostBufferUsd + CONFIG.fundingBorrowBufferUsd),
-      netToCostRatio: 0,
-      tpMovePct: 0,
-    };
-  }
-
-  const tpMovePct = Math.abs(pct(tp, entry));
-  const grossPnlUsd = notionalUsd * tpMovePct / 100;
-  const positionFeesUsd = notionalUsd * (CONFIG.positionFeeBpsPerSide / 10_000) * 2;
-  const executionCostUsd = CONFIG.executionCostBufferUsd;
-  const fundingBorrowBufferUsd = CONFIG.fundingBorrowBufferUsd;
-  const totalCostUsd = positionFeesUsd + executionCostUsd + fundingBorrowBufferUsd;
-  const expectedNetUsd = grossPnlUsd - totalCostUsd;
-  const netToCostRatio = totalCostUsd > 0 ? expectedNetUsd / totalCostUsd : 0;
-
-  return {
+    distancePct: selected.distancePct,
+    targetPrice: selected.tp,
+    structurePrice: selected.structure,
+    bufferPct: selected.bufferPct,
+    atrDistance: Number(selected.atrDistance.toFixed(2)),
     valid: true,
-    collateralUsd,
-    notionalUsd,
-    grossPnlUsd,
-    positionFeesUsd,
-    executionCostUsd,
-    fundingBorrowBufferUsd,
-    totalCostUsd,
-    expectedNetUsd,
-    netToCostRatio,
-    tpMovePct,
-  };
-}
-
-function economicGate(candidate, walletUsd) {
-  const economics = estimateEconomicOpportunity(candidate, walletUsd);
-  if (!economics.valid) return { ok: false, reason: "ECONOMIC_INVALID", economics };
-  if (economics.expectedNetUsd < CONFIG.minExpectedNetUsd) {
-    return {
-      ok: false,
-      reason: `EXPECTED_NET_${economics.expectedNetUsd.toFixed(2)}_BELOW_${CONFIG.minExpectedNetUsd.toFixed(2)}`,
-      economics,
-    };
-  }
-  if (economics.netToCostRatio < CONFIG.minNetToCostRatio) {
-    return {
-      ok: false,
-      reason: `NET_COST_RATIO_${economics.netToCostRatio.toFixed(2)}_BELOW_${CONFIG.minNetToCostRatio.toFixed(2)}`,
-      economics,
-    };
-  }
-  return { ok: true, reason: "ECONOMIC_EDGE_OK", economics };
-}
-
-function attachEconomicOpportunity(candidate, walletUsd) {
-  const economics = estimateEconomicOpportunity(candidate, walletUsd);
-  return {
-    ...candidate,
-    economics,
-    expectedGrossPnlUsd: economics.grossPnlUsd,
-    expectedNetPnlUsd: economics.expectedNetUsd,
-    estimatedTotalCostUsd: economics.totalCostUsd,
   };
 }
 
@@ -2366,10 +2312,18 @@ function candidateIsActionable(candidate) {
   // that extension is part of the reversal setup rather than a chase entry.
   if (ev.lateChase) return { ok: false, reason: "LATE_CHASE" };
   if (ev.lateMove) return { ok: false, reason: `MOVE_MATURITY_${ev.moveMaturityLabel || "LATE"}_${num(ev.moveMaturity).toFixed(1)}` };
+  if (ev.reversalEntryLate) return { ok: false, reason: `REVERSAL_ENTRY_LATE_${num(ev.reversalLegMovePct).toFixed(2)}PCT_${num(ev.reversalLegAtr).toFixed(2)}ATR` };
   if (candidate.risk > CONFIG.maxRisk) return { ok: false, reason: `RISK_${candidate.risk.toFixed(1)}_ABOVE_${CONFIG.maxRisk}` };
 
   const tpDistance = Math.abs(pct(candidate.tp, candidate.entry));
+  if (!(candidate.tp > 0)) return { ok: false, reason: `TP_INVALID_${ev.tpMethod || "UNKNOWN"}` };
+  if (candidate.direction === "short" && !(candidate.tp < candidate.entry)) return { ok: false, reason: "TP_WRONG_SIDE_SHORT" };
+  if (candidate.direction === "long" && !(candidate.tp > candidate.entry)) return { ok: false, reason: "TP_WRONG_SIDE_LONG" };
   if (tpDistance < CONFIG.minTpDistancePct) return { ok: false, reason: "TP_TOO_CLOSE" };
+  if (num(ev.tpStructurePrice) > 0) {
+    if (candidate.direction === "short" && !(candidate.tp > num(ev.tpStructurePrice))) return { ok: false, reason: "TP_BELOW_SUPPORT" };
+    if (candidate.direction === "long" && !(candidate.tp < num(ev.tpStructurePrice))) return { ok: false, reason: "TP_ABOVE_RESISTANCE" };
+  }
 
   if (CONFIG.stopLossEnabled) {
     const sl = num(candidate.sl);
@@ -3218,6 +3172,8 @@ function cycleMessage(report) {
       lines.push(`  🧠 ${String(item.setupType || "N/A")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)}`);
       const tm = item.setupEvidence || {};
       lines.push(`  ⏱️ Move maturity ${num(tm.moveMaturity).toFixed(1)} | ${String(tm.moveMaturityLabel || "N/A")} | Extension ${num(tm.extensionPct).toFixed(2)}% | ATR dist ${num(tm.atrDistance).toFixed(2)}x`);
+      lines.push(`  🎯 TP ${formatPrice(item.tp)} | ${String(tm.tpMethod || "N/A")} | Structure ${formatPrice(tm.tpStructurePrice)} | Buffer ${num(tm.tpBufferPct).toFixed(2)}%`);
+      if (tm.reversalEntryLate) lines.push(`  ⏱️ Reversal leg ${num(tm.reversalLegMovePct).toFixed(2)}% | ${num(tm.reversalLegAtr).toFixed(2)} ATR | LATE`);
       const cf = item.setupEvidence?.capitalFlow || {};
       lines.push(`  💧 Flow ${num(cf.score).toFixed(1)} | ${String(cf.state || "N/A")} | Smart ${num(cf.smartMoneyProxy).toFixed(1)} | OI Δ ${num(cf.oiDeltaPct).toFixed(2)}% | Vol5 ${num(cf.volumeRatio5m).toFixed(2)}x`);
       const li = item.setupEvidence?.fiveLayers || {};
