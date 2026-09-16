@@ -1220,65 +1220,136 @@ async function deepScan(sdk, broadRows, marketRegime = null) {
   return valid.sort((a,b)=>(b.score+b.edge*0.35)-(a.score+a.edge*0.35));
 }
 
-function extractBalanceRows(payload) {
-  return collectObjects(
-    payload,
-    (x) => {
-      const symbol = String(x?.symbol || x?.tokenSymbol || x?.assetSymbol || "").toUpperCase();
-      return ["USDC", "USDT", "USDC.E"].includes(symbol);
+function walletBalanceEntries(balances) {
+  const out = [];
+  const seen = new Set();
+  const visit = (value, keyHint = "", depth = 0) => {
+    if (value == null || depth > 7) return;
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, "", depth + 1);
+      return;
     }
+    if (typeof value !== "object") return;
+    const symbolHint = String(
+      value?.tokenSymbol || value?.symbol || value?.token?.symbol || value?.asset?.symbol || keyHint || ""
+    ).toUpperCase();
+    const hasBalance = [
+      "balance", "amount", "balanceRaw", "rawBalance", "tokenBalance",
+      "balanceFormatted", "balanceHuman", "uiAmount", "amountFormatted",
+      "usdValue", "balanceUsd", "balanceUSD"
+    ].some((k) => value?.[k] != null);
+    const hasTokenIdentity = Boolean(
+      symbolHint || value?.address || value?.tokenAddress || value?.contractAddress || value?.token?.address
+    );
+    if (hasBalance && hasTokenIdentity) {
+      const marker = `${symbolHint}|${String(value?.address || value?.tokenAddress || value?.contractAddress || value?.token?.address || "").toLowerCase()}|${String(value?.balance ?? value?.amount ?? value?.balanceRaw ?? value?.rawBalance ?? "")}`;
+      if (!seen.has(marker)) {
+        seen.add(marker);
+        out.push({ value, keyHint });
+      }
+    }
+    for (const [k, v] of Object.entries(value)) {
+      if (v && typeof v === "object") visit(v, String(k).toUpperCase(), depth + 1);
+    }
+  };
+  visit(balances);
+  return out;
+}
+
+function tokenNumericBalance(entry) {
+  const b = entry?.value || {};
+  const decimalsRaw = Number(b?.decimals ?? b?.token?.decimals ?? 6);
+  const decimals = Number.isFinite(decimalsRaw) && decimalsRaw >= 0 && decimalsRaw <= 36 ? decimalsRaw : 6;
+  const explicitUsd = Number(
+    b?.balanceUsd ?? b?.balanceUSD ?? b?.usdValue ?? b?.valueUsd ?? b?.token?.usdValue ?? 0
   );
+
+  const humanCandidates = [
+    b?.balanceFormatted, b?.balanceHuman, b?.uiAmount, b?.amountFormatted,
+    b?.displayBalance, b?.token?.balanceFormatted
+  ];
+  let human = humanCandidates.map(Number).find((n) => Number.isFinite(n) && n > 0);
+  let interpretation = human > 0 ? "FORMATTED_HUMAN" : null;
+
+  if (!(human > 0)) {
+    const rawValue = b?.balanceRaw ?? b?.rawBalance ?? b?.tokenBalance ?? b?.amountRaw;
+    if (rawValue != null) {
+      try {
+        const n = Number(rawValue);
+        if (Number.isFinite(n) && n > 0) {
+          human = n / (10 ** decimals);
+          interpretation = "EXPLICIT_RAW";
+        }
+      } catch {}
+    }
+  }
+
+  if (!(human > 0)) {
+    const value = b?.balance ?? b?.amount ?? b?.value;
+    if (value != null) {
+      const text = String(value).trim();
+      const n = Number(value);
+      if (Number.isFinite(n) && n > 0) {
+        if (explicitUsd > 0) {
+          const humanErr = Math.abs(n - explicitUsd) / Math.max(Math.abs(explicitUsd), 1e-12);
+          const rawConverted = n / (10 ** decimals);
+          const rawErr = Math.abs(rawConverted - explicitUsd) / Math.max(Math.abs(explicitUsd), 1e-12);
+          if (humanErr <= 0.05 && rawErr > humanErr) {
+            human = n;
+            interpretation = "BALANCE_HUMAN_BY_USD";
+          } else if (rawErr <= 0.05 && humanErr > rawErr) {
+            human = rawConverted;
+            interpretation = "BALANCE_RAW_BY_USD";
+          } else {
+            human = n;
+            interpretation = "BALANCE_HUMAN_DEFAULT";
+          }
+        } else if (/[.eE]/.test(text) || !Number.isInteger(n)) {
+          human = n;
+          interpretation = "BALANCE_HUMAN_DECIMAL";
+        } else if (n > 1_000_000) {
+          human = n / (10 ** decimals);
+          interpretation = "BALANCE_RAW_LARGE_INTEGER";
+        } else {
+          human = n;
+          interpretation = "BALANCE_HUMAN_DEFAULT";
+        }
+      }
+    }
+  }
+  return { usd: explicitUsd > 0 ? explicitUsd : human > 0 ? human : 0, balance: human > 0 ? human : 0, decimals, interpretation };
 }
 
 function parseCollateralBalances(payload) {
-  const rows = extractBalanceRows(payload);
   const result = {
     USDC: { usd: 0, raw: 0n, decimals: 6, address: null },
     USDT: { usd: 0, raw: 0n, decimals: 6, address: null },
   };
 
-  for (const row of rows) {
-    const symbol = String(row.symbol || row.tokenSymbol || row.assetSymbol).toUpperCase() === "USDC.E"
-      ? "USDC"
-      : String(row.symbol || row.tokenSymbol || row.assetSymbol).toUpperCase();
+  for (const entry of walletBalanceEntries(payload)) {
+    const b = entry?.value || {};
+    const rawSymbol = String(
+      b?.tokenSymbol || b?.symbol || b?.token?.symbol || b?.asset?.symbol || entry?.keyHint || ""
+    ).toUpperCase();
+    const cleaned = rawSymbol.replace(/[^A-Z0-9.]/g, "");
+    const symbol = cleaned === "USDC.E" ? "USDC" : cleaned.replace(/[^A-Z0-9]/g, "");
+    if (symbol !== "USDC" && symbol !== "USDT") continue;
 
-    const decimals = Math.max(0, Math.min(18, Math.trunc(num(row.decimals, 6))));
-    const rawValue =
-      row.balance ??
-      row.rawBalance ??
-      row.balanceAmount ??
-      row.amount ??
-      row.tokenAmount ??
-      row.amountRaw;
+    const address = String(
+      b?.address || b?.tokenAddress || b?.contractAddress || b?.token?.address || b?.token?.tokenAddress || ""
+    );
+    const parsed = tokenNumericBalance(entry);
+    if (!(parsed.balance > 0 || parsed.usd > 0)) continue;
 
-    let raw = 0n;
-    try {
-      if (typeof rawValue === "bigint") raw = rawValue;
-      else if (rawValue !== undefined && rawValue !== null) {
-        const text = String(rawValue);
-        raw = /^\d+$/.test(text) ? BigInt(text) : toUnits(text, decimals);
-      }
-    } catch {}
-
-    const human =
-      row.usd ??
-      row.usdValue ??
-      row.balanceUsd ??
-      row.valueUsd ??
-      row.amountUsd;
-
-    const usd = num(human, Number(raw) / 10 ** decimals);
-
-    if (usd > result[symbol].usd) {
-      result[symbol] = {
-        usd,
-        raw,
-        decimals,
-        address: row.address || row.tokenAddress || row.contractAddress || null,
-      };
-    }
+    const candidate = {
+      usd: Number(parsed.balance > 0 ? parsed.balance : parsed.usd),
+      raw: b?.balanceRaw ?? b?.rawBalance ?? b?.amountRaw ?? b?.balance ?? 0,
+      decimals: parsed.decimals,
+      address: address || null,
+      interpretation: parsed.interpretation,
+    };
+    if (candidate.usd > Number(result[symbol].usd || 0)) result[symbol] = candidate;
   }
-
   return result;
 }
 
