@@ -1,6 +1,6 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ GMX SMART MONEY FUTURES AI BOT — V21.9 HTF TREND-END + EARLY ENTRY + STRUCTURE TARGET      ║
+║ GMX SMART MONEY FUTURES AI BOT — V21.9.1 HTF TREND-END + STRICT CONTINUATION + STRUCTURE TARGET      ║
 ║ Single pipeline • 5M broad scan • 15M deep scan • Classic GMX only          ║
 ║ 20x leverage • 100% wallet • max 1 position • dynamic TP + structure SL               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -2271,6 +2271,26 @@ function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupTy
   };
 }
 
+function economicGate(candidate, walletUsd) {
+  const economics = estimateEconomicOpportunity(candidate, walletUsd);
+  if (!economics.valid) return { ok: false, reason: "ECONOMIC_INVALID", economics };
+  if (economics.expectedNetUsd < CONFIG.minExpectedNetUsd) {
+    return {
+      ok: false,
+      reason: `EXPECTED_NET_${economics.expectedNetUsd.toFixed(2)}_BELOW_${CONFIG.minExpectedNetUsd.toFixed(2)}`,
+      economics,
+    };
+  }
+  if (economics.netToCostRatio < CONFIG.minNetToCostRatio) {
+    return {
+      ok: false,
+      reason: `NET_COST_RATIO_${economics.netToCostRatio.toFixed(2)}_BELOW_${CONFIG.minNetToCostRatio.toFixed(2)}`,
+      economics,
+    };
+  }
+  return { ok: true, reason: "ECONOMIC_EDGE_OK", economics };
+}
+
 function candidateIsActionable(candidate) {
   if (!candidate || !candidate.symbol || !candidate.entry || !candidate.tp) {
     return { ok: false, reason: "INVALID_PLAN" };
@@ -2278,7 +2298,18 @@ function candidateIsActionable(candidate) {
 
   const ev = candidate.setupEvidence || {};
   const isEarlyReversal = candidate.setupType === "REVERSAL" && candidate.reversalTrigger;
-  const isEarlyContinuation = candidate.setupType === "CONTINUATION" && candidate.continuationTrigger;
+  const isContinuationSetup = candidate.setupType === "CONTINUATION" || candidate.setupType === "CONTINUATION_WATCH";
+  const isEarlyContinuation = isContinuationSetup && candidate.continuationTrigger;
+
+  // Hard timing protection must run BEFORE the generic no-trigger return,
+  // otherwise a CONTINUATION_WATCH at the end of a 1H/4H move would only show
+  // NO_EARLY_TRIGGER and could later become executable without the HTF block.
+  if (isContinuationSetup && ev.htfContinuationTooLate) {
+    return { ok: false, reason: `HTF_TREND_END_${ev.htfTrendMaturityLabel || "LATE"}_${num(ev.htfTrendMaturity).toFixed(1)}` };
+  }
+  if (isContinuationSetup && ev.trendEndExhaustion) {
+    return { ok: false, reason: `TREND_END_EXHAUSTION_${num(ev.trendEndSignals).toFixed(0)}` };
+  }
 
   // V20.3: do NOT require the mature Score threshold for an active early
   // trigger. The trigger is specifically designed to fire before EMA/MACD
@@ -2305,14 +2336,11 @@ function candidateIsActionable(candidate) {
       return { ok: false, reason: "REVERSAL_DIRECTION_AUTHORITY_NOT_CONFIRMED" };
     }
   }
-  if (candidate.setupType === "CONTINUATION" && ev.continuationTooLate) {
+  if (isContinuationSetup && ev.continuationTooLate) {
     return { ok: false, reason: "CONTINUATION_TOO_LATE_AFTER_IMPULSE" };
   }
-  if (candidate.setupType === "CONTINUATION" && ev.trendEndExhaustion) {
-    return { ok: false, reason: "CONTINUATION_BLOCKED_TREND_END_EXHAUSTION" };
-  }
 
-  if (CONFIG.directionAuthorityEnabled && candidate.setupType === "CONTINUATION") {
+  if (CONFIG.directionAuthorityEnabled && isContinuationSetup) {
     const side = candidate.direction === "long" ? "long" : "short";
     const trendSide = num(layer.trend?.[side]);
     const momSide = num(layer.momentum?.[side]);
@@ -2390,7 +2418,7 @@ function candidateIsActionable(candidate) {
   // chase. A reversal is allowed to appear after a large prior move because
   // that extension is part of the reversal setup rather than a chase entry.
   if (ev.lateChase) return { ok: false, reason: "LATE_CHASE" };
-  if (ev.htfContinuationTooLate && candidate.setupType === "CONTINUATION") return { ok: false, reason: `HTF_TREND_END_${ev.htfTrendMaturityLabel || "LATE"}_${num(ev.htfTrendMaturity).toFixed(1)}` };
+  if (ev.htfContinuationTooLate && isContinuationSetup) return { ok: false, reason: `HTF_TREND_END_${ev.htfTrendMaturityLabel || "LATE"}_${num(ev.htfTrendMaturity).toFixed(1)}` };
   if (ev.lateMove) return { ok: false, reason: `MOVE_MATURITY_${ev.moveMaturityLabel || "LATE"}_${num(ev.moveMaturity).toFixed(1)}` };
   if (ev.reversalEntryLate) return { ok: false, reason: `REVERSAL_ENTRY_LATE_${num(ev.reversalLegMovePct).toFixed(2)}PCT_${num(ev.reversalLegAtr).toFixed(2)}ATR` };
   if (candidate.risk > CONFIG.maxRisk) return { ok: false, reason: `RISK_${candidate.risk.toFixed(1)}_ABOVE_${CONFIG.maxRisk}` };
