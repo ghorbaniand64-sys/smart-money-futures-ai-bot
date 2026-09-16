@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V22.1.0-HTF-CONTINUATION-BREAKOUT-STRUCTURE-20X";
+export const BOT_VERSION = "V22.2.0-HTF-SHORT-STRUCTURE-FIX-DEBUG-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -1973,6 +1973,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       targetTimeframe: structurePlan.targetTimeframe || null,
       breakoutConfirmed15m: Boolean(structurePlan.breakoutConfirmed15m),
       breakoutRetest15m: Boolean(structurePlan.breakoutRetest15m),
+      structureDebug: structurePlan.structureDebug || null,
       zoneState: zone.state, nearSupport: zone.nearSupport, nearResistance: zone.nearResistance,
       nearestSupport: zone.support, nearestResistance: zone.resistance, sharpMove: sharp, lateChase, impulseQuality,
       acceleration: impulse.acceleration, rangeExpansion: impulse.rangeExpansion, volumeRatio: impulse.volumeRatio,
@@ -2078,6 +2079,10 @@ function calculateContinuationTradePlan({
   const volumeRatio15m = num(capitalFlow?.volumeRatio15m, 0);
   const smartMoneyProxy = num(capitalFlow?.smartMoneyProxy, 50);
   const flowDirection = capitalFlow?.direction || null;
+  const framesReadyForDebug = [
+    { tf: "1H", candles: c1h },
+    { tf: "4H", candles: c4h },
+  ].filter(x => x.candles.length >= 20).map(x => x.tf);
 
   const fail = (reason, extra = {}) => ({
     valid: false, reason, entry, tp: 0, sl: 0,
@@ -2090,6 +2095,18 @@ function calculateContinuationTradePlan({
     slPlan: { sl: 0, distancePct: 0, method: "CONTINUATION_PLAN_INVALID", valid: false },
     tpPlan: { tp: 0, method: "CONTINUATION_PLAN_INVALID", targetType: "NEXT_STRUCTURE", targetScore: 0, probabilityProxy: 0, distancePct: 0, targetPrice: 0 },
     ...extra,
+    structureDebug: {
+      direction, entry, structuralFrames: framesReadyForDebug,
+      anchor: direction === "long" ? "BROKEN_RESISTANCE" : "BROKEN_SUPPORT",
+      anchorPrice: extra.anchorPrice ?? 0, targetPrice: extra.targetPrice ?? 0,
+      entryDistancePct: extra.entryDistancePct ?? 0, entryDistanceAtr: extra.entryDistanceAtr ?? 0,
+      volumeRatio5m, volumeRatio15m, flowDirection, smartMoneyProxy,
+      breakoutTimeframe: extra.breakoutTimeframe ?? null,
+      breakoutConfirmed15m: Boolean(extra.breakoutConfirmed15m),
+      breakoutRetest15m: Boolean(extra.breakoutRetest15m),
+      riskPct: extra.riskPct ?? 0, rewardPct: extra.rewardPct ?? 0, rr: extra.rr ?? 0,
+      rejectReason: reason,
+    },
   });
 
   if (!(entry > 0)) return fail("INVALID_ENTRY");
@@ -2106,9 +2123,14 @@ function calculateContinuationTradePlan({
 
   for (const frame of frames) {
     const levels = recentSwingLevels(frame.candles);
+    // Continuation structure is directional:
+    // LONG  = break above resistance below current price.
+    // SHORT = break below support below current price.
+    // V22.1 incorrectly searched for SHORT support above entry, which could
+    // make a valid bearish breakout impossible to anchor.
     const candidates = direction === "long"
       ? (levels.resistance || []).filter(x => x > 0 && x < entry).sort((a,b) => b-a)
-      : (levels.support || []).filter(x => x > 0 && x > entry).sort((a,b) => a-b);
+      : (levels.support || []).filter(x => x > 0 && x < entry).sort((a,b) => b-a);
 
     for (const level of candidates) {
       const levelAtr = Math.max(num(atr(frame.candles, 14)), entry * 0.0012, 1e-12);
@@ -2221,6 +2243,14 @@ function calculateContinuationTradePlan({
     breakoutTimeframe: breakout.tf, targetTimeframe: targetTf, breakoutConfirmed15m: true, breakoutRetest15m: breakout.retest,
     slPlan: { sl, distancePct: Number(riskPct.toFixed(3)), method: `BROKEN_${direction === "long" ? "RESISTANCE" : "SUPPORT"}_BUFFER`, valid: true, anchorPrice },
     tpPlan: { tp, method: `NEXT_${direction === "long" ? "RESISTANCE" : "SUPPORT"}_BEFORE_HTF_LEVEL`, targetType: `${targetTf}_STRUCTURE`, targetScore: 100, probabilityProxy: 100, distancePct: Number(rewardPct.toFixed(3)), targetPrice, atrDistance: Number((reward/volatilityAtr).toFixed(2)) },
+    structureDebug: {
+      direction, entry, structuralFrames: framesReadyForDebug,
+      anchor: direction === "long" ? "BROKEN_RESISTANCE" : "BROKEN_SUPPORT", anchorPrice, targetPrice,
+      entryDistancePct: Number(entryDistancePct.toFixed(3)), entryDistanceAtr: Number(entryDistanceAtr.toFixed(2)),
+      volumeRatio5m, volumeRatio15m, flowDirection, smartMoneyProxy,
+      breakoutTimeframe: breakout.tf, breakoutConfirmed15m: true, breakoutRetest15m: breakout.retest,
+      riskPct: Number(riskPct.toFixed(3)), rewardPct: Number(rewardPct.toFixed(3)), rr: Number(rr.toFixed(2)), rejectReason: null,
+    },
   };
 }
 
@@ -3523,6 +3553,11 @@ function cycleMessage(report) {
       if (mr.regime) lines.push(`  🌐 ${mr.regime} | BTC ${num(mr.btcScore).toFixed(0)} ETH ${num(mr.ethScore).toFixed(0)} Breadth ${num(mr.breadthScore).toFixed(0)} | ${mr.counterTrend ? "COUNTER" : "ALIGNED"}`);
       const slInfo = item.setupEvidence || {};
       lines.push(`  🛡️ SL ${formatPrice(item.sl)} | ${num(slInfo.slDistancePct).toFixed(2)}% | ${String(slInfo.slMethod || "N/A")}`);
+      if (item.setupType === "CONTINUATION" && slInfo.structureDebug) {
+        const sd = slInfo.structureDebug;
+        lines.push(`  🔬 STRUCT ${String(sd.anchor || "N/A")} ${formatPrice(sd.anchorPrice)} → ${String(item.setupEvidence?.structureTarget || "TARGET")} ${formatPrice(sd.targetPrice)} | ${String(sd.breakoutTimeframe || "N/A")} + 15M ${sd.breakoutConfirmed15m ? "OK" : "NO"} | Retest ${sd.breakoutRetest15m ? "YES" : "NO"}`);
+        lines.push(`  🔬 Dist ${num(sd.entryDistancePct).toFixed(2)}%/${num(sd.entryDistanceAtr).toFixed(2)}ATR | Vol5 ${num(sd.volumeRatio5m).toFixed(2)}x Vol15 ${num(sd.volumeRatio15m).toFixed(2)}x | Flow ${String(sd.flowDirection || "N/A")} | Smart ${num(sd.smartMoneyProxy).toFixed(1)} | RR ${num(sd.rr).toFixed(2)} | Reject ${String(sd.rejectReason || item.reason || "NONE")}`);
+      }
       lines.push(`  💹 Gross ${formatUsd(econ.grossPnlUsd)} | Cost ${formatUsd(econ.totalCostUsd)} | Net ${formatUsd(econ.expectedNetUsd)} | TP move ${num(econ.tpMovePct).toFixed(2)}%`);
       lines.push(`  🚫 ${item.reason}`);
     }
@@ -3530,7 +3565,7 @@ function cycleMessage(report) {
 
   lines.push(`🆔 Scan: ${report.scanId}`);
   lines.push(`🕐 ${new Date().toISOString()}`);
-  lines.push(`ℹ️ مسیر: Scan → Selection → Dynamic SL/TP → Classic Execution → Verification`);
+  lines.push(`ℹ️ مسیر: Scan → Selection → HTF Structure → 15M Confirmation → Entry/TP/SL → Classic Execution → Verification`);
 
   return lines.join("\n");
 }
