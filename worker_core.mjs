@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V22.3.0-CONTINUATION-WATCH-STRUCTURE-DEBUG-20X";
+export const BOT_VERSION = "V22.1.1-REAL-GMX-VOLUME-FLOW-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -43,6 +43,9 @@ const USDC6 = 10n ** 6n;
 
 const CONFIG = Object.freeze({
   chainId: CHAIN_ID,
+  gmxSubsquidUrl: String(process.env.GMX_SUBSQUID_URL || "https://gmx.squids.live/gmx-synthetics-arbitrum:prod/api/graphql"),
+  gmxVolumeLookbackMinutes: 90,
+  gmxVolumeLimit: 5000,
   cronRecommended: "* * * * *",
 
   maxPositions: 1,
@@ -1132,9 +1135,15 @@ function candleVolumeFlow(candles) {
   return {available:true,ratio:base>0?recent/base:0,lastVolume:num(rows.at(-1).volume)};
 }
 
-function capitalFlowEngine({ticker,marketValue,previousSnapshot,candles5,candles15,price}) {
+function capitalFlowEngine({ticker,marketValue,previousSnapshot,candles5,candles15,price,tradeVolume}) {
   if(!CONFIG.capitalFlowEnabled)return {enabled:false,score:50,direction:null,state:"DISABLED",reasons:[]};
-  const flow=marketFlowSnapshot(ticker,marketValue,previousSnapshot), v5=candleVolumeFlow(candles5), v15=candleVolumeFlow(candles15), profile=volumeProfile(candles15,price);
+  const flow=marketFlowSnapshot(ticker,marketValue,previousSnapshot);
+  // GMX OHLCV candles contain OHLC only; they do NOT provide trade volume.
+  // Prefer real GMX position-change volume aggregated by deepScan.
+  // Candle-derived volume remains only a fallback for non-GMX/test data.
+  const v5=tradeVolume?.volumeRatio5m > 0 ? {available:true,ratio:tradeVolume.volumeRatio5m,lastVolume:tradeVolume.recent5mVolume||0} : candleVolumeFlow(candles5);
+  const v15=tradeVolume?.volumeRatio15m > 0 ? {available:true,ratio:tradeVolume.volumeRatio15m,lastVolume:tradeVolume.recent15mVolume||0} : candleVolumeFlow(candles15);
+  const profile=volumeProfile(candles15,price);
   let longScore=50, shortScore=50; const reasons=[];
   if(flow.flowDirection==="long")longScore+=16; if(flow.flowDirection==="short")shortScore+=16;
   if(flow.smartMoneyProxy>=65){if(flow.flowDirection==="long")longScore+=10;if(flow.flowDirection==="short")shortScore+=10;}
@@ -1442,13 +1451,13 @@ function fiveLayerEngine({ candles5, candles15, candles1h, candles4h, candles1d,
   };
 }
 
-function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles5, candles15, candles1h, candles4h, candles1d, marketRegime }) {
+function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles5, candles15, candles1h, candles4h, candles1d, marketRegime, tradeVolume }) {
   const five = structureIndicators(candles5, 'long');
   const fifteen = structureIndicators(candles15, 'long');
   const price = five.price;
   const topDown = topDownLevelAnalysis(candles1d, candles4h, candles1h, price);
   const impulse = candleImpulseMetrics(candles5);
-  const capitalFlow = capitalFlowEngine({ ticker, marketValue, previousSnapshot, candles5, candles15, price });
+  const capitalFlow = capitalFlowEngine({ ticker, marketValue, previousSnapshot, candles5, candles15, price, tradeVolume });
   const fiveLayers = fiveLayerEngine({
     candles5, candles15, candles1h, candles4h, candles1d,
     capitalFlow, price, atrValue: five.atr,
@@ -1879,7 +1888,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   // price. Therefore "entry just above support/resistance" is enforced as an
   // ENTRY ZONE: current price must already be close enough to that structure.
   // We never move TP closer or invent a farther target to rescue a bad RR.
-  const structurePlan = setupType.startsWith("CONTINUATION")
+  const structurePlan = setupType === "CONTINUATION"
     ? calculateContinuationTradePlan({
         direction,
         price,
@@ -1916,8 +1925,8 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   if (continuationTooLate) reasons.push('CONTINUATION_TOO_LATE');
   if (firstBreakLong || firstBreakShort) reasons.push('FIRST_BREAK');
   if (strongBreakLong || strongBreakShort || htfStrongBreakLong || htfStrongBreakShort) reasons.push('STRONG_BREAKOUT');
-  if (setupType.startsWith('CONTINUATION') && structurePlan.breakoutConfirmed15m) reasons.push(`CONTINUATION_15M_BREAK_CONFIRMED_${structurePlan.breakoutTimeframe || 'HTF'}`);
-  if (setupType.startsWith('CONTINUATION') && structurePlan.breakoutRetest15m) reasons.push('CONTINUATION_15M_RETEST');
+  if (setupType === 'CONTINUATION' && structurePlan.breakoutConfirmed15m) reasons.push(`CONTINUATION_15M_BREAK_CONFIRMED_${structurePlan.breakoutTimeframe || 'HTF'}`);
+  if (setupType === 'CONTINUATION' && structurePlan.breakoutRetest15m) reasons.push('CONTINUATION_15M_RETEST');
   if (failedBreakLong || failedBreakShort || htfFailedBreakLong || htfFailedBreakShort) reasons.push('BREAKOUT_FAILURE');
   if (liveBreakLong && !genuineShortFailure) reasons.push('NO_SHORT_FADE_ON_LIVE_BREAKOUT');
   if (liveBreakShort && !genuineLongFailure) reasons.push('NO_LONG_FADE_ON_LIVE_BREAKOUT');
@@ -1973,7 +1982,6 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       targetTimeframe: structurePlan.targetTimeframe || null,
       breakoutConfirmed15m: Boolean(structurePlan.breakoutConfirmed15m),
       breakoutRetest15m: Boolean(structurePlan.breakoutRetest15m),
-      structureDebug: structurePlan.structureDebug || null,
       zoneState: zone.state, nearSupport: zone.nearSupport, nearResistance: zone.nearResistance,
       nearestSupport: zone.support, nearestResistance: zone.resistance, sharpMove: sharp, lateChase, impulseQuality,
       acceleration: impulse.acceleration, rangeExpansion: impulse.rangeExpansion, volumeRatio: impulse.volumeRatio,
@@ -2079,10 +2087,6 @@ function calculateContinuationTradePlan({
   const volumeRatio15m = num(capitalFlow?.volumeRatio15m, 0);
   const smartMoneyProxy = num(capitalFlow?.smartMoneyProxy, 50);
   const flowDirection = capitalFlow?.direction || null;
-  const framesReadyForDebug = [
-    { tf: "1H", candles: c1h },
-    { tf: "4H", candles: c4h },
-  ].filter(x => x.candles.length >= 20).map(x => x.tf);
 
   const fail = (reason, extra = {}) => ({
     valid: false, reason, entry, tp: 0, sl: 0,
@@ -2095,18 +2099,6 @@ function calculateContinuationTradePlan({
     slPlan: { sl: 0, distancePct: 0, method: "CONTINUATION_PLAN_INVALID", valid: false },
     tpPlan: { tp: 0, method: "CONTINUATION_PLAN_INVALID", targetType: "NEXT_STRUCTURE", targetScore: 0, probabilityProxy: 0, distancePct: 0, targetPrice: 0 },
     ...extra,
-    structureDebug: {
-      direction, entry, structuralFrames: framesReadyForDebug,
-      anchor: direction === "long" ? "BROKEN_RESISTANCE" : "BROKEN_SUPPORT",
-      anchorPrice: extra.anchorPrice ?? 0, targetPrice: extra.targetPrice ?? 0,
-      entryDistancePct: extra.entryDistancePct ?? 0, entryDistanceAtr: extra.entryDistanceAtr ?? 0,
-      volumeRatio5m, volumeRatio15m, flowDirection, smartMoneyProxy,
-      breakoutTimeframe: extra.breakoutTimeframe ?? null,
-      breakoutConfirmed15m: Boolean(extra.breakoutConfirmed15m),
-      breakoutRetest15m: Boolean(extra.breakoutRetest15m),
-      riskPct: extra.riskPct ?? 0, rewardPct: extra.rewardPct ?? 0, rr: extra.rr ?? 0,
-      rejectReason: reason,
-    },
   });
 
   if (!(entry > 0)) return fail("INVALID_ENTRY");
@@ -2123,14 +2115,9 @@ function calculateContinuationTradePlan({
 
   for (const frame of frames) {
     const levels = recentSwingLevels(frame.candles);
-    // Continuation structure is directional:
-    // LONG  = break above resistance below current price.
-    // SHORT = break below support below current price.
-    // V22.1 incorrectly searched for SHORT support above entry, which could
-    // make a valid bearish breakout impossible to anchor.
     const candidates = direction === "long"
       ? (levels.resistance || []).filter(x => x > 0 && x < entry).sort((a,b) => b-a)
-      : (levels.support || []).filter(x => x > 0 && x < entry).sort((a,b) => b-a);
+      : (levels.support || []).filter(x => x > 0 && x > entry).sort((a,b) => a-b);
 
     for (const level of candidates) {
       const levelAtr = Math.max(num(atr(frame.candles, 14)), entry * 0.0012, 1e-12);
@@ -2243,14 +2230,6 @@ function calculateContinuationTradePlan({
     breakoutTimeframe: breakout.tf, targetTimeframe: targetTf, breakoutConfirmed15m: true, breakoutRetest15m: breakout.retest,
     slPlan: { sl, distancePct: Number(riskPct.toFixed(3)), method: `BROKEN_${direction === "long" ? "RESISTANCE" : "SUPPORT"}_BUFFER`, valid: true, anchorPrice },
     tpPlan: { tp, method: `NEXT_${direction === "long" ? "RESISTANCE" : "SUPPORT"}_BEFORE_HTF_LEVEL`, targetType: `${targetTf}_STRUCTURE`, targetScore: 100, probabilityProxy: 100, distancePct: Number(rewardPct.toFixed(3)), targetPrice, atrDistance: Number((reward/volatilityAtr).toFixed(2)) },
-    structureDebug: {
-      direction, entry, structuralFrames: framesReadyForDebug,
-      anchor: direction === "long" ? "BROKEN_RESISTANCE" : "BROKEN_SUPPORT", anchorPrice, targetPrice,
-      entryDistancePct: Number(entryDistancePct.toFixed(3)), entryDistanceAtr: Number(entryDistanceAtr.toFixed(2)),
-      volumeRatio5m, volumeRatio15m, flowDirection, smartMoneyProxy,
-      breakoutTimeframe: breakout.tf, breakoutConfirmed15m: true, breakoutRetest15m: breakout.retest,
-      riskPct: Number(riskPct.toFixed(3)), rewardPct: Number(rewardPct.toFixed(3)), rr: Number(rr.toFixed(2)), rejectReason: null,
-    },
   };
 }
 
@@ -2265,17 +2244,13 @@ function calculateStructureTradePlan({
   marketRegime,
 }) {
   const entry = num(price);
-  // Reversal structure is read from 15M; 5M is timing/volatility only.
-  // The previous build used 5M swing levels here, which could make a visible
-  // 15M support/resistance (like the MON setup) invisible to the trade plan.
-  const rows = Array.isArray(candles15) ? candles15 : [];
+  const rows = Array.isArray(candles5) ? candles5 : [];
   const levels = recentSwingLevels(rows);
   const a5 = Math.max(num(atr5), entry * 0.001, 1e-12);
-  const a15 = Math.max(num(atr(rows, 14)), entry * 0.0012, 1e-12);
-  const volatilityAtr = Math.max(a15, a5 * 0.55);
+  const a15 = Math.max(num(atr(candles15 || [], 14)), entry * 0.0012, 1e-12);
+  const volatilityAtr = Math.max(a5, a15 * 0.55);
 
   const volumeRatio5m = num(capitalFlow?.volumeRatio5m, 0);
-  const volumeRatio15m = num(capitalFlow?.volumeRatio15m, 0);
   const smartMoneyProxy = num(capitalFlow?.smartMoneyProxy, 50);
   const flowDirection = capitalFlow?.direction || null;
 
@@ -2309,19 +2284,8 @@ function calculateStructureTradePlan({
     rewardPct: 0,
     rr: 0,
     volumeRatio5m,
-    volumeRatio15m,
     smartMoneyProxy,
     flowDirection,
-    structureDebug: {
-      direction, entry, structuralFrames: ["15M"],
-      anchor, anchorPrice, target, targetPrice,
-      entryDistancePct: extra.entryDistancePct ?? 0,
-      entryDistanceAtr: extra.entryDistanceAtr ?? 0,
-      volumeRatio5m, volumeRatio15m, flowDirection, smartMoneyProxy,
-      breakoutTimeframe: null, breakoutConfirmed15m: false, breakoutRetest15m: false,
-      riskPct: extra.riskPct ?? 0, rewardPct: extra.rewardPct ?? 0, rr: extra.rr ?? 0,
-      rejectReason: reason,
-    },
     slPlan: { sl: 0, distancePct: 0, method: "STRUCTURE_PLAN_INVALID", valid: false },
     tpPlan: { tp: 0, method: "STRUCTURE_PLAN_INVALID", targetType: target, targetScore: 0, probabilityProxy: 0, distancePct: 0, targetPrice },
     ...extra,
@@ -2453,7 +2417,7 @@ function calculateStructureTradePlan({
   const slPlan = {
     sl,
     distancePct: Number(riskPct.toFixed(3)),
-    method: `15M_STRUCTURE_${direction === "long" ? "SUPPORT" : "RESISTANCE"}`,
+    method: `STRUCTURE_${direction === "long" ? "SUPPORT" : "RESISTANCE"}`,
     valid: true,
     anchorPrice,
     bufferPct: Number((stopBuffer / actualEntry * 100).toFixed(3)),
@@ -2461,7 +2425,7 @@ function calculateStructureTradePlan({
   const tpPlan = {
     tp,
     method: `STRUCTURE_${direction === "long" ? "RESISTANCE" : "SUPPORT"}_BEFORE_LEVEL`,
-    targetType: `15M_${target}`,
+    targetType: `SAME_TF_${target}`,
     targetScore: 100,
     probabilityProxy: 100,
     distancePct: Number(rewardPct.toFixed(3)),
@@ -2486,19 +2450,8 @@ function calculateStructureTradePlan({
     rewardPct: Number(rewardPct.toFixed(3)),
     rr: Number(rr.toFixed(2)),
     volumeRatio5m,
-    volumeRatio15m,
     smartMoneyProxy,
     flowDirection,
-    structureDebug: {
-      direction, entry: actualEntry, structuralFrames: ["15M"],
-      anchor, anchorPrice, target, targetPrice,
-      entryDistancePct: Number(entryDistancePct.toFixed(3)),
-      entryDistanceAtr: Number(entryDistanceAtr.toFixed(2)),
-      volumeRatio5m, volumeRatio15m, flowDirection, smartMoneyProxy,
-      breakoutTimeframe: null, breakoutConfirmed15m: false, breakoutRetest15m: false,
-      riskPct: Number(riskPct.toFixed(3)), rewardPct: Number(rewardPct.toFixed(3)),
-      rr: Number(rr.toFixed(2)), rejectReason: null,
-    },
     slPlan,
     tpPlan,
   };
@@ -2585,11 +2538,14 @@ function attachEconomicOpportunity(candidate, walletUsd) {
 }
 
 function candidateIsActionable(candidate) {
-  if (!candidate || !candidate.symbol || !candidate.entry) {
-    return { ok: false, reason: "INVALID_CANDIDATE" };
+  if (!candidate || !candidate.symbol || !candidate.entry || !candidate.tp) {
+    return { ok: false, reason: "INVALID_PLAN" };
   }
 
   const ev = candidate.setupEvidence || {};
+  if (candidate.setupType === "CONTINUATION" && ev.structurePlanValid !== true) {
+    return { ok: false, reason: ev.structurePlanReason || "CONTINUATION_STRUCTURE_PLAN_INVALID" };
+  }
   const isEarlyReversal = candidate.setupType === "REVERSAL" && candidate.reversalTrigger;
   const isEarlyContinuation = candidate.setupType === "CONTINUATION" && candidate.continuationTrigger;
 
@@ -2601,13 +2557,6 @@ function candidateIsActionable(candidate) {
       return { ok: false, reason: `NO_EARLY_TRIGGER_SCORE_${candidate.score.toFixed(1)}_BELOW_${CONFIG.minScore}` };
     }
     return { ok: false, reason: "NO_EARLY_TRIGGER" };
-  }
-
-  // Only an actual trigger may require a fully valid execution plan. WATCH
-  // states are diagnostic and must not be labelled INVALID_PLAN merely because
-  // their eventual Entry/TP/SL has not been constructed yet.
-  if (ev.structurePlanValid !== true) {
-    return { ok: false, reason: ev.structurePlanReason || "STRUCTURE_PLAN_INVALID" };
   }
 
   if (candidate.edge < CONFIG.minEdge) {
@@ -2823,6 +2772,74 @@ async function fetchCandles(sdk, marketOrSymbol, timeframe, limit) {
     catch (e) { errors.push(`ORACLE:${safeError(e)}`); }
   }
   throw new Error(`OHLCV_ALL_SOURCES_FAILED:${errors.slice(0,4).join("|")}`);
+}
+
+
+function marketAddressFromMarket(market) {
+  return String(market?.marketTokenAddress || market?.marketAddress || market?.address || market?.marketToken || "").toLowerCase();
+}
+
+function usd30ToNumber(value) {
+  if (typeof value === "bigint") return Number(value) / 1e30;
+  const s = String(value ?? "").trim();
+  if (!s) return 0;
+  try { if (/^-?\d+$/.test(s) && s.length > 15) return Number(BigInt(s)) / 1e30; } catch {}
+  const n = Number(s);
+  return Number.isFinite(n) ? n / 1e30 : 0;
+}
+
+function floorBucket(tsSec, bucketSec) {
+  return Math.floor(Number(tsSec) / bucketSec) * bucketSec;
+}
+
+function buildTradeVolumeRatios(rows, nowSec) {
+  const by5 = new Map(), by15 = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const market = String(row?.market || "").toLowerCase();
+    const ts = Number(row?.timestamp || 0);
+    const volume = Math.abs(usd30ToNumber(row?.sizeDeltaUsd));
+    if (!market || !Number.isFinite(ts) || volume <= 0) continue;
+    const b5 = floorBucket(ts, 300), b15 = floorBucket(ts, 900);
+    by5.set(`${market}:${b5}`, (by5.get(`${market}:${b5}`) || 0) + volume);
+    by15.set(`${market}:${b15}`, (by15.get(`${market}:${b15}`) || 0) + volume);
+  }
+  const current5 = floorBucket(nowSec, 300) - 300;
+  const current15 = floorBucket(nowSec, 900) - 900;
+  const result = new Map();
+  const markets = new Set([
+    ...[...by5.keys()].map(k => k.split(":")[0]),
+    ...[...by15.keys()].map(k => k.split(":")[0]),
+  ]);
+  for (const market of markets) {
+    const recent5 = by5.get(`${market}:${current5}`) || 0;
+    const base5 = []; for (let i = 2; i <= 11; i++) base5.push(by5.get(`${market}:${current5 - i * 300}`) || 0);
+    const avg5 = base5.reduce((a,b)=>a+b,0) / Math.max(base5.length,1);
+    const recent15 = by15.get(`${market}:${current15}`) || 0;
+    const base15 = []; for (let i = 2; i <= 6; i++) base15.push(by15.get(`${market}:${current15 - i * 900}`) || 0);
+    const avg15 = base15.reduce((a,b)=>a+b,0) / Math.max(base15.length,1);
+    result.set(market, { volumeRatio5m: avg5 > 0 ? recent5 / avg5 : 0, volumeRatio15m: avg15 > 0 ? recent15 / avg15 : 0, recent5mVolume: recent5, recent15mVolume: recent15, baseline5mVolume: avg5, baseline15mVolume: avg15, source: "GMX_POSITION_CHANGES", volumeBucketsCompleted: true });
+  }
+  return result;
+}
+
+async function fetchGmxTradeVolumeMap() {
+  const endpoint = String(CONFIG.gmxSubsquidUrl || "").trim();
+  if (!endpoint) return new Map();
+  const nowSec = Math.floor(Date.now() / 1000);
+  const since = nowSec - Number(CONFIG.gmxVolumeLookbackMinutes || 90) * 60;
+  const query = `query RecentPositionChanges($since: Int!, $limit: Int!) {\n  positionChanges(where: { timestamp_gte: $since }, orderBy: timestamp_DESC, limit: $limit) {\n    market\n    sizeDeltaUsd\n    timestamp\n    type\n  }\n}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const res = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ query, variables: { since, limit: Number(CONFIG.gmxVolumeLimit || 5000) } }), signal: controller.signal });
+    if (!res.ok) throw new Error(`GMX_VOLUME_GRAPHQL_HTTP_${res.status}`);
+    const payload = await res.json();
+    if (Array.isArray(payload?.errors) && payload.errors.length) throw new Error(`GMX_VOLUME_GRAPHQL_${safeError(payload.errors[0])}`);
+    const rows = Array.isArray(payload?.data?.positionChanges) ? payload.data.positionChanges : [];
+    const map = buildTradeVolumeRatios(rows, nowSec);
+    console.log("[VOLUME][GMX_POSITION_CHANGES]", { source: "GMX_POSITION_CHANGES", rows: rows.length, markets: map.size, lookbackMinutes: Number(CONFIG.gmxVolumeLookbackMinutes || 90) });
+    return map;
+  } finally { clearTimeout(timer); }
 }
 
 function findMarketValue(marketValues, market) {
@@ -3078,7 +3095,7 @@ async function broadScan(sdk, markets, tickers, marketValues = [], previousSnaps
   };
 }
 
-async function deepScan(sdk, broadRows, marketRegime = null) {
+async function deepScan(sdk, broadRows, marketRegime = null, tradeVolumeMap = new Map()) {
   const selected = broadRows.slice(0, CONFIG.deepCandidates);
   const results = await mapLimit(selected, Math.min(6, CONFIG.ohlcvConcurrency), async (row) => {
     // V20.5.1: never let one missing HTF feed kill the entire deep candidate.
@@ -3121,6 +3138,7 @@ async function deepScan(sdk, broadRows, marketRegime = null) {
       candles4h,
       candles1d,
       marketRegime,
+      tradeVolume: tradeVolumeMap.get(marketAddressFromMarket(row.market)) || null,
     });
 
     candidate.setupEvidence = candidate.setupEvidence || {};
@@ -3134,6 +3152,8 @@ async function deepScan(sdk, broadRows, marketRegime = null) {
     };
     candidate.indicators = candidate.indicators || {};
     candidate.indicators.htfData = candidate.setupEvidence.htfData;
+    candidate.setupEvidence.volumeSource = tradeVolumeMap.get(marketAddressFromMarket(row.market))?.source || "NONE";
+    candidate.setupEvidence.volumeBucketsCompleted = Boolean(tradeVolumeMap.get(marketAddressFromMarket(row.market))?.volumeBucketsCompleted);
     return applyMarketRegimeToCandidate(candidate, marketRegime);
   });
 
@@ -3574,7 +3594,7 @@ function cycleMessage(report) {
       const tm = item.setupEvidence || {};
       lines.push(`  ⏱️ Move maturity ${num(tm.moveMaturity).toFixed(1)} | ${String(tm.moveMaturityLabel || "N/A")} | Extension ${num(tm.extensionPct).toFixed(2)}% | ATR dist ${num(tm.atrDistance).toFixed(2)}x`);
       const cf = item.setupEvidence?.capitalFlow || {};
-      lines.push(`  💧 Flow ${num(cf.score).toFixed(1)} | ${String(cf.state || "N/A")} | Smart ${num(cf.smartMoneyProxy).toFixed(1)} | OI Δ ${num(cf.oiDeltaPct).toFixed(2)}% | Vol5 ${num(cf.volumeRatio5m).toFixed(2)}x`);
+      lines.push(`  💧 Flow ${num(cf.score).toFixed(1)} | ${String(cf.state || "N/A")} | Smart ${num(cf.smartMoneyProxy).toFixed(1)} | OI Δ ${num(cf.oiDeltaPct).toFixed(2)}% | Vol5 ${num(cf.volumeRatio5m).toFixed(2)}x | Vol15 ${num(cf.volumeRatio15m).toFixed(2)}x | Src ${String(tm.volumeSource || "N/A")}`);
       const li = item.setupEvidence?.fiveLayers || {};
       const dir = String(item.direction || "").toLowerCase();
       const pick = (x) => dir === "long" ? num(x?.long) : num(x?.short);
@@ -3583,13 +3603,6 @@ function cycleMessage(report) {
       if (mr.regime) lines.push(`  🌐 ${mr.regime} | BTC ${num(mr.btcScore).toFixed(0)} ETH ${num(mr.ethScore).toFixed(0)} Breadth ${num(mr.breadthScore).toFixed(0)} | ${mr.counterTrend ? "COUNTER" : "ALIGNED"}`);
       const slInfo = item.setupEvidence || {};
       lines.push(`  🛡️ SL ${formatPrice(item.sl)} | ${num(slInfo.slDistancePct).toFixed(2)}% | ${String(slInfo.slMethod || "N/A")}`);
-      if (slInfo.structureDebug) {
-        const sd = slInfo.structureDebug;
-        const isContinuation = String(item.setupType || "").startsWith("CONTINUATION");
-        const tf = sd.breakoutTimeframe || (isContinuation ? "HTF" : (sd.structuralFrames || []).join("/") || "N/A");
-        lines.push(`  🔬 STRUCT ${String(sd.anchor || "N/A")} ${formatPrice(sd.anchorPrice)} → ${String(item.setupEvidence?.structureTarget || sd.target || "TARGET")} ${formatPrice(sd.targetPrice)} | ${tf} | ${isContinuation ? `15M ${sd.breakoutConfirmed15m ? "OK" : "NO"} | Retest ${sd.breakoutRetest15m ? "YES" : "NO"}` : "15M STRUCTURE"}`);
-        lines.push(`  🔬 Dist ${num(sd.entryDistancePct).toFixed(2)}%/${num(sd.entryDistanceAtr).toFixed(2)}ATR | Vol5 ${num(sd.volumeRatio5m).toFixed(2)}x Vol15 ${num(sd.volumeRatio15m).toFixed(2)}x | Flow ${String(sd.flowDirection || "N/A")} | Smart ${num(sd.smartMoneyProxy).toFixed(1)} | RR ${num(sd.rr).toFixed(2)} | Reject ${String(sd.rejectReason || item.reason || "NONE")}`);
-      }
       lines.push(`  💹 Gross ${formatUsd(econ.grossPnlUsd)} | Cost ${formatUsd(econ.totalCostUsd)} | Net ${formatUsd(econ.expectedNetUsd)} | TP move ${num(econ.tpMovePct).toFixed(2)}%`);
       lines.push(`  🚫 ${item.reason}`);
     }
@@ -3597,7 +3610,7 @@ function cycleMessage(report) {
 
   lines.push(`🆔 Scan: ${report.scanId}`);
   lines.push(`🕐 ${new Date().toISOString()}`);
-  lines.push(`ℹ️ مسیر: Scan → Selection → HTF Structure → 15M Confirmation → Entry/TP/SL → Classic Execution → Verification`);
+  lines.push(`ℹ️ مسیر: Scan → Selection → Dynamic SL/TP → Classic Execution → Verification`);
 
   return lines.join("\n");
 }
@@ -3873,7 +3886,13 @@ async function runCycle(event, env) {
     confidence: marketRegime.confidence, btc: marketRegime.btc?.score, eth: marketRegime.eth?.score,
     breadth: marketRegime.breadth?.score, agreement: marketRegime.agreement,
   });
-  const deep = await deepScan(runtime.sdk, broad.rows, marketRegime);
+  let tradeVolumeMap = new Map();
+  try {
+    tradeVolumeMap = await fetchGmxTradeVolumeMap();
+  } catch (volumeError) {
+    console.warn("[VOLUME][GMX_POSITION_CHANGES][FALLBACK]", safeError(volumeError));
+  }
+  const deep = await deepScan(runtime.sdk, broad.rows, marketRegime, tradeVolumeMap);
   const deepAttempted = Math.min(CONFIG.deepCandidates, broad.rows.length);
   const deepFailureCount = Math.max(0, deepAttempted - deep.length);
   const intelligence = await fetchOptionalIntelligence(env);
