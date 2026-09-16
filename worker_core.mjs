@@ -1229,7 +1229,18 @@ function walletBalanceEntries(balances) {
       for (const item of value) visit(item, "", depth + 1);
       return;
     }
-    if (typeof value !== "object") return;
+    if (typeof value !== "object") {
+      const key = String(keyHint || "").toUpperCase().replace(/[^A-Z0-9.]/g, "");
+      const symbol = key === "USDC.E" ? "USDC" : key;
+      if ((symbol === "USDC" || symbol === "USDT") && (typeof value === "bigint" || (typeof value === "number" && Number.isFinite(value)) || (typeof value === "string" && value.trim() !== ""))) {
+        const marker = `${symbol}|PRIMITIVE|${String(value)}`;
+        if (!seen.has(marker)) {
+          seen.add(marker);
+          out.push({ value: { symbol, balance: value }, keyHint: symbol });
+        }
+      }
+      return;
+    }
     const symbolHint = String(
       value?.tokenSymbol || value?.symbol || value?.token?.symbol || value?.asset?.symbol || keyHint || ""
     ).toUpperCase();
