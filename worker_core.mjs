@@ -966,6 +966,51 @@ function calculateHourlyContinuationTradePlan({ direction, price, candles1h }) {
   return {valid:true,reason:`1H_CONTINUATION_${direction.toUpperCase()}_BREAKOUT_VALID`,entry,tp,sl,anchor:direction==="long"?"1H_BROKEN_RESISTANCE":"1H_BROKEN_SUPPORT",anchorPrice:anchor,target:direction==="long"?"1H_NEXT_RESISTANCE":"1H_NEXT_SUPPORT",targetPrice:target,entryDistancePct:dPct,entryDistanceAtr:dAtr,riskPct:risk/entry*100,rewardPct:reward/entry*100,rr:rrv,breakoutTimeframe:"1H",slPlan:{sl,distancePct:risk/entry*100,method:direction==="long"?"1H_BROKEN_RESISTANCE_BELOW":"1H_BROKEN_SUPPORT_ABOVE",valid:true,anchorPrice:anchor},tpPlan:{tp,targetPrice:target,targetType:"1H_NEXT_STRUCTURE_BEFORE_LEVEL",method:"1H_NEXT_STRUCTURE_BEFORE_LEVEL",distancePct:reward/entry*100}};
 }
 
+
+function estimateEconomicOpportunity(candidate, walletUsd = 0) {
+  const entry = num(candidate?.entry);
+  const tp = num(candidate?.tp);
+  const sl = num(candidate?.sl);
+  const collateralUsd = Math.max(0, num(walletUsd) * num(CONFIG.walletAllocationPerPosition || 0));
+  const leverage = Math.max(1, num(CONFIG.leverage || 1));
+  const notionalUsd = collateralUsd * leverage;
+
+  let movePct = 0;
+  if (entry > 0 && tp > 0) movePct = Math.abs(tp - entry) / entry;
+  const grossPnlUsd = notionalUsd * movePct;
+
+  // Keep cost estimation conservative and compatible with the existing economic gate.
+  const feeRate = num(CONFIG.estimatedTradingFeeRate ?? CONFIG.tradingFeeRate ?? 0.001);
+  const estimatedExecutionCostUsd = Math.max(
+    0,
+    num(CONFIG.estimatedExecutionCostUsd ?? CONFIG.executionCostUsd ?? 0)
+  );
+  const tradingFeeUsd = notionalUsd * Math.max(0, feeRate);
+  const totalCostUsd = tradingFeeUsd + estimatedExecutionCostUsd;
+  const expectedNetUsd = grossPnlUsd - totalCostUsd;
+
+  const riskMovePct = entry > 0 && sl > 0 ? Math.abs(entry - sl) / entry : 0;
+  const riskUsd = notionalUsd * riskMovePct;
+
+  return {
+    entry,
+    tp,
+    sl,
+    walletUsd: num(walletUsd),
+    collateralUsd,
+    leverage,
+    notionalUsd,
+    movePct,
+    riskMovePct,
+    grossPnlUsd,
+    riskUsd,
+    tradingFeeUsd,
+    estimatedExecutionCostUsd,
+    totalCostUsd,
+    expectedNetUsd,
+  };
+}
+
 function economicGate(candidate, walletUsd) {
   const economics = estimateEconomicOpportunity(candidate, walletUsd);
   if (!economics.valid) return { ok: false, reason: "ECONOMIC_INVALID", economics };
