@@ -2,7 +2,7 @@
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║ GMX SMART MONEY FUTURES AI BOT — V21.5 GLOBAL MARKET DATA CENTER + ROBUST DEEP DATA      ║
 ║ Single pipeline • 5M broad scan • 15M deep scan • Classic GMX only          ║
-║ 20x leverage • 100% wallet • max 1 position • dynamic TP + structure SL               ║
+║ 20x leverage • 100% wallet • max 1 position • dynamic TP + profit-lock SL            ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 Architecture:
@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V21.8.0-PROFESSIONAL-SR-RR-DYNAMIC-PLAN";
+export const BOT_VERSION = "V21.9.0-PROFIT-LOCK-10ROI-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -49,6 +49,13 @@ const CONFIG = Object.freeze({
   walletAllocationPerPosition: 1.00,
   maxTotalWalletAllocation: 1.00,
   leverage: 20,
+
+  // V21.9: profit-lock protection is based on POSITION ROI, not raw price %.
+  // At 20x leverage, +10% ROI corresponds to approximately +0.50% favorable
+  // price movement before fees/funding/slippage.
+  profitLockEnabled: true,
+  profitLockTriggerRoiPct: 10.00,
+  profitLockTargetRoiPct: 10.00,
 
   broadTimeframe: "5m",
   broadLimit: 72,
@@ -87,16 +94,6 @@ const CONFIG = Object.freeze({
   tpReversalMaxPct: 1.80,
   tpContinuationMaxPct: 2.20,
   tpMinTargetScore: 52,
-
-  // V21.8 Professional risk/reward plan. SL is structural/ATR; TP must
-  // respect the actual stop distance instead of being selected independently.
-  // This prevents valid setups from reaching Entry with an undefined/invalid plan.
-  rrEnabled: true,
-  rrMin: 1.50,
-  rrBase: 2.00,
-  rrStrong: 2.50,
-  rrExtreme: 3.00,
-  rrStructureTolerance: 0.12,
 
   // V21.6 Dynamic structure-based stop loss. The stop is derived from the
   // nearest structural swing/support/resistance plus an ATR volatility buffer.
@@ -1865,15 +1862,12 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   );
 
   const entry = price;
-  // V21.8: calculate SL first, then TP from the actual risk distance.
-  // This makes R:R deterministic and prevents TP/SL from becoming detached.
+  const tpPlan = calculateLogicalTp(entry, direction, candles5, candles15, five.atr, setupType, impulse);
+  const tp = tpPlan.tp;
   const slPlan = CONFIG.stopLossEnabled
     ? calculateDynamicSl(entry, direction, candles5, candles15, five.atr, setupType, { ...topDown, nearestSupport: zone.support, nearestResistance: zone.resistance }, marketRegime)
     : { sl: 0, distancePct: 0, method: "DISABLED", valid: true };
   const sl = slPlan.sl;
-  const tpPlan = calculateLogicalTp(entry, direction, candles5, candles15, five.atr, setupType, impulse, sl, score);
-  const tp = tpPlan.tp;
-  const actualRR = sl > 0 && tp > 0 ? Math.abs(tp - entry) / Math.abs(entry - sl) : 0;
   const reasons = [];
   if (setupType === 'REVERSAL') reasons.push(`REVERSAL_${direction.toUpperCase()}`);
   if (setupType === 'CONTINUATION') reasons.push(`CONTINUATION_${direction.toUpperCase()}`);
@@ -1906,7 +1900,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   if (fiveLayers.reversal.reasons.length) reasons.push(...fiveLayers.reversal.reasons.slice(0, 3).map(x => `REV5:${x}`));
 
   return {
-    symbol: marketDisplaySymbol(market), candleSymbol: candleSymbolFromMarket(market), direction, entry, tp, sl, rr: Number(actualRR.toFixed(2)),
+    symbol: marketDisplaySymbol(market), candleSymbol: candleSymbolFromMarket(market), direction, entry, tp, sl,
     moveMaturity, moveMaturityLabel, lateMove,
     score: Number(score.toFixed(2)), edge: Number(edge.toFixed(2)), risk: Number(risk.toFixed(2)), trendConfluence: trend,
     setupType, reversalEvidence,
@@ -1924,7 +1918,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       trendEndExhaustion, trendEndSignals, continuationEarly, continuationRetest, continuationTooLate, continuationBreak,
       moveMaturity, moveMaturityLabel, lateMove, extensionPct, atrDistance, opposingZoneNear, directionalDecelerating,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
-      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy, tpRR: Number((tpPlan.rr || actualRR).toFixed(2)), tpRRPass: Boolean(tpPlan.rrPass ?? (actualRR >= CONFIG.rrMin)),
+      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
       sl: slPlan.sl, slDistancePct: slPlan.distancePct, slMethod: slPlan.method, slValid: slPlan.valid,
       zoneState: zone.state, nearSupport: zone.nearSupport, nearResistance: zone.nearResistance,
       nearestSupport: zone.support, nearestResistance: zone.resistance, sharpMove: sharp, lateChase, impulseQuality,
@@ -1969,7 +1963,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       strongBreakLong, strongBreakShort, htfBreakLong, htfBreakShort, htfStrongBreakLong, htfStrongBreakShort,
       liveBreakLong, liveBreakShort, failedBreakLong, failedBreakShort, htfFailedBreakLong, htfFailedBreakShort, genuineLongFailure, genuineShortFailure,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
-      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy, tpRR: Number((tpPlan.rr || actualRR).toFixed(2)), tpRRPass: Boolean(tpPlan.rrPass ?? (actualRR >= CONFIG.rrMin)),
+      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
       sl: slPlan.sl, slDistancePct: slPlan.distancePct, slMethod: slPlan.method,
       reversalConfidence, continuationConfidence, setupDominance, triggerActive: setupType === 'REVERSAL' || setupType === 'CONTINUATION',
       topDownState: topDown.state, topDownDirection: topDown.preferredDirection, topDownConfidence: topDown.confidence, topDownControllingTimeframe: topDown.controllingTimeframe, topDownLevelPrice: topDown.levelPrice, topDownSupport: topDown.support?.price || null, topDownResistance: topDown.resistance?.price || null, topDownSupportBreak: topDown.supportBreak, topDownResistanceBreak: topDown.resistanceBreak, topDownSupportReaction: topDown.supportReaction, topDownResistanceReaction: topDown.resistanceReaction, topDownSupportFailedBreak: topDown.supportFailedBreak, topDownResistanceFailedBreak: topDown.resistanceFailedBreak,
@@ -2076,14 +2070,11 @@ function calculateDynamicSl(entry, direction, candles5, candles15, atr5, setupTy
   };
 }
 
-function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupType = "CONTINUATION", impulse = {}, slPrice = 0, signalScore = 0) {
+function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupType = "CONTINUATION", impulse = {}) {
   const minDist = CONFIG.minTpDistancePct / 100;
   const maxDistPct = setupType === "REVERSAL" ? CONFIG.tpReversalMaxPct : CONFIG.tpContinuationMaxPct;
   const maxDist = maxDistPct / 100;
   const atr = Math.max(num(atr5), entry * 0.0005, 1e-12);
-  const slDistance = slPrice > 0 ? Math.abs(entry - slPrice) : 0;
-  const rrTarget = signalScore >= 90 ? CONFIG.rrExtreme : signalScore >= 80 ? CONFIG.rrStrong : CONFIG.rrBase;
-  const requiredTpDistancePct = slDistance > 0 ? (slDistance / entry) * 100 * (CONFIG.rrEnabled ? rrTarget : 1) : CONFIG.minTpDistancePct;
 
   const levels5 = recentSwingLevels(candles5);
   const levels15 = recentSwingLevels(candles15);
@@ -2106,8 +2097,6 @@ function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupTy
     const distancePct = Math.abs(pct(x, entry));
     const favorable = direction === "long" ? x > entry : x < entry;
     if (!favorable || distancePct < CONFIG.minTpDistancePct || distancePct > maxDistPct) return;
-    const rr = slDistance > 0 ? distancePct / ((slDistance / entry) * 100) : rrTarget;
-    const rrPass = !CONFIG.rrEnabled || slDistance <= 0 || rr >= CONFIG.rrMin - CONFIG.rrStructureTolerance;
 
     // Probability proxy: closer first reaction levels are generally more reachable;
     // a second confirmation from 15m earns a small bonus. This is deliberately
@@ -2117,10 +2106,8 @@ function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupTy
     const tfBonus = tf === "15m" ? 7 : 3;
     const setupBonus = setupType === "REVERSAL" ? (distancePct <= 1.25 ? 10 : 0) : (distancePct <= 1.80 ? 6 : 0);
     const weightBonus = Number(weight) || 0;
-    const rrBonus = slDistance > 0 ? clamp((rr - CONFIG.rrMin) * 10, -20, 15) : 0;
-    const rrPenalty = rrPass ? 0 : -35;
-    const targetScore = clamp(distanceScore + tfBonus + setupBonus + weightBonus + rrBonus + rrPenalty, 0, 100);
-    candidates.push({price:x, type, tf, distancePct, atrDist, targetScore, rr, rrPass});
+    const targetScore = clamp(distanceScore + tfBonus + setupBonus + weightBonus, 0, 100);
+    candidates.push({price:x, type, tf, distancePct, atrDist, targetScore});
   };
 
   // First reaction / recent range is considered before older swing structure.
@@ -2147,18 +2134,15 @@ function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupTy
   let pool = [...dedup.values()];
   pool.sort((a, b) => b.targetScore - a.targetScore || a.distancePct - b.distancePct);
 
-  let selected = pool.find(x => x.rrPass && x.targetScore >= CONFIG.tpMinTargetScore);
-  if (!selected) selected = pool.find(x => x.rrPass) || pool.find(x => x.targetScore >= CONFIG.tpMinTargetScore) || pool[0] || null;
+  let selected = pool.find(x => x.targetScore >= CONFIG.tpMinTargetScore);
+  if (!selected) selected = pool[0] || null;
 
   if (!selected) {
-    const rrDistance = slDistance > 0 ? (slDistance / entry) * rrTarget : (CONFIG.tpAtrMultiplier * atr / entry);
-    const fallbackDistance = Math.min(maxDist, Math.max(minDist, requiredTpDistancePct / 100, rrDistance));
+    const fallbackDistance = Math.min(maxDist, Math.max(minDist, CONFIG.tpAtrMultiplier * atr / entry));
     const tp = direction === "long" ? entry * (1 + fallbackDistance) : entry * (1 - fallbackDistance);
     return {
       tp: Number(tp.toPrecision(12)), method: "ATR_PROBABILITY_FALLBACK", targetType: "ATR_FALLBACK",
-      targetScore: 60, probabilityProxy: 60, distancePct: fallbackDistance * 100,
-      rr: slDistance > 0 ? (fallbackDistance * entry) / slDistance : rrTarget,
-      rrPass: slDistance <= 0 || (fallbackDistance * entry) / slDistance >= CONFIG.rrMin,
+      targetScore: 50, probabilityProxy: 50, distancePct: fallbackDistance * 100,
       targetPrice: tp, atrDistance: fallbackDistance * entry / atr,
     };
   }
@@ -2184,8 +2168,6 @@ function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupTy
     targetScore: Number(selected.targetScore.toFixed(1)),
     probabilityProxy: Number(selected.targetScore.toFixed(1)),
     distancePct: Number(selected.distancePct.toFixed(3)),
-    rr: Number((selected.rr || 0).toFixed(2)),
-    rrPass: Boolean(selected.rrPass),
     targetPrice: selected.price,
     atrDistance: Number(selected.atrDist.toFixed(2)),
   };
@@ -2272,15 +2254,9 @@ function attachEconomicOpportunity(candidate, walletUsd) {
 }
 
 function candidateIsActionable(candidate) {
-  if (!candidate || !candidate.symbol || !candidate.entry || !candidate.tp || (CONFIG.stopLossEnabled && !(num(candidate.sl) > 0))) {
+  if (!candidate || !candidate.symbol || !candidate.entry || !candidate.tp) {
     return { ok: false, reason: "INVALID_PLAN" };
   }
-
-  // V21.8: Entry is never considered ready without a real, direction-correct
-  // SL/TP pair and a measurable minimum R:R. Flow remains a quality signal;
-  // it is not allowed to turn a valid risk plan into an undefined plan.
-  const rr = num(candidate.rr) || (num(candidate.sl) > 0 ? Math.abs(num(candidate.tp) - num(candidate.entry)) / Math.abs(num(candidate.entry) - num(candidate.sl)) : 0);
-  if (!(rr >= CONFIG.rrMin)) return { ok: false, reason: `RR_${rr.toFixed(2)}_BELOW_${CONFIG.rrMin.toFixed(2)}` };
 
   const ev = candidate.setupEvidence || {};
   const isEarlyReversal = candidate.setupType === "REVERSAL" && candidate.reversalTrigger;
@@ -2921,6 +2897,287 @@ async function getOpenPositions(sdk, account) {
     .filter((p) => positionSizeUsd(p) > 0);
 }
 
+// ======================================================
+// V21.9 PROFIT-LOCK ENGINE — 10% ROI @ 20x
+// ======================================================
+// This is deliberately isolated from entry/TP/initial-SL logic.
+// It only manages an already-open position after it reaches the
+// requested ROI threshold. The existing SL is never loosened.
+//
+// Example at 20x:
+//   LONG  entry 100 -> +0.50% price = ~+10% ROI
+//   SHORT entry 100 -> -0.50% price = ~+10% ROI
+//
+// Once activated, the SL is moved to the corresponding +10% ROI
+// price level and remains there. This is gross price/ROI protection;
+// fees, funding and execution slippage are not included in the
+// trigger arithmetic.
+function profitLockDirection(position) {
+  return position?.isLong === false ? "short" : "long";
+}
+
+function humanPriceValue(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  if (typeof value === "bigint") {
+    const n = Number(value);
+    return Number.isFinite(n) ? n / 1e30 : 0;
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.abs(n) > 1e12 ? n / 1e30 : n;
+}
+
+function positionEntryPrice(position) {
+  return humanPriceValue(
+    position?.entryPrice ??
+    position?.averagePrice ??
+    position?.avgPrice ??
+    position?.entryPriceUsd
+  );
+}
+
+function positionCurrentPrice(position, tickers) {
+  const symbol =
+    position?.indexName ||
+    position?.symbol ||
+    position?.marketSymbol ||
+    position?.market?.symbol ||
+    "";
+
+  const ticker = findTicker(tickers, { symbol });
+  return (
+    humanPriceValue(position?.markPrice) ||
+    humanPriceValue(position?.indexPrice) ||
+    tickerPrice(ticker)
+  );
+}
+
+function orderIsStopLoss(order) {
+  const typeText = [
+    order?.orderType,
+    order?.type,
+    order?.orderKind,
+    order?.orderTypeName,
+    order?.eventName,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  return (
+    typeText.includes("stop-loss") ||
+    typeText.includes("stop_loss") ||
+    typeText.includes("stoploss") ||
+    typeText.includes("stoplossdecrease")
+  );
+}
+
+function orderMatchesPosition(order, position) {
+  const positionSymbol = normalizeAsset(
+    position?.indexName ||
+    position?.symbol ||
+    position?.marketSymbol ||
+    position?.market?.symbol ||
+    ""
+  );
+  const orderSymbol = normalizeAsset(
+    order?.indexName ||
+    order?.symbol ||
+    order?.marketSymbol ||
+    order?.market?.symbol ||
+    ""
+  );
+
+  if (positionSymbol && orderSymbol && positionSymbol !== orderSymbol) return false;
+  if (typeof order?.isLong === "boolean" && order.isLong !== (position?.isLong !== false)) return false;
+
+  return true;
+}
+
+function relatedStopLossOrders(position, allOrders) {
+  const related = Array.isArray(position?.relatedOrders)
+    ? position.relatedOrders
+    : Array.isArray(position?.orders)
+      ? position.orders
+      : [];
+
+  const combined = [...related, ...(Array.isArray(allOrders) ? allOrders : [])];
+  const seen = new Set();
+
+  return combined.filter((order) => {
+    const key = String(order?.key || order?.orderKey || order?.id || "");
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return orderIsStopLoss(order) && orderMatchesPosition(order, position);
+  });
+}
+
+function profitLockPlan(position, currentPrice) {
+  if (!CONFIG.profitLockEnabled) return { enabled: false };
+
+  const entry = positionEntryPrice(position);
+  const price = humanPriceValue(currentPrice);
+  const leverage = Math.max(1, num(CONFIG.leverage, 20));
+  const side = profitLockDirection(position);
+
+  if (!(entry > 0) || !(price > 0)) {
+    return { enabled: true, ready: false, reason: "PRICE_OR_ENTRY_UNAVAILABLE" };
+  }
+
+  const priceMovePct = side === "long"
+    ? pct(price, entry)
+    : pct(entry, price);
+
+  const roiPct = priceMovePct * leverage;
+  const triggerRoiPct = num(CONFIG.profitLockTriggerRoiPct, 10);
+  const targetRoiPct = num(CONFIG.profitLockTargetRoiPct, 10);
+
+  // ROI% -> price movement% using the configured leverage.
+  const lockMovePct = targetRoiPct / leverage;
+  const lockPrice = side === "long"
+    ? entry * (1 + lockMovePct / 100)
+    : entry * (1 - lockMovePct / 100);
+
+  return {
+    enabled: true,
+    ready: true,
+    side,
+    entry,
+    price,
+    leverage,
+    priceMovePct,
+    roiPct,
+    triggerRoiPct,
+    targetRoiPct,
+    lockMovePct,
+    lockPrice,
+    active: roiPct >= triggerRoiPct,
+  };
+}
+
+async function editClassicStopLoss(runtime, orderKey, triggerPrice) {
+  const { sdk, signer, account } = runtime;
+
+  if (typeof sdk.prepareEditOrder !== "function") {
+    throw new Error("GMX_SDK_PREPARE_EDIT_ORDER_UNAVAILABLE");
+  }
+
+  const prepared = await sdk.prepareEditOrder({
+    orderIds: [orderKey],
+    newTriggerPrice: toUnits(Number(triggerPrice).toFixed(12), 30),
+    mode: "classic",
+    from: account,
+  });
+
+  if (prepared?.payloadType !== "transaction") {
+    throw new Error(`CLASSIC_EDIT_PAYLOAD_EXPECTED:${prepared?.payloadType || "unknown"}`);
+  }
+
+  const txHash = await sendClassicTransaction(signer, prepared);
+  if (!txHash) throw new Error("CLASSIC_EDIT_TX_HASH_MISSING");
+  return txHash;
+}
+
+async function manageProfitLockStops(runtime, positions, tickers, env) {
+  if (!CONFIG.profitLockEnabled || !Array.isArray(positions) || !positions.length) {
+    return [];
+  }
+
+  let allOrders = [];
+  try {
+    if (typeof runtime.sdk.fetchOrders === "function") {
+      allOrders = await runtime.sdk.fetchOrders({ address: runtime.account });
+    }
+  } catch (error) {
+    console.warn("[PROFIT_LOCK][ORDERS_READ_FAILED]", safeError(error));
+    return [];
+  }
+
+  const changes = [];
+
+  for (const position of positions) {
+    const currentPrice = positionCurrentPrice(position, tickers);
+    const plan = profitLockPlan(position, currentPrice);
+
+    if (!plan.ready || !plan.active) continue;
+
+    const stops = relatedStopLossOrders(position, allOrders);
+    if (!stops.length) {
+      console.warn("[PROFIT_LOCK][NO_ACTIVE_SL]", {
+        symbol: position?.indexName || position?.symbol,
+        side: plan.side,
+        roiPct: Number(plan.roiPct.toFixed(2)),
+        lockPrice: plan.lockPrice,
+      });
+      continue;
+    }
+
+    // There should normally be one full-size SL. If multiple exist,
+    // update only those that would otherwise leave less protection.
+    for (const order of stops) {
+      const currentTrigger = humanPriceValue(
+        order?.triggerPrice ??
+        order?.triggerPriceUsd ??
+        order?.price
+      );
+
+      if (!(currentTrigger > 0)) continue;
+
+      // NEVER loosen an existing SL.
+      const needsTightening = plan.side === "long"
+        ? currentTrigger < plan.lockPrice
+        : currentTrigger > plan.lockPrice;
+
+      if (!needsTightening) continue;
+
+      try {
+        const txHash = await editClassicStopLoss(
+          runtime,
+          String(order?.key || order?.orderKey || order?.id),
+          plan.lockPrice
+        );
+
+        const item = {
+          symbol: position?.indexName || position?.symbol || "N/A",
+          direction: plan.side,
+          entry: plan.entry,
+          currentPrice: plan.price,
+          roiPct: Number(plan.roiPct.toFixed(2)),
+          oldSl: currentTrigger,
+          newSl: plan.lockPrice,
+          lockRoiPct: plan.targetRoiPct,
+          txHash,
+        };
+
+        changes.push(item);
+        console.log("[PROFIT_LOCK][UPDATED]", item);
+
+        try {
+          await sendTelegram(env, [
+            `🛡️ GMX PROFIT LOCK — SL MOVED`,
+            `━━━━━━━━━━━━━━━━━━`,
+            `🪙 ${item.symbol}`,
+            `📌 ${item.direction.toUpperCase()}`,
+            `💰 Entry: ${formatPrice(item.entry)}`,
+            `📈 Current: ${formatPrice(item.currentPrice)}`,
+            `💹 ROI: +${item.roiPct.toFixed(2)}%`,
+            `🔒 Locked ROI: +${item.lockRoiPct.toFixed(2)}%`,
+            `🛡️ SL: ${formatPrice(item.oldSl)} → ${formatPrice(item.newSl)}`,
+            `🔗 Tx: ${item.txHash}`,
+          ].join("\n"));
+        } catch {}
+      } catch (error) {
+        console.error("[PROFIT_LOCK][UPDATE_FAILED]", {
+          symbol: position?.indexName || position?.symbol,
+          side: plan.side,
+          roiPct: plan.roiPct,
+          targetSl: plan.lockPrice,
+          error: safeError(error),
+        });
+      }
+    }
+  }
+
+  return changes;
+}
+
 function findPositionForCandidate(positions, candidate) {
   const wanted = normalizeAsset(candidate.symbol);
   return positions.find((p) => positionAsset(p) === wanted);
@@ -3219,6 +3476,7 @@ function cycleMessage(report) {
     `🧩 Early gates: M ${report.universe} | B ${report.broadSuccess} | V ${report.deepSuccess} | F ${report.flowCount} | MA ${report.maCount} | A ${report.adxCount} | Z ${report.srCount} | P ${report.positiveMoveCount} | PB ${report.pullbackCount} | S ${report.scoreReadyCount} | E ${report.edgeReadyCount}`,
     `🚫 Early reject: Move ${report.rejectMove} / Body ${report.rejectBody} / Activity ${report.rejectActivity} / Accel ${report.rejectAccel} / Ext ${report.rejectExt} / Zone ${report.rejectZone} / Pre ${report.rejectPre} / Score ${report.rejectScore} / Edge ${report.rejectEdge} / Setup ${report.rejectSetup}`,
     `🎯 Entry ready: ${report.actionableCount}`,
+    `🛡️ Profit-lock SL updates: ${report.profitLockChanges || 0}`,
     `🟢 Executed: ${report.executedCount}`,
     `🔴 Execution failures: ${report.failureCount}`,
     ``,
@@ -3533,6 +3791,15 @@ async function runCycle(event, env) {
   const universe = Array.isArray(markets) ? markets.filter(isLikelyPerpMarket) : [];
   const tickerRows = Array.isArray(tickers) ? tickers : [];
 
+  // V21.9: protect an already-open position before evaluating any new entry.
+  // This does not modify entry selection, TP calculation, or initial SL logic.
+  const profitLockChanges = await manageProfitLockStops(
+    runtime,
+    openPositions,
+    tickerRows,
+    env
+  );
+
   const broad = await broadScan(runtime.sdk, universe, tickerRows, marketValues, state.marketSnapshots);
   // GLOBAL MARKET DATA CENTER runs before deep signal classification. BTC/ETH
   // + breadth become the macro prior for every individual market.
@@ -3663,6 +3930,7 @@ async function runCycle(event, env) {
     deepAttempted,
     deepFailureCount,
     actionableCount: actionable.length,
+    profitLockChanges: profitLockChanges.length,
     impulseCount,
     flowCount,
     smartMoneyCount,
