@@ -1764,6 +1764,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const sharp = absMove3 >= 0.75 || absMove5 >= 1.20 || impulse.rangeExpansion >= 1.65 || Math.abs(impulse.acceleration) >= 0.45;
   const directionalAcceleration = direction === 'long' ? impulse.acceleration : -impulse.acceleration;
   const directionalMove3 = direction === 'long' ? impulse.move3 : -impulse.move3;
+  const directionalMove5 = direction === 'long' ? impulse.move5 : -impulse.move5;
   const earlyBreak = direction === 'long' ? firstBreakLong : firstBreakShort;
   const earlyTrend = directionalMove3 >= CONFIG.earlyImpulseMinMove3Pct && directionalAcceleration >= CONFIG.earlyImpulseMinAccelerationPct;
   const notExtended = extension <= 1.80;
