@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V22.2.0-HTF-SHORT-STRUCTURE-FIX-DEBUG-20X";
+export const BOT_VERSION = "V22.3.0-CONTINUATION-WATCH-STRUCTURE-DEBUG-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -1879,7 +1879,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   // price. Therefore "entry just above support/resistance" is enforced as an
   // ENTRY ZONE: current price must already be close enough to that structure.
   // We never move TP closer or invent a farther target to rescue a bad RR.
-  const structurePlan = setupType === "CONTINUATION"
+  const structurePlan = setupType.startsWith("CONTINUATION")
     ? calculateContinuationTradePlan({
         direction,
         price,
@@ -1916,8 +1916,8 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   if (continuationTooLate) reasons.push('CONTINUATION_TOO_LATE');
   if (firstBreakLong || firstBreakShort) reasons.push('FIRST_BREAK');
   if (strongBreakLong || strongBreakShort || htfStrongBreakLong || htfStrongBreakShort) reasons.push('STRONG_BREAKOUT');
-  if (setupType === 'CONTINUATION' && structurePlan.breakoutConfirmed15m) reasons.push(`CONTINUATION_15M_BREAK_CONFIRMED_${structurePlan.breakoutTimeframe || 'HTF'}`);
-  if (setupType === 'CONTINUATION' && structurePlan.breakoutRetest15m) reasons.push('CONTINUATION_15M_RETEST');
+  if (setupType.startsWith('CONTINUATION') && structurePlan.breakoutConfirmed15m) reasons.push(`CONTINUATION_15M_BREAK_CONFIRMED_${structurePlan.breakoutTimeframe || 'HTF'}`);
+  if (setupType.startsWith('CONTINUATION') && structurePlan.breakoutRetest15m) reasons.push('CONTINUATION_15M_RETEST');
   if (failedBreakLong || failedBreakShort || htfFailedBreakLong || htfFailedBreakShort) reasons.push('BREAKOUT_FAILURE');
   if (liveBreakLong && !genuineShortFailure) reasons.push('NO_SHORT_FADE_ON_LIVE_BREAKOUT');
   if (liveBreakShort && !genuineLongFailure) reasons.push('NO_LONG_FADE_ON_LIVE_BREAKOUT');
@@ -2265,13 +2265,17 @@ function calculateStructureTradePlan({
   marketRegime,
 }) {
   const entry = num(price);
-  const rows = Array.isArray(candles5) ? candles5 : [];
+  // Reversal structure is read from 15M; 5M is timing/volatility only.
+  // The previous build used 5M swing levels here, which could make a visible
+  // 15M support/resistance (like the MON setup) invisible to the trade plan.
+  const rows = Array.isArray(candles15) ? candles15 : [];
   const levels = recentSwingLevels(rows);
   const a5 = Math.max(num(atr5), entry * 0.001, 1e-12);
-  const a15 = Math.max(num(atr(candles15 || [], 14)), entry * 0.0012, 1e-12);
-  const volatilityAtr = Math.max(a5, a15 * 0.55);
+  const a15 = Math.max(num(atr(rows, 14)), entry * 0.0012, 1e-12);
+  const volatilityAtr = Math.max(a15, a5 * 0.55);
 
   const volumeRatio5m = num(capitalFlow?.volumeRatio5m, 0);
+  const volumeRatio15m = num(capitalFlow?.volumeRatio15m, 0);
   const smartMoneyProxy = num(capitalFlow?.smartMoneyProxy, 50);
   const flowDirection = capitalFlow?.direction || null;
 
@@ -2305,8 +2309,19 @@ function calculateStructureTradePlan({
     rewardPct: 0,
     rr: 0,
     volumeRatio5m,
+    volumeRatio15m,
     smartMoneyProxy,
     flowDirection,
+    structureDebug: {
+      direction, entry, structuralFrames: ["15M"],
+      anchor, anchorPrice, target, targetPrice,
+      entryDistancePct: extra.entryDistancePct ?? 0,
+      entryDistanceAtr: extra.entryDistanceAtr ?? 0,
+      volumeRatio5m, volumeRatio15m, flowDirection, smartMoneyProxy,
+      breakoutTimeframe: null, breakoutConfirmed15m: false, breakoutRetest15m: false,
+      riskPct: extra.riskPct ?? 0, rewardPct: extra.rewardPct ?? 0, rr: extra.rr ?? 0,
+      rejectReason: reason,
+    },
     slPlan: { sl: 0, distancePct: 0, method: "STRUCTURE_PLAN_INVALID", valid: false },
     tpPlan: { tp: 0, method: "STRUCTURE_PLAN_INVALID", targetType: target, targetScore: 0, probabilityProxy: 0, distancePct: 0, targetPrice },
     ...extra,
@@ -2438,7 +2453,7 @@ function calculateStructureTradePlan({
   const slPlan = {
     sl,
     distancePct: Number(riskPct.toFixed(3)),
-    method: `STRUCTURE_${direction === "long" ? "SUPPORT" : "RESISTANCE"}`,
+    method: `15M_STRUCTURE_${direction === "long" ? "SUPPORT" : "RESISTANCE"}`,
     valid: true,
     anchorPrice,
     bufferPct: Number((stopBuffer / actualEntry * 100).toFixed(3)),
@@ -2446,7 +2461,7 @@ function calculateStructureTradePlan({
   const tpPlan = {
     tp,
     method: `STRUCTURE_${direction === "long" ? "RESISTANCE" : "SUPPORT"}_BEFORE_LEVEL`,
-    targetType: `SAME_TF_${target}`,
+    targetType: `15M_${target}`,
     targetScore: 100,
     probabilityProxy: 100,
     distancePct: Number(rewardPct.toFixed(3)),
@@ -2471,8 +2486,19 @@ function calculateStructureTradePlan({
     rewardPct: Number(rewardPct.toFixed(3)),
     rr: Number(rr.toFixed(2)),
     volumeRatio5m,
+    volumeRatio15m,
     smartMoneyProxy,
     flowDirection,
+    structureDebug: {
+      direction, entry: actualEntry, structuralFrames: ["15M"],
+      anchor, anchorPrice, target, targetPrice,
+      entryDistancePct: Number(entryDistancePct.toFixed(3)),
+      entryDistanceAtr: Number(entryDistanceAtr.toFixed(2)),
+      volumeRatio5m, volumeRatio15m, flowDirection, smartMoneyProxy,
+      breakoutTimeframe: null, breakoutConfirmed15m: false, breakoutRetest15m: false,
+      riskPct: Number(riskPct.toFixed(3)), rewardPct: Number(rewardPct.toFixed(3)),
+      rr: Number(rr.toFixed(2)), rejectReason: null,
+    },
     slPlan,
     tpPlan,
   };
@@ -2559,14 +2585,11 @@ function attachEconomicOpportunity(candidate, walletUsd) {
 }
 
 function candidateIsActionable(candidate) {
-  if (!candidate || !candidate.symbol || !candidate.entry || !candidate.tp) {
-    return { ok: false, reason: "INVALID_PLAN" };
+  if (!candidate || !candidate.symbol || !candidate.entry) {
+    return { ok: false, reason: "INVALID_CANDIDATE" };
   }
 
   const ev = candidate.setupEvidence || {};
-  if (candidate.setupType === "CONTINUATION" && ev.structurePlanValid !== true) {
-    return { ok: false, reason: ev.structurePlanReason || "CONTINUATION_STRUCTURE_PLAN_INVALID" };
-  }
   const isEarlyReversal = candidate.setupType === "REVERSAL" && candidate.reversalTrigger;
   const isEarlyContinuation = candidate.setupType === "CONTINUATION" && candidate.continuationTrigger;
 
@@ -2578,6 +2601,13 @@ function candidateIsActionable(candidate) {
       return { ok: false, reason: `NO_EARLY_TRIGGER_SCORE_${candidate.score.toFixed(1)}_BELOW_${CONFIG.minScore}` };
     }
     return { ok: false, reason: "NO_EARLY_TRIGGER" };
+  }
+
+  // Only an actual trigger may require a fully valid execution plan. WATCH
+  // states are diagnostic and must not be labelled INVALID_PLAN merely because
+  // their eventual Entry/TP/SL has not been constructed yet.
+  if (ev.structurePlanValid !== true) {
+    return { ok: false, reason: ev.structurePlanReason || "STRUCTURE_PLAN_INVALID" };
   }
 
   if (candidate.edge < CONFIG.minEdge) {
@@ -3553,9 +3583,11 @@ function cycleMessage(report) {
       if (mr.regime) lines.push(`  🌐 ${mr.regime} | BTC ${num(mr.btcScore).toFixed(0)} ETH ${num(mr.ethScore).toFixed(0)} Breadth ${num(mr.breadthScore).toFixed(0)} | ${mr.counterTrend ? "COUNTER" : "ALIGNED"}`);
       const slInfo = item.setupEvidence || {};
       lines.push(`  🛡️ SL ${formatPrice(item.sl)} | ${num(slInfo.slDistancePct).toFixed(2)}% | ${String(slInfo.slMethod || "N/A")}`);
-      if (item.setupType === "CONTINUATION" && slInfo.structureDebug) {
+      if (slInfo.structureDebug) {
         const sd = slInfo.structureDebug;
-        lines.push(`  🔬 STRUCT ${String(sd.anchor || "N/A")} ${formatPrice(sd.anchorPrice)} → ${String(item.setupEvidence?.structureTarget || "TARGET")} ${formatPrice(sd.targetPrice)} | ${String(sd.breakoutTimeframe || "N/A")} + 15M ${sd.breakoutConfirmed15m ? "OK" : "NO"} | Retest ${sd.breakoutRetest15m ? "YES" : "NO"}`);
+        const isContinuation = String(item.setupType || "").startsWith("CONTINUATION");
+        const tf = sd.breakoutTimeframe || (isContinuation ? "HTF" : (sd.structuralFrames || []).join("/") || "N/A");
+        lines.push(`  🔬 STRUCT ${String(sd.anchor || "N/A")} ${formatPrice(sd.anchorPrice)} → ${String(item.setupEvidence?.structureTarget || sd.target || "TARGET")} ${formatPrice(sd.targetPrice)} | ${tf} | ${isContinuation ? `15M ${sd.breakoutConfirmed15m ? "OK" : "NO"} | Retest ${sd.breakoutRetest15m ? "YES" : "NO"}` : "15M STRUCTURE"}`);
         lines.push(`  🔬 Dist ${num(sd.entryDistancePct).toFixed(2)}%/${num(sd.entryDistanceAtr).toFixed(2)}ATR | Vol5 ${num(sd.volumeRatio5m).toFixed(2)}x Vol15 ${num(sd.volumeRatio15m).toFixed(2)}x | Flow ${String(sd.flowDirection || "N/A")} | Smart ${num(sd.smartMoneyProxy).toFixed(1)} | RR ${num(sd.rr).toFixed(2)} | Reject ${String(sd.rejectReason || item.reason || "NONE")}`);
       }
       lines.push(`  💹 Gross ${formatUsd(econ.grossPnlUsd)} | Cost ${formatUsd(econ.totalCostUsd)} | Net ${formatUsd(econ.expectedNetUsd)} | TP move ${num(econ.tpMovePct).toFixed(2)}%`);
