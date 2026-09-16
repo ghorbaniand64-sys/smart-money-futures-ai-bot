@@ -967,47 +967,52 @@ function calculateHourlyContinuationTradePlan({ direction, price, candles1h }) {
 }
 
 
-function estimateEconomicOpportunity(candidate, walletUsd = 0) {
+function estimateEconomicOpportunity(candidate, walletUsd) {
+  const wallet = Math.max(num(walletUsd), 0);
+  const allocation = CONFIG.walletAllocationPerPosition;
+  const collateralUsd = wallet * allocation;
+  const leverage = CONFIG.leverage;
+  const notionalUsd = collateralUsd * leverage;
   const entry = num(candidate?.entry);
   const tp = num(candidate?.tp);
-  const sl = num(candidate?.sl);
-  const collateralUsd = Math.max(0, num(walletUsd) * num(CONFIG.walletAllocationPerPosition || 0));
-  const leverage = Math.max(1, num(CONFIG.leverage || 1));
-  const notionalUsd = collateralUsd * leverage;
 
-  let movePct = 0;
-  if (entry > 0 && tp > 0) movePct = Math.abs(tp - entry) / entry;
-  const grossPnlUsd = notionalUsd * movePct;
+  if (!(entry > 0) || !(tp > 0) || !(notionalUsd > 0)) {
+    return {
+      valid: false,
+      collateralUsd,
+      notionalUsd,
+      grossPnlUsd: 0,
+      positionFeesUsd: 0,
+      executionCostUsd: CONFIG.executionCostBufferUsd,
+      fundingBorrowBufferUsd: CONFIG.fundingBorrowBufferUsd,
+      totalCostUsd: CONFIG.executionCostBufferUsd + CONFIG.fundingBorrowBufferUsd,
+      expectedNetUsd: -(CONFIG.executionCostBufferUsd + CONFIG.fundingBorrowBufferUsd),
+      netToCostRatio: 0,
+      tpMovePct: 0,
+    };
+  }
 
-  // Keep cost estimation conservative and compatible with the existing economic gate.
-  const feeRate = num(CONFIG.estimatedTradingFeeRate ?? CONFIG.tradingFeeRate ?? 0.001);
-  const estimatedExecutionCostUsd = Math.max(
-    0,
-    num(CONFIG.estimatedExecutionCostUsd ?? CONFIG.executionCostUsd ?? 0)
-  );
-  const tradingFeeUsd = notionalUsd * Math.max(0, feeRate);
-  const totalCostUsd = tradingFeeUsd + estimatedExecutionCostUsd;
+  const tpMovePct = Math.abs(pct(tp, entry));
+  const grossPnlUsd = notionalUsd * tpMovePct / 100;
+  const positionFeesUsd = notionalUsd * (CONFIG.positionFeeBpsPerSide / 10_000) * 2;
+  const executionCostUsd = CONFIG.executionCostBufferUsd;
+  const fundingBorrowBufferUsd = CONFIG.fundingBorrowBufferUsd;
+  const totalCostUsd = positionFeesUsd + executionCostUsd + fundingBorrowBufferUsd;
   const expectedNetUsd = grossPnlUsd - totalCostUsd;
-
-  const riskMovePct = entry > 0 && sl > 0 ? Math.abs(entry - sl) / entry : 0;
-  const riskUsd = notionalUsd * riskMovePct;
+  const netToCostRatio = totalCostUsd > 0 ? expectedNetUsd / totalCostUsd : 0;
 
   return {
-    entry,
-    tp,
-    sl,
-    walletUsd: num(walletUsd),
+    valid: true,
     collateralUsd,
-    leverage,
     notionalUsd,
-    movePct,
-    riskMovePct,
     grossPnlUsd,
-    riskUsd,
-    tradingFeeUsd,
-    estimatedExecutionCostUsd,
+    positionFeesUsd,
+    executionCostUsd,
+    fundingBorrowBufferUsd,
     totalCostUsd,
     expectedNetUsd,
+    netToCostRatio,
+    tpMovePct,
   };
 }
 
