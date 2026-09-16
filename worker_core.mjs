@@ -1,6 +1,6 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ GMX SMART MONEY FUTURES AI BOT — V21.9.2 HTF STRUCTURE TP + TREND-END + STRICT CONTINUATION      ║
+║ GMX SMART MONEY FUTURES AI BOT — V21.5 GLOBAL MARKET DATA CENTER + ROBUST DEEP DATA      ║
 ║ Single pipeline • 5M broad scan • 15M deep scan • Classic GMX only          ║
 ║ 20x leverage • 100% wallet • max 1 position • dynamic TP + structure SL               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -33,7 +33,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V21.9.2-HTF-STRUCTURE-TP-ROBUST-EARLY-ENTRY-20X";
+export const BOT_VERSION = "V22.1.0-HTF-CONTINUATION-BREAKOUT-STRUCTURE-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -87,22 +87,6 @@ const CONFIG = Object.freeze({
   tpReversalMaxPct: 1.80,
   tpContinuationMaxPct: 2.20,
   tpMinTargetScore: 52,
-  // V21.8: targets must be placed BEFORE the nearest valid opposing structure,
-  // not on/through it. This is especially important for small, fast markets.
-  tpStructureBufferPct: 0.10,
-  tpStructureBufferAtr: 0.18,
-  tpStructureBufferMaxPct: 0.22,
-  tpRejectIfStructureTooClose: true,
-  tpUseHtfStructure: true,
-  tpHtfLookback1h: 48,
-  tpHtfLookback4h: 24,
-  tpHtfLookback1d: 30,
-
-  // V21.8: a reversal is only tradable while the reversal leg itself is still
-  // fresh. The prior impulse may be large (that is the setup), but the new
-  // directional leg must not already have travelled too far.
-  reversalEntryMaxMovePct: 0.85,
-  reversalEntryMaxAtr: 1.60,
 
   // V21.6 Dynamic structure-based stop loss. The stop is derived from the
   // nearest structural swing/support/resistance plus an ATR volatility buffer.
@@ -116,6 +100,25 @@ const CONFIG = Object.freeze({
   slMaxDistancePct: 1.80,
   slCounterTrendMaxDistancePct: 1.25,
   slSafetyBufferPct: 0.35,
+
+  // V22.0 Structure-first trade plan. Entry/SL/TP are derived from the
+  // same 5M structural zone that created the setup. Score only ranks the
+  // already-valid structure; it no longer manufactures a trade location.
+  structureEntryMaxDistancePct: 0.85,
+  structureEntryMaxAtr: 1.15,
+  structureEntryBufferPct: 0.08,
+  structureStopBufferAtr: 0.20,
+  structureStopBufferPct: 0.08,
+  structureTpBufferAtr: 0.15,
+  structureTpBufferPct: 0.08,
+  structureMinRR: 1.50,
+  structureRequireVolume: true,
+  structureMinVolumeRatio5m: 1.25,
+  structureMinVolumeRatio15m: 1.25,
+  structureRequireFlow: true,
+  structureMinSmartMoneyProxy: 55,
+  structureFlowDirectionRequired: true,
+  structureRequireOpposingTarget: true,
 
   // V21 Capital Flow Engine. Flow is a quality/ranking layer, not a hard
   // direction gate. True wallet-labelled smart-money data is not available
@@ -192,7 +195,7 @@ const CONFIG = Object.freeze({
   trendEndVolumeRatio: 1.45,
   trendEndMinSignals: 2,
 
-  // V21.8: move-maturity filter. The bot is optimized for the FIRST
+  // V21.7: move-maturity filter. The bot is optimized for the FIRST
   // actionable part of a sharp move, not for joining an already mature
   // impulse. This filter is intentionally applied to CONTINUATION entries;
   // confirmed REVERSAL entries may occur after a large prior move because
@@ -206,18 +209,6 @@ const CONFIG = Object.freeze({
   moveMaturityRejectScore: 70,
   moveMaturitySoftRejectScore: 60,
   moveMaturitySoftRejectDeceleration: 0,
-
-  // V21.9: short-term 5m/15m extension alone is not enough. A continuation
-  // can look "early" on 5m while actually being very late inside a large 1h/4h
-  // trend. Block continuation when the higher-timeframe move is already mature
-  // or price is sitting near the terminal HTF extreme.
-  htfTrendMaturity1hLookback: 24,
-  htfTrendMaturity4hLookback: 12,
-  htfContinuationMaxMove1hPct: 3.50,
-  htfContinuationMaxMove4hPct: 6.00,
-  htfContinuationNearExtremePct: 1.00,
-  htfContinuationNearExtreme4hPct: 1.50,
-  htfContinuationMaturityRejectScore: 70,
 
   // V21.5: protect the data pipeline from burst/rate-limit failures introduced
   // by the BTC/ETH market-data center. Never let macro intelligence starve
@@ -1741,7 +1732,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     Math.abs(continuationLong - continuationShort) >= Number(CONFIG.continuationAuthorityEdge || 10) &&
     continuationBreak && continuationSideTrend >= 52 && continuationSideMomentum >= 50 && continuationSideFlow >= 48 &&
     !continuationExhaustion && !continuationTooLate && !trendEndExhaustion &&
-    !continuationLateChase && !htfContinuationTooLate;
+    !continuationLateChase;
 
   const reversalVsContinuation = bestReversal - bestContinuation;
   const reversalTrigger = reversalStrong &&
@@ -1780,75 +1771,12 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const sharp = absMove3 >= 0.75 || absMove5 >= 1.20 || impulse.rangeExpansion >= 1.65 || Math.abs(impulse.acceleration) >= 0.45;
   const directionalAcceleration = direction === 'long' ? impulse.acceleration : -impulse.acceleration;
   const directionalMove3 = direction === 'long' ? impulse.move3 : -impulse.move3;
-  const directionalMove5 = direction === 'long' ? impulse.move5 : -impulse.move5;
   const earlyBreak = direction === 'long' ? firstBreakLong : firstBreakShort;
   const earlyTrend = directionalMove3 >= CONFIG.earlyImpulseMinMove3Pct && directionalAcceleration >= CONFIG.earlyImpulseMinAccelerationPct;
   const notExtended = extension <= 1.80;
   const lateChase = setupType === 'CONTINUATION' && continuationLateChase;
 
-  // V21.9: higher-timeframe trend-end protection. The prior V21.8 filter
-  // measured the immediate 5m/15m leg. That misses the exact failure mode seen
-  // on GMX: price can be only ~1% from the 5m/15m move start while already being
-  // ~8-10% down from the 1h swing high. For a continuation SHORT that is a late
-  // entry near the bottom of the larger trend; the inverse applies to LONG.
-  const completed1h = Array.isArray(candles1h) ? candles1h.slice(0, -1) : [];
-  const completed4h = Array.isArray(candles4h) ? candles4h.slice(0, -1) : [];
-  const htf1hLookback = Math.max(6, Number(CONFIG.htfTrendMaturity1hLookback || 24));
-  const htf4hLookback = Math.max(4, Number(CONFIG.htfTrendMaturity4hLookback || 12));
-  const htf1h = completed1h.slice(-htf1hLookback);
-  const htf4h = completed4h.slice(-htf4hLookback);
-  const htf1hHigh = htf1h.length ? Math.max(...htf1h.map(c => num(c.high)).filter(Number.isFinite)) : NaN;
-  const htf1hLow = htf1h.length ? Math.min(...htf1h.map(c => num(c.low)).filter(Number.isFinite)) : NaN;
-  const htf4hHigh = htf4h.length ? Math.max(...htf4h.map(c => num(c.high)).filter(Number.isFinite)) : NaN;
-  const htf4hLow = htf4h.length ? Math.min(...htf4h.map(c => num(c.low)).filter(Number.isFinite)) : NaN;
-  const htf1hMovePct = direction === 'short' && Number.isFinite(htf1hHigh)
-    ? Math.max(0, pct(htf1hHigh, price))
-    : direction === 'long' && Number.isFinite(htf1hLow)
-      ? Math.max(0, pct(price, htf1hLow))
-      : 0;
-  const htf4hMovePct = direction === 'short' && Number.isFinite(htf4hHigh)
-    ? Math.max(0, pct(htf4hHigh, price))
-    : direction === 'long' && Number.isFinite(htf4hLow)
-      ? Math.max(0, pct(price, htf4hLow))
-      : 0;
-  const htf1hExtremeDistancePct = direction === 'short' && Number.isFinite(htf1hLow)
-    ? Math.max(0, pct(price, htf1hLow))
-    : direction === 'long' && Number.isFinite(htf1hHigh)
-      ? Math.max(0, pct(htf1hHigh, price))
-      : 999;
-  const htf4hExtremeDistancePct = direction === 'short' && Number.isFinite(htf4hLow)
-    ? Math.max(0, pct(price, htf4hLow))
-    : direction === 'long' && Number.isFinite(htf4hHigh)
-      ? Math.max(0, pct(htf4hHigh, price))
-      : 999;
-  const htf1hMaturityComponent = Math.min(100, (htf1hMovePct / Number(CONFIG.htfContinuationMaxMove1hPct || 3.5)) * 100);
-  const htf4hMaturityComponent = Math.min(100, (htf4hMovePct / Number(CONFIG.htfContinuationMaxMove4hPct || 6.0)) * 100);
-  const htfExtremeComponent = Math.min(100,
-    htf1hExtremeDistancePct <= Number(CONFIG.htfContinuationNearExtremePct || 1.0) ? 100 :
-    htf1hExtremeDistancePct <= 2.0 ? 55 : 0);
-  const htf4hExtremeComponent = Math.min(100,
-    htf4hExtremeDistancePct <= Number(CONFIG.htfContinuationNearExtreme4hPct || 1.5) ? 100 : 0);
-  const htfTrendMaturity = Number(clamp(
-    htf1hMaturityComponent * 0.45 +
-    htf4hMaturityComponent * 0.25 +
-    htfExtremeComponent * 0.20 +
-    htf4hExtremeComponent * 0.10,
-    0, 100
-  ).toFixed(1));
-  const htfTrendMaturityLabel = htfTrendMaturity >= 85 ? 'EXHAUSTED'
-    : htfTrendMaturity >= Number(CONFIG.htfContinuationMaturityRejectScore || 70) ? 'LATE'
-    : htfTrendMaturity >= 55 ? 'MATURE'
-    : htfTrendMaturity >= 35 ? 'HEALTHY' : 'EARLY';
-  const htfContinuationTooLate = setupType === 'CONTINUATION' && (
-    htf1hMovePct >= Number(CONFIG.htfContinuationMaxMove1hPct || 3.5) ||
-    htf4hMovePct >= Number(CONFIG.htfContinuationMaxMove4hPct || 6.0) ||
-    htf1hExtremeDistancePct <= Number(CONFIG.htfContinuationNearExtremePct || 1.0) ||
-    htf4hExtremeDistancePct <= Number(CONFIG.htfContinuationNearExtreme4hPct || 1.5) ||
-    htfTrendMaturity >= Number(CONFIG.htfContinuationMaturityRejectScore || 70)
-  );
-  const htfTrendEnd = htfContinuationTooLate;
-
-  // V21.8: measure how mature the current move is before allowing a
+  // V21.7: measure how mature the current move is before allowing a
   // continuation entry. A high score means the market has already travelled
   // too far, is stretched from its short-term mean, is losing directional
   // acceleration, or is approaching the opposing structural level.
@@ -1889,18 +1817,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     : 'EARLY';
   const lateMove = setupType === 'CONTINUATION' && (
     moveMaturity >= Number(CONFIG.moveMaturityRejectScore) ||
-    (moveMaturity >= Number(CONFIG.moveMaturitySoftRejectScore) && (directionalDecelerating || opposingZoneNear)) ||
-    htfContinuationTooLate
-  );
-
-  // V21.8: distinguish the large PRIOR impulse (which can be desirable for a
-  // reversal) from the NEW reversal leg. We want the first reversal push, not
-  // a reversal signal after that push has already travelled too far.
-  const reversalLegMovePct = Math.max(0, directionalMove3, directionalMove5);
-  const reversalLegAtr = reversalLegMovePct > 0 ? (reversalLegMovePct / 100) * price / Math.max(retestAtr, 1e-12) : 0;
-  const reversalEntryLate = setupType === 'REVERSAL' && (
-    reversalLegMovePct >= Number(CONFIG.reversalEntryMaxMovePct || 0.85) ||
-    reversalLegAtr >= Number(CONFIG.reversalEntryMaxAtr || 1.60)
+    (moveMaturity >= Number(CONFIG.moveMaturitySoftRejectScore) && (directionalDecelerating || opposingZoneNear))
   );
 
   // Reversal gets timing credit for the FIRST rejection/displacement, not for
@@ -1956,13 +1873,38 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     0, 100
   );
 
-  const entry = price;
-  const tpPlan = calculateLogicalTp(entry, direction, candles5, candles15, five.atr, setupType, impulse, { nearestSupport: zone.support, nearestResistance: zone.resistance }, candles1h, candles4h, candles1d);
-  const tp = tpPlan.tp;
-  const slPlan = CONFIG.stopLossEnabled
-    ? calculateDynamicSl(entry, direction, candles5, candles15, five.atr, setupType, { ...topDown, nearestSupport: zone.support, nearestResistance: zone.resistance }, marketRegime)
-    : { sl: 0, distancePct: 0, method: "DISABLED", valid: true };
-  const sl = slPlan.sl;
+  // V22.1: structure-first execution plan. Continuation uses HTF breakout structure
+  // (1H/4H) with 15M breakout confirmation; 5M is timing only.
+  // With Classic GMX MARKET increase, the order executes at the live market
+  // price. Therefore "entry just above support/resistance" is enforced as an
+  // ENTRY ZONE: current price must already be close enough to that structure.
+  // We never move TP closer or invent a farther target to rescue a bad RR.
+  const structurePlan = setupType === "CONTINUATION"
+    ? calculateContinuationTradePlan({
+        direction,
+        price,
+        candles15,
+        candles1h,
+        candles4h,
+        atr5: five.atr,
+        capitalFlow,
+        marketRegime,
+      })
+    : calculateStructureTradePlan({
+        direction,
+        setupType,
+        price,
+        candles5,
+        candles15,
+        atr5: five.atr,
+        capitalFlow,
+        marketRegime,
+      });
+  const entry = structurePlan.entry;
+  const tpPlan = structurePlan.tpPlan;
+  const tp = structurePlan.tp;
+  const slPlan = structurePlan.slPlan;
+  const sl = structurePlan.sl;
   const reasons = [];
   if (setupType === 'REVERSAL') reasons.push(`REVERSAL_${direction.toUpperCase()}`);
   if (setupType === 'CONTINUATION') reasons.push(`CONTINUATION_${direction.toUpperCase()}`);
@@ -1972,9 +1914,10 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   if (continuationRetest) reasons.push('CONTINUATION_RETEST');
   if (continuationEarly) reasons.push('CONTINUATION_EARLY_BREAK');
   if (continuationTooLate) reasons.push('CONTINUATION_TOO_LATE');
-  if (htfContinuationTooLate) reasons.push(`HTF_CONTINUATION_TOO_LATE_${htfTrendMaturity.toFixed(1)}`);
   if (firstBreakLong || firstBreakShort) reasons.push('FIRST_BREAK');
   if (strongBreakLong || strongBreakShort || htfStrongBreakLong || htfStrongBreakShort) reasons.push('STRONG_BREAKOUT');
+  if (setupType === 'CONTINUATION' && structurePlan.breakoutConfirmed15m) reasons.push(`CONTINUATION_15M_BREAK_CONFIRMED_${structurePlan.breakoutTimeframe || 'HTF'}`);
+  if (setupType === 'CONTINUATION' && structurePlan.breakoutRetest15m) reasons.push('CONTINUATION_15M_RETEST');
   if (failedBreakLong || failedBreakShort || htfFailedBreakLong || htfFailedBreakShort) reasons.push('BREAKOUT_FAILURE');
   if (liveBreakLong && !genuineShortFailure) reasons.push('NO_SHORT_FADE_ON_LIVE_BREAKOUT');
   if (liveBreakShort && !genuineLongFailure) reasons.push('NO_LONG_FADE_ON_LIVE_BREAKOUT');
@@ -1997,7 +1940,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
 
   return {
     symbol: marketDisplaySymbol(market), candleSymbol: candleSymbolFromMarket(market), direction, entry, tp, sl,
-    moveMaturity, moveMaturityLabel, lateMove, reversalLegMovePct, reversalLegAtr, reversalEntryLate,
+    moveMaturity, moveMaturityLabel, lateMove,
     score: Number(score.toFixed(2)), edge: Number(edge.toFixed(2)), risk: Number(risk.toFixed(2)), trendConfluence: trend,
     setupType, reversalEvidence,
     setupConfidence: setupType === 'REVERSAL' ? reversalConfidence : continuationConfidence,
@@ -2011,13 +1954,25 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       setupType, reversalEvidence, reversalConfidence, continuationConfidence, setupDominance,
       directionAuthority: fiveLayers.authority, reversalAuthority: fiveLayers.reversalAuthority, continuationAuthority: fiveLayers.continuationAuthority,
       reversalEdge: fiveLayers.reversalEdge, continuationEdge: fiveLayers.continuationEdge,
-      trendEndExhaustion, trendEndSignals, continuationEarly, continuationRetest, continuationTooLate, continuationBreak, htfContinuationTooLate, htfTrendEnd,
-      htfTrendMaturity, htfTrendMaturityLabel, htf1hMovePct, htf4hMovePct, htf1hExtremeDistancePct, htf4hExtremeDistancePct,
+      trendEndExhaustion, trendEndSignals, continuationEarly, continuationRetest, continuationTooLate, continuationBreak,
       moveMaturity, moveMaturityLabel, lateMove, extensionPct, atrDistance, opposingZoneNear, directionalDecelerating,
-      reversalLegMovePct, reversalLegAtr, reversalEntryLate,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
-      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy, tpStructurePrice: tpPlan.structurePrice, tpStructureTf: tpPlan.structureTf, tpBufferPct: tpPlan.bufferPct, tpValid: tpPlan.valid,
+      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
       sl: slPlan.sl, slDistancePct: slPlan.distancePct, slMethod: slPlan.method, slValid: slPlan.valid,
+      structurePlanValid: structurePlan.valid, structurePlanReason: structurePlan.reason,
+      structureAnchor: structurePlan.anchor, structureAnchorPrice: structurePlan.anchorPrice,
+      structureTarget: structurePlan.target, structureTargetPrice: structurePlan.targetPrice,
+      structureEntryDistancePct: structurePlan.entryDistancePct,
+      structureEntryDistanceAtr: structurePlan.entryDistanceAtr,
+      structureRR: structurePlan.rr, structureRewardPct: structurePlan.rewardPct,
+      structureRiskPct: structurePlan.riskPct,
+      structureVolumeRatio5m: structurePlan.volumeRatio5m,
+      structureVolumeRatio15m: structurePlan.volumeRatio15m,
+      structureSmartMoneyProxy: structurePlan.smartMoneyProxy,
+      breakoutTimeframe: structurePlan.breakoutTimeframe || null,
+      targetTimeframe: structurePlan.targetTimeframe || null,
+      breakoutConfirmed15m: Boolean(structurePlan.breakoutConfirmed15m),
+      breakoutRetest15m: Boolean(structurePlan.breakoutRetest15m),
       zoneState: zone.state, nearSupport: zone.nearSupport, nearResistance: zone.nearResistance,
       nearestSupport: zone.support, nearestResistance: zone.resistance, sharpMove: sharp, lateChase, impulseQuality,
       acceleration: impulse.acceleration, rangeExpansion: impulse.rangeExpansion, volumeRatio: impulse.volumeRatio,
@@ -2031,7 +1986,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       priorMove: preMove, priorMoveOppositeLong, priorMoveOppositeShort,
       reversalTiming, continuationTiming,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
-      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy, tpStructureTf: tpPlan.structureTf,
+      tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
       capitalFlow, smartMoneyProxy: capitalFlow.smartMoneyProxy, capitalFlowScore: capitalFlow.score,
       capitalFlowDirection: capitalFlow.direction, capitalFlowState: capitalFlow.state,
       volumeRatio5m: capitalFlow.volumeRatio5m, volumeRatio15m: capitalFlow.volumeRatio15m, oiDeltaPct: capitalFlow.oiDeltaPct,
@@ -2057,13 +2012,23 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
       macdHistogram: five.macd.histogram, move5m: move5, move15m: move15, oiChange5m: oi.delta, reactionScore: srReaction,
       explosive: sharp, impulseQuality, acceleration: impulse.acceleration, rangeExpansion: impulse.rangeExpansion, volumeRatio: impulse.volumeRatio,
       moveMaturity, moveMaturityLabel, lateMove, extensionPct, atrDistance, opposingZoneNear, directionalDecelerating,
-      htfTrendMaturity, htfTrendMaturityLabel, htf1hMovePct, htf4hMovePct, htf1hExtremeDistancePct, htf4hExtremeDistancePct, htfContinuationTooLate,
       earlyTrend, earlyBreak, freshExpansion, earlyTimingBonus: timing, lateChase,
       strongBreakLong, strongBreakShort, htfBreakLong, htfBreakShort, htfStrongBreakLong, htfStrongBreakShort,
       liveBreakLong, liveBreakShort, failedBreakLong, failedBreakShort, htfFailedBreakLong, htfFailedBreakShort, genuineLongFailure, genuineShortFailure,
       tpMethod: tpPlan.method, tpTargetScore: tpPlan.targetScore, tpDistancePct: tpPlan.distancePct,
       tpTargetType: tpPlan.targetType, tpProbabilityProxy: tpPlan.probabilityProxy,
       sl: slPlan.sl, slDistancePct: slPlan.distancePct, slMethod: slPlan.method,
+      structurePlanValid: structurePlan.valid, structurePlanReason: structurePlan.reason,
+      structureAnchor: structurePlan.anchor, structureAnchorPrice: structurePlan.anchorPrice,
+      structureTarget: structurePlan.target, structureTargetPrice: structurePlan.targetPrice,
+      structureEntryDistancePct: structurePlan.entryDistancePct,
+      structureEntryDistanceAtr: structurePlan.entryDistanceAtr,
+      structureRR: structurePlan.rr, structureRewardPct: structurePlan.rewardPct,
+      structureRiskPct: structurePlan.riskPct,
+      breakoutTimeframe: structurePlan.breakoutTimeframe || null,
+      targetTimeframe: structurePlan.targetTimeframe || null,
+      breakoutConfirmed15m: Boolean(structurePlan.breakoutConfirmed15m),
+      breakoutRetest15m: Boolean(structurePlan.breakoutRetest15m),
       reversalConfidence, continuationConfidence, setupDominance, triggerActive: setupType === 'REVERSAL' || setupType === 'CONTINUATION',
       topDownState: topDown.state, topDownDirection: topDown.preferredDirection, topDownConfidence: topDown.confidence, topDownControllingTimeframe: topDown.controllingTimeframe, topDownLevelPrice: topDown.levelPrice, topDownSupport: topDown.support?.price || null, topDownResistance: topDown.resistance?.price || null, topDownSupportBreak: topDown.supportBreak, topDownResistanceBreak: topDown.resistanceBreak, topDownSupportReaction: topDown.supportReaction, topDownResistanceReaction: topDown.resistanceReaction, topDownSupportFailedBreak: topDown.supportFailedBreak, topDownResistanceFailedBreak: topDown.resistanceFailedBreak,
       volume24h: tickerVolume(ticker), openInterest: tickerOpenInterest(ticker), fundingRate: tickerFunding(ticker), liquidity: marketLiquidity(market),
@@ -2092,203 +2057,443 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
 }
 
 
-function calculateDynamicSl(entry, direction, candles5, candles15, atr5, setupType = "CONTINUATION", setupEvidence = {}, marketRegime = null) {
-  const price = Number(entry || 0);
-  if (!(price > 0)) return { sl: 0, distancePct: 0, method: "INVALID_ENTRY", valid: false };
+function calculateContinuationTradePlan({
+  direction,
+  price,
+  candles15,
+  candles1h,
+  candles4h,
+  atr5,
+  capitalFlow,
+  marketRegime,
+}) {
+  const entry = num(price);
+  const c15 = Array.isArray(candles15) ? candles15.slice(0, -1) : [];
+  const c1h = Array.isArray(candles1h) ? candles1h.slice(0, -1) : [];
+  const c4h = Array.isArray(candles4h) ? candles4h.slice(0, -1) : [];
+  const atr15 = Math.max(num(atr(c15, 14)), entry * 0.0012, 1e-12);
+  const atr5Safe = Math.max(num(atr5), entry * 0.001, 1e-12);
+  const volatilityAtr = Math.max(atr5Safe, atr15 * 0.55);
+  const volumeRatio5m = num(capitalFlow?.volumeRatio5m, 0);
+  const volumeRatio15m = num(capitalFlow?.volumeRatio15m, 0);
+  const smartMoneyProxy = num(capitalFlow?.smartMoneyProxy, 50);
+  const flowDirection = capitalFlow?.direction || null;
 
-  const a5 = Math.max(Number(atr5 || 0), price * 0.0015, 1e-12);
-  const a15 = Math.max(Number(atr(candles15 || [], 14) || 0), price * 0.0018, 1e-12);
-  const volatilityAtr = Math.max(a5, a15 * 0.55);
-  const atrMult = setupType === "REVERSAL" ? CONFIG.slAtrMultiplierReversal : CONFIG.slAtrMultiplierContinuation;
-  const buffer = volatilityAtr * atrMult;
+  const fail = (reason, extra = {}) => ({
+    valid: false, reason, entry, tp: 0, sl: 0,
+    anchor: direction === "long" ? "BROKEN_RESISTANCE" : "BROKEN_SUPPORT",
+    anchorPrice: 0, target: direction === "long" ? "NEXT_RESISTANCE" : "NEXT_SUPPORT",
+    targetPrice: 0, entryDistancePct: 0, entryDistanceAtr: 0,
+    riskPct: 0, rewardPct: 0, rr: 0,
+    volumeRatio5m, volumeRatio15m, smartMoneyProxy, flowDirection,
+    breakoutTimeframe: null, breakoutConfirmed15m: false, breakoutRetest15m: false,
+    slPlan: { sl: 0, distancePct: 0, method: "CONTINUATION_PLAN_INVALID", valid: false },
+    tpPlan: { tp: 0, method: "CONTINUATION_PLAN_INVALID", targetType: "NEXT_STRUCTURE", targetScore: 0, probabilityProxy: 0, distancePct: 0, targetPrice: 0 },
+    ...extra,
+  });
 
-  const supports = [
-    num(setupEvidence?.nearestSupport),
-    ...recentSwingLevels(candles5 || []).support,
-    ...recentSwingLevels(candles15 || []).support,
-  ].filter(x => x > 0 && x < price);
-  const resistances = [
-    num(setupEvidence?.nearestResistance),
-    ...recentSwingLevels(candles5 || []).resistance,
-    ...recentSwingLevels(candles15 || []).resistance,
-  ].filter(x => x > price);
+  if (!(entry > 0)) return fail("INVALID_ENTRY");
+  if (c15.length < 12) return fail("INSUFFICIENT_15M_DATA");
 
-  let structural = 0;
-  let method = "ATR_ONLY";
-  if (direction === "long") {
-    structural = supports.length ? Math.max(...supports) : 0;
-    if (structural > 0) {
-      // Put the trigger just beyond the structural low/support.
-      const candidate = structural - buffer;
-      const minSl = price * (1 - CONFIG.slMaxDistancePct / 100);
-      const sl = Math.max(candidate, minSl);
-      structural = sl;
-      method = "STRUCTURE_SUPPORT_ATR";
-    } else {
-      structural = price - buffer;
-      method = "ATR_FALLBACK";
-    }
-  } else {
-    structural = resistances.length ? Math.min(...resistances) : 0;
-    if (structural > 0) {
-      const candidate = structural + buffer;
-      const maxSl = price * (1 + CONFIG.slMaxDistancePct / 100);
-      structural = Math.min(candidate, maxSl);
-      method = "STRUCTURE_RESISTANCE_ATR";
-    } else {
-      structural = price + buffer;
-      method = "ATR_FALLBACK";
+  const frames = [
+    { tf: "1H", candles: c1h, weight: 1.5 },
+    { tf: "4H", candles: c4h, weight: 2.4 },
+  ].filter(x => x.candles.length >= 20);
+  if (!frames.length) return fail("NO_HTF_STRUCTURE_DATA");
+
+  const breakoutRows = c15.slice(-4);
+  const breakoutCandidates = [];
+
+  for (const frame of frames) {
+    const levels = recentSwingLevels(frame.candles);
+    const candidates = direction === "long"
+      ? (levels.resistance || []).filter(x => x > 0 && x < entry).sort((a,b) => b-a)
+      : (levels.support || []).filter(x => x > 0 && x > entry).sort((a,b) => a-b);
+
+    for (const level of candidates) {
+      const levelAtr = Math.max(num(atr(frame.candles, 14)), entry * 0.0012, 1e-12);
+      for (let i = 0; i < breakoutRows.length; i++) {
+        const row = breakoutRows[i];
+        const range = Math.max(num(row.high) - num(row.low), 1e-12);
+        const bodyRatio = Math.abs(num(row.close) - num(row.open)) / range;
+        const closeLocation = (num(row.close) - num(row.low)) / range;
+        const rangeExpansion = range / Math.max(
+          breakoutRows.slice(0, i).map(x => Math.max(num(x.high)-num(x.low),1e-12)).reduce((a,b)=>a+b,0) / Math.max(i,1),
+          levelAtr
+        );
+        const prior = breakoutRows.slice(0, i);
+        const hadPreBreak = direction === "long"
+          ? prior.some(x => num(x.close) <= level)
+          : prior.some(x => num(x.close) >= level);
+        const strong = direction === "long"
+          ? num(row.close) > level + levelAtr * 0.12 && bodyRatio >= 0.55 && closeLocation >= 0.65 && range >= levelAtr * 1.05
+          : num(row.close) < level - levelAtr * 0.12 && bodyRatio >= 0.55 && closeLocation <= 0.35 && range >= levelAtr * 1.05;
+        if (!strong || !hadPreBreak) continue;
+
+        const later = breakoutRows.slice(i + 1);
+        const retest = later.some(x => direction === "long"
+          ? num(x.low) <= level + levelAtr * 0.25 && num(x.close) > level
+          : num(x.high) >= level - levelAtr * 0.25 && num(x.close) < level);
+        breakoutCandidates.push({
+          level, tf: frame.tf, weight: frame.weight, index: i,
+          strong, retest, levelAtr,
+        });
+      }
     }
   }
 
-  // Enforce a minimum distance so normal oracle noise does not immediately
-  // trigger the stop, while respecting the hard maximum risk envelope.
-  const minDist = price * (CONFIG.slMinDistancePct / 100);
-  if (direction === "long") structural = Math.min(structural, price - minDist);
-  else structural = Math.max(structural, price + minDist);
+  if (!breakoutCandidates.length) return fail("NO_VALID_HTF_BREAKOUT_15M_CONFIRMATION");
 
-  const macro = String(marketRegime?.direction || "neutral");
-  const counterTrend = macro !== "neutral" && macro !== direction;
-  const maxPct = counterTrend ? Math.min(CONFIG.slMaxDistancePct, CONFIG.slCounterTrendMaxDistancePct) : CONFIG.slMaxDistancePct;
-  const maxDist = price * (maxPct / 100);
-  if (direction === "long") structural = Math.max(structural, price - maxDist);
-  else structural = Math.min(structural, price + maxDist);
+  breakoutCandidates.sort((a,b) => {
+    const da = Math.abs(entry-a.level)/entry, db = Math.abs(entry-b.level)/entry;
+    return (da-db) || (b.index-a.index) || (b.weight-a.weight);
+  });
+  const breakout = breakoutCandidates[0];
+  const anchorPrice = breakout.level;
 
-  const sl = Number(structural.toPrecision(12));
-  const distancePct = Math.abs(pct(sl, price));
-  const validSide = direction === "long" ? sl < price : sl > price;
-  const valid = validSide && distancePct >= CONFIG.slMinDistancePct * 0.95 && distancePct <= maxPct + 0.05;
+  const sameFrame = breakout.tf === "1H" ? c1h : c4h;
+  const higherFrame = breakout.tf === "1H" ? c4h : c1h;
+  const targetLevels = (candles) => {
+    const levels = recentSwingLevels(candles);
+    return direction === "long"
+      ? (levels.resistance || []).filter(x => x > entry).sort((a,b)=>a-b)
+      : (levels.support || []).filter(x => x < entry).sort((a,b)=>b-a);
+  };
+  let targetPrice = targetLevels(sameFrame)[0] || 0;
+  let targetTf = breakout.tf;
+  if (!(targetPrice > 0)) {
+    targetPrice = targetLevels(higherFrame)[0] || 0;
+    targetTf = breakout.tf === "1H" ? "4H" : "1H";
+  }
+  if (!(targetPrice > 0)) return fail("NO_NEXT_HTF_STRUCTURE_TARGET", {
+    anchorPrice, breakoutTimeframe: breakout.tf, breakoutConfirmed15m: true, breakoutRetest15m: breakout.retest,
+  });
+
+  const entryGap = Math.abs(entry-anchorPrice);
+  const entryDistancePct = entryGap / entry * 100;
+  const entryDistanceAtr = entryGap / volatilityAtr;
+  if (entryDistancePct > Number(CONFIG.structureEntryMaxDistancePct || 0.85) || entryDistanceAtr > Number(CONFIG.structureEntryMaxAtr || 1.15)) {
+    return fail(`CONTINUATION_ENTRY_AWAY_FROM_BROKEN_${breakout.tf}_${entryDistancePct.toFixed(2)}PCT_${entryDistanceAtr.toFixed(2)}ATR`, {
+      anchorPrice, targetPrice, breakoutTimeframe: breakout.tf, breakoutConfirmed15m: true, breakoutRetest15m: breakout.retest,
+      entryDistancePct: Number(entryDistancePct.toFixed(3)), entryDistanceAtr: Number(entryDistanceAtr.toFixed(2)),
+    });
+  }
+
+  if (CONFIG.structureRequireVolume && (volumeRatio5m < Number(CONFIG.structureMinVolumeRatio5m || 1.25) || volumeRatio15m < Number(CONFIG.structureMinVolumeRatio15m || CONFIG.structureMinVolumeRatio5m || 1.25))) {
+    return fail(`BREAKOUT_VOLUME_5M_${volumeRatio5m.toFixed(2)}_15M_${volumeRatio15m.toFixed(2)}`, {
+      anchorPrice, targetPrice, breakoutTimeframe: breakout.tf, breakoutConfirmed15m: true, breakoutRetest15m: breakout.retest,
+      entryDistancePct: Number(entryDistancePct.toFixed(3)), entryDistanceAtr: Number(entryDistanceAtr.toFixed(2)),
+    });
+  }
+  if (CONFIG.structureRequireFlow) {
+    if (CONFIG.structureFlowDirectionRequired && flowDirection && flowDirection !== direction) {
+      return fail(`BREAKOUT_FLOW_${String(flowDirection).toUpperCase()}_AGAINST_${direction.toUpperCase()}`, { anchorPrice, targetPrice, breakoutTimeframe: breakout.tf, breakoutConfirmed15m: true, breakoutRetest15m: breakout.retest });
+    }
+    if (smartMoneyProxy < Number(CONFIG.structureMinSmartMoneyProxy || 55)) {
+      return fail(`BREAKOUT_SMART_MONEY_PROXY_${smartMoneyProxy.toFixed(1)}_BELOW_${Number(CONFIG.structureMinSmartMoneyProxy).toFixed(1)}`, { anchorPrice, targetPrice, breakoutTimeframe: breakout.tf, breakoutConfirmed15m: true, breakoutRetest15m: breakout.retest });
+    }
+  }
+
+  const stopBuffer = Math.max(volatilityAtr * Number(CONFIG.structureStopBufferAtr || 0.20), entry * Number(CONFIG.structureStopBufferPct || 0.08) / 100);
+  const targetBuffer = Math.max(volatilityAtr * Number(CONFIG.structureTpBufferAtr || 0.15), entry * Number(CONFIG.structureTpBufferPct || 0.08) / 100);
+  const sl = Number((direction === "long" ? anchorPrice-stopBuffer : anchorPrice+stopBuffer).toPrecision(12));
+  const tp = Number((direction === "long" ? targetPrice-targetBuffer : targetPrice+targetBuffer).toPrecision(12));
+  if (!(direction === "long" ? sl < entry && tp > entry : sl > entry && tp < entry)) return fail("CONTINUATION_STRUCTURE_WRONG_SIDE", { anchorPrice, targetPrice });
+
+  const risk = Math.abs(entry-sl), reward = Math.abs(tp-entry);
+  const riskPct = risk/entry*100, rewardPct = reward/entry*100, rr = risk > 0 ? reward/risk : 0;
+  if (rr < Number(CONFIG.structureMinRR || 1.5)) return fail(`RR_${rr.toFixed(2)}_BELOW_${Number(CONFIG.structureMinRR).toFixed(2)}`, {
+    anchorPrice, targetPrice, breakoutTimeframe: breakout.tf, breakoutConfirmed15m: true, breakoutRetest15m: breakout.retest,
+    entryDistancePct: Number(entryDistancePct.toFixed(3)), entryDistanceAtr: Number(entryDistanceAtr.toFixed(2)), riskPct: Number(riskPct.toFixed(3)), rewardPct: Number(rewardPct.toFixed(3)), rr: Number(rr.toFixed(2)), targetTimeframe: targetTf,
+  });
+
+  const counterTrend = marketRegime?.direction && marketRegime.direction !== "neutral" && marketRegime.direction !== direction;
+  const slMax = counterTrend ? Number(CONFIG.slCounterTrendMaxDistancePct || CONFIG.slMaxDistancePct) : Number(CONFIG.slMaxDistancePct);
+  if (riskPct > slMax + 0.05) return fail(`CONTINUATION_SL_TOO_FAR_${riskPct.toFixed(2)}PCT`, { anchorPrice, targetPrice, breakoutTimeframe: breakout.tf, breakoutConfirmed15m: true, breakoutRetest15m: breakout.retest, riskPct: Number(riskPct.toFixed(3)), rewardPct: Number(rewardPct.toFixed(3)), rr: Number(rr.toFixed(2)) });
+
   return {
-    sl,
-    distancePct: Number(distancePct.toFixed(3)),
-    method,
-    valid,
-    counterTrend,
-    maxDistancePct: maxPct,
-    bufferPct: Number((buffer / price * 100).toFixed(3)),
+    valid: true, reason: "CONTINUATION_HTF_BREAKOUT_ENTRY_TP_SL_RR_VALID", entry,
+    tp, sl, anchor: direction === "long" ? "BROKEN_RESISTANCE" : "BROKEN_SUPPORT", anchorPrice,
+    target: direction === "long" ? "NEXT_RESISTANCE" : "NEXT_SUPPORT", targetPrice,
+    entryDistancePct: Number(entryDistancePct.toFixed(3)), entryDistanceAtr: Number(entryDistanceAtr.toFixed(2)),
+    riskPct: Number(riskPct.toFixed(3)), rewardPct: Number(rewardPct.toFixed(3)), rr: Number(rr.toFixed(2)),
+    volumeRatio5m, volumeRatio15m, smartMoneyProxy, flowDirection,
+    breakoutTimeframe: breakout.tf, targetTimeframe: targetTf, breakoutConfirmed15m: true, breakoutRetest15m: breakout.retest,
+    slPlan: { sl, distancePct: Number(riskPct.toFixed(3)), method: `BROKEN_${direction === "long" ? "RESISTANCE" : "SUPPORT"}_BUFFER`, valid: true, anchorPrice },
+    tpPlan: { tp, method: `NEXT_${direction === "long" ? "RESISTANCE" : "SUPPORT"}_BEFORE_HTF_LEVEL`, targetType: `${targetTf}_STRUCTURE`, targetScore: 100, probabilityProxy: 100, distancePct: Number(rewardPct.toFixed(3)), targetPrice, atrDistance: Number((reward/volatilityAtr).toFixed(2)) },
   };
 }
 
-function calculateLogicalTp(entry, direction, candles5, candles15, atr5, setupType = "CONTINUATION", impulse = {}, setupEvidence = {}, candles1h = [], candles4h = [], candles1d = []) {
-  const minDistPct = Number(CONFIG.minTpDistancePct || 0.30);
-  const maxDistPct = setupType === "REVERSAL" ? Number(CONFIG.tpReversalMaxPct || 1.80) : Number(CONFIG.tpContinuationMaxPct || 2.20);
-  const atr = Math.max(num(atr5), entry * 0.0005, 1e-12);
+function calculateStructureTradePlan({
+  direction,
+  setupType,
+  price,
+  candles5,
+  candles15,
+  atr5,
+  capitalFlow,
+  marketRegime,
+}) {
+  const entry = num(price);
+  const rows = Array.isArray(candles5) ? candles5 : [];
+  const levels = recentSwingLevels(rows);
+  const a5 = Math.max(num(atr5), entry * 0.001, 1e-12);
+  const a15 = Math.max(num(atr(candles15 || [], 14)), entry * 0.0012, 1e-12);
+  const volatilityAtr = Math.max(a5, a15 * 0.55);
 
-  const levels5 = recentSwingLevels(candles5 || []);
-  const levels15 = recentSwingLevels(candles15 || []);
-  const levels1h = CONFIG.tpUseHtfStructure ? recentSwingLevels((candles1h || []).slice(-Number(CONFIG.tpHtfLookback1h || 48))) : { support: [], resistance: [] };
-  const levels4h = CONFIG.tpUseHtfStructure ? recentSwingLevels((candles4h || []).slice(-Number(CONFIG.tpHtfLookback4h || 24))) : { support: [], resistance: [] };
-  const levels1d = CONFIG.tpUseHtfStructure ? recentSwingLevels((candles1d || []).slice(-Number(CONFIG.tpHtfLookback1d || 30))) : { support: [], resistance: [] };
+  const volumeRatio5m = num(capitalFlow?.volumeRatio5m, 0);
+  const smartMoneyProxy = num(capitalFlow?.smartMoneyProxy, 50);
+  const flowDirection = capitalFlow?.direction || null;
 
-  const supportEntries = [
-    [num(setupEvidence?.nearestSupport), "ZONE"],
-    ...(levels5.support || []).map(x => [x, "5m"]),
-    ...(levels15.support || []).map(x => [x, "15m"]),
-    ...(levels1h.support || []).map(x => [x, "1h"]),
-    ...(levels4h.support || []).map(x => [x, "4h"]),
-    ...(levels1d.support || []).map(x => [x, "1d"]),
-  ].filter(([x]) => x > 0 && x < entry).sort((a,b) => b[0]-a[0]);
-  const resistanceEntries = [
-    [num(setupEvidence?.nearestResistance), "ZONE"],
-    ...(levels5.resistance || []).map(x => [x, "5m"]),
-    ...(levels15.resistance || []).map(x => [x, "15m"]),
-    ...(levels1h.resistance || []).map(x => [x, "1h"]),
-    ...(levels4h.resistance || []).map(x => [x, "4h"]),
-    ...(levels1d.resistance || []).map(x => [x, "1d"]),
-  ].filter(([x]) => x > entry).sort((a,b) => a[0]-b[0]);
+  const supports = (levels.support || [])
+    .map(num)
+    .filter(x => x > 0 && x < entry)
+    .sort((a, b) => b - a);
+  const resistances = (levels.resistance || [])
+    .map(num)
+    .filter(x => x > entry)
+    .sort((a, b) => a - b);
 
-  // The target is not the support/resistance itself. It is deliberately placed
-  // a little BEFORE that level, because the bot's objective is a reachable
-  // reaction rather than requiring price to touch/break a structure.
-  const bufferPct = Math.min(
-    Number(CONFIG.tpStructureBufferMaxPct || 0.22),
-    Math.max(Number(CONFIG.tpStructureBufferPct || 0.10), (atr / entry) * Number(CONFIG.tpStructureBufferAtr || 0.18) * 100)
+  const anchor = direction === "long" ? "SUPPORT" : "RESISTANCE";
+  const target = direction === "long" ? "RESISTANCE" : "SUPPORT";
+  const anchorPrice = direction === "long" ? (supports[0] || 0) : (resistances[0] || 0);
+  const targetPrice = direction === "long" ? (resistances[0] || 0) : (supports[0] || 0);
+
+  const fail = (reason, extra = {}) => ({
+    valid: false,
+    reason,
+    entry,
+    tp: 0,
+    sl: 0,
+    anchor,
+    anchorPrice,
+    target,
+    targetPrice,
+    entryDistancePct: 0,
+    entryDistanceAtr: 0,
+    riskPct: 0,
+    rewardPct: 0,
+    rr: 0,
+    volumeRatio5m,
+    smartMoneyProxy,
+    flowDirection,
+    slPlan: { sl: 0, distancePct: 0, method: "STRUCTURE_PLAN_INVALID", valid: false },
+    tpPlan: { tp: 0, method: "STRUCTURE_PLAN_INVALID", targetType: target, targetScore: 0, probabilityProxy: 0, distancePct: 0, targetPrice },
+    ...extra,
+  });
+
+  if (!(entry > 0)) return fail("INVALID_ENTRY");
+  if (!(anchorPrice > 0)) return fail(`NO_${anchor}_STRUCTURE`);
+  if (!(targetPrice > 0)) return fail(`NO_${target}_STRUCTURE`);
+
+  // Entry must be close to the originating structure. This is the critical
+  // anti-chase rule: a mature move is rejected rather than given a smaller TP.
+  const entryGap = Math.abs(entry - anchorPrice);
+  const entryDistancePct = (entryGap / entry) * 100;
+  const entryDistanceAtr = entryGap / volatilityAtr;
+  const maxEntryPct = Number(CONFIG.structureEntryMaxDistancePct || 0.85);
+  const maxEntryAtr = Number(CONFIG.structureEntryMaxAtr || 1.15);
+
+  if (entryDistancePct > maxEntryPct || entryDistanceAtr > maxEntryAtr) {
+    return fail(`ENTRY_AWAY_FROM_${anchor}_${entryDistancePct.toFixed(2)}PCT_${entryDistanceAtr.toFixed(2)}ATR`, {
+      entryDistancePct: Number(entryDistancePct.toFixed(3)),
+      entryDistanceAtr: Number(entryDistanceAtr.toFixed(2)),
+    });
+  }
+
+  // Volume expansion + directional flow are confirmations for the actual
+  // structure, not merely scoring inputs.
+  if (CONFIG.structureRequireVolume && volumeRatio5m < Number(CONFIG.structureMinVolumeRatio5m || 1.25)) {
+    return fail(`VOLUME_${volumeRatio5m.toFixed(2)}_BELOW_${Number(CONFIG.structureMinVolumeRatio5m).toFixed(2)}`, {
+      entryDistancePct: Number(entryDistancePct.toFixed(3)),
+      entryDistanceAtr: Number(entryDistanceAtr.toFixed(2)),
+    });
+  }
+  if (CONFIG.structureRequireFlow) {
+    if (CONFIG.structureFlowDirectionRequired && flowDirection && flowDirection !== direction) {
+      return fail(`FLOW_DIRECTION_${String(flowDirection).toUpperCase()}_AGAINST_${direction.toUpperCase()}`, {
+        entryDistancePct: Number(entryDistancePct.toFixed(3)),
+        entryDistanceAtr: Number(entryDistanceAtr.toFixed(2)),
+      });
+    }
+    if (smartMoneyProxy < Number(CONFIG.structureMinSmartMoneyProxy || 55)) {
+      return fail(`SMART_MONEY_PROXY_${smartMoneyProxy.toFixed(1)}_BELOW_${Number(CONFIG.structureMinSmartMoneyProxy).toFixed(1)}`, {
+        entryDistancePct: Number(entryDistancePct.toFixed(3)),
+        entryDistanceAtr: Number(entryDistanceAtr.toFixed(2)),
+      });
+    }
+  }
+
+  // Place the theoretical trigger just inside the zone. For MARKET execution
+  // the live price is the real entry, so the trigger is diagnostic unless a
+  // future execution lane explicitly supports a limit order.
+  const entryBuffer = Math.max(
+    entry * Number(CONFIG.structureEntryBufferPct || 0.08) / 100,
+    volatilityAtr * 0.05
   );
+  const theoreticalEntry = direction === "long"
+    ? anchorPrice + entryBuffer
+    : anchorPrice - entryBuffer;
 
-  const makeTarget = (level, type, tf) => {
-    if (!(level > 0)) return null;
-    const rawTp = direction === "short"
-      ? level * (1 + bufferPct / 100)
-      : level * (1 - bufferPct / 100);
-    const distancePct = Math.abs(pct(rawTp, entry));
-    if (!(rawTp > 0) || distancePct < minDistPct || distancePct > maxDistPct) return null;
-    return {
-      tp: Number(rawTp.toPrecision(12)),
-      structure: Number(level.toPrecision(12)),
-      distancePct: Number(distancePct.toFixed(3)),
-      bufferPct: Number(bufferPct.toFixed(3)),
-      type,
-      tf,
-      atrDistance: Math.abs(rawTp - entry) / atr,
-      targetScore: clamp(92 - (Math.abs(rawTp - entry) / atr) * 18 + (tf === "15m" ? 6 : 3), 25, 98),
-    };
+  // The actual Classic MARKET entry remains the current market price.
+  // Do not replace it with theoreticalEntry, because doing so would make the
+  // execution report claim a price that the market order did not execute at.
+  const actualEntry = entry;
+
+  const stopBuffer = Math.max(
+    volatilityAtr * Number(CONFIG.structureStopBufferAtr || 0.20),
+    entry * Number(CONFIG.structureStopBufferPct || 0.08) / 100
+  );
+  const rawSl = direction === "long"
+    ? anchorPrice - stopBuffer
+    : anchorPrice + stopBuffer;
+  const sl = Number(rawSl.toPrecision(12));
+
+  const targetBuffer = Math.max(
+    volatilityAtr * Number(CONFIG.structureTpBufferAtr || 0.15),
+    entry * Number(CONFIG.structureTpBufferPct || 0.08) / 100
+  );
+  const rawTp = direction === "long"
+    ? targetPrice - targetBuffer
+    : targetPrice + targetBuffer;
+  const tp = Number(rawTp.toPrecision(12));
+
+  if (!(direction === "long" ? sl < actualEntry && tp > actualEntry : sl > actualEntry && tp < actualEntry)) {
+    return fail("STRUCTURE_PLAN_WRONG_SIDE", {
+      entryDistancePct: Number(entryDistancePct.toFixed(3)),
+      entryDistanceAtr: Number(entryDistanceAtr.toFixed(2)),
+    });
+  }
+
+  const risk = Math.abs(actualEntry - sl);
+  const reward = Math.abs(tp - actualEntry);
+  const riskPct = actualEntry > 0 ? (risk / actualEntry) * 100 : 0;
+  const rewardPct = actualEntry > 0 ? (reward / actualEntry) * 100 : 0;
+  const rr = risk > 0 ? reward / risk : 0;
+
+  if (!(reward > 0) || !(risk > 0)) {
+    return fail("STRUCTURE_PLAN_ZERO_RISK_OR_REWARD", {
+      entryDistancePct: Number(entryDistancePct.toFixed(3)),
+      entryDistanceAtr: Number(entryDistanceAtr.toFixed(2)),
+      riskPct: Number(riskPct.toFixed(3)),
+      rewardPct: Number(rewardPct.toFixed(3)),
+    });
+  }
+
+  if (CONFIG.structureRequireOpposingTarget && rr < Number(CONFIG.structureMinRR || 1.5)) {
+    return fail(`RR_${rr.toFixed(2)}_BELOW_${Number(CONFIG.structureMinRR).toFixed(2)}`, {
+      entryDistancePct: Number(entryDistancePct.toFixed(3)),
+      entryDistanceAtr: Number(entryDistanceAtr.toFixed(2)),
+      riskPct: Number(riskPct.toFixed(3)),
+      rewardPct: Number(rewardPct.toFixed(3)),
+      rr: Number(rr.toFixed(2)),
+    });
+  }
+
+  const counterTrend = marketRegime?.direction && marketRegime.direction !== "neutral" && marketRegime.direction !== direction;
+  const slMax = counterTrend
+    ? Number(CONFIG.slCounterTrendMaxDistancePct || CONFIG.slMaxDistancePct)
+    : Number(CONFIG.slMaxDistancePct);
+
+  if (riskPct > slMax + 0.05) {
+    return fail(`STRUCTURE_SL_TOO_FAR_${riskPct.toFixed(2)}PCT`, {
+      entryDistancePct: Number(entryDistancePct.toFixed(3)),
+      entryDistanceAtr: Number(entryDistanceAtr.toFixed(2)),
+      riskPct: Number(riskPct.toFixed(3)),
+      rewardPct: Number(rewardPct.toFixed(3)),
+      rr: Number(rr.toFixed(2)),
+    });
+  }
+
+  const slPlan = {
+    sl,
+    distancePct: Number(riskPct.toFixed(3)),
+    method: `STRUCTURE_${direction === "long" ? "SUPPORT" : "RESISTANCE"}`,
+    valid: true,
+    anchorPrice,
+    bufferPct: Number((stopBuffer / actualEntry * 100).toFixed(3)),
+  };
+  const tpPlan = {
+    tp,
+    method: `STRUCTURE_${direction === "long" ? "RESISTANCE" : "SUPPORT"}_BEFORE_LEVEL`,
+    targetType: `SAME_TF_${target}`,
+    targetScore: 100,
+    probabilityProxy: 100,
+    distancePct: Number(rewardPct.toFixed(3)),
+    targetPrice,
+    atrDistance: Number((reward / volatilityAtr).toFixed(2)),
   };
 
-  // Pick the NEAREST valid opposing structure in price terms:
-  // short -> highest support below entry; long -> lowest resistance above entry.
-  // Do not select a deeper support / higher resistance merely because it scores
-  // better; that was the source of the overly distant TP behavior.
-  let selected = null;
-  let nearestStructure = 0;
-  let nearestStructureTf = "N/A";
-  if (direction === "short") {
-    nearestStructure = supportEntries[0]?.[0] || 0;
-    nearestStructureTf = supportEntries[0]?.[1] || "N/A";
-    for (const [level, tf] of supportEntries) {
-      const candidate = makeTarget(level, "NEAREST_REACHABLE_SUPPORT_BEFORE", tf);
-      if (candidate) { selected = candidate; break; }
-    }
-    if (!selected && nearestStructure && CONFIG.tpRejectIfStructureTooClose) {
-      return {
-        tp: 0, method: "NO_REACHABLE_SUPPORT_BEFORE_STRUCTURE", targetType: "SUPPORT_TOO_CLOSE",
-        targetScore: 0, probabilityProxy: 0, distancePct: 0, targetPrice: 0,
-        atrDistance: 0, structurePrice: nearestStructure, structureTf: nearestStructureTf, bufferPct,
-        valid: false,
-      };
-    }
-  } else {
-    nearestStructure = resistanceEntries[0]?.[0] || 0;
-    nearestStructureTf = resistanceEntries[0]?.[1] || "N/A";
-    for (const [level, tf] of resistanceEntries) {
-      const candidate = makeTarget(level, "NEAREST_REACHABLE_RESISTANCE_BEFORE", tf);
-      if (candidate) { selected = candidate; break; }
-    }
-    if (!selected && nearestStructure && CONFIG.tpRejectIfStructureTooClose) {
-      return {
-        tp: 0, method: "NO_REACHABLE_RESISTANCE_BEFORE_STRUCTURE", targetType: "RESISTANCE_TOO_CLOSE",
-        targetScore: 0, probabilityProxy: 0, distancePct: 0, targetPrice: 0,
-        atrDistance: 0, structurePrice: nearestStructure, structureTf: nearestStructureTf, bufferPct,
-        valid: false,
-      };
-    }
-  }
+  return {
+    valid: true,
+    reason: "STRUCTURE_ENTRY_TP_SL_RR_VALID",
+    entry: actualEntry,
+    theoreticalEntry: Number(theoreticalEntry.toPrecision(12)),
+    tp,
+    sl,
+    anchor,
+    anchorPrice,
+    target,
+    targetPrice,
+    entryDistancePct: Number(entryDistancePct.toFixed(3)),
+    entryDistanceAtr: Number(entryDistanceAtr.toFixed(2)),
+    riskPct: Number(riskPct.toFixed(3)),
+    rewardPct: Number(rewardPct.toFixed(3)),
+    rr: Number(rr.toFixed(2)),
+    volumeRatio5m,
+    smartMoneyProxy,
+    flowDirection,
+    slPlan,
+    tpPlan,
+  };
+}
 
-  if (!selected) {
-    // ATR fallback is only used when there is genuinely no opposing structure.
-    // It is never allowed to override a known nearby structure.
-    const fallbackDistance = Math.min(maxDistPct / 100, Math.max(minDistPct / 100, Number(CONFIG.tpAtrMultiplier || 1) * atr / entry));
-    const tp = direction === "long" ? entry * (1 + fallbackDistance) : entry * (1 - fallbackDistance);
+function estimateEconomicOpportunity(candidate, walletUsd) {
+  const wallet = Math.max(num(walletUsd), 0);
+  const allocation = CONFIG.walletAllocationPerPosition;
+  const collateralUsd = wallet * allocation;
+  const leverage = CONFIG.leverage;
+  const notionalUsd = collateralUsd * leverage;
+  const entry = num(candidate?.entry);
+  const tp = num(candidate?.tp);
+
+  if (!(entry > 0) || !(tp > 0) || !(notionalUsd > 0)) {
     return {
-      tp: Number(tp.toPrecision(12)), method: "ATR_ONLY_NO_STRUCTURE", targetType: "ATR_FALLBACK",
-      targetScore: 50, probabilityProxy: 50, distancePct: fallbackDistance * 100,
-      targetPrice: tp, atrDistance: fallbackDistance * entry / atr, structurePrice: 0,
-      bufferPct: 0, valid: true,
+      valid: false,
+      collateralUsd,
+      notionalUsd,
+      grossPnlUsd: 0,
+      positionFeesUsd: 0,
+      executionCostUsd: CONFIG.executionCostBufferUsd,
+      fundingBorrowBufferUsd: CONFIG.fundingBorrowBufferUsd,
+      totalCostUsd: CONFIG.executionCostBufferUsd + CONFIG.fundingBorrowBufferUsd,
+      expectedNetUsd: -(CONFIG.executionCostBufferUsd + CONFIG.fundingBorrowBufferUsd),
+      netToCostRatio: 0,
+      tpMovePct: 0,
     };
   }
 
+  const tpMovePct = Math.abs(pct(tp, entry));
+  const grossPnlUsd = notionalUsd * tpMovePct / 100;
+  const positionFeesUsd = notionalUsd * (CONFIG.positionFeeBpsPerSide / 10_000) * 2;
+  const executionCostUsd = CONFIG.executionCostBufferUsd;
+  const fundingBorrowBufferUsd = CONFIG.fundingBorrowBufferUsd;
+  const totalCostUsd = positionFeesUsd + executionCostUsd + fundingBorrowBufferUsd;
+  const expectedNetUsd = grossPnlUsd - totalCostUsd;
+  const netToCostRatio = totalCostUsd > 0 ? expectedNetUsd / totalCostUsd : 0;
+
   return {
-    tp: selected.tp,
-    method: "NEAREST_STRUCTURE_BEFORE_LEVEL",
-    targetType: selected.type,
-    targetScore: Number(selected.targetScore.toFixed(1)),
-    probabilityProxy: Number(selected.targetScore.toFixed(1)),
-    distancePct: selected.distancePct,
-    targetPrice: selected.tp,
-    structurePrice: selected.structure,
-    structureTf: selected.tf,
-    bufferPct: selected.bufferPct,
-    atrDistance: Number(selected.atrDistance.toFixed(2)),
     valid: true,
+    collateralUsd,
+    notionalUsd,
+    grossPnlUsd,
+    positionFeesUsd,
+    executionCostUsd,
+    fundingBorrowBufferUsd,
+    totalCostUsd,
+    expectedNetUsd,
+    netToCostRatio,
+    tpMovePct,
   };
 }
 
@@ -2312,25 +2517,28 @@ function economicGate(candidate, walletUsd) {
   return { ok: true, reason: "ECONOMIC_EDGE_OK", economics };
 }
 
+function attachEconomicOpportunity(candidate, walletUsd) {
+  const economics = estimateEconomicOpportunity(candidate, walletUsd);
+  return {
+    ...candidate,
+    economics,
+    expectedGrossPnlUsd: economics.grossPnlUsd,
+    expectedNetPnlUsd: economics.expectedNetUsd,
+    estimatedTotalCostUsd: economics.totalCostUsd,
+  };
+}
+
 function candidateIsActionable(candidate) {
   if (!candidate || !candidate.symbol || !candidate.entry || !candidate.tp) {
     return { ok: false, reason: "INVALID_PLAN" };
   }
 
   const ev = candidate.setupEvidence || {};
+  if (candidate.setupType === "CONTINUATION" && ev.structurePlanValid !== true) {
+    return { ok: false, reason: ev.structurePlanReason || "CONTINUATION_STRUCTURE_PLAN_INVALID" };
+  }
   const isEarlyReversal = candidate.setupType === "REVERSAL" && candidate.reversalTrigger;
-  const isContinuationSetup = candidate.setupType === "CONTINUATION" || candidate.setupType === "CONTINUATION_WATCH";
-  const isEarlyContinuation = isContinuationSetup && candidate.continuationTrigger;
-
-  // Hard timing protection must run BEFORE the generic no-trigger return,
-  // otherwise a CONTINUATION_WATCH at the end of a 1H/4H move would only show
-  // NO_EARLY_TRIGGER and could later become executable without the HTF block.
-  if (isContinuationSetup && ev.htfContinuationTooLate) {
-    return { ok: false, reason: `HTF_TREND_END_${ev.htfTrendMaturityLabel || "LATE"}_${num(ev.htfTrendMaturity).toFixed(1)}` };
-  }
-  if (isContinuationSetup && ev.trendEndExhaustion) {
-    return { ok: false, reason: `TREND_END_EXHAUSTION_${num(ev.trendEndSignals).toFixed(0)}` };
-  }
+  const isEarlyContinuation = candidate.setupType === "CONTINUATION" && candidate.continuationTrigger;
 
   // V20.3: do NOT require the mature Score threshold for an active early
   // trigger. The trigger is specifically designed to fire before EMA/MACD
@@ -2357,11 +2565,14 @@ function candidateIsActionable(candidate) {
       return { ok: false, reason: "REVERSAL_DIRECTION_AUTHORITY_NOT_CONFIRMED" };
     }
   }
-  if (isContinuationSetup && ev.continuationTooLate) {
+  if (candidate.setupType === "CONTINUATION" && ev.continuationTooLate) {
     return { ok: false, reason: "CONTINUATION_TOO_LATE_AFTER_IMPULSE" };
   }
+  if (candidate.setupType === "CONTINUATION" && ev.trendEndExhaustion) {
+    return { ok: false, reason: "CONTINUATION_BLOCKED_TREND_END_EXHAUSTION" };
+  }
 
-  if (CONFIG.directionAuthorityEnabled && isContinuationSetup) {
+  if (CONFIG.directionAuthorityEnabled && candidate.setupType === "CONTINUATION") {
     const side = candidate.direction === "long" ? "long" : "short";
     const trendSide = num(layer.trend?.[side]);
     const momSide = num(layer.momentum?.[side]);
@@ -2439,20 +2650,21 @@ function candidateIsActionable(candidate) {
   // chase. A reversal is allowed to appear after a large prior move because
   // that extension is part of the reversal setup rather than a chase entry.
   if (ev.lateChase) return { ok: false, reason: "LATE_CHASE" };
-  if (ev.htfContinuationTooLate && isContinuationSetup) return { ok: false, reason: `HTF_TREND_END_${ev.htfTrendMaturityLabel || "LATE"}_${num(ev.htfTrendMaturity).toFixed(1)}` };
   if (ev.lateMove) return { ok: false, reason: `MOVE_MATURITY_${ev.moveMaturityLabel || "LATE"}_${num(ev.moveMaturity).toFixed(1)}` };
-  if (ev.reversalEntryLate) return { ok: false, reason: `REVERSAL_ENTRY_LATE_${num(ev.reversalLegMovePct).toFixed(2)}PCT_${num(ev.reversalLegAtr).toFixed(2)}ATR` };
+
+  // V22.0: structure is the trade. A high score cannot compensate for a bad
+  // location, missing volume/flow confirmation, absent opposing structure, or
+  // poor reward/risk.
+  if (ev.structurePlanValid !== true) {
+    return { ok: false, reason: ev.structurePlanReason || "STRUCTURE_PLAN_INVALID" };
+  }
+  if (num(ev.structureRR) < Number(CONFIG.structureMinRR || 1.5)) {
+    return { ok: false, reason: `RR_${num(ev.structureRR).toFixed(2)}_BELOW_${Number(CONFIG.structureMinRR).toFixed(2)}` };
+  }
   if (candidate.risk > CONFIG.maxRisk) return { ok: false, reason: `RISK_${candidate.risk.toFixed(1)}_ABOVE_${CONFIG.maxRisk}` };
 
   const tpDistance = Math.abs(pct(candidate.tp, candidate.entry));
-  if (!(candidate.tp > 0)) return { ok: false, reason: `TP_INVALID_${ev.tpMethod || "UNKNOWN"}` };
-  if (candidate.direction === "short" && !(candidate.tp < candidate.entry)) return { ok: false, reason: "TP_WRONG_SIDE_SHORT" };
-  if (candidate.direction === "long" && !(candidate.tp > candidate.entry)) return { ok: false, reason: "TP_WRONG_SIDE_LONG" };
   if (tpDistance < CONFIG.minTpDistancePct) return { ok: false, reason: "TP_TOO_CLOSE" };
-  if (num(ev.tpStructurePrice) > 0) {
-    if (candidate.direction === "short" && !(candidate.tp > num(ev.tpStructurePrice))) return { ok: false, reason: "TP_BELOW_SUPPORT" };
-    if (candidate.direction === "long" && !(candidate.tp < num(ev.tpStructurePrice))) return { ok: false, reason: "TP_ABOVE_RESISTANCE" };
-  }
 
   if (CONFIG.stopLossEnabled) {
     const sl = num(candidate.sl);
@@ -3301,9 +3513,6 @@ function cycleMessage(report) {
       lines.push(`  🧠 ${String(item.setupType || "N/A")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)}`);
       const tm = item.setupEvidence || {};
       lines.push(`  ⏱️ Move maturity ${num(tm.moveMaturity).toFixed(1)} | ${String(tm.moveMaturityLabel || "N/A")} | Extension ${num(tm.extensionPct).toFixed(2)}% | ATR dist ${num(tm.atrDistance).toFixed(2)}x`);
-      if (Number.isFinite(num(tm.htfTrendMaturity))) lines.push(`  🕐 HTF maturity ${num(tm.htfTrendMaturity).toFixed(1)} | ${String(tm.htfTrendMaturityLabel || "N/A")} | 1H move ${num(tm.htf1hMovePct).toFixed(2)}% | 4H move ${num(tm.htf4hMovePct).toFixed(2)}% | 1H extreme ${num(tm.htf1hExtremeDistancePct).toFixed(2)}%`);
-      lines.push(`  🎯 TP ${formatPrice(item.tp)} | ${String(tm.tpMethod || "N/A")} | Structure ${formatPrice(tm.tpStructurePrice)} | Buffer ${num(tm.tpBufferPct).toFixed(2)}%`);
-      if (tm.reversalEntryLate) lines.push(`  ⏱️ Reversal leg ${num(tm.reversalLegMovePct).toFixed(2)}% | ${num(tm.reversalLegAtr).toFixed(2)} ATR | LATE`);
       const cf = item.setupEvidence?.capitalFlow || {};
       lines.push(`  💧 Flow ${num(cf.score).toFixed(1)} | ${String(cf.state || "N/A")} | Smart ${num(cf.smartMoneyProxy).toFixed(1)} | OI Δ ${num(cf.oiDeltaPct).toFixed(2)}% | Vol5 ${num(cf.volumeRatio5m).toFixed(2)}x`);
       const li = item.setupEvidence?.fiveLayers || {};
@@ -3644,7 +3853,7 @@ async function runCycle(event, env) {
   });
   const selected = actionable.slice(0, CONFIG.finalCandidates);
   console.log("[SELECTION][TOP]", selected[0] ? {
-    symbol: selected[0].symbol, direction: selected[0].direction, entry: selected[0].entry, tp: selected[0].tp,
+    symbol: selected[0].symbol, direction: selected[0].direction, entry: selected[0].entry, tp: selected[0].tp, sl: selected[0].sl, rr: selected[0].setupEvidence?.structureRR,
     setupType: selected[0].setupType, reversalEvidence: selected[0].reversalEvidence, score: selected[0].score,
     edge: selected[0].edge, risk: selected[0].risk, allocation: CONFIG.walletAllocationPerPosition, leverage: CONFIG.leverage,
     expectedGrossPnlUsd: selected[0].expectedGrossPnlUsd, expectedNetPnlUsd: selected[0].expectedNetPnlUsd,
