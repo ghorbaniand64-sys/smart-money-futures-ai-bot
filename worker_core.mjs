@@ -41,7 +41,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V22.4.7-1H-BREAKOUT-ACCEPTANCE";
+export const BOT_VERSION = "V22.5.0-1H-STRUCTURE-CLEAN";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -801,9 +801,10 @@ function ichimoku(candles, conversionPeriod = 9, basePeriod = 26, spanPeriod = 5
 }
 
 function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles1h }) {
-  // V22.3: PURE 1H ENGINE. Only completed 1H candles define the trade.
-  // No 5M/15M/4H/1D indicator, timing rule, direction gate, SL, TP or macro gate
-  // participates in signal generation.
+  // V22.5: PURE 1H STRUCTURE DECISION ENGINE.
+  // Only completed 1H candles determine setup type, direction, entry, SL and TP.
+  // The live ticker is used only as the current execution price; it never
+  // creates a signal by itself. No lower timeframe participates here.
   const h1 = Array.isArray(candles1h) ? candles1h : [];
   const completed = h1.slice(0, -1);
   const price = tickerPrice(ticker) || num(completed.at(-1)?.close);
@@ -824,6 +825,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     { setupType:'CONTINUATION', direction:'long', plan:calculateHourlyContinuationTradePlan({direction:'long',price,candles1h:h1}) },
     { setupType:'CONTINUATION', direction:'short', plan:calculateHourlyContinuationTradePlan({direction:'short',price,candles1h:h1}) },
   ];
+
   const valid = plans.filter(x => x.plan?.valid === true).sort((a,b) =>
     (num(b.plan.rr)-num(a.plan.rr)) || (num(a.plan.entryDistancePct)-num(b.plan.entryDistancePct))
   );
@@ -831,8 +833,8 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const last = completed.at(-1) || {};
   const lookback = Math.max(2, Number(CONFIG.hourlyTrendLookback || 12));
   const base = completed.at(Math.max(0, completed.length - 1 - lookback));
-  const trendMove = base ? pct(num(last.close),num(base.close)) : 0;
-  const range = Math.max(num(last.high)-num(last.low),1e-12);
+  const trendMove = base ? pct(num(last.close), num(base.close)) : 0;
+  const range = Math.max(num(last.high)-num(last.low), 1e-12);
   const bodyRatio = Math.abs(num(last.close)-num(last.open))/range;
   const closeLocation = (num(last.close)-num(last.low))/range;
   const bullish = num(last.close)>num(last.open);
@@ -841,25 +843,46 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const support = (levels.support||[]).filter(x=>x<price).sort((a,b)=>b-a)[0]||0;
   const resistance = (levels.resistance||[]).filter(x=>x>price).sort((a,b)=>a-b)[0]||0;
 
+  // A valid structure plan is the ONLY way to become an active signal.
+  // When none exists, report a directionally coherent WATCH state instead of
+  // manufacturing a reversal in the same direction as the prevailing trend.
   let chosen = valid[0] || null;
   let setupType = chosen?.setupType || 'NONE';
-  let direction = chosen?.direction || (trendMove>=Number(CONFIG.hourlyTrendMinMovePct||0.60)?'long':trendMove<=-Number(CONFIG.hourlyTrendMinMovePct||0.60)?'short':bullish?'long':bearish?'short':null);
+  let direction = chosen?.direction || null;
   let plan = chosen?.plan || null;
 
-  if (!chosen && direction) {
-    const candidates = plans.filter(x=>x.direction===direction).sort((a,b)=>
-      Math.abs(price-(num(a.plan.anchorPrice)||price))-Math.abs(price-(num(b.plan.anchorPrice)||price))
-    );
-    const watch = candidates[0];
-    if (watch) { setupType = watch.setupType + '_WATCH'; plan = watch.plan; }
+  if (!chosen) {
+    if (trendMove >= Number(CONFIG.hourlyTrendMinMovePct || 0.60)) {
+      // Uptrend: continuation-long is the trend-side setup; reversal is short.
+      const continuation = plans.find(x => x.setupType==='CONTINUATION' && x.direction==='long');
+      const reversal = plans.find(x => x.setupType==='REVERSAL' && x.direction==='short');
+      const preferred = continuation?.plan?.reason === 'NO_1H_CONFIRMED_BULL_BREAKOUT'
+        ? continuation : continuation || reversal;
+      if (preferred) { setupType = preferred.setupType + '_WATCH'; direction = preferred.direction; plan = preferred.plan; }
+    } else if (trendMove <= -Number(CONFIG.hourlyTrendMinMovePct || 0.60)) {
+      // Downtrend: continuation-short is the trend-side setup; reversal is long.
+      const continuation = plans.find(x => x.setupType==='CONTINUATION' && x.direction==='short');
+      const reversal = plans.find(x => x.setupType==='REVERSAL' && x.direction==='long');
+      const preferred = continuation?.plan?.reason === 'NO_1H_CONFIRMED_BEAR_BREAKOUT'
+        ? continuation : continuation || reversal;
+      if (preferred) { setupType = preferred.setupType + '_WATCH'; direction = preferred.direction; plan = preferred.plan; }
+    } else if (bullish || bearish) {
+      direction = bullish ? 'long' : 'short';
+      const continuation = plans.find(x => x.setupType==='CONTINUATION' && x.direction===direction);
+      if (continuation) { setupType = 'CONTINUATION_WATCH'; plan = continuation.plan; }
+    }
   }
 
   const validPlan = Boolean(plan?.valid);
   const rr = num(plan?.rr);
   const distancePct = num(plan?.entryDistancePct);
   const distanceAtr = num(plan?.entryDistanceAtr);
-  const score = validPlan ? clamp(82 + Math.min(14,rr*6) - Math.min(10,distancePct*4),0,100) : clamp(35 + Math.min(25,Math.abs(trendMove)*8) + (bodyRatio>=0.60?8:0),0,100);
-  const edge = validPlan ? clamp(25 + rr*10 + Math.max(0,1.15-distanceAtr)*10,0,100) : clamp(8 + Math.abs(trendMove)*5,0,100);
+  const score = validPlan
+    ? clamp(82 + Math.min(14,rr*6) - Math.min(10,distancePct*4),0,100)
+    : clamp(35 + Math.min(25,Math.abs(trendMove)*8) + (bodyRatio>=0.60?8:0),0,100);
+  const edge = validPlan
+    ? clamp(25 + rr*10 + Math.max(0,1.15-distanceAtr)*10,0,100)
+    : clamp(8 + Math.abs(trendMove)*5,0,100);
   const risk = validPlan ? clamp(num(plan.riskPct)*20,0,100) : 0;
   const reason = plan?.reason || 'NO_1H_SIGNAL';
   const evidence = {
@@ -878,6 +901,7 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     hourlyLastCandleBearish:bearish, hourlyLevels:{support,resistance},
     fiveLayers:null, marketRegime:null,
   };
+
   return {
     symbol:marketDisplaySymbol(market), candleSymbol:candleSymbolFromMarket(market), direction,
     entry:price, tp:num(plan?.tp), sl:num(plan?.sl), score:Number(score.toFixed(2)),
