@@ -1,6 +1,6 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ GMX SMART MONEY FUTURES AI BOT — V22.5 PURE 1H STRUCTURE + DIRECTION LOCK      ║
+║ GMX SMART MONEY FUTURES AI BOT — V22.5 PURE 1H STRUCTURE + DIRECTION LOCK + PRICE NORMALIZATION      ║
 ║ Single pipeline • COMPLETED 1H signal scan • Classic GMX only ║
 ║ 20x leverage • 100% wallet • max 1 position • dynamic TP + structure SL               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -281,6 +281,27 @@ function num(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+// GMX SDK price fields can be returned as 30-decimal fixed-point values
+// (e.g. XRP 1.295e30). Never apply this conversion to generic numbers such
+// as volume/OI; use it only for actual price fields.
+function normalizePrice(value, fallback = 0) {
+  if (value === null || value === undefined || value === "") return fallback;
+  const n = num(value, NaN);
+  if (!Number.isFinite(n)) return fallback;
+  if (Math.abs(n) >= 1e20) {
+    const scaled = n / 1e30;
+    return Number.isFinite(scaled) ? scaled : fallback;
+  }
+  return n;
+}
+
+function normalizeTimestamp(value) {
+  const n = num(value, 0);
+  if (!(n > 0)) return 0;
+  // Internal candle timestamps are stored in seconds.
+  return n > 1e12 ? Math.floor(n / 1000) : Math.floor(n);
+}
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -553,13 +574,13 @@ function findTicker(tickers, market) {
 }
 
 function tickerPrice(ticker) {
-  return num(
-    ticker?.maxPrice ??
-    ticker?.minPrice ??
+  return normalizePrice(
     ticker?.markPrice ??
-    ticker?.price ??
     ticker?.indexPrice ??
-    ticker?.lastPrice
+    ticker?.price ??
+    ticker?.lastPrice ??
+    ticker?.maxPrice ??
+    ticker?.minPrice
   );
 }
 
@@ -609,22 +630,22 @@ function marketLiquidity(market) {
 }
 
 function candleClose(c) {
-  return num(c?.close ?? c?.c ?? c?.[4]);
+  return normalizePrice(c?.close ?? c?.c ?? c?.[4]);
 }
 function candleOpen(c) {
-  return num(c?.open ?? c?.o ?? c?.[1]);
+  return normalizePrice(c?.open ?? c?.o ?? c?.[1]);
 }
 function candleHigh(c) {
-  return num(c?.high ?? c?.h ?? c?.[2]);
+  return normalizePrice(c?.high ?? c?.h ?? c?.[2]);
 }
 function candleLow(c) {
-  return num(c?.low ?? c?.l ?? c?.[3]);
+  return normalizePrice(c?.low ?? c?.l ?? c?.[3]);
 }
 
 function cleanCandles(rows) {
   return (Array.isArray(rows) ? rows : [])
     .map((c) => ({
-      timestamp: num(c?.timestamp ?? c?.time ?? c?.t ?? c?.[0]),
+      timestamp: normalizeTimestamp(c?.timestamp ?? c?.time ?? c?.t ?? c?.[0]),
       open: candleOpen(c),
       high: candleHigh(c),
       low: candleLow(c),
@@ -1493,12 +1514,15 @@ function oneHStructureSignal(candles1h, ticker) {
   const c = completedOneHCandles(candles1h);
   if (c.length < 24) return {
     valid: false, reason: `INSUFFICIENT_COMPLETED_1H:${c.length}`,
-    direction: null, setupType: "NONE"
+    direction: null, setupType: "NONE", entry: num(c.at(-1)?.close) || tickerPrice(ticker) || 0
   };
 
   const last = c.at(-1);
   const prev = c.at(-2);
-  const price = num(tickerPrice(ticker)) || num(last.close);
+  // Entry authority uses the same completed 1H candle data as the structure
+  // engine. Ticker price is only a fallback, preventing unit mismatches between
+  // SDK fixed-point ticker fields and human-readable OHLCV prices.
+  const price = num(last.close) || tickerPrice(ticker);
   const atr1h = Math.max(atr(c, 14), price * 0.001, 1e-12);
   const closes = c.map(x => num(x.close));
   const e20 = ema(closes, 20), e50 = ema(closes, 50), e200 = ema(closes, 200);
@@ -1662,12 +1686,14 @@ function oneHStructureSignal(candles1h, ticker) {
     const shortBias =
       Number(priorUp) * 2 + Number(shortTouch) + Number(shortBearishReaction) +
       Number(shortBreak) * 2;
-    direction = longBias > shortBias ? "long" : shortBias > longBias ? "short" : null;
-    setupType = longBias > shortBias ? "REVERSAL_WATCH" : shortBias > longBias ? "REVERSAL_WATCH" : "NONE";
+    const diagnosticBias = longBias > shortBias ? "long" : shortBias > longBias ? "short" : null;
+    setupType = diagnosticBias ? "1H_WATCH" : "NONE";
     confidence = Math.max(longBias, shortBias) * 15;
     return {
-      valid: false, reason: "NO_CONFIRMED_1H_SETUP", direction, setupType, confidence,
+      valid: false, reason: "NO_CONFIRMED_1H_SETUP", direction: null, setupType, confidence,
+      entry: price,
       diagnostics: {
+        diagnosticBias,
         price, e20, e50, e200, rsi:r, macd:m, adx:d, stoch:st, bb,
         trendMove, priorUp, priorDown, longTouch, shortTouch,
         longBullishReaction, shortBearishReaction, longBreak, shortBreak,
@@ -1888,10 +1914,10 @@ function scoreCandidate({ market, ticker, candles1h, marketRegime }) {
   if (!base.valid) {
     return {
       symbol, candleSymbol: candleSymbolFromMarket(market),
-      direction: base.direction || null,
+      direction: base.valid ? (base.direction || null) : null,
       setupType: base.setupType || "NONE",
       score: 0, edge: 0, risk: 100,
-      entry: num(base.entry) || tickerPrice(ticker) || 0,
+      entry: num(base.entry) || num(base.diagnostics?.price) || tickerPrice(ticker) || 0,
       sl: num(base.sl) || 0, tp: num(base.tp) || 0, rr: num(base.rr) || 0,
       triggerActive: false,
       reversalTrigger: false, continuationTrigger: false,
@@ -2176,7 +2202,8 @@ function normalizeOhlcvRows(raw) {
       ? r
       : [r?.timestamp ?? r?.time ?? r?.t, r?.open ?? r?.o, r?.high ?? r?.h, r?.low ?? r?.l, r?.close ?? r?.c, r?.volume ?? r?.v ?? 0];
     const [ts, o, h, l, c, v] = vals.map(Number);
-    if ([ts,o,h,l,c].every(Number.isFinite)) out.push({ timestamp: ts > 1e12 ? Math.floor(ts/1000) : Math.floor(ts), open:o, high:h, low:l, close:c, volume:Number.isFinite(v)?v:0 });
+    const oo = normalizePrice(o), hh = normalizePrice(h), ll = normalizePrice(l), cc = normalizePrice(c);
+    if ([ts,oo,hh,ll,cc].every(Number.isFinite)) out.push({ timestamp: normalizeTimestamp(ts), open:oo, high:hh, low:ll, close:cc, volume:Number.isFinite(v)?v:0 });
   }
   out.sort((a,b)=>a.timestamp-b.timestamp);
   return out;
@@ -2218,7 +2245,7 @@ async function fetchCandles(sdk, marketOrSymbol, timeframe, limit) {
   throw new Error(`OHLCV_ALL_SOURCES_FAILED:${errors.slice(0,4).join("|")}`);
 }
 
-// V22.5.1: single resilient 1H OHLCV entry point.
+// V22.5.1+: single resilient 1H OHLCV entry point.
 // The previous V22.5 build called this helper but never defined it, causing
 // every market (and BTC/ETH) to fail before the 1H engine could run.
 async function fetchCandlesResilient(sdk, marketOrSymbol, timeframe, limit) {
