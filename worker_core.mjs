@@ -41,7 +41,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V22.4.0-PURE-1H-ENGINE-CLEAN-20X";
+export const BOT_VERSION = "V22.4.6-1H-FAKE-BREAK-FILTER";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
