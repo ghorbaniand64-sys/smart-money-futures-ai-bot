@@ -1,6 +1,6 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ GMX SMART MONEY FUTURES AI BOT — V22.4 PURE 1H STRUCTURE ENGINE           ║
+║ GMX SMART MONEY FUTURES AI BOT — V22.5 PURE 1H STRUCTURE CLEAN           ║
 ║ GMX universe → completed 1H candles → 1H reversal/continuation → Classic ║
 ║ GMX only • 20x leverage • 100% wallet • max 1 position • one TP + SL     ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -801,10 +801,9 @@ function ichimoku(candles, conversionPeriod = 9, basePeriod = 26, spanPeriod = 5
 }
 
 function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles1h }) {
-  // V22.5: PURE 1H STRUCTURE DECISION ENGINE.
-  // Only completed 1H candles determine setup type, direction, entry, SL and TP.
-  // The live ticker is used only as the current execution price; it never
-  // creates a signal by itself. No lower timeframe participates here.
+  // V22.3: PURE 1H ENGINE. Only completed 1H candles define the trade.
+  // No 5M/15M/4H/1D indicator, timing rule, direction gate, SL, TP or macro gate
+  // participates in signal generation.
   const h1 = Array.isArray(candles1h) ? candles1h : [];
   const completed = h1.slice(0, -1);
   const price = tickerPrice(ticker) || num(completed.at(-1)?.close);
@@ -825,7 +824,6 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     { setupType:'CONTINUATION', direction:'long', plan:calculateHourlyContinuationTradePlan({direction:'long',price,candles1h:h1}) },
     { setupType:'CONTINUATION', direction:'short', plan:calculateHourlyContinuationTradePlan({direction:'short',price,candles1h:h1}) },
   ];
-
   const valid = plans.filter(x => x.plan?.valid === true).sort((a,b) =>
     (num(b.plan.rr)-num(a.plan.rr)) || (num(a.plan.entryDistancePct)-num(b.plan.entryDistancePct))
   );
@@ -833,8 +831,8 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const last = completed.at(-1) || {};
   const lookback = Math.max(2, Number(CONFIG.hourlyTrendLookback || 12));
   const base = completed.at(Math.max(0, completed.length - 1 - lookback));
-  const trendMove = base ? pct(num(last.close), num(base.close)) : 0;
-  const range = Math.max(num(last.high)-num(last.low), 1e-12);
+  const trendMove = base ? pct(num(last.close),num(base.close)) : 0;
+  const range = Math.max(num(last.high)-num(last.low),1e-12);
   const bodyRatio = Math.abs(num(last.close)-num(last.open))/range;
   const closeLocation = (num(last.close)-num(last.low))/range;
   const bullish = num(last.close)>num(last.open);
@@ -843,46 +841,25 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
   const support = (levels.support||[]).filter(x=>x<price).sort((a,b)=>b-a)[0]||0;
   const resistance = (levels.resistance||[]).filter(x=>x>price).sort((a,b)=>a-b)[0]||0;
 
-  // A valid structure plan is the ONLY way to become an active signal.
-  // When none exists, report a directionally coherent WATCH state instead of
-  // manufacturing a reversal in the same direction as the prevailing trend.
   let chosen = valid[0] || null;
   let setupType = chosen?.setupType || 'NONE';
-  let direction = chosen?.direction || null;
+  let direction = chosen?.direction || (trendMove>=Number(CONFIG.hourlyTrendMinMovePct||0.60)?'long':trendMove<=-Number(CONFIG.hourlyTrendMinMovePct||0.60)?'short':bullish?'long':bearish?'short':null);
   let plan = chosen?.plan || null;
 
-  if (!chosen) {
-    if (trendMove >= Number(CONFIG.hourlyTrendMinMovePct || 0.60)) {
-      // Uptrend: continuation-long is the trend-side setup; reversal is short.
-      const continuation = plans.find(x => x.setupType==='CONTINUATION' && x.direction==='long');
-      const reversal = plans.find(x => x.setupType==='REVERSAL' && x.direction==='short');
-      const preferred = continuation?.plan?.reason === 'NO_1H_CONFIRMED_BULL_BREAKOUT'
-        ? continuation : continuation || reversal;
-      if (preferred) { setupType = preferred.setupType + '_WATCH'; direction = preferred.direction; plan = preferred.plan; }
-    } else if (trendMove <= -Number(CONFIG.hourlyTrendMinMovePct || 0.60)) {
-      // Downtrend: continuation-short is the trend-side setup; reversal is long.
-      const continuation = plans.find(x => x.setupType==='CONTINUATION' && x.direction==='short');
-      const reversal = plans.find(x => x.setupType==='REVERSAL' && x.direction==='long');
-      const preferred = continuation?.plan?.reason === 'NO_1H_CONFIRMED_BEAR_BREAKOUT'
-        ? continuation : continuation || reversal;
-      if (preferred) { setupType = preferred.setupType + '_WATCH'; direction = preferred.direction; plan = preferred.plan; }
-    } else if (bullish || bearish) {
-      direction = bullish ? 'long' : 'short';
-      const continuation = plans.find(x => x.setupType==='CONTINUATION' && x.direction===direction);
-      if (continuation) { setupType = 'CONTINUATION_WATCH'; plan = continuation.plan; }
-    }
+  if (!chosen && direction) {
+    const candidates = plans.filter(x=>x.direction===direction).sort((a,b)=>
+      Math.abs(price-(num(a.plan.anchorPrice)||price))-Math.abs(price-(num(b.plan.anchorPrice)||price))
+    );
+    const watch = candidates[0];
+    if (watch) { setupType = watch.setupType + '_WATCH'; plan = watch.plan; }
   }
 
   const validPlan = Boolean(plan?.valid);
   const rr = num(plan?.rr);
   const distancePct = num(plan?.entryDistancePct);
   const distanceAtr = num(plan?.entryDistanceAtr);
-  const score = validPlan
-    ? clamp(82 + Math.min(14,rr*6) - Math.min(10,distancePct*4),0,100)
-    : clamp(35 + Math.min(25,Math.abs(trendMove)*8) + (bodyRatio>=0.60?8:0),0,100);
-  const edge = validPlan
-    ? clamp(25 + rr*10 + Math.max(0,1.15-distanceAtr)*10,0,100)
-    : clamp(8 + Math.abs(trendMove)*5,0,100);
+  const score = validPlan ? clamp(82 + Math.min(14,rr*6) - Math.min(10,distancePct*4),0,100) : clamp(35 + Math.min(25,Math.abs(trendMove)*8) + (bodyRatio>=0.60?8:0),0,100);
+  const edge = validPlan ? clamp(25 + rr*10 + Math.max(0,1.15-distanceAtr)*10,0,100) : clamp(8 + Math.abs(trendMove)*5,0,100);
   const risk = validPlan ? clamp(num(plan.riskPct)*20,0,100) : 0;
   const reason = plan?.reason || 'NO_1H_SIGNAL';
   const evidence = {
@@ -901,7 +878,6 @@ function scoreCandidate({ market, ticker, marketValue, previousSnapshot, candles
     hourlyLastCandleBearish:bearish, hourlyLevels:{support,resistance},
     fiveLayers:null, marketRegime:null,
   };
-
   return {
     symbol:marketDisplaySymbol(market), candleSymbol:candleSymbolFromMarket(market), direction,
     entry:price, tp:num(plan?.tp), sl:num(plan?.sl), score:Number(score.toFixed(2)),
@@ -962,65 +938,34 @@ function calculateHourlyReversalTradePlan({ direction, price, candles1h }) {
 
 function calculateHourlyContinuationTradePlan({ direction, price, candles1h }) {
   const entry=num(price), c=Array.isArray(candles1h)?candles1h.slice(0,-1):[];
-  const fail=(reason,extra={})=>({valid:false,reason,entry,tp:0,sl:0,anchorPrice:0,targetPrice:0,entryDistancePct:0,entryDistanceAtr:0,riskPct:0,rewardPct:0,rr:0,breakoutTimeframe:"1H",breakoutConfirmed1h:false,slPlan:{sl:0,distancePct:0,method:"HOURLY_CONTINUATION_INVALID",valid:false},tpPlan:{tp:0,targetPrice:0,targetType:"1H_STRUCTURE",method:"HOURLY_CONTINUATION_INVALID",distancePct:0},...extra});
-  if(!(entry>0)) return fail("INVALID_ENTRY");
-  if(c.length<25) return fail("INSUFFICIENT_1H_DATA");
-
-  // The signal is evaluated only after TWO completed 1H candles:
-  // breakout candle + the following 1H acceptance candle. This prevents
-  // a single wick/close through a level from being treated as continuation.
-  const breakout=c.at(-2), confirm=c.at(-1), preBreak=c.at(-3);
-  const atr1=Math.max(num(atr(c,14)),entry*0.001,1e-12);
-  const levels=recentSwingLevels(c.slice(0,-2));
+  const fail=(reason,extra={})=>({valid:false,reason,entry,tp:0,sl:0,anchorPrice:0,targetPrice:0,entryDistancePct:0,entryDistanceAtr:0,riskPct:0,rewardPct:0,rr:0,breakoutTimeframe:"1H",slPlan:{sl:0,distancePct:0,method:"HOURLY_CONTINUATION_INVALID",valid:false},tpPlan:{tp:0,targetPrice:0,targetType:"1H_STRUCTURE",method:"HOURLY_CONTINUATION_INVALID",distancePct:0},...extra});
+  if(!(entry>0)) return fail("INVALID_ENTRY"); if(c.length<24) return fail("INSUFFICIENT_1H_DATA");
+  const last=c.at(-1), atr1=Math.max(num(atr(c,14)),entry*0.001,1e-12), levels=recentSwingLevels(c.slice(0,-2));
   const trendLookback=Math.max(2,Number(CONFIG.hourlyTrendLookback||12));
   const trendBase=c.at(Math.max(0,c.length-1-trendLookback));
-  const trendMove=trendBase?pct(num(confirm.close),num(trendBase.close)):0;
-
-  const breakRange=Math.max(num(breakout.high)-num(breakout.low),1e-12);
-  const breakBodyRatio=Math.abs(num(breakout.close)-num(breakout.open))/breakRange;
-  const breakLoc=(num(breakout.close)-num(breakout.low))/breakRange;
-  const confirmRange=Math.max(num(confirm.high)-num(confirm.low),1e-12);
-  const confirmLoc=(num(confirm.close)-num(confirm.low))/confirmRange;
-  const strongBreak=breakBodyRatio>=Number(CONFIG.hourlyBreakBodyRatio||0.60)
-    && breakRange>=atr1*Number(CONFIG.hourlyBreakAtrMultiplier||1);
-  const levelBuffer=atr1*Number(CONFIG.hourlyBreakLevelAtrBuffer||0.10);
-  const acceptBuffer=atr1*0.05;
-  const reclaimBuffer=atr1*0.10;
-
+  const trendMove=trendBase?pct(num(last.close),num(trendBase.close)):0;
+  const range=Math.max(num(last.high)-num(last.low),1e-12), bodyRatio=Math.abs(num(last.close)-num(last.open))/range, loc=(num(last.close)-num(last.low))/range;
+  const strong=bodyRatio>=Number(CONFIG.hourlyBreakBodyRatio||0.60)&&range>=atr1*Number(CONFIG.hourlyBreakAtrMultiplier||1);
   let anchor=0,target=0;
   if(direction==="long") {
-    anchor=(levels.resistance||[]).filter(x=>x>0&&x<num(breakout.close)).sort((a,b)=>b-a)[0]||0;
-    const freshBreak=anchor>0 && num(preBreak?.close)<=anchor && num(breakout.high)>anchor && num(breakout.close)>anchor+levelBuffer;
-    const cleanBreak=breakLoc>=Number(CONFIG.hourlyBreakCloseLocationLong||0.72) && strongBreak;
-    const accepted=anchor>0 && num(confirm.close)>anchor+acceptBuffer && num(confirm.low)>=anchor-reclaimBuffer && confirmLoc>=0.50;
-    if(!(anchor>0&&trendMove>=Number(CONFIG.hourlyTrendMinMovePct||0.60)&&freshBreak&&cleanBreak&&accepted)) {
-      return fail("NO_1H_CONFIRMED_BULL_BREAKOUT",{trendMovePct:trendMove,anchorPrice:anchor,breakoutConfirmed1h:false});
-    }
+    anchor=(levels.resistance||[]).filter(x=>x>0&&x<num(last.close)).sort((a,b)=>b-a)[0]||0;
+    if(!(anchor>0&&trendMove>=Number(CONFIG.hourlyTrendMinMovePct||0.60)&&num(last.close)>anchor+atr1*Number(CONFIG.hourlyBreakLevelAtrBuffer||0.10)&&loc>=Number(CONFIG.hourlyBreakCloseLocationLong||0.72)&&strong)) return fail("NO_1H_STRONG_BULL_BREAK_OR_UPTREND",{trendMovePct:trendMove});
     target=(levels.resistance||[]).filter(x=>x>entry).sort((a,b)=>a-b)[0]||0;
   } else {
-    anchor=(levels.support||[]).filter(x=>x>0&&x>num(breakout.close)).sort((a,b)=>a-b)[0]||0;
-    const freshBreak=anchor>0 && num(preBreak?.close)>=anchor && num(breakout.low)<anchor && num(breakout.close)<anchor-levelBuffer;
-    const cleanBreak=breakLoc<=Number(CONFIG.hourlyBreakCloseLocationShort||0.28) && strongBreak;
-    const accepted=anchor>0 && num(confirm.close)<anchor-acceptBuffer && num(confirm.high)<=anchor+reclaimBuffer && confirmLoc<=0.50;
-    if(!(anchor>0&&trendMove<=-Number(CONFIG.hourlyTrendMinMovePct||0.60)&&freshBreak&&cleanBreak&&accepted)) {
-      return fail("NO_1H_CONFIRMED_BEAR_BREAKOUT",{trendMovePct:trendMove,anchorPrice:anchor,breakoutConfirmed1h:false});
-    }
+    anchor=(levels.support||[]).filter(x=>x>0&&x>num(last.close)).sort((a,b)=>a-b)[0]||0;
+    if(!(anchor>0&&trendMove<=-Number(CONFIG.hourlyTrendMinMovePct||0.60)&&num(last.close)<anchor-atr1*Number(CONFIG.hourlyBreakLevelAtrBuffer||0.10)&&loc<=Number(CONFIG.hourlyBreakCloseLocationShort||0.28)&&strong)) return fail("NO_1H_STRONG_BEAR_BREAK_OR_DOWNTREND",{trendMovePct:trendMove});
     target=(levels.support||[]).filter(x=>x<entry).sort((a,b)=>b-a)[0]||0;
   }
-
-  if(!(target>0)) return fail(direction==="long"?"NO_1H_NEXT_RESISTANCE":"NO_1H_NEXT_SUPPORT",{anchorPrice:anchor,breakoutConfirmed1h:true});
+  if(!(target>0)) return fail(direction==="long"?"NO_1H_NEXT_RESISTANCE":"NO_1H_NEXT_SUPPORT",{anchorPrice:anchor});
   const dPct=Math.abs(entry-anchor)/entry*100,dAtr=Math.abs(entry-anchor)/atr1;
-  if(dPct>Number(CONFIG.hourlyStructureMaxEntryDistancePct||0.85)||dAtr>Number(CONFIG.hourlyStructureMaxEntryAtr||1.15)) return fail(`1H_CONTINUATION_TOO_LATE_${dPct.toFixed(2)}PCT_${dAtr.toFixed(2)}ATR`,{anchorPrice:anchor,targetPrice:target,entryDistancePct:dPct,entryDistanceAtr:dAtr,breakoutConfirmed1h:true});
-
-  const sb=Math.max(atr1*0.15,entry*0.0008),tb=Math.max(atr1*0.15,entry*0.0008);
-  const sl=Number((direction==="long"?anchor-sb:anchor+sb).toPrecision(12));
-  const tp=Number((direction==="long"?target-tb:target+tb).toPrecision(12));
+  if(dPct>Number(CONFIG.hourlyStructureMaxEntryDistancePct||0.85)||dAtr>Number(CONFIG.hourlyStructureMaxEntryAtr||1.15)) return fail(`1H_CONTINUATION_TOO_LATE_${dPct.toFixed(2)}PCT_${dAtr.toFixed(2)}ATR`,{anchorPrice:anchor,targetPrice:target,entryDistancePct:dPct,entryDistanceAtr:dAtr});
+  const sb=Math.max(atr1*0.15,entry*0.0008),tb=Math.max(atr1*0.15,entry*0.0008),sl=Number((direction==="long"?anchor-sb:anchor+sb).toPrecision(12)),tp=Number((direction==="long"?target-tb:target+tb).toPrecision(12));
   const risk=Math.abs(entry-sl),reward=Math.abs(tp-entry),rrv=risk>0?reward/risk:0;
-  if(!(direction==="long"?sl<entry&&tp>entry:sl>entry&&tp<entry)) return fail("1H_CONTINUATION_WRONG_SIDE",{anchorPrice:anchor,targetPrice:target,breakoutConfirmed1h:true});
-  if(rrv<Number(CONFIG.structureMinRR||1.5)) return fail(`RR_${rrv.toFixed(2)}_BELOW_${Number(CONFIG.structureMinRR||1.5).toFixed(2)}`,{anchorPrice:anchor,targetPrice:target,entryDistancePct:dPct,entryDistanceAtr:dAtr,riskPct:risk/entry*100,rewardPct:reward/entry*100,rr:rrv,breakoutConfirmed1h:true});
-
-  return {valid:true,reason:`1H_CONTINUATION_${direction.toUpperCase()}_BREAKOUT_ACCEPTED`,entry,tp,sl,anchor:direction==="long"?"1H_BROKEN_RESISTANCE":"1H_BROKEN_SUPPORT",anchorPrice:anchor,target:direction==="long"?"1H_NEXT_RESISTANCE":"1H_NEXT_SUPPORT",targetPrice:target,entryDistancePct:dPct,entryDistanceAtr:dAtr,riskPct:risk/entry*100,rewardPct:reward/entry*100,rr:rrv,breakoutTimeframe:"1H",breakoutConfirmed1h:true,slPlan:{sl,distancePct:risk/entry*100,method:direction==="long"?"1H_BROKEN_RESISTANCE_BELOW":"1H_BROKEN_SUPPORT_ABOVE",valid:true,anchorPrice:anchor},tpPlan:{tp,targetPrice:target,targetType:"1H_NEXT_STRUCTURE_BEFORE_LEVEL",method:"1H_NEXT_STRUCTURE_BEFORE_LEVEL",distancePct:reward/entry*100}};
+  if(!(direction==="long"?sl<entry&&tp>entry:sl>entry&&tp<entry)) return fail("1H_CONTINUATION_WRONG_SIDE",{anchorPrice:anchor,targetPrice:target});
+  if(rrv<Number(CONFIG.structureMinRR||1.5)) return fail(`RR_${rrv.toFixed(2)}_BELOW_${Number(CONFIG.structureMinRR||1.5).toFixed(2)}`,{anchorPrice:anchor,targetPrice:target,entryDistancePct:dPct,entryDistanceAtr:dAtr,riskPct:risk/entry*100,rewardPct:reward/entry*100,rr:rrv});
+  return {valid:true,reason:`1H_CONTINUATION_${direction.toUpperCase()}_BREAKOUT_VALID`,entry,tp,sl,anchor:direction==="long"?"1H_BROKEN_RESISTANCE":"1H_BROKEN_SUPPORT",anchorPrice:anchor,target:direction==="long"?"1H_NEXT_RESISTANCE":"1H_NEXT_SUPPORT",targetPrice:target,entryDistancePct:dPct,entryDistanceAtr:dAtr,riskPct:risk/entry*100,rewardPct:reward/entry*100,rr:rrv,breakoutTimeframe:"1H",slPlan:{sl,distancePct:risk/entry*100,method:direction==="long"?"1H_BROKEN_RESISTANCE_BELOW":"1H_BROKEN_SUPPORT_ABOVE",valid:true,anchorPrice:anchor},tpPlan:{tp,targetPrice:target,targetType:"1H_NEXT_STRUCTURE_BEFORE_LEVEL",method:"1H_NEXT_STRUCTURE_BEFORE_LEVEL",distancePct:reward/entry*100}};
 }
+
 
 function estimateEconomicOpportunity(candidate, walletUsd) {
   const wallet = Math.max(num(walletUsd), 0);
@@ -1240,7 +1185,7 @@ async function fetchCandlesResilient(sdk, market, timeframe, limit, attempts = N
 
 
 async function broadScan(sdk, markets, tickers, marketValues = [], previousSnapshots = {}) {
-  // V22.4: universe discovery is metadata-only. No 5M candle is used by the
+  // V22.5: universe discovery is metadata-only. No 5M candle is used by the
   // signal engine. Every listed perpetual goes directly to the completed-1H scan.
   const listed = markets.filter(isLikelyPerpMarket);
   const rows = listed.map((market) => ({
