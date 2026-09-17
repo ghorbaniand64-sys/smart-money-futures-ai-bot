@@ -41,7 +41,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V22.4.4-WALLET-MAP-AND-POSITION-API-REPAIR";
+export const BOT_VERSION = "V22.4.0-PURE-1H-ENGINE-CLEAN-20X";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -119,6 +119,10 @@ const CONFIG = Object.freeze({
   hourlyBreakCloseLocationShort: 0.28,
   hourlyBreakAtrMultiplier: 1.00,
   hourlyBreakLevelAtrBuffer: 0.10,
+  // V22.4.6: completed-1H breakout quality filter. A continuation must be a
+  // fresh level break, not an old trend candle or a wick/reclaim fakeout.
+  hourlyBreakMaxBreakoutWickRatio: 0.28,
+  hourlyBreakRequireFreshLevelBreak: true,
 
   // V21 Capital Flow Engine. Flow is a quality/ranking layer, not a hard
   // direction gate. True wallet-labelled smart-money data is not available
@@ -940,20 +944,31 @@ function calculateHourlyContinuationTradePlan({ direction, price, candles1h }) {
   const entry=num(price), c=Array.isArray(candles1h)?candles1h.slice(0,-1):[];
   const fail=(reason,extra={})=>({valid:false,reason,entry,tp:0,sl:0,anchorPrice:0,targetPrice:0,entryDistancePct:0,entryDistanceAtr:0,riskPct:0,rewardPct:0,rr:0,breakoutTimeframe:"1H",slPlan:{sl:0,distancePct:0,method:"HOURLY_CONTINUATION_INVALID",valid:false},tpPlan:{tp:0,targetPrice:0,targetType:"1H_STRUCTURE",method:"HOURLY_CONTINUATION_INVALID",distancePct:0},...extra});
   if(!(entry>0)) return fail("INVALID_ENTRY"); if(c.length<24) return fail("INSUFFICIENT_1H_DATA");
-  const last=c.at(-1), atr1=Math.max(num(atr(c,14)),entry*0.001,1e-12), levels=recentSwingLevels(c.slice(0,-2));
+  const last=c.at(-1), prev=c.at(-2), atr1=Math.max(num(atr(c,14)),entry*0.001,1e-12), levels=recentSwingLevels(c.slice(0,-2));
   const trendLookback=Math.max(2,Number(CONFIG.hourlyTrendLookback||12));
   const trendBase=c.at(Math.max(0,c.length-1-trendLookback));
   const trendMove=trendBase?pct(num(last.close),num(trendBase.close)):0;
-  const range=Math.max(num(last.high)-num(last.low),1e-12), bodyRatio=Math.abs(num(last.close)-num(last.open))/range, loc=(num(last.close)-num(last.low))/range;
+  const range=Math.max(num(last.high)-num(last.low),1e-12), body=Math.abs(num(last.close)-num(last.open));
+  const bodyRatio=body/range, loc=(num(last.close)-num(last.low))/range;
+  const upperWick=Math.max(0,num(last.high)-Math.max(num(last.open),num(last.close)));
+  const lowerWick=Math.max(0,Math.min(num(last.open),num(last.close))-num(last.low));
+  const breakWickRatio=direction==="long"?upperWick/range:lowerWick/range;
   const strong=bodyRatio>=Number(CONFIG.hourlyBreakBodyRatio||0.60)&&range>=atr1*Number(CONFIG.hourlyBreakAtrMultiplier||1);
   let anchor=0,target=0;
   if(direction==="long") {
     anchor=(levels.resistance||[]).filter(x=>x>0&&x<num(last.close)).sort((a,b)=>b-a)[0]||0;
     if(!(anchor>0&&trendMove>=Number(CONFIG.hourlyTrendMinMovePct||0.60)&&num(last.close)>anchor+atr1*Number(CONFIG.hourlyBreakLevelAtrBuffer||0.10)&&loc>=Number(CONFIG.hourlyBreakCloseLocationLong||0.72)&&strong)) return fail("NO_1H_STRONG_BULL_BREAK_OR_UPTREND",{trendMovePct:trendMove});
+    // Fresh-break test: the prior completed candle must still be at/below the
+    // resistance. This prevents entering on a later candle after the breakout.
+    if(CONFIG.hourlyBreakRequireFreshLevelBreak!==false && !(num(prev?.close)<=anchor)) return fail("1H_BREAKOUT_NOT_FRESH",{anchorPrice:anchor,trendMovePct:trendMove});
+    // A large upper wick means the market probed higher but was rejected.
+    if(breakWickRatio>Number(CONFIG.hourlyBreakMaxBreakoutWickRatio||0.28)) return fail("1H_BREAKOUT_WICK_REJECTION",{anchorPrice:anchor,breakWickRatio});
     target=(levels.resistance||[]).filter(x=>x>entry).sort((a,b)=>a-b)[0]||0;
   } else {
     anchor=(levels.support||[]).filter(x=>x>0&&x>num(last.close)).sort((a,b)=>a-b)[0]||0;
     if(!(anchor>0&&trendMove<=-Number(CONFIG.hourlyTrendMinMovePct||0.60)&&num(last.close)<anchor-atr1*Number(CONFIG.hourlyBreakLevelAtrBuffer||0.10)&&loc<=Number(CONFIG.hourlyBreakCloseLocationShort||0.28)&&strong)) return fail("NO_1H_STRONG_BEAR_BREAK_OR_DOWNTREND",{trendMovePct:trendMove});
+    if(CONFIG.hourlyBreakRequireFreshLevelBreak!==false && !(num(prev?.close)>=anchor)) return fail("1H_BREAKOUT_NOT_FRESH",{anchorPrice:anchor,trendMovePct:trendMove});
+    if(breakWickRatio>Number(CONFIG.hourlyBreakMaxBreakoutWickRatio||0.28)) return fail("1H_BREAKOUT_WICK_REJECTION",{anchorPrice:anchor,breakWickRatio});
     target=(levels.support||[]).filter(x=>x<entry).sort((a,b)=>b-a)[0]||0;
   }
   if(!(target>0)) return fail(direction==="long"?"NO_1H_NEXT_RESISTANCE":"NO_1H_NEXT_SUPPORT",{anchorPrice:anchor});
@@ -965,7 +980,6 @@ function calculateHourlyContinuationTradePlan({ direction, price, candles1h }) {
   if(rrv<Number(CONFIG.structureMinRR||1.5)) return fail(`RR_${rrv.toFixed(2)}_BELOW_${Number(CONFIG.structureMinRR||1.5).toFixed(2)}`,{anchorPrice:anchor,targetPrice:target,entryDistancePct:dPct,entryDistanceAtr:dAtr,riskPct:risk/entry*100,rewardPct:reward/entry*100,rr:rrv});
   return {valid:true,reason:`1H_CONTINUATION_${direction.toUpperCase()}_BREAKOUT_VALID`,entry,tp,sl,anchor:direction==="long"?"1H_BROKEN_RESISTANCE":"1H_BROKEN_SUPPORT",anchorPrice:anchor,target:direction==="long"?"1H_NEXT_RESISTANCE":"1H_NEXT_SUPPORT",targetPrice:target,entryDistancePct:dPct,entryDistanceAtr:dAtr,riskPct:risk/entry*100,rewardPct:reward/entry*100,rr:rrv,breakoutTimeframe:"1H",slPlan:{sl,distancePct:risk/entry*100,method:direction==="long"?"1H_BROKEN_RESISTANCE_BELOW":"1H_BROKEN_SUPPORT_ABOVE",valid:true,anchorPrice:anchor},tpPlan:{tp,targetPrice:target,targetType:"1H_NEXT_STRUCTURE_BEFORE_LEVEL",method:"1H_NEXT_STRUCTURE_BEFORE_LEVEL",distancePct:reward/entry*100}};
 }
-
 
 function estimateEconomicOpportunity(candidate, walletUsd) {
   const wallet = Math.max(num(walletUsd), 0);
@@ -1220,147 +1234,65 @@ async function deepScan(sdk, broadRows, marketRegime = null) {
   return valid.sort((a,b)=>(b.score+b.edge*0.35)-(a.score+a.edge*0.35));
 }
 
-function walletBalanceEntries(balances) {
-  const out = [];
-  const seen = new Set();
-  const visit = (value, keyHint = "", depth = 0) => {
-    if (value == null || depth > 7) return;
-    if (Array.isArray(value)) {
-      for (const item of value) visit(item, "", depth + 1);
-      return;
+function extractBalanceRows(payload) {
+  return collectObjects(
+    payload,
+    (x) => {
+      const symbol = String(x?.symbol || x?.tokenSymbol || x?.assetSymbol || "").toUpperCase();
+      return ["USDC", "USDT", "USDC.E"].includes(symbol);
     }
-    if (typeof value !== "object") {
-      const key = String(keyHint || "").toUpperCase().replace(/[^A-Z0-9.]/g, "");
-      const symbol = key === "USDC.E" ? "USDC" : key;
-      if ((symbol === "USDC" || symbol === "USDT") && (typeof value === "bigint" || (typeof value === "number" && Number.isFinite(value)) || (typeof value === "string" && value.trim() !== ""))) {
-        const marker = `${symbol}|PRIMITIVE|${String(value)}`;
-        if (!seen.has(marker)) {
-          seen.add(marker);
-          out.push({ value: { symbol, balance: value }, keyHint: symbol });
-        }
-      }
-      return;
-    }
-    const symbolHint = String(
-      value?.tokenSymbol || value?.symbol || value?.token?.symbol || value?.asset?.symbol || keyHint || ""
-    ).toUpperCase();
-    const hasBalance = [
-      "balance", "amount", "balanceRaw", "rawBalance", "tokenBalance",
-      "balanceFormatted", "balanceHuman", "uiAmount", "amountFormatted",
-      "usdValue", "balanceUsd", "balanceUSD"
-    ].some((k) => value?.[k] != null);
-    const hasTokenIdentity = Boolean(
-      symbolHint || value?.address || value?.tokenAddress || value?.contractAddress || value?.token?.address
-    );
-    if (hasBalance && hasTokenIdentity) {
-      const marker = `${symbolHint}|${String(value?.address || value?.tokenAddress || value?.contractAddress || value?.token?.address || "").toLowerCase()}|${String(value?.balance ?? value?.amount ?? value?.balanceRaw ?? value?.rawBalance ?? "")}`;
-      if (!seen.has(marker)) {
-        seen.add(marker);
-        out.push({ value, keyHint });
-      }
-    }
-    for (const [k, v] of Object.entries(value)) {
-      if (v && typeof v === "object") visit(v, String(k).toUpperCase(), depth + 1);
-    }
-  };
-  visit(balances);
-  return out;
-}
-
-function tokenNumericBalance(entry) {
-  const b = entry?.value || {};
-  const decimalsRaw = Number(b?.decimals ?? b?.token?.decimals ?? 6);
-  const decimals = Number.isFinite(decimalsRaw) && decimalsRaw >= 0 && decimalsRaw <= 36 ? decimalsRaw : 6;
-  const explicitUsd = Number(
-    b?.balanceUsd ?? b?.balanceUSD ?? b?.usdValue ?? b?.valueUsd ?? b?.token?.usdValue ?? 0
   );
-
-  const humanCandidates = [
-    b?.balanceFormatted, b?.balanceHuman, b?.uiAmount, b?.amountFormatted,
-    b?.displayBalance, b?.token?.balanceFormatted
-  ];
-  let human = humanCandidates.map(Number).find((n) => Number.isFinite(n) && n > 0);
-  let interpretation = human > 0 ? "FORMATTED_HUMAN" : null;
-
-  if (!(human > 0)) {
-    const rawValue = b?.balanceRaw ?? b?.rawBalance ?? b?.tokenBalance ?? b?.amountRaw;
-    if (rawValue != null) {
-      try {
-        const n = Number(rawValue);
-        if (Number.isFinite(n) && n > 0) {
-          human = n / (10 ** decimals);
-          interpretation = "EXPLICIT_RAW";
-        }
-      } catch {}
-    }
-  }
-
-  if (!(human > 0)) {
-    const value = b?.balance ?? b?.amount ?? b?.value;
-    if (value != null) {
-      const text = String(value).trim();
-      const n = Number(value);
-      if (Number.isFinite(n) && n > 0) {
-        if (explicitUsd > 0) {
-          const humanErr = Math.abs(n - explicitUsd) / Math.max(Math.abs(explicitUsd), 1e-12);
-          const rawConverted = n / (10 ** decimals);
-          const rawErr = Math.abs(rawConverted - explicitUsd) / Math.max(Math.abs(explicitUsd), 1e-12);
-          if (humanErr <= 0.05 && rawErr > humanErr) {
-            human = n;
-            interpretation = "BALANCE_HUMAN_BY_USD";
-          } else if (rawErr <= 0.05 && humanErr > rawErr) {
-            human = rawConverted;
-            interpretation = "BALANCE_RAW_BY_USD";
-          } else {
-            human = n;
-            interpretation = "BALANCE_HUMAN_DEFAULT";
-          }
-        } else if (/[.eE]/.test(text) || !Number.isInteger(n)) {
-          human = n;
-          interpretation = "BALANCE_HUMAN_DECIMAL";
-        } else if (n > 1_000_000) {
-          human = n / (10 ** decimals);
-          interpretation = "BALANCE_RAW_LARGE_INTEGER";
-        } else {
-          human = n;
-          interpretation = "BALANCE_HUMAN_DEFAULT";
-        }
-      }
-    }
-  }
-  return { usd: explicitUsd > 0 ? explicitUsd : human > 0 ? human : 0, balance: human > 0 ? human : 0, decimals, interpretation };
 }
 
 function parseCollateralBalances(payload) {
+  const rows = extractBalanceRows(payload);
   const result = {
     USDC: { usd: 0, raw: 0n, decimals: 6, address: null },
     USDT: { usd: 0, raw: 0n, decimals: 6, address: null },
   };
 
-  for (const entry of walletBalanceEntries(payload)) {
-    const b = entry?.value || {};
-    const rawSymbol = String(
-      b?.tokenSymbol || b?.symbol || b?.token?.symbol || b?.asset?.symbol || entry?.keyHint || ""
-    ).toUpperCase();
-    const cleaned = rawSymbol.replace(/[^A-Z0-9.]/g, "");
-    const symbol = cleaned === "USDC.E" ? "USDC" : cleaned.replace(/[^A-Z0-9]/g, "");
-    if (symbol !== "USDC" && symbol !== "USDT") continue;
+  for (const row of rows) {
+    const symbol = String(row.symbol || row.tokenSymbol || row.assetSymbol).toUpperCase() === "USDC.E"
+      ? "USDC"
+      : String(row.symbol || row.tokenSymbol || row.assetSymbol).toUpperCase();
 
-    const address = String(
-      b?.address || b?.tokenAddress || b?.contractAddress || b?.token?.address || b?.token?.tokenAddress || ""
-    );
-    const parsed = tokenNumericBalance(entry);
-    if (!(parsed.balance > 0 || parsed.usd > 0)) continue;
+    const decimals = Math.max(0, Math.min(18, Math.trunc(num(row.decimals, 6))));
+    const rawValue =
+      row.balance ??
+      row.rawBalance ??
+      row.balanceAmount ??
+      row.amount ??
+      row.tokenAmount ??
+      row.amountRaw;
 
-    const candidate = {
-      usd: Number(parsed.balance > 0 ? parsed.balance : parsed.usd),
-      raw: b?.balanceRaw ?? b?.rawBalance ?? b?.amountRaw ?? b?.balance ?? 0,
-      decimals: parsed.decimals,
-      address: address || null,
-      interpretation: parsed.interpretation,
-    };
-    if (candidate.usd > Number(result[symbol].usd || 0)) result[symbol] = candidate;
+    let raw = 0n;
+    try {
+      if (typeof rawValue === "bigint") raw = rawValue;
+      else if (rawValue !== undefined && rawValue !== null) {
+        const text = String(rawValue);
+        raw = /^\d+$/.test(text) ? BigInt(text) : toUnits(text, decimals);
+      }
+    } catch {}
+
+    const human =
+      row.usd ??
+      row.usdValue ??
+      row.balanceUsd ??
+      row.valueUsd ??
+      row.amountUsd;
+
+    const usd = num(human, Number(raw) / 10 ** decimals);
+
+    if (usd > result[symbol].usd) {
+      result[symbol] = {
+        usd,
+        raw,
+        decimals,
+        address: row.address || row.tokenAddress || row.contractAddress || null,
+      };
+    }
   }
+
   return result;
 }
 
@@ -1390,36 +1322,12 @@ function positionSizeUsd(position) {
 }
 
 async function getOpenPositions(sdk, account) {
-  let lastError = null;
-
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    try {
-      const positions = await sdk.fetchPositionsInfo({
-        address: account,
-        // Related orders are not used by the bot for position detection.
-        // Keep this request minimal to avoid unnecessary API-side failures.
-        includeRelatedOrders: false,
-      });
-
-      return (Array.isArray(positions) ? positions : [])
-        .filter((p) => positionSizeUsd(p) > 0);
-    } catch (error) {
-      lastError = error;
-      if (attempt < 3) {
-        console.warn('[POSITIONS][RETRY]', {
-          attempt,
-          nextAttempt: attempt + 1,
-          error: safeError(error),
-        });
-        await sleep(750 * attempt);
-      }
-    }
-  }
-
-  // Do not silently return [] here: an unavailable position read must never
-  // be interpreted as "no open positions", otherwise max-position protection
-  // could be bypassed. Fail closed after the bounded retries.
-  throw lastError || new Error('GMX_POSITIONS_READ_FAILED');
+  const positions = await sdk.fetchPositionsInfo({
+    address: account,
+    includeRelatedOrders: true,
+  });
+  return (Array.isArray(positions) ? positions : [])
+    .filter((p) => positionSizeUsd(p) > 0);
 }
 
 function findPositionForCandidate(positions, candidate) {
