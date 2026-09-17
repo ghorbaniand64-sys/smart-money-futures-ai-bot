@@ -34,7 +34,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V22.5.1-PURE-1H-RR-TELEGRAM";
+export const BOT_VERSION = "V22.5.0-PURE-1H-STRUCTURE-DIRECTION-LOCK";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -1834,9 +1834,6 @@ function oneHStructureSignal(candles1h, ticker) {
     sl: Number(sl.toPrecision(12)),
     tp: Number(tp.toPrecision(12)),
     rr: Number(rr.toFixed(2)),
-    riskPct: Number((slDistance / Math.max(price, 1e-12) * 100).toFixed(3)),
-    rewardPct: Number((tpDistance / Math.max(price, 1e-12) * 100).toFixed(3)),
-    rrPass: rr >= CONFIG.oneHMinRR,
     score: Number(score.toFixed(2)),
     edge: Number(edge.toFixed(2)),
     risk: Number(risk.toFixed(2)),
@@ -2086,22 +2083,6 @@ function attachEconomicOpportunity(candidate, walletUsd) {
 }
 
 
-function calculateRiskReward(direction, entry, sl, tp) {
-  const side = String(direction || "").toLowerCase();
-  const e = num(entry, NaN), s = num(sl, NaN), t = num(tp, NaN);
-  if ((side !== "long" && side !== "short") || !Number.isFinite(e) || !Number.isFinite(s) || !Number.isFinite(t) || !(e > 0) || !(s > 0) || !(t > 0)) return { valid:false, pass:false, riskPct:0, rewardPct:0, rr:0 };
-  const risk = side === "long" ? e - s : s - e;
-  const reward = side === "long" ? t - e : e - t;
-  if (!(risk > 0) || !(reward > 0)) return { valid:false, pass:false, riskPct:e>0?Math.abs(risk/e)*100:0, rewardPct:e>0?Math.abs(reward/e)*100:0, rr:0 };
-  const riskPct=(risk/e)*100, rewardPct=(reward/e)*100, rr=reward/risk;
-  return { valid:true, pass:rr>=CONFIG.oneHMinRR, riskPct, rewardPct, rr };
-}
-
-function rrTelegramLines(info) {
-  if (!info || !info.valid) return ["📐 Risk: N/A","🎯 Reward: N/A","⚖️ Risk/Reward: N/A",`🛡️ RR Gate: FAIL (< ${CONFIG.oneHMinRR.toFixed(2)}R)`];
-  return [`📐 Risk: ${info.riskPct.toFixed(2)}%`,`🎯 Reward: ${info.rewardPct.toFixed(2)}%`,`⚖️ Risk/Reward: ${info.rr.toFixed(2)}R`,info.pass ? `✅ RR Gate: PASS (≥ ${CONFIG.oneHMinRR.toFixed(2)}R)` : `🚫 RR Gate: FAIL (< ${CONFIG.oneHMinRR.toFixed(2)}R)`];
-}
-
 function candidateIsActionable(candidate) {
   if (!candidate || !candidate.symbol || !(num(candidate.entry) > 0)) {
     return { ok: false, reason: "INVALID_1H_CANDIDATE" };
@@ -2130,9 +2111,8 @@ function candidateIsActionable(candidate) {
     return { ok: false, reason: "DIRECTION_PLAN_MISMATCH_SHORT" };
   }
 
-  const rrInfo = calculateRiskReward(direction, entry, sl, tp);
-  if (!rrInfo.valid) return { ok: false, reason: "RR_INVALID" };
-  if (!rrInfo.pass) return { ok: false, reason: `RR_${rrInfo.rr.toFixed(2)}_BELOW_${CONFIG.oneHMinRR.toFixed(2)}`, rr: rrInfo.rr, riskPct: rrInfo.riskPct, rewardPct: rrInfo.rewardPct };
+  const rr = Math.abs(tp - entry) / Math.max(Math.abs(entry - sl), 1e-12);
+  if (rr < CONFIG.oneHMinRR) return { ok: false, reason: `RR_${rr.toFixed(2)}_BELOW_${CONFIG.oneHMinRR.toFixed(2)}` };
 
   if (candidate.setupType !== "REVERSAL" && candidate.setupType !== "CONTINUATION") {
     return { ok: false, reason: "NO_CONFIRMED_1H_SETUP" };
@@ -2826,7 +2806,6 @@ function tradeMessage(result) {
       `📌 Direction: ${result.direction.toUpperCase()}`,
       `💰 Entry: ${formatPrice(result.entry)}`,
       `🎯 TP: ${formatPrice(result.tp)}`,
-      ...rrTelegramLines(calculateRiskReward(result.direction, result.entry, result.sl, result.tp)),
       `⚙️ Leverage: ${result.leverage.toFixed(1)}x`,
       `📊 Allocation: ${(result.allocation * 100).toFixed(2)}%`,
       `📦 Notional: ${formatUsd(result.notionalUsd)}`,
@@ -2850,7 +2829,6 @@ function tradeMessage(result) {
     `📌 Direction: ${String(result.direction || "N/A").toUpperCase()}`,
     `💰 Entry: ${formatPrice(result.entry)}`,
     `🎯 TP: ${formatPrice(result.tp)}`,
-    ...rrTelegramLines(calculateRiskReward(result.direction, result.entry, result.sl, result.tp)),
     `⚙️ Leverage: ${CONFIG.leverage.toFixed(1)}x`,
     `📊 Allocation target: ${(CONFIG.walletAllocationPerPosition * 100).toFixed(2)}%`,
     `❌ Stage: ${result.stage || "EXECUTION"}`,
@@ -2871,7 +2849,6 @@ function cycleMessage(report) {
     `🕐 1H signal scan: ${report.deepCount}/${report.deepAttempted || report.deepCount} | Data failures: ${report.deepFailureCount || 0}`,
     `📐 Signal authority: COMPLETED 1H CANDLE STRUCTURE`,
     `🧭 Entry / SL / TP timeframe: 1H`,
-    `⚖️ RR Gate: minimum ${CONFIG.oneHMinRR.toFixed(2)}R`,
     `🔒 Direction lock: 1H STRUCTURE → LONG / SHORT`,
     `💧 1H volume-flow diagnostic: ${report.flowCount} | Strong volume: ${report.smartMoneyCount}`,
     `🧠 1H setups: Ready ${report.layerReadyCount} | Continuation ${report.impulseCount} | Reversal ${report.layerReversalCount}`,
@@ -2912,8 +2889,6 @@ function cycleMessage(report) {
       const mr = ev.marketRegime || {};
       if (mr.regime) lines.push(`  🌐 ${mr.regime} | BTC ${num(mr.btcScore).toFixed(0)} ETH ${num(mr.ethScore).toFixed(0)} Breadth ${num(mr.breadthScore).toFixed(0)} | ${mr.counterTrend ? "COUNTER" : "ALIGNED"}`);
       lines.push(`  🛡️ SL ${formatPrice(item.sl)} | ${num(ev.slDistancePct).toFixed(2)}% | ${String(ev.slMethod || "N/A")}`);
-      const rrInfo = calculateRiskReward(item.direction, item.entry, item.sl, item.tp);
-      lines.push(`  📐 Risk: ${rrInfo.valid ? rrInfo.riskPct.toFixed(2) + "%" : "N/A"} | 🎯 Reward: ${rrInfo.valid ? rrInfo.rewardPct.toFixed(2) + "%" : "N/A"} | ⚖️ Risk/Reward: ${rrInfo.valid ? rrInfo.rr.toFixed(2) + "R" : "N/A"} | ${rrInfo.pass ? "✅ PASS" : `🚫 FAIL (< ${CONFIG.oneHMinRR.toFixed(2)}R)`}`);
       const econ = item.economics || {};
       lines.push(`  💹 Gross ${formatUsd(econ.grossPnlUsd)} | Cost ${formatUsd(econ.totalCostUsd)} | Net ${formatUsd(econ.expectedNetUsd)} | TP move ${num(econ.tpMovePct).toFixed(2)}%`);
       lines.push(`  🚫 ${item.reason}`);
@@ -2981,10 +2956,6 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
   const walletBefore = wallet.walletUsd;
   const collateralUsd = walletBefore * CONFIG.walletAllocationPerPosition;
   const notionalUsd = collateralUsd * CONFIG.leverage;
-  const executionRR = calculateRiskReward(candidate.direction, candidate.entry, candidate.sl, candidate.tp);
-  if (!executionRR.valid) return { executed:false, symbol:candidate.symbol, direction:candidate.direction, entry:candidate.entry, tp:candidate.tp, sl:candidate.sl, rr:0, riskPct:0, rewardPct:0, score:candidate.score, edge:candidate.edge, risk:candidate.risk, reason:"EXECUTION_RR_INVALID", stage:"RR_GATE" };
-  if (!executionRR.pass) return { executed:false, symbol:candidate.symbol, direction:candidate.direction, entry:candidate.entry, tp:candidate.tp, sl:candidate.sl, rr:executionRR.rr, riskPct:executionRR.riskPct, rewardPct:executionRR.rewardPct, score:candidate.score, edge:candidate.edge, risk:candidate.risk, reason:`RR_${executionRR.rr.toFixed(2)}_BELOW_${CONFIG.oneHMinRR.toFixed(2)}`, stage:"RR_GATE" };
-  candidate.rr=Number(executionRR.rr.toFixed(2)); candidate.riskPct=Number(executionRR.riskPct.toFixed(3)); candidate.rewardPct=Number(executionRR.rewardPct.toFixed(3)); candidate.rrPass=true;
   const economics = estimateEconomicOpportunity(candidate, walletBefore);
 
   if (collateralUsd <= 0) {
@@ -3021,10 +2992,6 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
       entry: candidate.entry,
       tp: candidate.tp,
       sl: candidate.sl,
-      rr: num(candidate.rr),
-      riskPct: num(candidate.riskPct),
-      rewardPct: num(candidate.rewardPct),
-      rrPass: candidate.rr >= CONFIG.oneHMinRR,
       score: candidate.score,
       edge: candidate.edge,
       risk: candidate.risk,
@@ -3273,10 +3240,15 @@ async function runCycle(event, env) {
 
     const check = candidateIsActionable(candidate);
     if (!check.ok) {
+      // Preserve the exact existing block reason, but still calculate economics
+      // for reporting. Previously these candidates skipped attachEconomicOpportunity(),
+      // so Telegram received no economics object and formatted the missing values as 0.
+      const blockedEconomics = attachEconomicOpportunity(candidate, wallet.walletUsd);
       blocked.push({
         symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, sl: candidate.sl, tp: candidate.tp,
         score: candidate.score, edge: candidate.edge, risk: candidate.risk, setupType: candidate.setupType,
         reversalEvidence: candidate.reversalEvidence, reason: check.reason, setupEvidence: candidate.setupEvidence,
+        economics: blockedEconomics.economics,
       });
       continue;
     }
