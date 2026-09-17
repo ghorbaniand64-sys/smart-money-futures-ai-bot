@@ -1,15 +1,16 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║ GMX SMART MONEY FUTURES AI BOT — V22.5 PURE 1H STRUCTURE + DIRECTION LOCK      ║
-║ Single pipeline • 1H signal scan • Classic GMX only          ║
+║ Single pipeline • COMPLETED 1H signal scan • Classic GMX only ║
 ║ 20x leverage • 100% wallet • max 1 position • dynamic TP + structure SL               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 Architecture:
 GMX MARKET UNIVERSE
-  → FULL 5M BROAD SCAN
-  → TOP DEEP CANDIDATES
-  → 15M STRUCTURE + SMART-MONEY/OI/FLOW + S/R
+  → UNIVERSE DISCOVERY (NO SIGNAL AUTHORITY)
+  → COMPLETED 1H OHLCV FOR EVERY MARKET
+  → 1H STRUCTURE → SINGLE DIRECTION LOCK
+  → 1H SL/TP + RR VALIDATION
   → TOP 1 ECONOMIC OPPORTUNITY
   → 100% WALLET COLLATERAL
   → 20x CLASSIC GMX MARKET INCREASE
@@ -1456,10 +1457,19 @@ function fiveLayerEngine({ candles5, candles15, candles1h, candles4h, candles1d,
 function completedOneHCandles(candles) {
   const rows = Array.isArray(candles) ? candles.filter(c =>
     num(c?.open) > 0 && num(c?.high) > 0 && num(c?.low) > 0 && num(c?.close) > 0
-  ) : [];
-  // The newest OHLCV row is treated as the live/incomplete 1H candle.
-  // Signal authority is therefore based only on completed 1H candles.
-  return rows.length >= 3 ? rows.slice(0, -1) : rows;
+  ).sort((a,b) => num(a.timestamp) - num(b.timestamp)) : [];
+  if (rows.length < 3) return rows;
+
+  // Drop the newest row only when it is actually the currently forming UTC
+  // 1H candle. Some SDK endpoints return completed candles only; blindly
+  // removing the newest row would otherwise discard the latest valid signal.
+  const last = rows.at(-1);
+  const tsMs = num(last?.timestamp) * 1000;
+  const now = Date.now();
+  const hourStart = Math.floor(now / 3600000) * 3600000;
+  const lastMs = Number.isFinite(tsMs) ? tsMs : 0;
+  const looksCurrent = lastMs >= hourStart && lastMs < now + 60000;
+  return looksCurrent ? rows.slice(0, -1) : rows;
 }
 
 function oneHConfirmedSwings(candles, lookback = CONFIG.oneHLookbackStructure) {
@@ -1672,15 +1682,15 @@ function oneHStructureSignal(candles1h, ticker) {
   // Continuation: beyond the broken level.
   const buffer = Math.max(atr1h * 0.18, price * 0.0010);
   let sl = 0;
-  if (direction === "short") sl = setupType === "REVERSAL" ? extreme + buffer : structureLevel - buffer;
-  else sl = setupType === "REVERSAL" ? extreme - buffer : structureLevel + buffer;
+  if (direction === "short") sl = setupType === "REVERSAL" ? extreme + buffer : structureLevel + buffer;
+  else sl = setupType === "REVERSAL" ? extreme - buffer : structureLevel - buffer;
 
   // For continuation, the stop must be on the invalidation side of the break.
   // For reversal, the stop must be beyond the actual high/low.
   if (direction === "short" && setupType === "REVERSAL") sl = Math.max(sl, extreme + buffer);
   if (direction === "long" && setupType === "REVERSAL") sl = Math.min(sl, extreme - buffer);
-  if (direction === "short" && setupType === "CONTINUATION") sl = Math.min(sl, structureLevel - buffer);
-  if (direction === "long" && setupType === "CONTINUATION") sl = Math.max(sl, structureLevel + buffer);
+  if (direction === "short" && setupType === "CONTINUATION") sl = structureLevel + buffer;
+  if (direction === "long" && setupType === "CONTINUATION") sl = structureLevel - buffer;
 
   // Targets are generated ONLY from 1H structure.
   const bufferTarget = Math.max(price * CONFIG.oneHTargetBufferPct / 100, atr1h * CONFIG.oneHTargetBufferAtr);
@@ -2206,6 +2216,15 @@ async function fetchCandles(sdk, marketOrSymbol, timeframe, limit) {
     catch (e) { errors.push(`ORACLE:${safeError(e)}`); }
   }
   throw new Error(`OHLCV_ALL_SOURCES_FAILED:${errors.slice(0,4).join("|")}`);
+}
+
+// V22.5.1: single resilient 1H OHLCV entry point.
+// The previous V22.5 build called this helper but never defined it, causing
+// every market (and BTC/ETH) to fail before the 1H engine could run.
+async function fetchCandlesResilient(sdk, marketOrSymbol, timeframe, limit) {
+  const tf = String(timeframe || "1h").toLowerCase();
+  if (tf !== "1h") throw new Error(`PURE_1H_ONLY_TIMEFRAME:${tf}`);
+  return fetchCandles(sdk, marketOrSymbol, "1h", limit);
 }
 
 function findMarketValue(marketValues, market) {
@@ -2799,7 +2818,7 @@ function cycleMessage(report) {
     `━━━━━━━━━━━━━━━━━━`,
     `📡 Status: ${report.status}`,
     `🪙 Universe: ${report.universe}`,
-    `🔎 Universe scan: ${report.broadSuccess}/${report.universe}`,
+    `🔎 Universe discovery: ${report.universeScanSuccess}/${report.universe} | Signal authority: 1H`,
     `🕐 1H signal scan: ${report.deepCount}/${report.deepAttempted || report.deepCount} | Data failures: ${report.deepFailureCount || 0}`,
     `📐 Signal authority: COMPLETED 1H CANDLE STRUCTURE`,
     `🧭 Entry / SL / TP timeframe: 1H`,
@@ -3297,7 +3316,7 @@ async function runCycle(event, env) {
     scanId,
     status: executions.length ? "EXECUTED" : actionable.length ? "ENTRY_READY" : "WATCHING",
     universe: universe.length,
-    broadSuccess: broad.successful,
+    universeScanSuccess: broad.successful,
     deepCount: deep.length,
     deepSuccess: deep.length,
     deepAttempted,
@@ -3367,7 +3386,7 @@ async function runCycle(event, env) {
     scanId,
     status: report.status,
     universe: report.universe,
-    broad5m: report.broadSuccess,
+    universeScan: report.universeScanSuccess,
     deep: report.deepCount,
     entryReady: report.actionableCount,
     executed: report.executedCount,
