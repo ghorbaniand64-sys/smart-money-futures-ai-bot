@@ -1627,6 +1627,55 @@ function calculateHourlyContinuationTradePlan({ direction, price, candles1h }) {
   return {valid:true,reason:`1H_CONTINUATION_${direction.toUpperCase()}_BREAKOUT_VALID`,entry,tp,sl,anchor:direction==="long"?"1H_BROKEN_RESISTANCE":"1H_BROKEN_SUPPORT",anchorPrice:anchor,target:direction==="long"?"1H_NEXT_RESISTANCE":"1H_NEXT_SUPPORT",targetPrice:target,entryDistancePct:dPct,entryDistanceAtr:dAtr,riskPct:risk/entry*100,rewardPct:reward/entry*100,rr:rrv,breakoutTimeframe:"1H",slPlan:{sl,distancePct:risk/entry*100,method:direction==="long"?"1H_BROKEN_RESISTANCE_BELOW":"1H_BROKEN_SUPPORT_ABOVE",valid:true,anchorPrice:anchor},tpPlan:{tp,targetPrice:target,targetType:"1H_NEXT_STRUCTURE_BEFORE_LEVEL",method:"1H_NEXT_STRUCTURE_BEFORE_LEVEL",distancePct:reward/entry*100}};
 }
 
+function estimateEconomicOpportunity(candidate, walletUsd) {
+  const wallet = Math.max(num(walletUsd), 0);
+  const allocation = CONFIG.walletAllocationPerPosition;
+  const collateralUsd = wallet * allocation;
+  const leverage = CONFIG.leverage;
+  const notionalUsd = collateralUsd * leverage;
+  const entry = num(candidate?.entry);
+  const tp = num(candidate?.tp);
+
+  if (!(entry > 0) || !(tp > 0) || !(notionalUsd > 0)) {
+    return {
+      valid: false,
+      collateralUsd,
+      notionalUsd,
+      grossPnlUsd: 0,
+      positionFeesUsd: 0,
+      executionCostUsd: CONFIG.executionCostBufferUsd,
+      fundingBorrowBufferUsd: CONFIG.fundingBorrowBufferUsd,
+      totalCostUsd: CONFIG.executionCostBufferUsd + CONFIG.fundingBorrowBufferUsd,
+      expectedNetUsd: -(CONFIG.executionCostBufferUsd + CONFIG.fundingBorrowBufferUsd),
+      netToCostRatio: 0,
+      tpMovePct: 0,
+    };
+  }
+
+  const tpMovePct = Math.abs(pct(tp, entry));
+  const grossPnlUsd = notionalUsd * tpMovePct / 100;
+  const positionFeesUsd = notionalUsd * (CONFIG.positionFeeBpsPerSide / 10_000) * 2;
+  const executionCostUsd = CONFIG.executionCostBufferUsd;
+  const fundingBorrowBufferUsd = CONFIG.fundingBorrowBufferUsd;
+  const totalCostUsd = positionFeesUsd + executionCostUsd + fundingBorrowBufferUsd;
+  const expectedNetUsd = grossPnlUsd - totalCostUsd;
+  const netToCostRatio = totalCostUsd > 0 ? expectedNetUsd / totalCostUsd : 0;
+
+  return {
+    valid: true,
+    collateralUsd,
+    notionalUsd,
+    grossPnlUsd,
+    positionFeesUsd,
+    executionCostUsd,
+    fundingBorrowBufferUsd,
+    totalCostUsd,
+    expectedNetUsd,
+    netToCostRatio,
+    tpMovePct,
+  };
+}
+
 function economicGate(candidate, walletUsd) {
   const economics = estimateEconomicOpportunity(candidate, walletUsd);
   if (!economics.valid) return { ok: false, reason: "ECONOMIC_INVALID", economics };
