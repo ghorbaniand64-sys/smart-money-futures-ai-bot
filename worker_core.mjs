@@ -1530,9 +1530,15 @@ function oneHStructureSignal(candles1h, ticker) {
   const st = stochastic(c);
   const bb = bollingerBands(closes);
   const swings = oneHConfirmedSwings(c);
-  const recent = c.slice(-Math.max(6, Number(CONFIG.oneHLookbackTrend) || 8));
-  const trendStart = num(recent[0]?.close);
-  const trendMove = trendStart > 0 ? pct(last.close, trendStart) : 0;
+  // The reversal candle itself must NOT be used to decide whether the prior
+  // move was up/down.  The old version tested `last.close > e20` and included
+  // the signal candle in the trend move, which made a genuine reversal lose
+  // its own preceding trend exactly when the reversal was strong.
+  const trendLookback = Math.max(6, Number(CONFIG.oneHLookbackTrend) || 8);
+  const priorTrendRows = c.slice(-trendLookback - 1, -1);
+  const trendStart = num(priorTrendRows[0]?.close);
+  const trendEnd = num(priorTrendRows.at(-1)?.close);
+  const trendMove = trendStart > 0 ? pct(trendEnd, trendStart) : 0;
   const prior = c.slice(-Math.max(12, Number(CONFIG.oneHLookbackTrend) || 8) - 1, -1);
   const priorHigh = prior.length ? Math.max(...prior.map(x => x.high)) : 0;
   const priorLow = prior.length ? Math.min(...prior.map(x => x.low)) : 0;
@@ -1546,10 +1552,11 @@ function oneHStructureSignal(candles1h, ticker) {
   const upperWickRatio = upperWick / range;
   const lowerWickRatio = lowerWick / range;
 
+  const priorTrendClose = trendEnd;
   const priorUp = trendMove >= CONFIG.oneHMinTrendMovePct &&
-    last.close > e20 && e20 >= e50;
+    priorTrendClose > 0 && e20 >= e50 && priorTrendClose >= e20 * 0.985;
   const priorDown = trendMove <= -CONFIG.oneHMinTrendMovePct &&
-    last.close < e20 && e20 <= e50;
+    priorTrendClose > 0 && e20 <= e50 && priorTrendClose <= e20 * 1.015;
 
   const priorSwingHigh = [...swings.highs]
     .filter(s => s.index < c.length - 2)
@@ -1925,11 +1932,21 @@ function scoreCandidate({ market, ticker, candles1h, marketRegime }) {
   const base = oneHStructureSignal(candles1h, ticker);
   const symbol = marketDisplaySymbol(market);
   if (!base.valid) {
+    // A WATCH candidate is not an entry, but a zero score hides the actual
+    // 1H structural state. Keep it diagnostic-only: never actionable.
+    const diagnosticScore = clamp(
+      num(base.confidence) +
+      (base.diagnostics?.priorUp || base.diagnostics?.priorDown ? 8 : 0) +
+      (base.diagnostics?.shortTouch || base.diagnostics?.longTouch ? 6 : 0) +
+      (base.diagnostics?.shortBearishReaction || base.diagnostics?.longBullishReaction ? 8 : 0) +
+      (base.diagnostics?.shortBreak || base.diagnostics?.longBreak ? 10 : 0),
+      0, 67
+    );
     return {
       symbol, candleSymbol: candleSymbolFromMarket(market),
-      direction: base.valid ? (base.direction || null) : null,
+      direction: null,
       setupType: base.setupType || "NONE",
-      score: 0, edge: 0, risk: 100,
+      score: Number(diagnosticScore.toFixed(1)), edge: 0, risk: 100,
       entry: num(base.entry) || num(base.diagnostics?.price) || tickerPrice(ticker) || 0,
       sl: num(base.sl) || 0, tp: num(base.tp) || 0, rr: num(base.rr) || 0,
       triggerActive: false,
@@ -1939,6 +1956,7 @@ function scoreCandidate({ market, ticker, candles1h, marketRegime }) {
       setupEvidence: {
         ...(base.diagnostics || {}),
         reason: base.reason,
+        diagnosticOnly: true,
         signalTimeframe: "1H",
         directionAuthority: "1H_STRUCTURE",
         directionLocked: false,
@@ -2920,7 +2938,7 @@ function cycleMessage(report) {
     for (const item of report.topRejected.slice(0, 3)) {
       lines.push(`• ${item.symbol}`);
       lines.push(`  📌 ${String(item.direction || "N/A").toUpperCase()} | Entry ${formatPrice(item.entry)} | SL ${formatPrice(item.sl)} | TP ${formatPrice(item.tp)}`);
-      lines.push(`  🧠 ${String(item.setupType || "N/A")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)}`);
+      lines.push(`  🧠 ${String(item.setupType || "N/A")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)} | RR ${num(item.rr).toFixed(2) || "N/A"}`);
       const ev = item.setupEvidence || {};
       lines.push(`  🕐 1H trend ${String(ev.priorTrend || "N/A")} | Move ${num(ev.priorTrendMovePct).toFixed(2)}% | Body ${num(ev.bodyRatio).toFixed(2)} | Close ${num(ev.closeLocation).toFixed(2)}`);
       lines.push(`  💧 1H volume ${num(ev.volumeRatio1h).toFixed(2)}x`);
@@ -3311,7 +3329,7 @@ async function runCycle(event, env) {
         risk: num(candidate?.risk),
         setupType: candidate?.setupType || "NONE",
         reversalEvidence: num(candidate?.reversalEvidence),
-        reason: directionCheck.reason,
+        reason: candidate?.setupEvidence?.reason || directionCheck.reason,
         setupEvidence: candidate?.setupEvidence || {}
       });
       continue;
