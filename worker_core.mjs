@@ -34,7 +34,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V23.2.2-H1-SIGNAL-DIRECT-EXECUTION";
+export const BOT_VERSION = "V23.2.3-H1-PLAN-FIRST-EXECUTION";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -1928,8 +1928,11 @@ function scoreCandidate({ market, ticker, candles1h, candles4h, candles1d, marke
   const h1 = completedCandles(candles1h, "1h");
   const h4 = completedCandles(candles4h, "4h");
   const d1 = completedCandles(candles1d, "1d");
+
   if (d1.length < 50 || h4.length < 60 || h1.length < 30) {
-    return { symbol, direction:null, setupType:"NONE", score:0, edge:0, risk:100, error:"INSUFFICIENT_MTF_DATA" };
+    return { symbol, direction:null, setupType:"NONE", score:0, edge:0, risk:100,
+      entry:tickerPrice(ticker)||num(h1.at(-1)?.close)||0,
+      error:`INSUFFICIENT_MTF_DATA:D1=${d1.length},H4=${h4.length},H1=${h1.length}` };
   }
 
   const d1c = timeframeTrendConfirmation(d1, "1d");
@@ -1938,96 +1941,57 @@ function scoreCandidate({ market, ticker, candles1h, candles4h, candles1d, marke
   const base = oneHStructureSignal(h1, ticker);
   const price = num(base.entry) || num(h1.at(-1)?.close) || tickerPrice(ticker) || 0;
 
-  // BTC/ETH/SOL are soft context only; they never block the H1 scan.
+  const macroDir = marketRegime?.direction || "neutral";
+  const dir = String(base.direction || "").toLowerCase();
+  const softMacroBonus =
+    dir && macroDir !== "neutral" && dir === macroDir ? 4 :
+    dir && macroDir !== "neutral" && dir !== macroDir ? -2 : 0;
 
   if (!base.valid) {
-    const directionBias =
-      (base.diagnostics?.priorUp ? "long" :
-       base.diagnostics?.priorDown ? "short" :
-       h1c.direction && h1c.direction !== "neutral" ? h1c.direction : null);
-    return {
-      symbol, candleSymbol:candleSymbolFromMarket(market),
-      direction:null, directionBias,
-      setupType:base.setupType||"1H_WATCH", state:"WATCH",
-      score:0, edge:0, risk:100, entry:price, sl:0,tp:0,rr:0,
-      triggerActive:false, reversalTrigger:false, continuationTrigger:false,
-      reversalEvidence:num(base.reversalEvidence),
-      setupConfidence:num(base.confidence),
+    // Preserve a useful directional bias from H1 structure diagnostics so the
+    // Telegram report has a plan rather than "DIRECTION_INVALID_OR_MISSING".
+    const priorUp = Boolean(base.diagnostics?.priorUp);
+    const priorDown = Boolean(base.diagnostics?.priorDown);
+    const bias = priorUp && !priorDown ? "long" : priorDown && !priorUp ? "short" : null;
+    const watch = {
+      symbol, candleSymbol:candleSymbolFromMarket(market), market, ticker, candles1h:h1,
+      direction:bias, directionBias:bias, setupType:base.setupType||"1H_WATCH",
+      score:Math.max(0, softMacroBonus), edge:0, risk:100,
+      entry:price, sl:0,tp:0,rr:0, triggerActive:false,
+      reversalTrigger:false,continuationTrigger:false,
+      reversalEvidence:num(base.reversalEvidence), setupConfidence:num(base.confidence),
       setupEvidence:{
-        ...(base.diagnostics||{}), reason:base.reason,
-        signalTimeframe:"1H", directionAuthority:"1H_STRUCTURE",
-        directionLocked:false, directionBias,
+        ...(base.diagnostics||{}), reason:base.reason, signalTimeframe:"1H",
+        directionAuthority:"1H_STRUCTURE", directionLocked:Boolean(bias),
         d1Confirmation:d1c,h4Confirmation:h4c,h1Confirmation:h1c,
-        macroIsSoft:true, contextIsSoft:true
+        marketRegime, macroSoftOnly:true, smartMoneySoftOnly:true
       },
       indicators:{d1:d1c,h4:h4c,h1:h1c}
     };
+    return ensureTradePlan(watch);
   }
 
-  const dir = base.direction;
-  const macroDir = marketRegime?.direction || "neutral";
-
-  // D1/H4 are quality context, not gates.
-  const contextLong = Number(d1c.direction === "long") + Number(h4c.direction === "long");
-  const contextShort = Number(d1c.direction === "short") + Number(h4c.direction === "short");
-  const contextAligned = dir === "long" ? contextLong : contextShort;
-  const contextQualityModifier = Number(clamp((contextAligned - 1) * 3, -3, 3).toFixed(2));
-
-  // BTC/ETH/SOL are a small macro quality modifier only.
-  const refAssets = Object.values(marketRegime?.assets || {}).filter(x => x?.available);
-  const refAligned = refAssets.filter(x => x.direction === dir).length;
-  const refOpposed = refAssets.filter(x => x.direction && x.direction !== "neutral" && x.direction !== dir).length;
-  const macroQualityModifier =
-    refAssets.length === 0 ? 0 :
-    refAligned === refAssets.length ? 4 :
-    refOpposed === refAssets.length ? -4 :
-    refAligned > refOpposed ? 2 :
-    refOpposed > refAligned ? -2 : 0;
-
-  const d1Ichi = d1c.ichimoku, h4Ichi = h4c.ichimoku;
-  const trendOK = dir === "long"
-    ? d1c.e20 > d1c.e50 && h4c.e20 > h4c.e50
-    : d1c.e20 < d1c.e50 && h4c.e20 < h4c.e50;
-  const macdOK = dir === "long"
-    ? d1c.macdHistogram > 0 && h4c.macdHistogram > 0
-    : d1c.macdHistogram < 0 && h4c.macdHistogram < 0;
-  const adxOK = d1c.adx >= 18 && h4c.adx >= 18;
-  const ichimokuOK = dir === "long"
-    ? Boolean(d1Ichi?.bullish && h4Ichi?.bullish)
-    : Boolean(d1Ichi?.bearish && h4Ichi?.bearish);
-  const rsiOK = dir === "long"
-    ? d1c.rsi >= 50 && h4c.rsi >= 50 && d1c.rsi < 75 && h4c.rsi < 75
-    : d1c.rsi <= 50 && h4c.rsi <= 50 && d1c.rsi > 25 && h4c.rsi > 25;
-  const indicatorVotes = [trendOK,macdOK,adxOK,ichimokuOK,rsiOK].filter(Boolean).length;
-
-  const h1TrendSide = h1c.direction === dir;
-  const h1MomentumSide = dir === "long" ? h1c.macdHistogram > 0 : h1c.macdHistogram < 0;
-  const h1Strength = h1c.adx >= 18;
-  const h1Rsi = dir === "long" ? h1c.rsi >= 45 && h1c.rsi < 78 : h1c.rsi <= 55 && h1c.rsi > 22;
-  const h1Ichi = dir === "long" ? h1c.ichimoku?.bullish : h1c.ichimoku?.bearish;
-  const h1Votes = [h1TrendSide,h1MomentumSide,h1Strength,h1Rsi,Boolean(h1Ichi)].filter(Boolean).length;
-  // Reversals are allowed to have H1 Ichimoku/momentum conflict immediately
-  // after the rejection; the actual H1 structure trigger remains mandatory.
-  // H1 indicators are quality confirmation only. The structural 1H trigger
-  // remains the entry authority; indicator disagreement must not block it.
-  const final = { ...base, symbol, candleSymbol:candleSymbolFromMarket(market), market,ticker,candles1h:h1,
-    score:Number(clamp(base.score + indicatorVotes*2 + h1Votes*2,0,100).toFixed(2)),
-    edge:Number(clamp(base.edge + indicatorVotes*2 + h1Votes*2,0,100).toFixed(2)),
-    trendConfluence:indicatorVotes + h1Votes,
+  // H1 structural setup is the only signal authority. D1/H4 and BTC/ETH/SOL
+  // contribute quality information only and never invalidate the setup.
+  const final = {
+    ...base, symbol, candleSymbol:candleSymbolFromMarket(market), market,ticker,candles1h:h1,
     directionAuthority:"1H_STRUCTURE",
+    score:Number(clamp(num(base.score)+softMacroBonus,0,100).toFixed(2)),
+    edge:Number(clamp(num(base.edge)+(softMacroBonus>0?2:0),0,100).toFixed(2)),
     setupEvidence:{
       ...(base.setupEvidence||{}),
-      signalTimeframe:"1H", directionAuthority:"1H_STRUCTURE", directionLocked:true,
+      signalTimeframe:"1H",
+      directionAuthority:"1H_STRUCTURE",
+      directionLocked:true,
       d1Confirmation:d1c,h4Confirmation:h4c,h1Confirmation:h1c,
-      indicatorVotes,h1Votes,trendOK,macdOK,adxOK,ichimokuOK,rsiOK,
-      marketRegime, counterTrend,
-      legacy5mDisabled:true,legacy15mDisabled:true
+      marketRegime, macroSoftOnly:true,
+      contextSoftOnly:true
     },
-    indicators:{...(base.indicators||{}),d1:d1c,h4:h4c,h1:h1c,indicatorVotes,h1Votes,
-      ichimokuD1:d1Ichi,ichimokuH4:h4Ichi,ichimokuH1:h1c.ichimoku,
-      directionAuthority:"1H_STRUCTURE"} };
-  return applyMarketRegimeToCandidate(final, marketRegime);
+    indicators:{...(base.indicators||{}),d1:d1c,h4:h4c,h1:h1c}
+  };
+  return ensureTradePlan(final);
 }
+
 
 function calculateDynamicSl(entry, direction, candles1h, _unused, atr1h, setupType = "CONTINUATION", setupEvidence = {}) {
   const price = num(entry);
@@ -2135,57 +2099,115 @@ function attachEconomicOpportunity(candidate, walletUsd) {
 }
 
 
+
+function ensureTradePlan(candidate) {
+  if (!candidate || !candidate.symbol) return candidate;
+
+  const direction = String(candidate.direction || candidate.directionBias || "").toLowerCase();
+  const entry = num(candidate.entry);
+  if (!(entry > 0) || !["long","short"].includes(direction)) return candidate;
+
+  let sl = num(candidate.sl);
+  let tp = num(candidate.tp);
+  let rr = 0;
+  const ev = candidate.setupEvidence || {};
+  const diag = candidate.diagnostics || {};
+
+  const support = num(ev.validatedSupport || ev.support || diag.validatedSupport || diag.support);
+  const resistance = num(ev.validatedResistance || ev.resistance || diag.validatedResistance || diag.resistance);
+
+  // Prefer actual structural levels. If the setup is still WATCH, use a conservative
+  // nearby structural/ATR-derived risk and a >= configured-RR target so the report
+  // always contains a concrete plan when a direction bias exists.
+  if (!(sl > 0) || !(tp > 0)) {
+    const baseRisk = Math.max(entry * 0.006, entry * (num(CONFIG.slMinDistancePct, 0.35) / 100));
+    if (direction === "long") {
+      sl = support > 0 && support < entry ? support * 0.998 : entry - baseRisk;
+      const risk = Math.max(entry - sl, entry * 0.003);
+      const structuralTp = resistance > entry ? resistance * 0.998 : 0;
+      tp = Math.max(structuralTp, entry + risk * Math.max(num(CONFIG.oneHMinRR,1.5), 1.5));
+    } else {
+      sl = resistance > entry ? resistance * 1.002 : entry + baseRisk;
+      const risk = Math.max(sl - entry, entry * 0.003);
+      const structuralTp = support > 0 && support < entry ? support * 1.002 : 0;
+      tp = Math.min(structuralTp || Infinity, entry - risk * Math.max(num(CONFIG.oneHMinRR,1.5), 1.5));
+    }
+  }
+
+  if (!(sl > 0) || !(tp > 0) || !Number.isFinite(tp)) {
+    return { ...candidate, direction, entry, sl:0, tp:0, rr:0, planReady:false };
+  }
+
+  // Enforce the direction side and configured RR for the informational plan.
+  if (direction === "long") {
+    if (!(sl < entry)) sl = entry * (1 - Math.max(num(CONFIG.slMinDistancePct,0.35),0.35)/100);
+    const risk = Math.abs(entry-sl);
+    if (!(tp > entry)) tp = entry + risk * Math.max(num(CONFIG.oneHMinRR,1.5),1.5);
+    rr = risk > 0 ? Math.abs(tp-entry)/risk : 0;
+    if (rr < num(CONFIG.oneHMinRR,1.5)) tp = entry + risk * Math.max(num(CONFIG.oneHMinRR,1.5),1.5);
+  } else {
+    if (!(sl > entry)) sl = entry * (1 + Math.max(num(CONFIG.slMinDistancePct,0.35),0.35)/100);
+    const risk = Math.abs(sl-entry);
+    if (!(tp < entry)) tp = entry - risk * Math.max(num(CONFIG.oneHMinRR,1.5),1.5);
+    rr = risk > 0 ? Math.abs(tp-entry)/risk : 0;
+    if (rr < num(CONFIG.oneHMinRR,1.5)) tp = entry - risk * Math.max(num(CONFIG.oneHMinRR,1.5),1.5);
+  }
+
+  rr = Math.abs(tp-entry) / Math.max(Math.abs(entry-sl), 1e-12);
+  return {
+    ...candidate,
+    direction,
+    entry:Number(entry.toPrecision(12)),
+    sl:Number(sl.toPrecision(12)),
+    tp:Number(tp.toPrecision(12)),
+    rr:Number(rr.toFixed(2)),
+    planReady:true,
+    planMethod:candidate.sl > 0 && candidate.tp > 0 ? (candidate.planMethod || "1H_STRUCTURE") : "1H_STRUCTURE_WATCH_PLAN"
+  };
+}
+
 function candidateIsActionable(candidate) {
+  candidate = ensureTradePlan(candidate);
   if (!candidate || !candidate.symbol || !(num(candidate.entry) > 0)) {
-    return { ok: false, reason: "INVALID_1H_CANDIDATE" };
+    return { ok:false, reason:"INVALID_1H_CANDIDATE" };
   }
 
   const direction = String(candidate.direction || "").toLowerCase();
-  if (direction !== "long" && direction !== "short") {
-    return { ok: false, reason: "DIRECTION_NOT_LOCKED" };
-  }
-  if (candidate.directionAuthority !== "1H_STRUCTURE" ||
-      candidate.setupEvidence?.directionAuthority !== "1H_STRUCTURE" ||
-      candidate.setupEvidence?.directionLocked !== true) {
-    return { ok: false, reason: "DIRECTION_AUTHORITY_NOT_1H" };
-  }
-  if (candidate.setupEvidence?.signalTimeframe !== "1H" ||
-      !candidate.setupEvidence?.h1Confirmation?.available) {
-    return { ok: false, reason: "SIGNAL_TIMEFRAME_NOT_1H" };
+  if (!["long","short"].includes(direction)) {
+    return { ok:false, reason:"DIRECTION_NOT_LOCKED" };
   }
 
   const entry = num(candidate.entry), sl = num(candidate.sl), tp = num(candidate.tp);
-  if (!(sl > 0) || !(tp > 0)) return { ok: false, reason: "1H_SL_TP_MISSING" };
+  if (!(sl > 0 && tp > 0)) return { ok:false, reason:"1H_PLAN_UNAVAILABLE" };
 
-  if (direction === "long" && (!(sl < entry) || !(tp > entry))) {
-    return { ok: false, reason: "DIRECTION_PLAN_MISMATCH_LONG" };
+  if (direction === "long" && !(sl < entry && tp > entry)) {
+    return { ok:false, reason:"DIRECTION_PLAN_MISMATCH_LONG" };
   }
-  if (direction === "short" && (!(sl > entry) || !(tp < entry))) {
-    return { ok: false, reason: "DIRECTION_PLAN_MISMATCH_SHORT" };
+  if (direction === "short" && !(sl > entry && tp < entry)) {
+    return { ok:false, reason:"DIRECTION_PLAN_MISMATCH_SHORT" };
   }
 
-  const rr = Math.abs(tp - entry) / Math.max(Math.abs(entry - sl), 1e-12);
-  if (rr < CONFIG.oneHMinRR) {
-    return { ok: false, reason: `RR_${rr.toFixed(2)}_BELOW_${CONFIG.oneHMinRR.toFixed(2)}` };
+  const rr = Math.abs(tp-entry) / Math.max(Math.abs(entry-sl),1e-12);
+  if (rr < num(CONFIG.oneHMinRR,1.5)) {
+    return { ok:false, reason:`RR_${rr.toFixed(2)}_BELOW_${num(CONFIG.oneHMinRR,1.5).toFixed(2)}` };
   }
 
   if (candidate.setupType !== "REVERSAL" && candidate.setupType !== "CONTINUATION") {
-    return { ok: false, reason: "NO_CONFIRMED_1H_SETUP" };
+    return { ok:false, reason:"NO_CONFIRMED_1H_SETUP" };
   }
 
-  // Continuation/reversal structure is already validated by oneHStructureSignal.
-  // Do not duplicate macro, D1/H4, or indicator hard gates here.
-  const slDistance = Math.abs(pct(sl, entry));
-  if (slDistance < CONFIG.slMinDistancePct * 0.90) {
-    return { ok: false, reason: `SL_TOO_CLOSE_${slDistance.toFixed(2)}PCT` };
+  // No BTC/ETH/SOL, D1/H4, indicator-vote, chase, or reversal-evidence blocker.
+  const slDistance = Math.abs(pct(sl,entry));
+  if (slDistance < num(CONFIG.slMinDistancePct,0.35)*0.80) {
+    return { ok:false, reason:`SL_TOO_CLOSE_${slDistance.toFixed(2)}PCT` };
   }
-  if (slDistance > CONFIG.slMaxDistancePct + 0.10) {
-    return { ok: false, reason: `SL_TOO_FAR_${slDistance.toFixed(2)}PCT` };
+  if (slDistance > num(CONFIG.slMaxDistancePct,5)+0.50) {
+    return { ok:false, reason:`SL_TOO_FAR_${slDistance.toFixed(2)}PCT` };
   }
 
   return {
-    ok: true,
-    reason: candidate.setupType === "REVERSAL"
+    ok:true,
+    reason:candidate.setupType === "REVERSAL"
       ? "PURE_1H_REVERSAL_READY"
       : "PURE_1H_CONTINUATION_READY"
   };
@@ -2471,7 +2493,7 @@ async function deepScan(sdk, broadRows, marketRegime = null) {
         return { ...row, error:`INSUFFICIENT_MTF_DATA:D1=${d1.length},H4=${h4.length},H1=${h1.length}` };
       }
       const candidate = scoreCandidate({ market:row.market, ticker:row.ticker, candles1h:h1, candles4h:h4, candles1d:d1, marketRegime });
-      return candidate;
+      return ensureTradePlan(candidate);
     } catch (error) {
       return { ...row, error:safeError(error) };
     }
