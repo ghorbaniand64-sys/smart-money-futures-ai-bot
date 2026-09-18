@@ -34,7 +34,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V22.9.0-PURE-1H-REPORT-DEDUPE";
+export const BOT_VERSION = "V23.0.0-MTF-D1-H4-H1-MARKET-LOCK";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -51,22 +51,26 @@ const CONFIG = Object.freeze({
   maxTotalWalletAllocation: 1.00,
   leverage: 20,
 
-  // V22.5: ONLY completed 1H candles have signal authority.
+  // V23: strict top-down authority: D1 -> H4 -> H1.
+  // D1/H4 establish directional context; completed H1 supplies the entry trigger.
   signalTimeframe: "1h",
   signalLimit: 120,
+  d1Timeframe: "1d",
+  h4Timeframe: "4h",
+  h1Timeframe: "1h",
+  d1Limit: 120,
+  h4Limit: 120,
+  h1Limit: 120,
   deepCandidates: 117,
   finalCandidates: 1,
-  // Legacy scan values retained only for backwards-compatible config reads.
-  broadTimeframe: "1h",
-  broadLimit: 120,
-  deepTimeframe: "1h",
-  deepLimit: 120,
-  htfTimeframe: "1h",
-  contextTimeframe: "1h",
-  htfLimit: 120,
-  contextLimit: 120,
+  marketScanConcurrency: 8,
+  referenceAssets: ["BTC","ETH","SOL"],
+  requireAllReferenceAssets: true,
+  requireD1H4Agreement: true,
+  requireH1SetupConfirmation: true,
+  indicatorMinConfirmation: 4,
 
-  // Pure-1H structure rules.
+  // H1 structure rules.
   oneHLookbackTrend: 8,
   oneHLookbackStructure: 30,
   oneHMinTrendMovePct: 0.80,
@@ -78,6 +82,12 @@ const CONFIG = Object.freeze({
   oneHContinuationMaxChasePct: 1.25,
   oneHContinuationMinBodyRatio: 0.60,
   oneHContinuationMinCloseLocation: 0.70,
+  // Strong-break quality: body/close-location alone is insufficient.
+  oneHContinuationMinRangeAtr: 1.05,
+  oneHContinuationMinVolumeRatio: 1.15,
+  oneHContinuationMinMove3Pct: 0.25,
+  oneHContinuationMinAccelerationPct: 0.10,
+  oneHContinuationMinQualityScore: 70,
   oneHTargetBufferPct: 0.12,
   oneHTargetBufferAtr: 0.12,
   oneHMinRR: 1.50,
@@ -1526,461 +1536,506 @@ function oneHConfirmedSwings(candles, lookback = CONFIG.oneHLookbackStructure) {
   return { highs, lows };
 }
 
+
+function buildValidatedStructuralZones(candles, atrValue, lookback = 60) {
+  const rows = Array.isArray(candles) ? candles.slice(-Math.max(25, lookback)) : [];
+  if (rows.length < 10) return { resistance: [], support: [], tolerance: 0 };
+  const price = num(rows.at(-1)?.close);
+  const atrSafe = Math.max(num(atrValue), price * 0.001, 1e-12);
+  const tolerance = Math.max(atrSafe * 0.35, price * 0.0025);
+  const pivots = [];
+  for (let i = 2; i < rows.length - 2; i++) {
+    const c = rows[i];
+    const hi = num(c.high), lo = num(c.low);
+    const isHigh = hi >= num(rows[i-1].high) && hi >= num(rows[i-2].high) &&
+      hi >= num(rows[i+1].high) && hi >= num(rows[i+2].high);
+    const isLow = lo <= num(rows[i-1].low) && lo <= num(rows[i-2].low) &&
+      lo <= num(rows[i+1].low) && lo <= num(rows[i+2].low);
+    if (isHigh) pivots.push({ side:'R', price:hi, index:i, timestamp:c.timestamp });
+    if (isLow) pivots.push({ side:'S', price:lo, index:i, timestamp:c.timestamp });
+  }
+  const makeZones = (side) => {
+    const zones = [];
+    for (const pivot of pivots.filter(x => x.side === side)) {
+      let z = zones.find(x => Math.abs(x.center - pivot.price) <= tolerance);
+      if (!z) {
+        z = { center:pivot.price, pivots:[], touches:0, rejections:0, recency:0, strength:0 };
+        zones.push(z);
+      }
+      z.pivots.push(pivot);
+      z.center = z.pivots.reduce((a,b)=>a+b.price,0) / z.pivots.length;
+    }
+    for (const z of zones) {
+      for (const p of z.pivots) {
+        let touches = 0, rejections = 0;
+        for (let j = Math.max(0,p.index-3); j < Math.min(rows.length,p.index+6); j++) {
+          if (j === p.index) continue;
+          const c = rows[j], range = Math.max(num(c.high)-num(c.low),1e-12);
+          const distance = side === 'R' ? Math.abs(num(c.high)-z.center) : Math.abs(num(c.low)-z.center);
+          if (distance <= tolerance) {
+            touches++;
+            const upper = (num(c.high)-Math.max(num(c.open),num(c.close)))/range;
+            const lower = (Math.min(num(c.open),num(c.close))-num(c.low))/range;
+            if (side === 'R' && (upper >= 0.20 || num(c.close) < num(c.open))) rejections++;
+            if (side === 'S' && (lower >= 0.20 || num(c.close) > num(c.open))) rejections++;
+          }
+        }
+        z.touches += touches;
+        z.rejections += rejections;
+        z.recency = Math.max(z.recency, p.index);
+      }
+      const age = rows.length - 1 - z.recency;
+      const recencyScore = Math.max(0, 1 - age / Math.max(rows.length,1));
+      // A level is valid when it has repeated interaction, or one pivot plus
+      // a clear rejection. This avoids treating every wick as S/R while still
+      // allowing a fresh, decisive swing to become structural.
+      z.strength = Math.min(100, 35 + Math.min(35, z.pivots.length * 14) +
+        Math.min(20, z.rejections * 5) + recencyScore * 10);
+    }
+    return zones.filter(z => z.pivots.length >= 2 || z.rejections >= 1)
+      .sort((a,b)=>b.strength-a.strength || b.recency-a.recency);
+  };
+  return { resistance:makeZones('R'), support:makeZones('S'), tolerance };
+}
+
+
+function continuationBreakQuality(candles, triggerIndex, atrValue, direction) {
+  const rows = Array.isArray(candles) ? candles : [];
+  const i = Number(triggerIndex);
+  const trigger = rows[i];
+  if (!trigger || i < 6) return {
+    available:false, qualityScore:0, rangeAtr:0, volumeRatio:1,
+    move3:0, move5:0, acceleration:0, bodyRatio:0, closeLocation:0,
+    rangeExpansion:0, checks:[]
+  };
+
+  const prior = rows.slice(Math.max(0, i - 8), i);
+  const range = Math.max(num(trigger.high) - num(trigger.low), 1e-12);
+  const atrSafe = Math.max(num(atrValue), num(trigger.close) * 0.001, 1e-12);
+  const bodyRatio = Math.abs(num(trigger.close) - num(trigger.open)) / range;
+  const closeLocation = (num(trigger.close) - num(trigger.low)) / range;
+  const rangeAtr = range / atrSafe;
+  const avgRange = prior.map(x => Math.max(num(x.high) - num(x.low), 1e-12))
+    .reduce((a,b)=>a+b,0) / Math.max(1, prior.length);
+  const rangeExpansion = range / Math.max(avgRange, 1e-12);
+
+  const prevClose = num(rows[i-1]?.close);
+  const c3 = num(rows[i-3]?.close);
+  const c5 = num(rows[i-5]?.close);
+  const move3 = prevClose > 0 && c3 > 0 ? pct(prevClose, c3) : 0;
+  const move5 = prevClose > 0 && c5 > 0 ? pct(prevClose, c5) : 0;
+  const prior3 = c3 > 0 && c5 > 0 ? pct(c3, c5) : 0;
+  const acceleration = move3 - prior3;
+
+  const priorVols = prior.map(x=>num(x.volume)).filter(x=>x>0);
+  const avgVol = priorVols.reduce((a,b)=>a+b,0) / Math.max(1, priorVols.length);
+  const volumeAvailable = num(trigger.volume) > 0 && avgVol > 0;
+  const volumeRatio = volumeAvailable ? num(trigger.volume) / avgVol : 1;
+
+  const bull = direction === 'long';
+  const directionCandle = bull ? num(trigger.close) > num(trigger.open) : num(trigger.close) < num(trigger.open);
+  const closeQuality = bull
+    ? closeLocation >= CONFIG.oneHContinuationMinCloseLocation
+    : closeLocation <= (1 - CONFIG.oneHContinuationMinCloseLocation);
+  const bodyQuality = bodyRatio >= CONFIG.oneHContinuationMinBodyRatio;
+  const rangeQuality = rangeAtr >= CONFIG.oneHContinuationMinRangeAtr;
+  const expansionQuality = rangeExpansion >= 1.05;
+  const moveQuality = bull ? move3 >= CONFIG.oneHContinuationMinMove3Pct : move3 <= -CONFIG.oneHContinuationMinMove3Pct;
+  const accelerationQuality = bull ? acceleration >= CONFIG.oneHContinuationMinAccelerationPct : acceleration <= -CONFIG.oneHContinuationMinAccelerationPct;
+  const volumeQuality = !volumeAvailable || volumeRatio >= CONFIG.oneHContinuationMinVolumeRatio;
+
+  // Volume is optional because some GMX OHLCV feeds do not expose reliable
+  // volume. When available, failure to expand volume costs quality points;
+  // when unavailable it neither rewards nor blocks the setup.
+  const checks = [
+    ['directionCandle', directionCandle, 10],
+    ['body', bodyQuality, 15],
+    ['closeLocation', closeQuality, 15],
+    ['rangeVsAtr', rangeQuality, 15],
+    ['rangeExpansion', expansionQuality, 10],
+    ['move3', moveQuality, 10],
+    ['acceleration', accelerationQuality, 10],
+    ['volume', volumeQuality, 15]
+  ];
+  let qualityScore = checks.reduce((sum, [,ok,weight]) => sum + (ok ? weight : 0), 0);
+  if (!volumeAvailable) qualityScore -= 5;
+  qualityScore = clamp(qualityScore, 0, 100);
+
+  return {
+    available:true, qualityScore:Number(qualityScore.toFixed(1)),
+    rangeAtr:Number(rangeAtr.toFixed(2)), volumeRatio:Number(volumeRatio.toFixed(2)),
+    volumeAvailable, move3:Number(move3.toFixed(3)), move5:Number(move5.toFixed(3)),
+    acceleration:Number(acceleration.toFixed(3)), bodyRatio:Number(bodyRatio.toFixed(3)),
+    closeLocation:Number(closeLocation.toFixed(3)), rangeExpansion:Number(rangeExpansion.toFixed(2)),
+    checks:Object.fromEntries(checks.map(([name,ok])=>[name,ok]))
+  };
+}
+
 function oneHStructureSignal(candles1h, ticker) {
   const c = completedOneHCandles(candles1h);
-  if (c.length < 24) return {
+  if (c.length < 40) return {
     valid: false, reason: `INSUFFICIENT_COMPLETED_1H:${c.length}`,
     direction: null, setupType: "NONE", entry: num(c.at(-1)?.close) || tickerPrice(ticker) || 0
   };
 
-  const last = c.at(-1);
-  const prev = c.at(-2);
-  // Entry authority uses the same completed 1H candle data as the structure
-  // engine. Ticker price is only a fallback, preventing unit mismatches between
-  // SDK fixed-point ticker fields and human-readable OHLCV prices.
+  const last = c.at(-1), confirm = c.at(-2), trigger = c.at(-3), prev = c.at(-4);
   const price = num(last.close) || tickerPrice(ticker);
   const atr1h = Math.max(atr(c, 14), price * 0.001, 1e-12);
   const closes = c.map(x => num(x.close));
   const e20 = ema(closes, 20), e50 = ema(closes, 50), e200 = ema(closes, 200);
-  const r = rsi(closes, 14), m = macd(closes), d = adx(c, 14);
-  const st = stochastic(c);
-  const bb = bollingerBands(closes);
-  const swings = oneHConfirmedSwings(c);
-  const recent = c.slice(-Math.max(6, Number(CONFIG.oneHLookbackTrend) || 8));
-  const trendStart = num(recent[0]?.close);
-  const trendMove = trendStart > 0 ? pct(last.close, trendStart) : 0;
-  const prior = c.slice(-Math.max(12, Number(CONFIG.oneHLookbackTrend) || 8) - 1, -1);
-  const priorHigh = prior.length ? Math.max(...prior.map(x => x.high)) : 0;
-  const priorLow = prior.length ? Math.min(...prior.map(x => x.low)) : 0;
+  const r = rsi(closes, 14), m = macd(closes), d = adx(c, 14), st = stochastic(c), bb = bollingerBands(closes);
 
-  const range = Math.max(last.high - last.low, 1e-12);
-  const body = Math.abs(last.close - last.open);
-  const bodyRatio = body / range;
-  const closeLocation = (last.close - last.low) / range;
-  const upperWick = last.high - Math.max(last.open, last.close);
-  const lowerWick = Math.min(last.open, last.close) - last.low;
-  const upperWickRatio = upperWick / range;
-  const lowerWickRatio = lowerWick / range;
+  // Only confirmed pivots are structural levels. Raw rolling highs/lows are
+  // deliberately excluded from entry authority because a single wick is not
+  // a "valid resistance/support" by itself.
+  // Structural zones are validated by repeated pivots/interactions and
+  // rejection quality. They are kept independent of current price so a level
+  // that was just broken remains available as the breakout/retest reference.
+  const zoneBook = buildValidatedStructuralZones(c.slice(0, -2), atr1h, Math.min(CONFIG.oneHLookbackStructure, c.length - 2));
+  const tolerance = zoneBook.tolerance;
+  const confirmedHighs = zoneBook.resistance || [];
+  const confirmedLows = zoneBook.support || [];
+  const resistances = confirmedHighs.map(x=>num(x.center)).filter(x => x > price).sort((a,b)=>a-b);
+  const supports = confirmedLows.map(x=>num(x.center)).filter(x => x < price).sort((a,b)=>b-a);
+  const resistance = resistances[0] || 0;
+  const support = supports[0] || 0;
 
-  const priorUp = trendMove >= CONFIG.oneHMinTrendMovePct &&
-    last.close > e20 && e20 >= e50;
-  const priorDown = trendMove <= -CONFIG.oneHMinTrendMovePct &&
-    last.close < e20 && e20 <= e50;
+  const prior = c.slice(-Math.max(12, Number(CONFIG.oneHLookbackTrend) || 8) - 3, -3);
+  const priorHigh = prior.length ? Math.max(...prior.map(x => num(x.high))) : 0;
+  const priorLow = prior.length ? Math.min(...prior.map(x => num(x.low))) : 0;
+  const trendRows = c.slice(-Math.max(9, Number(CONFIG.oneHLookbackTrend) || 8) - 1, -1);
+  const trendStart = num(trendRows[0]?.close);
+  const trendMove = trendStart > 0 ? pct(confirm.close, trendStart) : 0;
+  const priorUp = trendMove >= CONFIG.oneHMinTrendMovePct && confirm.close > e20 && e20 >= e50;
+  const priorDown = trendMove <= -CONFIG.oneHMinTrendMovePct && confirm.close < e20 && e20 <= e50;
 
-  const priorSwingHigh = [...swings.highs]
-    .filter(s => s.index < c.length - 2)
-    .at(-1)?.price || 0;
-  const priorSwingLow = [...swings.lows]
-    .filter(s => s.index < c.length - 2)
-    .at(-1)?.price || 0;
+  const candleStats = (x) => {
+    const range = Math.max(num(x?.high) - num(x?.low), 1e-12);
+    const body = Math.abs(num(x?.close) - num(x?.open));
+    return {
+      range, bodyRatio: body / range,
+      closeLocation: (num(x?.close) - num(x?.low)) / range,
+      upperWickRatio: (num(x?.high) - Math.max(num(x?.open), num(x?.close))) / range,
+      lowerWickRatio: (Math.min(num(x?.open), num(x?.close)) - num(x?.low)) / range
+    };
+  };
+  const ts = candleStats(trigger), cs = candleStats(confirm), ls = candleStats(last);
 
   // --------------------------- REVERSAL ----------------------------------
-  // SHORT: prior 1H move UP -> valid confirmed high -> price tests that high
-  // -> completed 1H bearish rejection/close -> current price has NOT already
-  // fallen too far from the extreme.
-  const shortExtreme = Math.max(priorSwingHigh, priorHigh);
-  const shortTouch = shortExtreme > 0 &&
-    last.high >= shortExtreme * (1 - CONFIG.oneHReversalTouchPct / 100);
-  const shortBearishReaction =
-    last.close < last.open &&
-    (upperWickRatio >= 0.20 || bodyRatio >= CONFIG.oneHReversalMinBodyRatio) &&
-    last.close < prev.close;
-  const shortReversalEvidence = [
-    priorUp,
-    shortTouch,
-    shortBearishReaction,
-    last.close < shortExtreme
-  ].filter(Boolean).length;
-  const shortDistanceFromExtreme = shortExtreme > 0 ? Math.abs(pct(price, shortExtreme)) : 999;
-  const shortReversal =
-    priorUp &&
-    shortTouch &&
-    shortBearishReaction &&
-    shortReversalEvidence >= CONFIG.oneHReversalMinEvidence &&
-    shortDistanceFromExtreme <= CONFIG.oneHReversalMaxDistanceFromExtremePct;
-
-  // LONG: prior 1H move DOWN -> valid confirmed low -> price tests that low
-  // -> completed 1H bullish rejection/close -> current price has NOT already
-  // risen too far from the extreme.
-  const longExtreme = Math.min(...[
-    priorSwingLow || Infinity,
-    priorLow || Infinity
-  ].filter(Number.isFinite));
-  const longTouch = Number.isFinite(longExtreme) && longExtreme > 0 &&
-    last.low <= longExtreme * (1 + CONFIG.oneHReversalTouchPct / 100);
-  const longBullishReaction =
-    last.close > last.open &&
-    (lowerWickRatio >= 0.20 || bodyRatio >= CONFIG.oneHReversalMinBodyRatio) &&
-    last.close > prev.close;
-  const longReversalEvidence = [
-    priorDown,
-    longTouch,
-    longBullishReaction,
-    last.close > longExtreme
-  ].filter(Boolean).length;
-  const longDistanceFromExtreme = Number.isFinite(longExtreme) && longExtreme > 0
-    ? Math.abs(pct(price, longExtreme)) : 999;
-  const longReversal =
-    priorDown &&
-    longTouch &&
-    longBullishReaction &&
-    longReversalEvidence >= CONFIG.oneHReversalMinEvidence &&
-    longDistanceFromExtreme <= CONFIG.oneHReversalMaxDistanceFromExtremePct;
+  // A reversal is a two-step event: the trigger candle rejects a confirmed
+  // level, then the next completed candle confirms/stabilizes the rejection.
+  // A mere touch or one-candle wick is never enough.
+  const nearbyResistance = confirmedHighs
+    .map(z=>num(z.center)).filter(x=>x>0 && Math.abs(num(trigger.high)-x)<=Math.max(tolerance, atr1h*0.75))
+    .sort((a,b)=>Math.abs(num(trigger.high)-a)-Math.abs(num(trigger.high)-b))[0] || resistance;
+  const nearbySupport = confirmedLows
+    .map(z=>num(z.center)).filter(x=>x>0 && Math.abs(num(trigger.low)-x)<=Math.max(tolerance, atr1h*0.75))
+    .sort((a,b)=>Math.abs(num(trigger.low)-a)-Math.abs(num(trigger.low)-b))[0] || support;
+  const resistanceForReaction = nearbyResistance;
+  const supportForReaction = nearbySupport;
+  const resistanceTouched = resistanceForReaction > 0 && trigger.high >= resistanceForReaction - tolerance;
+  const supportTouched = supportForReaction > 0 && trigger.low <= supportForReaction + tolerance;
+  const bearishReject = trigger.close < trigger.open &&
+    (ts.upperWickRatio >= 0.20 || ts.bodyRatio >= CONFIG.oneHReversalMinBodyRatio) &&
+    trigger.close < resistanceForReaction;
+  const bullishReject = trigger.close > trigger.open &&
+    (ts.lowerWickRatio >= 0.20 || ts.bodyRatio >= CONFIG.oneHReversalMinBodyRatio) &&
+    trigger.close > supportForReaction;
+  const shortStable = resistanceTouched && bearishReject &&
+    confirm.close < resistanceForReaction && confirm.close <= trigger.close &&
+    confirm.high <= resistanceForReaction + tolerance;
+  const longStable = supportTouched && bullishReject &&
+    confirm.close > supportForReaction && confirm.close >= trigger.close &&
+    confirm.low >= supportForReaction - tolerance;
+  const shortDistance = resistanceForReaction > 0 ? Math.abs(pct(last.close, resistanceForReaction)) : 999;
+  const longDistance = supportForReaction > 0 ? Math.abs(pct(last.close, supportForReaction)) : 999;
+  const shortReversalEvidence = [priorUp, resistanceTouched, bearishReject, shortStable].filter(Boolean).length;
+  const longReversalEvidence = [priorDown, supportTouched, bullishReject, longStable].filter(Boolean).length;
+  const shortReversal = priorUp && resistanceTouched && bearishReject && shortStable &&
+    shortDistance <= CONFIG.oneHReversalMaxDistanceFromExtremePct;
+  const longReversal = priorDown && supportTouched && bullishReject && longStable &&
+    longDistance <= CONFIG.oneHReversalMaxDistanceFromExtremePct;
 
   // ------------------------- CONTINUATION --------------------------------
-  // LONG requires a completed 1H solid-body close through resistance.
-  // SHORT is the exact mirror below support.
-  const breakoutResistance = Math.max(priorSwingHigh, priorHigh);
-  const breakdownSupport = Math.min(...[
-    priorSwingLow || Infinity,
-    priorLow || Infinity
-  ].filter(Number.isFinite));
-  const longBreak =
-    breakoutResistance > 0 &&
-    last.close > breakoutResistance * (1 + CONFIG.oneHContinuationBreakBufferPct / 100) &&
-    bodyRatio >= CONFIG.oneHContinuationMinBodyRatio &&
-    closeLocation >= CONFIG.oneHContinuationMinCloseLocation;
-  const shortBreak =
-    Number.isFinite(breakdownSupport) && breakdownSupport > 0 &&
-    last.close < breakdownSupport * (1 - CONFIG.oneHContinuationBreakBufferPct / 100) &&
-    bodyRatio >= CONFIG.oneHContinuationMinBodyRatio &&
-    closeLocation <= (1 - CONFIG.oneHContinuationMinCloseLocation);
-
-  const longChase = breakoutResistance > 0
-    ? Math.abs(pct(price, breakoutResistance)) > CONFIG.oneHContinuationMaxChasePct : true;
-  const shortChase = Number.isFinite(breakdownSupport) && breakdownSupport > 0
-    ? Math.abs(pct(price, breakdownSupport)) > CONFIG.oneHContinuationMaxChasePct : true;
-
-  const longContinuation = longBreak && !longChase;
-  const shortContinuation = shortBreak && !shortChase;
-
-  // Direction is selected ONCE here. Nothing downstream may reinterpret it.
-  // If both setups are somehow true on the same completed candle, refuse the
-  // trade instead of guessing.
-  let direction = null;
-  let setupType = "NONE";
-  let confidence = 0;
-  let extreme = null;
-  let structureLevel = null;
-  let reversalEvidence = 0;
-  let reasons = [];
+  // Continuation is deliberately a two-candle breakout, not an entry on the
+  // breakout candle itself. The trigger must break a confirmed level with a
+  // strong body; the following candle must hold/accept above/below that level.
+  const breakoutCandidates = confirmedHighs.map(z=>num(z.center)).filter(x=>x>0 && x < num(trigger.close) &&
+    num(trigger.high) >= x - tolerance && Math.abs(pct(num(trigger.close),x)) <= 3.5)
+    .sort((a,b)=>Math.abs(num(trigger.close)-a)-Math.abs(num(trigger.close)-b));
+  const breakdownCandidates = confirmedLows.map(z=>num(z.center)).filter(x=>x>0 && x > num(trigger.close) &&
+    num(trigger.low) <= x + tolerance && Math.abs(pct(num(trigger.close),x)) <= 3.5)
+    .sort((a,b)=>Math.abs(num(trigger.close)-a)-Math.abs(num(trigger.close)-b));
+  const breakoutLevel = breakoutCandidates[0] || 0;
+  const breakdownLevel = breakdownCandidates[0] || 0;
+  const bullBreakQuality = continuationBreakQuality(c, c.length - 3, atr1h, "long");
+  const bearBreakQuality = continuationBreakQuality(c, c.length - 3, atr1h, "short");
+  const strongBullBreak = breakoutLevel > 0 &&
+    trigger.close > breakoutLevel * (1 + CONFIG.oneHContinuationBreakBufferPct / 100) &&
+    bullBreakQuality.qualityScore >= CONFIG.oneHContinuationMinQualityScore;
+  const strongBearBreak = breakdownLevel > 0 &&
+    trigger.close < breakdownLevel * (1 - CONFIG.oneHContinuationBreakBufferPct / 100) &&
+    bearBreakQuality.qualityScore >= CONFIG.oneHContinuationMinQualityScore;
+  const longAccepted = strongBullBreak && confirm.close > breakoutLevel &&
+    confirm.low >= breakoutLevel - atr1h * CONFIG.continuationRetestAtr &&
+    confirm.close >= trigger.close - atr1h * 0.35;
+  const shortAccepted = strongBearBreak && confirm.close < breakdownLevel &&
+    confirm.high <= breakdownLevel + atr1h * CONFIG.continuationRetestAtr &&
+    confirm.close <= trigger.close + atr1h * 0.35;
+  const longChase = breakoutLevel > 0 ? Math.abs(pct(last.close, breakoutLevel)) > CONFIG.oneHContinuationMaxChasePct : true;
+  const shortChase = breakdownLevel > 0 ? Math.abs(pct(last.close, breakdownLevel)) > CONFIG.oneHContinuationMaxChasePct : true;
+  const longContinuation = longAccepted && !longChase;
+  const shortContinuation = shortAccepted && !shortChase;
 
   const directionConflict =
     (shortReversal && (longReversal || longContinuation)) ||
     (longReversal && (shortReversal || shortContinuation)) ||
     (longContinuation && shortContinuation);
+  if (directionConflict) return { valid:false, reason:"1H_DIRECTION_CONFLICT_NO_TRADE", direction:null, setupType:"NONE" };
 
-  if (directionConflict) {
-    return {
-      valid:false, reason:"1H_DIRECTION_CONFLICT_NO_TRADE",
-      direction:null, setupType:"NONE"
-    };
-  } else if (shortReversal) {
-    direction = "short"; setupType = "REVERSAL"; confidence = 88;
-    extreme = shortExtreme; structureLevel = priorSwingLow || priorLow || 0;
-    reversalEvidence = shortReversalEvidence;
-    reasons = ["1H_PRIOR_UPMOVE", "1H_VALID_HIGH", "1H_BEARISH_REJECTION"];
+  let direction = null, setupType = "NONE", confidence = 0, extreme = 0, structureLevel = 0;
+  let reversalEvidence = 0, reasons = [];
+  if (shortReversal) {
+    direction = "short"; setupType = "REVERSAL"; confidence = 90;
+    extreme = resistanceForReaction; structureLevel = resistanceForReaction; reversalEvidence = shortReversalEvidence;
+    reasons = ["1H_PRIOR_UPMOVE","1H_VALID_RESISTANCE","1H_BEARISH_REJECTION","1H_REJECTION_STABILIZED"];
   } else if (longReversal) {
-    direction = "long"; setupType = "REVERSAL"; confidence = 88;
-    extreme = longExtreme; structureLevel = priorSwingHigh || priorHigh || 0;
-    reversalEvidence = longReversalEvidence;
-    reasons = ["1H_PRIOR_DOWNMOVE", "1H_VALID_LOW", "1H_BULLISH_REJECTION"];
+    direction = "long"; setupType = "REVERSAL"; confidence = 90;
+    extreme = supportForReaction; structureLevel = supportForReaction; reversalEvidence = longReversalEvidence;
+    reasons = ["1H_PRIOR_DOWNMOVE","1H_VALID_SUPPORT","1H_BULLISH_REJECTION","1H_REJECTION_STABILIZED"];
   } else if (longContinuation) {
-    direction = "long"; setupType = "CONTINUATION"; confidence = 86;
-    extreme = breakoutResistance; structureLevel = breakoutResistance;
-    reasons = ["1H_STRONG_RESISTANCE_BREAK", "1H_SOLID_BODY", "1H_CLOSE_ABOVE_RESISTANCE"];
+    direction = "long"; setupType = "CONTINUATION"; confidence = 92;
+    extreme = breakoutLevel; structureLevel = breakoutLevel;
+    reasons = ["1H_STRONG_RESISTANCE_BREAK","1H_BREAKOUT_CANDLE","1H_BREAKOUT_ACCEPTED"];
   } else if (shortContinuation) {
-    direction = "short"; setupType = "CONTINUATION"; confidence = 86;
-    extreme = breakdownSupport; structureLevel = breakdownSupport;
-    reasons = ["1H_STRONG_SUPPORT_BREAK", "1H_SOLID_BODY", "1H_CLOSE_BELOW_SUPPORT"];
+    direction = "short"; setupType = "CONTINUATION"; confidence = 92;
+    extreme = breakdownLevel; structureLevel = breakdownLevel;
+    reasons = ["1H_STRONG_SUPPORT_BREAK","1H_BREAKDOWN_CANDLE","1H_BREAKDOWN_ACCEPTED"];
   } else {
-    // WATCH state: expose the structurally stronger side for diagnostics only.
-    // It is NEVER entry authority.
-    const longBias =
-      Number(priorDown) * 2 + Number(longTouch) + Number(longBullishReaction) +
-      Number(longBreak) * 2;
-    const shortBias =
-      Number(priorUp) * 2 + Number(shortTouch) + Number(shortBearishReaction) +
-      Number(shortBreak) * 2;
-    const diagnosticBias = longBias > shortBias ? "long" : shortBias > longBias ? "short" : null;
-    setupType = diagnosticBias ? "1H_WATCH" : "NONE";
-    confidence = Math.max(longBias, shortBias) * 15;
     return {
-      valid: false, reason: "NO_CONFIRMED_1H_SETUP", direction: null, setupType, confidence,
-      entry: price,
-      diagnostics: {
-        diagnosticBias,
-        price, e20, e50, e200, rsi:r, macd:m, adx:d, stoch:st, bb,
-        trendMove, priorUp, priorDown, longTouch, shortTouch,
-        longBullishReaction, shortBearishReaction, longBreak, shortBreak,
-        longChase, shortChase, bodyRatio, closeLocation,
-        priorSwingHigh, priorSwingLow, breakoutResistance, breakdownSupport
-      }
+      valid:false, reason:"NO_CONFIRMED_1H_SETUP", direction:null, setupType:"1H_WATCH", confidence:0,
+      entry:price,
+      diagnostics:{ price,resistance,support,priorUp,priorDown,trendMove,strongBullBreak,strongBearBreak,
+        bullBreakQuality,bearBreakQuality,
+        longAccepted,shortAccepted,longChase,shortChase,shortReversal,longReversal,
+        bodyRatio:ls.bodyRatio,closeLocation:ls.closeLocation,validatedResistance:resistanceForReaction,validatedSupport:supportForReaction,
+        structuralResistanceCount:confirmedHighs.length,structuralSupportCount:confirmedLows.length }
     };
   }
 
-  // Structural SL:
-  // Reversal: beyond the actual reversal extreme.
-  // Continuation: beyond the broken level.
+  // -------------------------- PLAN ---------------------------------------
+  // Continuation stops are structural: below the next valid support for LONG
+  // and above the next valid resistance for SHORT. Reversal stops sit beyond
+  // the rejection level. No synthetic TP is allowed merely to manufacture RR.
   const buffer = Math.max(atr1h * 0.18, price * 0.0010);
-  let sl = 0;
-  if (direction === "short") sl = setupType === "REVERSAL" ? extreme + buffer : structureLevel + buffer;
-  else sl = setupType === "REVERSAL" ? extreme - buffer : structureLevel - buffer;
+  let sl = 0, tp = 0, targetLevel = 0, targetType = "";
+  const futureRes = confirmedHighs.map(x=>num(x.center)).filter(x=>x > price + tolerance).sort((a,b)=>a-b);
+  const futureSup = confirmedLows.map(x=>num(x.center)).filter(x=>x < price - tolerance).sort((a,b)=>b-a);
 
-  // For continuation, the stop must be on the invalidation side of the break.
-  // For reversal, the stop must be beyond the actual high/low.
-  if (direction === "short" && setupType === "REVERSAL") sl = Math.max(sl, extreme + buffer);
-  if (direction === "long" && setupType === "REVERSAL") sl = Math.min(sl, extreme - buffer);
-  if (direction === "short" && setupType === "CONTINUATION") sl = structureLevel + buffer;
-  if (direction === "long" && setupType === "CONTINUATION") sl = structureLevel - buffer;
-
-  // Targets are generated ONLY from 1H structure.
-  const bufferTarget = Math.max(price * CONFIG.oneHTargetBufferPct / 100, atr1h * CONFIG.oneHTargetBufferAtr);
-  let tp = 0, targetLevel = 0, targetType = "";
-
-  if (direction === "short") {
+  if (direction === "long") {
     if (setupType === "REVERSAL") {
-      const lows = swings.lows.map(x => x.price).filter(x => x < price && x < extreme).sort((a,b) => b-a);
-      targetLevel = lows[0] || 0;
-      if (!(targetLevel > 0)) return { valid:false, reason:"1H_SHORT_REVERSAL_NO_VALID_LOW", direction, setupType };
-      tp = targetLevel + bufferTarget; // above the valid low, never the low itself
-      targetType = "1H_VALID_LOW_BUFFERED";
+      sl = supportForReaction - buffer;
+      targetLevel = futureRes[0] || 0;
+      targetType = "NEXT_RESISTANCE_AFTER_SUPPORT_REVERSAL";
     } else {
-      const highsAbove = swings.highs.map(x => x.price).filter(x => x > price).sort((a,b) => a-b);
-      targetLevel = highsAbove[0] || 0;
-      // For a short continuation the next valid lower support is the target.
-      const lowsBelow = swings.lows.map(x => x.price).filter(x => x < price).sort((a,b) => b-a);
-      targetLevel = lowsBelow[0] || 0;
-      if (!(targetLevel > 0)) return { valid:false, reason:"1H_SHORT_CONTINUATION_NO_VALID_LOW", direction, setupType };
-      tp = targetLevel + bufferTarget;
-      targetType = "1H_NEXT_SUPPORT_BUFFERED";
+      const structuralSupport = futureSup[0] || 0;
+      if (!(structuralSupport > 0 && structuralSupport < price)) return { valid:false, reason:"1H_LONG_CONTINUATION_NO_VALID_SUPPORT", direction, setupType };
+      sl = structuralSupport - buffer;
+      targetLevel = futureRes[0] || 0;
+      targetType = "NEXT_RESISTANCE_AFTER_BREAKOUT";
     }
+    if (!(targetLevel > price)) return { valid:false, reason:"1H_LONG_NO_VALID_TARGET", direction, setupType };
+    tp = targetLevel - Math.max(price * CONFIG.oneHTargetBufferPct / 100, atr1h * CONFIG.oneHTargetBufferAtr);
   } else {
     if (setupType === "REVERSAL") {
-      const highs = swings.highs.map(x => x.price).filter(x => x > price && x > extreme).sort((a,b) => a-b);
-      targetLevel = highs[0] || 0;
-      if (!(targetLevel > 0)) return { valid:false, reason:"1H_LONG_REVERSAL_NO_VALID_HIGH", direction, setupType };
-      tp = targetLevel - bufferTarget; // below the valid high, never the high itself
-      targetType = "1H_VALID_HIGH_BUFFERED";
+      sl = resistanceForReaction + buffer;
+      targetLevel = futureSup[0] || 0;
+      targetType = "NEXT_SUPPORT_AFTER_RESISTANCE_REVERSAL";
     } else {
-      const highsAbove = swings.highs.map(x => x.price).filter(x => x > price).sort((a,b) => a-b);
-      targetLevel = highsAbove[0] || 0;
-      if (!(targetLevel > 0)) return { valid:false, reason:"1H_LONG_CONTINUATION_NO_VALID_HIGH", direction, setupType };
-      tp = targetLevel - bufferTarget;
-      targetType = "1H_NEXT_RESISTANCE_BUFFERED";
+      const structuralResistance = futureRes[0] || 0;
+      if (!(structuralResistance > price)) return { valid:false, reason:"1H_SHORT_CONTINUATION_NO_VALID_RESISTANCE", direction, setupType };
+      sl = structuralResistance + buffer;
+      targetLevel = futureSup[0] || 0;
+      targetType = "NEXT_SUPPORT_AFTER_BREAKDOWN";
     }
+    if (!(targetLevel > 0 && targetLevel < price)) return { valid:false, reason:"1H_SHORT_NO_VALID_TARGET", direction, setupType };
+    tp = targetLevel + Math.max(price * CONFIG.oneHTargetBufferPct / 100, atr1h * CONFIG.oneHTargetBufferAtr);
   }
 
-  const slDistance = Math.abs(price - sl);
-  const tpDistance = Math.abs(tp - price);
+  const slDistance = Math.abs(price - sl), tpDistance = Math.abs(tp - price);
   const rr = slDistance > 0 ? tpDistance / slDistance : 0;
   const sideValid = direction === "long" ? sl < price && tp > price : sl > price && tp < price;
-  const rrPass = rr >= CONFIG.oneHMinRR;
+  if (!sideValid) return { valid:false, reason:"1H_PLAN_WRONG_SIDE", direction, setupType, entry:price, sl,tp,rr };
+  if (rr < CONFIG.oneHMinRR) return { valid:false, reason:`RR_${rr.toFixed(2)}_BELOW_${CONFIG.oneHMinRR.toFixed(2)}`, direction,setupType,entry:price,sl,tp,rr };
 
-  if (!sideValid) return {
-    valid:false, reason:"1H_PLAN_WRONG_SIDE", direction, setupType, entry:price, sl, tp, rr
-  };
-  if (!rrPass) return {
-    valid:false, reason:`RR_${rr.toFixed(2)}_BELOW_${CONFIG.oneHMinRR.toFixed(2)}`,
-    direction, setupType, entry:price, sl, tp, rr
-  };
-
-  const distanceFromExtreme = Math.abs(pct(price, extreme));
-  if (setupType === "REVERSAL" &&
-      distanceFromExtreme > CONFIG.oneHReversalMaxDistanceFromExtremePct) {
-    return {
-      valid:false, reason:"REVERSAL_ALREADY_TRAVELLED_TOO_FAR",
-      direction, setupType, entry:price, sl, tp, rr
-    };
-  }
-
-  const movePct = Math.abs(trendMove);
-  const score = clamp(
-    72 +
-    confidence * 0.18 +
-    (d >= 18 ? 5 : 0) +
-    (bodyRatio >= 0.60 ? 5 : 0) +
-    (rr >= 2 ? 5 : 0),
-    0, 100
-  );
-  const edge = clamp(
-    18 + confidence * 0.55 + Math.min(20, rr * 5) +
-    (setupType === "REVERSAL" ? reversalEvidence * 4 : 8),
-    0, 100
-  );
-  const risk = clamp(Math.abs(pct(sl, price)) * 20, 0, 100);
+  // The entry must still be close to the actual trigger zone. This is applied
+  // to both setup types, but reversal uses the rejection level and continuation
+  // uses the accepted breakout level.
+  const entryDistance = Math.abs(pct(price, structureLevel));
+  const maxEntryDistance = setupType === "CONTINUATION"
+    ? CONFIG.oneHContinuationMaxChasePct : CONFIG.oneHReversalMaxDistanceFromExtremePct;
+  if (entryDistance > maxEntryDistance) return { valid:false, reason:"ENTRY_TOO_FAR_FROM_TRIGGER_ZONE", direction,setupType,entry:price,sl,tp,rr };
 
   const volumeRows = c.filter(x => num(x.volume) > 0);
-  const volAvg = volumeRows.slice(-21,-1).reduce((a,x)=>a+num(x.volume),0) /
-    Math.max(1, volumeRows.slice(-21,-1).length);
-  const volumeRatio1h = num(last.volume) > 0 && volAvg > 0 ? num(last.volume) / volAvg : 0;
-
+  const volAvg = volumeRows.slice(-21,-1).reduce((a,x)=>a+num(x.volume),0) / Math.max(1,volumeRows.slice(-21,-1).length);
+  const volumeRatio1h = num(trigger.volume) > 0 && volAvg > 0 ? num(trigger.volume) / volAvg : 0;
+  const score = clamp(76 + confidence * 0.12 + (d >= 18 ? 5 : 0) + (rr >= 2 ? 6 : 0) + (volumeRatio1h >= CONFIG.volumeExpansionMinRatio ? 4 : 0),0,100);
+  const edge = clamp(20 + confidence * 0.55 + Math.min(20,rr * 5) + (setupType === "REVERSAL" ? reversalEvidence * 5 : 12),0,100);
+  const risk = clamp(Math.abs(pct(sl, price)) * 20,0,100);
   const fiveLayers = {
-    enabled: true,
-    direction,
-    authority: "1H_STRUCTURE",
-    confidence: Number(confidence.toFixed(1)),
-    edge: Number(edge.toFixed(1)),
-    long: direction === "long" ? Number(confidence.toFixed(1)) : 50,
-    short: direction === "short" ? Number(confidence.toFixed(1)) : 50,
-    trend: {
-      long: Number((last.close > e20 && e20 >= e50 ? 80 : 45).toFixed(1)),
-      short: Number((last.close < e20 && e20 <= e50 ? 80 : 45).toFixed(1)),
-      direction: last.close >= e20 ? "long" : "short"
-    },
-    location: { long: longTouch ? 75 : 50, short: shortTouch ? 75 : 50 },
-    momentum: {
-      long: Number(clamp(50 + (m.histogram > 0 ? 18 : -8) + (r < 40 ? 10 : 0),0,100).toFixed(1)),
-      short: Number(clamp(50 + (m.histogram < 0 ? 18 : -8) + (r > 60 ? 10 : 0),0,100).toFixed(1))
-    },
-    flow: {
-      long: volumeRatio1h >= 1.25 && last.close > last.open ? 72 : 50,
-      short: volumeRatio1h >= 1.25 && last.close < last.open ? 72 : 50
-    },
-    reversal: { long: longReversal ? confidence : 50, short: shortReversal ? confidence : 50 }
+    enabled:true, direction, authority:"1H_STRUCTURE_CONFIRMED",
+    confidence:Number(confidence.toFixed(1)), edge:Number(edge.toFixed(1)),
+    long:direction === "long" ? confidence : 50, short:direction === "short" ? confidence : 50,
+    trend:{long:Number((last.close > e20 && e20 >= e50 ? 80 : 45).toFixed(1)),short:Number((last.close < e20 && e20 <= e50 ? 80 : 45).toFixed(1)),direction:last.close >= e20 ? "long":"short"},
+    location:{long:longReversal ? 78 : 50, short:shortReversal ? 78 : 50},
+    momentum:{long:Number(clamp(50+(m.histogram>0?18:-8)+(r<40?10:0),0,100).toFixed(1)),short:Number(clamp(50+(m.histogram<0?18:-8)+(r>60?10:0),0,100).toFixed(1))},
+    flow:{long:volumeRatio1h>=CONFIG.volumeExpansionMinRatio&&trigger.close>trigger.open?72:50,short:volumeRatio1h>=CONFIG.volumeExpansionMinRatio&&trigger.close<trigger.open?72:50},
+    reversal:{long:longReversal?confidence:50,short:shortReversal?confidence:50}
   };
 
   return {
-    valid: true,
-    symbol: null,
-    direction,
-    directionAuthority: "1H_STRUCTURE",
-    setupType,
-    entry: price,
-    sl: Number(sl.toPrecision(12)),
-    tp: Number(tp.toPrecision(12)),
-    rr: Number(rr.toFixed(2)),
-    score: Number(score.toFixed(2)),
-    edge: Number(edge.toFixed(2)),
-    risk: Number(risk.toFixed(2)),
-    trendConfluence: direction === "long"
-      ? Number(last.close > e20) + Number(e20 >= e50) + Number(m.histogram > 0)
-      : Number(last.close < e20) + Number(e20 <= e50) + Number(m.histogram < 0),
-    reversalEvidence,
-    setupConfidence: confidence,
-    reversalConfidence: setupType === "REVERSAL" ? confidence : 0,
-    continuationConfidence: setupType === "CONTINUATION" ? confidence : 0,
-    setupDominance: setupType === "REVERSAL" ? 20 : 15,
-    triggerActive: true,
-    reversalTrigger: setupType === "REVERSAL",
-    continuationTrigger: setupType === "CONTINUATION",
-    tpPlan: {
-      tp: Number(tp.toPrecision(12)), method: "PURE_1H_STRUCTURE",
-      targetType, targetScore: 80, probabilityProxy: 80,
-      distancePct: Number(Math.abs(pct(tp, price)).toFixed(3)),
-      rr: Number(rr.toFixed(2)), rrPass: true, targetPrice: targetLevel,
-      atrDistance: Number(tpDistance / atr1h).toFixed(2)
+    valid:true, symbol:null, direction, directionAuthority:"MTF_D1_H4_H1", setupType,
+    entry:price, sl:Number(sl.toPrecision(12)), tp:Number(tp.toPrecision(12)), rr:Number(rr.toFixed(2)),
+    score:Number(score.toFixed(2)), edge:Number(edge.toFixed(2)), risk:Number(risk.toFixed(2)),
+    trendConfluence:direction === "long" ? Number(last.close>e20)+Number(e20>=e50)+Number(m.histogram>0) : Number(last.close<e20)+Number(e20<=e50)+Number(m.histogram<0),
+    reversalEvidence, setupConfidence:confidence, reversalConfidence:setupType === "REVERSAL" ? confidence:0,
+    continuationConfidence:setupType === "CONTINUATION" ? confidence:0,
+    setupDominance:setupType === "REVERSAL" ? 20:15, triggerActive:true,
+    reversalTrigger:setupType === "REVERSAL", continuationTrigger:setupType === "CONTINUATION",
+    tpPlan:{tp:Number(tp.toPrecision(12)),method:"PURE_1H_VALID_STRUCTURE",targetType,targetScore:80,probabilityProxy:80,distancePct:Number(Math.abs(pct(tp,price)).toFixed(3)),rr:Number(rr.toFixed(2)),rrPass:true,targetPrice:targetLevel,atrDistance:Number(tpDistance/atr1h).toFixed(2)},
+    setupEvidence:{setupType,directionAuthority:"MTF_D1_H4_H1",directionLocked:true,signalTimeframe:"1H",
+      signalCandle:last.timestamp, triggerCandle:trigger.timestamp, confirmationCandle:confirm.timestamp,
+      priorTrend:priorUp?"UP":priorDown?"DOWN":"NEUTRAL", priorTrendMovePct:Number(trendMove.toFixed(3)),
+      validExtreme:extreme, structureLevel, support, resistance, reversalTouch:setupType === "REVERSAL",
+      reversalStabilized:setupType === "REVERSAL", continuationBreak:setupType === "CONTINUATION",
+      continuationAccepted:setupType === "CONTINUATION", continuationChasePct:entryDistance,
+      continuationTriggerLevel:setupType === "CONTINUATION" ? structureLevel:0,
+      reasons, bodyRatio:Number(ts.bodyRatio.toFixed(3)),closeLocation:Number(ts.closeLocation.toFixed(3)),
+      volumeRatio1h:Number(volumeRatio1h.toFixed(2)),
+      breakQuality:setupType === "CONTINUATION" ? (direction === "long" ? bullBreakQuality : bearBreakQuality) : null,
+      marketRegime:null,
+      slMethod:setupType === "REVERSAL" ? "1H_REJECTION_LEVEL_BUFFER" : "1H_NEXT_STRUCTURAL_SUPPORT_RESISTANCE",
+      tpMethod:targetType
     },
-    setupEvidence: {
-      setupType, directionAuthority: "1H_STRUCTURE",
-      directionLocked: true,
-      signalTimeframe: "1H",
-      signalCandle: last.timestamp,
-      priorTrend: priorUp ? "UP" : priorDown ? "DOWN" : "NEUTRAL",
-      priorTrendMovePct: Number(trendMove.toFixed(3)),
-      validExtreme: extreme,
-      structureLevel,
-      targetLevel,
-      targetType,
-      bodyRatio: Number(bodyRatio.toFixed(3)),
-      closeLocation: Number(closeLocation.toFixed(3)),
-      volumeRatio1h: Number(volumeRatio1h.toFixed(2)),
-      rsi1h: Number(r.toFixed(2)),
-      macdHistogram1h: Number(m.histogram.toFixed(8)),
-      atr1h,
-      reversalEvidence,
-      reversalTouch: setupType === "REVERSAL",
-      continuationBreak: setupType === "CONTINUATION",
-      continuationChasePct: setupType === "CONTINUATION"
-        ? Number(Math.abs(pct(price, structureLevel)).toFixed(3)) : 0,
-      sl: Number(sl.toPrecision(12)),
-      slDistancePct: Number(Math.abs(pct(sl, price)).toFixed(3)),
-      slMethod: setupType === "REVERSAL" ? "1H_EXTREME_ATR_BUFFER" : "1H_BROKEN_STRUCTURE_ATR_BUFFER",
-      slValid: true,
-      tpMethod: "PURE_1H_STRUCTURE",
-      tpDistancePct: Number(Math.abs(pct(tp, price)).toFixed(3)),
-      tpRR: Number(rr.toFixed(2)),
-      tpRRPass: true,
-      fiveLayers,
-      marketRegime: null,
-      capitalFlow: null,
-      legacy5mDisabled: true,
-      legacy15mDisabled: true
-    },
-    reasons: [...reasons, "DIRECTION_LOCKED_1H", `RR_${rr.toFixed(2)}`, `SL_1H`, `TP_1H`],
-    indicators: {
-      timeframe: "1H",
-      rsi: Number(r.toFixed(2)), adx: Number(d.toFixed(2)),
-      ema20: e20, ema50: e50, ema200: e200,
-      macdHistogram: m.histogram,
-      move1h: Number(trendMove.toFixed(3)),
-      volumeRatio1h: Number(volumeRatio1h.toFixed(2)),
-      fiveLayerConfidence: confidence,
-      fiveLayerEdge: edge,
-      fiveLayerDirection: direction,
-      directionAuthority: "1H_STRUCTURE"
-    },
-    market: null, ticker, candles1h: c
+    indicators:{rsi:r,macd:m,adx:d,stochastic:st,bollinger:bb,ichimoku:ichimoku(c)},
+    fiveLayers
   };
 }
 
-function scoreCandidate({ market, ticker, candles1h, marketRegime }) {
-  const base = oneHStructureSignal(candles1h, ticker);
+
+function scoreCandidate({ market, ticker, candles1h, candles4h, candles1d, marketRegime }) {
   const symbol = marketDisplaySymbol(market);
+  const h1 = completedCandles(candles1h, "1h");
+  const h4 = completedCandles(candles4h, "4h");
+  const d1 = completedCandles(candles1d, "1d");
+  if (d1.length < 60 || h4.length < 60 || h1.length < 30) {
+    return { symbol, direction:null, setupType:"NONE", score:0, edge:0, risk:100, error:"INSUFFICIENT_MTF_DATA" };
+  }
+
+  const d1c = timeframeTrendConfirmation(d1, "1d");
+  const h4c = timeframeTrendConfirmation(h4, "4h");
+  const h1c = timeframeTrendConfirmation(h1, "1h");
+  const base = oneHStructureSignal(h1, ticker);
+  const price = num(base.entry) || num(h1.at(-1)?.close) || tickerPrice(ticker) || 0;
+
+  // The macro market lock is a hard gate, not a score modifier.
+  if (!marketRegime?.enabled || marketRegime.direction === "neutral" || String(marketRegime.regime).startsWith("BLOCKED")) {
+    return { symbol, direction:null, setupType:"NONE", score:0, edge:0, risk:100, entry:price,
+      error:"GLOBAL_MARKET_DIRECTION_NOT_CONFIRMED", setupEvidence:{marketRegime} };
+  }
+
   if (!base.valid) {
-    return {
-      symbol, candleSymbol: candleSymbolFromMarket(market),
-      direction: base.valid ? (base.direction || null) : null,
-      setupType: base.setupType || "NONE",
-      score: 0, edge: 0, risk: 100,
-      entry: num(base.entry) || num(base.diagnostics?.price) || tickerPrice(ticker) || 0,
-      sl: num(base.sl) || 0, tp: num(base.tp) || 0, rr: num(base.rr) || 0,
-      triggerActive: false,
-      reversalTrigger: false, continuationTrigger: false,
-      reversalEvidence: num(base.reversalEvidence),
-      setupConfidence: num(base.confidence),
-      setupEvidence: {
-        ...(base.diagnostics || {}),
-        reason: base.reason,
-        signalTimeframe: "1H",
-        directionAuthority: "1H_STRUCTURE",
-        directionLocked: false,
-        legacy5mDisabled: true,
-        legacy15mDisabled: true
-      },
-      reasons: [base.reason],
-      indicators: { timeframe: "1H", directionAuthority: "1H_STRUCTURE" },
-      market, ticker, candles1h: completedOneHCandles(candles1h)
-    };
+    return { symbol, candleSymbol:candleSymbolFromMarket(market), direction:null, setupType:base.setupType||"NONE",
+      score:0, edge:0, risk:100, entry:price, sl:0,tp:0,rr:0, triggerActive:false,
+      reversalTrigger:false,continuationTrigger:false,reversalEvidence:num(base.reversalEvidence),
+      setupConfidence:num(base.confidence), setupEvidence:{...(base.diagnostics||{}),reason:base.reason,
+      signalTimeframe:"1H", directionAuthority:"MTF_D1_H4_H1", directionLocked:false,
+      d1Confirmation:d1c,h4Confirmation:h4c,h1Confirmation:h1c}, indicators:{d1:d1c,h4:h4c,h1:h1c} };
   }
 
-  base.symbol = symbol;
-  base.candleSymbol = candleSymbolFromMarket(market);
-  base.market = market;
-  base.ticker = ticker;
-  base.candles1h = completedOneHCandles(candles1h);
+  const dir = base.direction;
+  const macroDir = marketRegime.direction;
+  const counterTrend = dir !== macroDir;
 
-  // Global BTC/ETH context can penalize a counter-trend trade, but it can NEVER
-  // change the direction locked by the completed 1H structure.
-  if (marketRegime?.enabled) {
-    base.setupEvidence.marketRegime = {
-      regime: marketRegime.regime,
-      direction: marketRegime.direction,
-      score: marketRegime.score,
-      confidence: marketRegime.confidence,
-      btcScore: marketRegime.btc?.score ?? 50,
-      ethScore: marketRegime.eth?.score ?? 50,
-      breadthScore: marketRegime.breadth?.score ?? 50,
-      agreement: marketRegime.agreement ?? 0,
-      counterTrend: marketRegime.direction !== "neutral" && marketRegime.direction !== base.direction,
-      aligned: marketRegime.direction !== "neutral" && marketRegime.direction === base.direction
-    };
-    base.setupEvidence.marketRegimeDirectionCannotOverride = true;
+  // D1 and H4 must agree with the macro regime. For a reversal, they still
+  // confirm the prevailing macro trend; H1 is the reversal trigger.
+  const contextAligned = d1c.direction === macroDir && h4c.direction === macroDir;
+  if (CONFIG.requireD1H4Agreement && !contextAligned) {
+    return { ...base, symbol, candleSymbol:candleSymbolFromMarket(market), market, ticker, candles1h:h1,
+      score:0,edge:0,risk:100,triggerActive:false,error:"D1_H4_CONTEXT_NOT_ALIGNED",
+      setupEvidence:{...(base.setupEvidence||{}),d1Confirmation:d1c,h4Confirmation:h4c,h1Confirmation:h1c,
+        directionAuthority:"MTF_D1_H4_H1",directionLocked:false,marketRegime} };
   }
 
-  return base;
+  // Continuation follows the macro direction. Reversal is explicitly the
+  // counter-direction H1 reaction against the D1/H4 trend.
+  if (base.setupType === "CONTINUATION" && dir !== macroDir) {
+    return { ...base, symbol, score:0,edge:0,risk:100,triggerActive:false,error:"CONTINUATION_MUST_FOLLOW_MARKET_REGIME" };
+  }
+  if (base.setupType === "REVERSAL" && dir === macroDir) {
+    return { ...base, symbol, score:0,edge:0,risk:100,triggerActive:false,error:"REVERSAL_MUST_COUNTER_MACRO_DIRECTION" };
+  }
+  if (base.setupType === "REVERSAL" && !counterTrend) {
+    return { ...base, symbol, score:0,edge:0,risk:100,triggerActive:false,error:"REVERSAL_DIRECTION_INVALID" };
+  }
+
+  // Every indicator below has decision authority: trend, momentum, strength,
+  // Ichimoku and H1 trigger structure. A setup cannot pass by structure alone.
+  const htf = macroDir;
+  const d1Ichi = d1c.ichimoku, h4Ichi = h4c.ichimoku;
+  const trendOK = htf === "long"
+    ? d1c.e20 > d1c.e50 && h4c.e20 > h4c.e50
+    : d1c.e20 < d1c.e50 && h4c.e20 < h4c.e50;
+  const macdOK = htf === "long" ? d1c.macdHistogram > 0 && h4c.macdHistogram > 0
+    : d1c.macdHistogram < 0 && h4c.macdHistogram < 0;
+  const adxOK = d1c.adx >= 18 && h4c.adx >= 18;
+  const ichimokuOK = htf === "long"
+    ? Boolean(d1Ichi?.bullish && h4Ichi?.bullish)
+    : Boolean(d1Ichi?.bearish && h4Ichi?.bearish);
+  const rsiOK = htf === "long"
+    ? d1c.rsi >= 50 && h4c.rsi >= 50 && d1c.rsi < 75 && h4c.rsi < 75
+    : d1c.rsi <= 50 && h4c.rsi <= 50 && d1c.rsi > 25 && h4c.rsi > 25;
+  const indicatorVotes = [trendOK,macdOK,adxOK,ichimokuOK,rsiOK].filter(Boolean).length;
+  if (indicatorVotes < CONFIG.indicatorMinConfirmation) {
+    return { ...base, symbol, score:0,edge:0,risk:100,triggerActive:false,error:`INDICATOR_CONFIRMATION_${indicatorVotes}_OF_5`,
+      setupEvidence:{...(base.setupEvidence||{}),d1Confirmation:d1c,h4Confirmation:h4c,h1Confirmation:h1c,
+        indicatorVotes,trendOK,macdOK,adxOK,ichimokuOK,rsiOK,directionAuthority:"MTF_D1_H4_H1",directionLocked:false} };
+  }
+
+  // H1 itself must confirm the requested entry side.
+  const h1TrendSide = h1c.direction === dir;
+  const h1MomentumSide = dir === "long" ? h1c.macdHistogram > 0 : h1c.macdHistogram < 0;
+  const h1Strength = h1c.adx >= 18;
+  const h1Rsi = dir === "long" ? h1c.rsi >= 45 && h1c.rsi < 78 : h1c.rsi <= 55 && h1c.rsi > 22;
+  const h1Ichi = dir === "long" ? h1c.ichimoku?.bullish : h1c.ichimoku?.bearish;
+  const h1Votes = [h1TrendSide,h1MomentumSide,h1Strength,h1Rsi,Boolean(h1Ichi)].filter(Boolean).length;
+  // Reversals are allowed to have H1 Ichimoku/momentum conflict immediately
+  // after the rejection; the actual H1 structure trigger remains mandatory.
+  const minH1Votes = base.setupType === "REVERSAL" ? 3 : 4;
+  if (h1Votes < minH1Votes) {
+    return { ...base, symbol, score:0,edge:0,risk:100,triggerActive:false,error:`H1_CONFIRMATION_${h1Votes}_OF_5`,
+      setupEvidence:{...(base.setupEvidence||{}),d1Confirmation:d1c,h4Confirmation:h4c,h1Confirmation:h1c,
+        indicatorVotes,h1Votes,directionAuthority:"MTF_D1_H4_H1",directionLocked:false} };
+  }
+
+  const final = { ...base, symbol, candleSymbol:candleSymbolFromMarket(market), market,ticker,candles1h:h1,
+    score:Number(clamp(base.score + indicatorVotes*2 + h1Votes*2,0,100).toFixed(2)),
+    edge:Number(clamp(base.edge + indicatorVotes*2 + h1Votes*2,0,100).toFixed(2)),
+    trendConfluence:indicatorVotes + h1Votes,
+    directionAuthority:"MTF_D1_H4_H1",
+    setupEvidence:{
+      ...(base.setupEvidence||{}),
+      signalTimeframe:"1H", directionAuthority:"MTF_D1_H4_H1", directionLocked:true,
+      d1Confirmation:d1c,h4Confirmation:h4c,h1Confirmation:h1c,
+      indicatorVotes,h1Votes,trendOK,macdOK,adxOK,ichimokuOK,rsiOK,
+      marketRegime, counterTrend,
+      legacy5mDisabled:true,legacy15mDisabled:true
+    },
+    indicators:{...(base.indicators||{}),d1:d1c,h4:h4c,h1:h1c,indicatorVotes,h1Votes,
+      ichimokuD1:d1Ichi,ichimokuH4:h4Ichi,ichimokuH1:h1c.ichimoku,
+      directionAuthority:"MTF_D1_H4_H1"} };
+  return applyMarketRegimeToCandidate(final, marketRegime);
 }
-
 
 function calculateDynamicSl(entry, direction, candles1h, _unused, atr1h, setupType = "CONTINUATION", setupEvidence = {}) {
   const price = num(entry);
@@ -2111,9 +2166,10 @@ function candidateIsActionable(candidate) {
   if (candidate.directionAuthority !== "1H_STRUCTURE" ||
       candidate.setupEvidence?.directionAuthority !== "1H_STRUCTURE" ||
       candidate.setupEvidence?.directionLocked !== true) {
-    return { ok: false, reason: "DIRECTION_AUTHORITY_NOT_1H" };
+    return { ok: false, reason: "DIRECTION_AUTHORITY_NOT_MTF" };
   }
-  if (candidate.setupEvidence?.signalTimeframe !== "1H") {
+  if (candidate.setupEvidence?.signalTimeframe !== "1H" ||
+       !candidate.setupEvidence?.d1Confirmation?.available || !candidate.setupEvidence?.h4Confirmation?.available || !candidate.setupEvidence?.h1Confirmation?.available) {
     return { ok: false, reason: "SIGNAL_TIMEFRAME_NOT_1H" };
   }
 
@@ -2152,13 +2208,17 @@ function candidateIsActionable(candidate) {
     }
   }
 
-  // Global context is a gate/quality modifier only. It NEVER changes direction.
+  // Global BTC/ETH/SOL regime is a hard directional context.
   const macro = candidate.setupEvidence?.marketRegime;
-  if (macro?.direction && macro.direction !== "neutral" && macro.direction !== direction) {
-    if (candidate.setupType !== "REVERSAL" || num(candidate.reversalConfidence) < 78) {
-      return { ok: false, reason: `GLOBAL_${macro.regime}_COUNTER_TREND_NOT_STRONG_ENOUGH` };
-    }
-    candidate.setupEvidence.globalCounterTrendApproved = true;
+  if (!macro || macro.direction === "neutral") return { ok:false, reason:"GLOBAL_MARKET_DIRECTION_UNCONFIRMED" };
+  if (candidate.setupType === "CONTINUATION" && direction !== macro.direction) {
+    return { ok:false, reason:"CONTINUATION_NOT_ALIGNED_WITH_GLOBAL_REGIME" };
+  }
+  if (candidate.setupType === "REVERSAL" && direction === macro.direction) {
+    return { ok:false, reason:"REVERSAL_NOT_COUNTER_GLOBAL_REGIME" };
+  }
+  if (macro.btcDirection !== macro.direction || macro.ethDirection !== macro.direction || macro.solDirection !== macro.direction) {
+    return { ok:false, reason:"BTC_ETH_SOL_DIRECTION_DISAGREEMENT" };
   }
 
   const slDistance = Math.abs(pct(sl, entry));
@@ -2290,141 +2350,139 @@ function findReferenceMarket(markets, asset) {
 }
 
 
-function marketRegimeFrameScore(candles) {
-  const rows = completedOneHCandles(candles);
-  if (rows.length < 24) return { available: false, score: 50, direction: "neutral", confidence: 0 };
-  const closes = rows.map(x => num(x.close)).filter(x => x > 0);
-  const last = closes.at(-1);
-  const e20 = ema(closes, 20), e50 = ema(closes, 50), e200 = ema(closes, 200);
-  const m = macd(closes), ad = adx(rows, 14), r = rsi(closes, 14);
-  const ret3 = pct(last, closes.at(-4) || last);
-  const ret8 = pct(last, closes.at(-9) || last);
-  let bull = 50;
-  bull += last > e20 ? 8 : -8;
-  bull += e20 > e50 ? 10 : -10;
-  bull += e50 > e200 ? 8 : -8;
-  bull += m.histogram > 0 ? 8 : -8;
-  bull += r >= 52 ? 5 : -5;
-  bull += ret3 > 0.15 ? 5 : ret3 < -0.15 ? -5 : 0;
-  bull += ret8 > 0.50 ? 8 : ret8 < -0.50 ? -8 : 0;
-  if (ad >= 18) bull += bull >= 50 ? 4 : -4;
-  bull = clamp(bull, 0, 100);
+function completedCandles(candles, timeframe = "1h") {
+  const rows = Array.isArray(candles) ? candles.filter(c =>
+    num(c?.open) > 0 && num(c?.high) > 0 && num(c?.low) > 0 && num(c?.close) > 0
+  ).sort((a,b) => num(a.timestamp) - num(b.timestamp)) : [];
+  if (rows.length < 3) return rows;
+
+  const ms = timeframe === "1d" ? 86400000 : timeframe === "4h" ? 14400000 : 3600000;
+  const tsMs = num(rows.at(-1)?.timestamp) * 1000;
+  if (!Number.isFinite(tsMs) || tsMs <= 0) return rows;
+  const now = Date.now();
+  const bucketStart = Math.floor(now / ms) * ms;
+  return tsMs >= bucketStart && tsMs < now + 60000 ? rows.slice(0, -1) : rows;
+}
+
+function timeframeTrendConfirmation(candles, timeframe) {
+  const rows = completedCandles(candles, timeframe);
+  if (rows.length < 60) return { available:false, direction:"neutral", score:50, confidence:0, confirmations:0, timeframe };
+  const closes = rows.map(x => num(x.close));
+  const price = closes.at(-1);
+  const e20 = ema(closes,20), e50 = ema(closes,50), e200 = ema(closes,200);
+  const m = macd(closes), ad = adx(rows,14), r = rsi(closes,14);
+  const ichi = ichimoku(rows);
+  const fib = fibonacciLevels(rows, Math.min(72, rows.length));
+  const ret = pct(price, closes.at(-Math.min(21, closes.length)) || price);
+
+  let long = 0, short = 0;
+  const add = (condition, side, weight=1) => { if (condition) side === "long" ? long += weight : short += weight; };
+  add(price > e20 && e20 > e50, "long", 2);
+  add(price < e20 && e20 < e50, "short", 2);
+  add(e50 > e200, "long");
+  add(e50 < e200, "short");
+  add(m.histogram > 0, "long");
+  add(m.histogram < 0, "short");
+  add(r >= 52 && r < 72, "long");
+  add(r <= 48 && r > 28, "short");
+  add(ad >= 18 && price > e20, "long");
+  add(ad >= 18 && price < e20, "short");
+  if (ichi.available) {
+    add(ichi.bullish, "long", 2);
+    add(ichi.bearish, "short", 2);
+    // Being inside the cloud is explicitly non-directional.
+    if (ichi.inCloud) { long -= 1; short -= 1; }
+  }
+  add(ret > 0.50, "long");
+  add(ret < -0.50, "short");
+
+  const confirmations = Math.max(long, short);
+  const direction = long >= short + 2 ? "long" : short >= long + 2 ? "short" : "neutral";
+  const raw = 50 + (long - short) * 5;
   return {
-    available: true, score: Number(bull.toFixed(1)),
-    direction: bull >= 55 ? "long" : bull <= 45 ? "short" : "neutral",
-    confidence: Number(Math.abs(bull - 50).toFixed(1)),
-    price:last, ema20:e20, ema50:e50, ema200:e200,
-    macdHistogram:m.histogram, rsi:r, adx:ad, ret3, ret8
+    available:true, timeframe, direction, score:Number(clamp(raw,0,100).toFixed(1)),
+    confidence:Number(Math.abs(long-short)*5), confirmations,
+    long:Number(long.toFixed(1)), short:Number(short.toFixed(1)),
+    price,e20,e50,e200,rsi:r,adx:ad,macdHistogram:m.histogram,ichimoku:ichi,
+    fibonacci:fib, returnPct:Number(ret.toFixed(3))
   };
 }
 
 async function buildMarketRegimeDataCenter(sdk, markets, _broadRows = []) {
   if (!CONFIG.marketRegimeEnabled) {
-    return { enabled:false, regime:"NEUTRAL", direction:"neutral", score:50, confidence:0, btc:null, eth:null, breadth:null };
+    return { enabled:false, regime:"NEUTRAL", direction:"neutral", score:50, confidence:0, assets:{}, agreement:0 };
   }
-  const btcMarket = findReferenceMarket(markets, "BTC");
-  const ethMarket = findReferenceMarket(markets, "ETH");
+  const refs = {};
+  for (const asset of CONFIG.referenceAssets) refs[asset] = findReferenceMarket(markets, asset);
 
-  async function analyzeRef(market, asset) {
-    if (!market) return { asset, available:false, reason:"REFERENCE_MARKET_NOT_FOUND" };
-    try {
-      const candles = await fetchCandlesResilient(sdk, market, "1h", CONFIG.signalLimit);
-      const x = marketRegimeFrameScore(candles);
-      return { asset, ...x, timeframe:"1H" };
-    } catch (e) {
-      return { asset, available:false, reason:safeError(e), score:50, direction:"neutral", confidence:0 };
+  async function analyzeAsset(asset) {
+    const market = refs[asset];
+    if (!market) return { asset, available:false, reason:"REFERENCE_MARKET_NOT_FOUND", frames:{} };
+    const frames = {};
+    for (const tf of ["1d","4h","1h"]) {
+      try {
+        const candles = await fetchCandlesResilient(sdk, market, tf, tf === "1d" ? CONFIG.d1Limit : tf === "4h" ? CONFIG.h4Limit : CONFIG.h1Limit);
+        frames[tf] = timeframeTrendConfirmation(candles, tf);
+      } catch (e) {
+        frames[tf] = { available:false, direction:"neutral", score:50, confidence:0, timeframe:tf, reason:safeError(e) };
+      }
     }
+    const available = ["1d","4h","1h"].every(tf => frames[tf]?.available);
+    const dirs = ["1d","4h","1h"].map(tf => frames[tf]?.direction);
+    const bullishFrames = dirs.filter(d => d === "long").length;
+    const bearishFrames = dirs.filter(d => d === "short").length;
+    const direction = bullishFrames === 3 ? "long" : bearishFrames === 3 ? "short" : "neutral";
+    return { asset, available, direction, frames, bullishFrames, bearishFrames };
   }
 
-  const [btc, eth] = await Promise.all([analyzeRef(btcMarket,"BTC"), analyzeRef(ethMarket,"ETH")]);
-  const btcScore = num(btc.score,50), ethScore = num(eth.score,50);
-  const weights = (btc.available ? CONFIG.marketRegimeBtcWeight : 0) + (eth.available ? CONFIG.marketRegimeEthWeight : 0);
-  const refScore = weights > 0
-    ? ((btc.available ? btcScore * CONFIG.marketRegimeBtcWeight : 0) +
-       (eth.available ? ethScore * CONFIG.marketRegimeEthWeight : 0)) / weights
-    : 50;
+  const assets = {};
+  for (const asset of CONFIG.referenceAssets) assets[asset] = await analyzeAsset(asset);
 
-  // Breadth is derived from the current ticker snapshot, not a 5M signal.
-  const rows = Array.isArray(_broadRows) ? _broadRows : [];
-  const changes = rows.map(r => num(r?.ticker?.priceChange24hPercent ?? r?.ticker?.change24hPercent ?? 0, 0));
-  const positive = changes.filter(x => x > 0.25).length;
-  const negative = changes.filter(x => x < -0.25).length;
-  const breadthRatio = changes.length ? (positive - negative) / changes.length : 0;
-  const breadthScore = 50 + breadthRatio * 50;
-  const combinedScore = clamp(
-    refScore * (1 - CONFIG.marketRegimeBreadthWeight) + breadthScore * CONFIG.marketRegimeBreadthWeight,
-    0, 100
-  );
-
-  const bothBear = btcScore <= 45 && ethScore <= 45;
-  const bothBull = btcScore >= 55 && ethScore >= 55;
-  let regime = "MIXED", direction = "neutral";
-  if (combinedScore >= CONFIG.marketRegimeBullThreshold && (bothBull || combinedScore >= CONFIG.marketRegimeStrongThreshold)) {
-    regime = combinedScore >= CONFIG.marketRegimeStrongThreshold ? "BULLISH_STRONG" : "BULLISH";
-    direction = "long";
-  } else if (combinedScore <= CONFIG.marketRegimeBearThreshold && (bothBear || combinedScore <= 100 - CONFIG.marketRegimeStrongThreshold)) {
-    regime = combinedScore <= 100 - CONFIG.marketRegimeStrongThreshold ? "BEARISH_STRONG" : "BEARISH";
-    direction = "short";
+  const usable = Object.values(assets).filter(x => x.available);
+  if (CONFIG.requireAllReferenceAssets && usable.length !== CONFIG.referenceAssets.length) {
+    return { enabled:true, regime:"BLOCKED_REFERENCE_DATA", direction:"neutral", score:50, confidence:0, assets,
+      agreement:0, reason:"ALL_BTC_ETH_SOL_REQUIRED" };
   }
 
-  const agreement = 100 - Math.min(100, Math.abs(btcScore - ethScore) * 2);
+  const assetDirs = usable.map(x => x.direction);
+  const longs = assetDirs.filter(x => x === "long").length;
+  const shorts = assetDirs.filter(x => x === "short").length;
+  let direction = longs === 3 ? "long" : shorts === 3 ? "short" : "neutral";
+  if (direction === "neutral") {
+    return { enabled:true, regime:"MIXED", direction:"neutral", score:50, confidence:0, assets,
+      agreement:Number((Math.max(longs,shorts)/3*100).toFixed(1)), reason:"BTC_ETH_SOL_NOT_UNANIMOUS" };
+  }
+
+  const selected = usable.map(x => x.frames);
+  const scores = selected.map(fr => fr["1d"].score * 0.45 + fr["4h"].score * 0.35 + fr["1h"].score * 0.20);
+  const score = Number((scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(1));
+  const agreement = 100;
   return {
-    enabled:true, timeframe:"1H", regime, direction,
-    score:Number(combinedScore.toFixed(1)), referenceScore:Number(refScore.toFixed(1)),
-    confidence:Number(Math.max(Math.abs(combinedScore-50),Math.abs(refScore-50)).toFixed(1)),
-    agreement:Number(agreement.toFixed(1)), btc, eth,
-    breadth:{score:Number(breadthScore.toFixed(1)), ratio:Number(breadthRatio.toFixed(3)), positive, negative, total:changes.length},
+    enabled:true,
+    regime: direction === "long" ? (score >= 72 ? "BULLISH_STRONG" : "BULLISH") : (score <= 28 ? "BEARISH_STRONG" : "BEARISH"),
+    direction, score, confidence:Number(Math.abs(score-50).toFixed(1)), assets, agreement,
+    btc:assets.BTC, eth:assets.ETH, sol:assets.SOL, timeframe:"D1/H4/H1",
     supportReliability:1, resistanceReliability:1, timestamp:Date.now()
   };
 }
 
 function applyMarketRegimeToCandidate(candidate, marketRegime) {
   if (!candidate || !marketRegime?.enabled) return candidate;
-  const ev = candidate.setupEvidence || {};
-  const dir = candidate.direction;
+  const ev = { ...(candidate.setupEvidence || {}) };
   const macroDir = marketRegime.direction;
+  const dir = candidate.direction;
   const counterTrend = macroDir !== "neutral" && dir !== macroDir;
-  const aligned = macroDir !== "neutral" && dir === macroDir;
-  const regimeStrength = num(marketRegime.confidence, 0);
-
-  let score = num(candidate.score), edge = num(candidate.edge);
-  if (aligned) { score += CONFIG.marketRegimeAlignedBonus * Math.min(1, regimeStrength / 30); edge += 3; }
-  if (counterTrend) {
-    score -= CONFIG.marketRegimeCounterTrendPenalty * Math.min(1.25, regimeStrength / 30);
-    edge -= 3;
-  }
-
-  const five = ev.fiveLayers || {};
-  const side = dir === "long" ? "long" : "short";
-  const localReversal = num(five.reversal?.[side]);
-  const localFlow = num(five.flow?.[side]);
-  const reversalConfidence = num(candidate.reversalConfidence);
-  const strongCounterTrendReversal = candidate.setupType === "REVERSAL" && counterTrend &&
-    localReversal >= CONFIG.marketRegimeCounterTrendReversalMin &&
-    localFlow >= CONFIG.marketRegimeCounterTrendFlowMin &&
-    reversalConfidence >= CONFIG.marketRegimeCounterTrendReversalMin &&
-    num(candidate.edge) >= CONFIG.marketRegimeCounterTrendEdgeMin;
-
-  const marketRegimeTag = `${marketRegime.regime}_${dir.toUpperCase()}${counterTrend ? "_COUNTER" : "_ALIGNED"}`;
   ev.marketRegime = {
-    regime: marketRegime.regime, direction: macroDir, score: marketRegime.score, confidence: marketRegime.confidence,
-    referenceScore: marketRegime.referenceScore, agreement: marketRegime.agreement,
-    btcScore: marketRegime.btc?.score ?? 50, ethScore: marketRegime.eth?.score ?? 50,
-    breadthScore: marketRegime.breadth?.score ?? 50, breadthRatio: marketRegime.breadth?.ratio ?? 0,
-    counterTrend, aligned, strongCounterTrendReversal,
-    supportReliability: marketRegime.supportReliability, resistanceReliability: marketRegime.resistanceReliability,
+    regime: marketRegime.regime, direction: macroDir, score: marketRegime.score,
+    confidence: marketRegime.confidence, agreement: marketRegime.agreement,
+    btcDirection: marketRegime.btc?.direction ?? marketRegime.assets?.BTC?.direction ?? "neutral",
+    ethDirection: marketRegime.eth?.direction ?? marketRegime.assets?.ETH?.direction ?? "neutral",
+    solDirection: marketRegime.sol?.direction ?? marketRegime.assets?.SOL?.direction ?? "neutral",
+    counterTrend, aligned: !counterTrend && macroDir !== "neutral"
   };
-  ev.marketRegimeTag = marketRegimeTag;
-
-  return {
-    ...candidate,
-    score: Number(clamp(score, 0, 100).toFixed(2)),
-    edge: Number(clamp(edge, 0, 100).toFixed(2)),
-    setupEvidence: ev,
-    indicators: { ...(candidate.indicators || {}), marketRegime: ev.marketRegime },
-  };
+  ev.marketRegimeTag = `${marketRegime.regime}_${dir.toUpperCase()}${counterTrend ? "_COUNTER" : "_ALIGNED"}`;
+  return { ...candidate, setupEvidence:ev, indicators:{...(candidate.indicators||{}), marketRegime:ev.marketRegime} };
 }
-
 
 async function broadScan(sdk, markets, tickers, marketValues = [], previousSnapshots = {}) {
   const listed = markets.filter(isLikelyPerpMarket);
@@ -2449,32 +2507,31 @@ async function broadScan(sdk, markets, tickers, marketValues = [], previousSnaps
 
 async function deepScan(sdk, broadRows, marketRegime = null) {
   const selected = broadRows.slice(0, Math.min(CONFIG.deepCandidates, broadRows.length));
-  const results = await mapLimit(selected, Math.min(8, CONFIG.ohlcvConcurrency), async (row) => {
+  const results = await mapLimit(selected, Math.min(8, CONFIG.marketScanConcurrency), async (row) => {
     try {
-      const candles1h = await fetchCandlesResilient(sdk, row.market, "1h", CONFIG.signalLimit);
-      if (candles1h.length < 24) {
-        return { ...row, error:`INSUFFICIENT_1H_CANDLES:${candles1h.length}` };
+      const [d1, h4, h1] = await Promise.all([
+        fetchCandlesResilient(sdk, row.market, "1d", CONFIG.d1Limit),
+        fetchCandlesResilient(sdk, row.market, "4h", CONFIG.h4Limit),
+        fetchCandlesResilient(sdk, row.market, "1h", CONFIG.h1Limit)
+      ]);
+      if (d1.length < 60 || h4.length < 60 || h1.length < 30) {
+        return { ...row, error:`INSUFFICIENT_MTF_DATA:D1=${d1.length},H4=${h4.length},H1=${h1.length}` };
       }
-      const candidate = scoreCandidate({
-        market: row.market, ticker: row.ticker,
-        candles1h, marketRegime
-      });
+      const candidate = scoreCandidate({ market:row.market, ticker:row.ticker, candles1h:h1, candles4h:h4, candles1d:d1, marketRegime });
       return candidate;
     } catch (error) {
       return { ...row, error:safeError(error) };
     }
   });
-
   const valid = results.filter(x => x && !x.error && x.symbol);
   const failed = results.filter(x => x?.error);
-  console.log("[DEEP][PURE_1H][SUMMARY]", {
-    attempted:selected.length, successful:valid.length,
-    failed:failed.length, timeframe:"1H",
-    failures:failed.slice(0, 5).map(x => ({symbol:x.symbol, error:x.error}))
+  console.log("[DEEP][MTF][SUMMARY]", {
+    attempted:selected.length, successful:valid.length, failed:failed.length,
+    timeframes:"D1/H4/H1", failures:failed.slice(0,5).map(x=>({symbol:x.symbol,error:x.error}))
   });
-  const ordered = valid.sort((a,b) => num(b.score)-num(a.score));
-  Object.defineProperty(ordered, "failedCount", { value: failed.length, enumerable: false });
-  Object.defineProperty(ordered, "attemptedCount", { value: selected.length, enumerable: false });
+  const ordered = valid.sort((a,b)=>num(b.score)-num(a.score));
+  Object.defineProperty(ordered,"failedCount",{value:failed.length,enumerable:false});
+  Object.defineProperty(ordered,"attemptedCount",{value:selected.length,enumerable:false});
   return ordered;
 }
 
@@ -3228,8 +3285,10 @@ async function runCycle(event, env) {
   const deep = await deepScan(runtime.sdk, broad.rows, marketRegime);
   const deepAttempted = Number(deep.attemptedCount || Math.min(CONFIG.deepCandidates, broad.rows.length));
   const deepFailureCount = Number(deep.failedCount || 0);
-  const intelligence = await fetchOptionalIntelligence(env);
-  const ranked = enrichWithIntelligence(deep, intelligence);
+  // External news/social sentiment has no signal authority in V23.
+  // It is intentionally excluded so no secondary engine can override the
+  // deterministic D1/H4/H1 + BTC/ETH/SOL decision path.
+  const ranked = deep;
 
   const blocked = [];
   const actionable = [];
@@ -3280,14 +3339,13 @@ async function runCycle(event, env) {
     }
   }
 
-  // GMX Opportunity Engine: rank by economic opportunity first, while keeping
-  // signal quality as the tie-breaker. We never manufacture a farther TP just
-  // to make a trade profitable on paper.
-  actionable.sort((a, b) => {
-    const net = num(b.expectedNetPnlUsd) - num(a.expectedNetPnlUsd);
-    if (Math.abs(net) > 0.05) return net;
-    const quality = (b.score + b.edge * 0.35) - (a.score + a.edge * 0.35);
-    return quality;
+  // Select by validated setup quality first. Economics may block a trade,
+  // but it cannot make a weaker signal outrank a stronger one.
+  actionable.sort((a,b) => {
+    const q = (num(b.score) + num(b.edge)*0.35 + num(b.rr)*4) -
+              (num(a.score) + num(a.edge)*0.35 + num(a.rr)*4);
+    if (Math.abs(q) > 0.01) return q;
+    return num(b.expectedNetPnlUsd) - num(a.expectedNetPnlUsd);
   });
   const selected = actionable.slice(0, CONFIG.finalCandidates);
   console.log("[SELECTION][TOP]", selected[0] ? {
@@ -3346,7 +3404,7 @@ async function runCycle(event, env) {
   const smartMoneyCount = ranked.filter((x) => num(x.setupEvidence?.volumeRatio1h) >= 1.50).length;
   const maCount = ranked.filter((x) => x.trendConfluence >= 3).length;
   const adxCount = ranked.filter((x) => num(x.indicators?.adx) >= 18).length;
-  const layerReadyCount = ranked.filter((x) => x.setupEvidence?.directionAuthority === "1H_STRUCTURE" && x.triggerActive).length;
+  const layerReadyCount = ranked.filter((x) => x.setupEvidence?.directionAuthority === "MTF_D1_H4_H1" && x.triggerActive).length;
   const layerFlowCount = flowCount;
   const layerReversalCount = ranked.filter((x) => x.setupType === "REVERSAL" && x.reversalTrigger).length;
   const srCount = ranked.filter((x) => x.setupEvidence?.validExtreme > 0).length;
