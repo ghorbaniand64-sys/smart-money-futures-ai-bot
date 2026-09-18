@@ -29,5 +29,6 @@ jobs:
           GMX_PRIVATE_KEY: ${{ secrets.GMX_PRIVATE_KEY }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GMX_COPY_TRADERS: ${{ vars.GMX_COPY_TRADERS }}
           EXECUTION_ENABLED: "true"
         run: node github-runner.mjs
