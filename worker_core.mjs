@@ -2860,7 +2860,9 @@ function tradeMessage(result) {
       `🪙 Symbol: ${result.symbol}`,
       `📌 Direction: ${result.direction.toUpperCase()}`,
       `💰 Entry: ${formatPrice(result.entry)}`,
+      `🛑 SL: ${formatPrice(result.sl)}`,
       `🎯 TP: ${formatPrice(result.tp)}`,
+      `📐 RR: ${calculatedRR(result.entry, result.sl, result.tp).toFixed(2)}:1 | Gate: ${rrGateLabel(calculatedRR(result.entry, result.sl, result.tp))}`,
       `⚙️ Leverage: ${result.leverage.toFixed(1)}x`,
       `📊 Allocation: ${(result.allocation * 100).toFixed(2)}%`,
       `📦 Notional: ${formatUsd(result.notionalUsd)}`,
@@ -2883,7 +2885,9 @@ function tradeMessage(result) {
     `🪙 Symbol: ${result.symbol || "N/A"}`,
     `📌 Direction: ${String(result.direction || "N/A").toUpperCase()}`,
     `💰 Entry: ${formatPrice(result.entry)}`,
+    `🛑 SL: ${formatPrice(result.sl)}`,
     `🎯 TP: ${formatPrice(result.tp)}`,
+    `📐 RR: ${calculatedRR(result.entry, result.sl, result.tp) > 0 ? calculatedRR(result.entry, result.sl, result.tp).toFixed(2)+":1" : "N/A"}`,
     `⚙️ Leverage: ${CONFIG.leverage.toFixed(1)}x`,
     `📊 Allocation target: ${(CONFIG.walletAllocationPerPosition * 100).toFixed(2)}%`,
     `❌ Stage: ${result.stage || "EXECUTION"}`,
@@ -2893,6 +2897,19 @@ function tradeMessage(result) {
   ].join("\n");
 }
 
+
+function calculatedRR(entry, sl, tp) {
+  const e = num(entry), s = num(sl), t = num(tp);
+  if (!(e > 0 && s > 0 && t > 0)) return 0;
+  const risk = Math.abs(e - s), reward = Math.abs(t - e);
+  return risk > 0 && reward > 0 ? reward / risk : 0;
+}
+
+function rrGateLabel(rr) {
+  return rr >= CONFIG.oneHMinRR
+    ? `PASS (≥ ${CONFIG.oneHMinRR.toFixed(2)})`
+    : `BLOCK (< ${CONFIG.oneHMinRR.toFixed(2)})`;
+}
 
 function cycleMessage(report) {
   const lines = [
@@ -2937,17 +2954,24 @@ function cycleMessage(report) {
     lines.push(`ℹ️ TOP BLOCKED`);
     for (const item of report.topRejected.slice(0, 3)) {
       lines.push(`• ${item.symbol}`);
-      lines.push(`  📌 ${item.direction ? String(item.direction).toUpperCase() : `BIAS ${String(item.directionBias || item.setupEvidence?.directionBias || "UNCONFIRMED").toUpperCase()}`} | Entry ${formatPrice(item.entry)} | SL ${item.sl > 0 ? formatPrice(item.sl) : "WAITING"} | TP ${item.tp > 0 ? formatPrice(item.tp) : "WAITING"}`);
-      lines.push(`  🧠 ${String(item.setupType || "N/A")} | ${item.direction ? "SIGNAL" : "WATCH"} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)} | RR ${item.rr > 0 ? num(item.rr).toFixed(2) : "N/A"}`);
+      const hasPlan = num(item.entry) > 0 && num(item.sl) > 0 && num(item.tp) > 0;
+      const rr = hasPlan ? calculatedRR(item.entry, item.sl, item.tp) : 0;
+      const sideLabel = item.direction ? String(item.direction).toUpperCase() : "NO DIRECTION — WATCH ONLY";
+      lines.push(`  🧭 وضعیت: ${item.direction ? "سیگنال جهت‌دار" : "فقط پایش؛ ورود ممنوع"} | جهت: ${sideLabel}`);
+      lines.push(`  📍 Entry: ${formatPrice(item.entry)} | 🛑 SL: ${hasPlan ? formatPrice(item.sl) : "محاسبه‌نشده"} | 🎯 TP: ${hasPlan ? formatPrice(item.tp) : "محاسبه‌نشده"}`);
+      lines.push(`  📐 RR واقعیِ قیمت‌ها: ${hasPlan ? rr.toFixed(2) + ":1" : "N/A — پلن کامل نیست"} | فیلتر RR: ${hasPlan ? rrGateLabel(rr) : "BLOCK — قیمت SL/TP موجود نیست"}`);
+      lines.push(`  🧠 Setup: ${String(item.setupType || "N/A")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)}`);
       const ev = item.setupEvidence || {};
       lines.push(`  🕐 1H trend ${String(ev.priorTrend || ev.directionBias || "N/A")} | Move ${num(ev.priorTrendMovePct).toFixed(2)}% | Body ${num(ev.bodyRatio).toFixed(2)} | Close ${num(ev.closeLocation).toFixed(2)}`);
       lines.push(`  💧 1H volume ${Number.isFinite(Number(ev.volumeRatio1h)) ? `${num(ev.volumeRatio1h).toFixed(2)}x` : "N/A (feed has no usable volume)"}`);
       const mr = ev.marketRegime || {};
       if (mr.regime) lines.push(`  🌐 ${mr.regime} | BTC ${num(mr.btcScore).toFixed(0)} ETH ${num(mr.ethScore).toFixed(0)} Breadth ${num(mr.breadthScore).toFixed(0)} | ${mr.counterTrend ? "COUNTER" : "ALIGNED"}`);
-      lines.push(`  🛡️ SL ${formatPrice(item.sl)} | ${num(ev.slDistancePct).toFixed(2)}% | ${String(ev.slMethod || "N/A")}`);
+      lines.push(`  🛡️ فاصله SL: ${hasPlan ? Math.abs((num(item.entry)-num(item.sl))/num(item.entry)*100).toFixed(2)+"%" : "N/A"} | روش: ${String(ev.slMethod || "ساختار 1H / ATR")}`);
       const econ = item.economics || {};
       lines.push(`  💹 Gross ${formatUsd(econ.grossPnlUsd)} | Cost ${formatUsd(econ.totalCostUsd)} | Net ${formatUsd(econ.expectedNetUsd)} | TP move ${num(econ.tpMovePct).toFixed(2)}%`);
-      lines.push(`  🚫 ${item.reason}`);
+      const reasonText = String(item.reason || "علت نامشخص");
+      lines.push(`  🚫 نتیجه: ${reasonText}`);
+      if (!item.direction) lines.push(`  ℹ️ این مورد هنوز LONG/SHORT معتبر ندارد؛ قیمت Entry صرفاً قیمت پایش است، نه سفارش آماده اجرا.`);
     }
   }
 
