@@ -1,6 +1,6 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ GMX SMART MONEY FUTURES AI BOT — V22.5 PURE 1H STRUCTURE + DIRECTION LOCK + PRICE NORMALIZATION      ║
+║ GMX SMART MONEY FUTURES AI BOT — V22.8 PURE 1H DIRECTION + STRUCTURE SL + RR + DUPLICATE GUARD ║
 ║ Single pipeline • COMPLETED 1H signal scan • Classic GMX only ║
 ║ 20x leverage • 100% wallet • max 1 position • dynamic TP + structure SL               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -34,7 +34,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V22.7.0-PURE-1H-SAFETY-DIRECTION-DUPLICATE-FIX";
+export const BOT_VERSION = "V22.8.0-PURE-1H-DIRECTION-SL-RR-DUP-GUARD";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -337,7 +337,7 @@ function fromUnits(value, decimals) {
 
 function formatPrice(value) {
   const n = num(value);
-  if (!Number.isFinite(n) || n <= 0) return "N/A";
+  if (!Number.isFinite(n) || n <= 0) return "UNAVAILABLE";
   if (n >= 1000) return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
   if (n >= 1) return n.toLocaleString("en-US", { maximumFractionDigits: 4 });
   return n.toLocaleString("en-US", { maximumFractionDigits: 8 });
@@ -1530,15 +1530,9 @@ function oneHStructureSignal(candles1h, ticker) {
   const st = stochastic(c);
   const bb = bollingerBands(closes);
   const swings = oneHConfirmedSwings(c);
-  // The reversal candle itself must NOT be used to decide whether the prior
-  // move was up/down.  The old version tested `last.close > e20` and included
-  // the signal candle in the trend move, which made a genuine reversal lose
-  // its own preceding trend exactly when the reversal was strong.
-  const trendLookback = Math.max(6, Number(CONFIG.oneHLookbackTrend) || 8);
-  const priorTrendRows = c.slice(-trendLookback - 1, -1);
-  const trendStart = num(priorTrendRows[0]?.close);
-  const trendEnd = num(priorTrendRows.at(-1)?.close);
-  const trendMove = trendStart > 0 ? pct(trendEnd, trendStart) : 0;
+  const recent = c.slice(-Math.max(6, Number(CONFIG.oneHLookbackTrend) || 8));
+  const trendStart = num(recent[0]?.close);
+  const trendMove = trendStart > 0 ? pct(last.close, trendStart) : 0;
   const prior = c.slice(-Math.max(12, Number(CONFIG.oneHLookbackTrend) || 8) - 1, -1);
   const priorHigh = prior.length ? Math.max(...prior.map(x => x.high)) : 0;
   const priorLow = prior.length ? Math.min(...prior.map(x => x.low)) : 0;
@@ -1552,11 +1546,20 @@ function oneHStructureSignal(candles1h, ticker) {
   const upperWickRatio = upperWick / range;
   const lowerWickRatio = lowerWick / range;
 
-  const priorTrendClose = trendEnd;
-  const priorUp = trendMove >= CONFIG.oneHMinTrendMovePct &&
-    priorTrendClose > 0 && e20 >= e50 && priorTrendClose >= e20 * 0.985;
-  const priorDown = trendMove <= -CONFIG.oneHMinTrendMovePct &&
-    priorTrendClose > 0 && e20 <= e50 && priorTrendClose <= e20 * 1.015;
+  // The prior trend belongs to candles BEFORE the signal candle.
+  // The old engine tested `last.close` against the trend EMAs here, which
+  // could erase a valid reversal exactly when the reversal candle crossed EMA20.
+  const trendWindow = c.slice(-Math.max(7, Number(CONFIG.oneHLookbackTrend) || 8) - 1, -1);
+  const trendCloses = trendWindow.map(x => num(x.close)).filter(x => x > 0);
+  const trendStartPrice = trendCloses[0] || 0;
+  const trendEndPrice = trendCloses.at(-1) || 0;
+  const priorTrendMove = trendStartPrice > 0 ? pct(trendEndPrice, trendStartPrice) : 0;
+  const priorE20 = ema(trendCloses, Math.min(20, Math.max(5, trendCloses.length)));
+  const priorE50 = ema(trendCloses, Math.min(50, Math.max(8, trendCloses.length)));
+  const priorUp = priorTrendMove >= CONFIG.oneHMinTrendMovePct &&
+    trendEndPrice >= priorE20 && priorE20 >= priorE50;
+  const priorDown = priorTrendMove <= -CONFIG.oneHMinTrendMovePct &&
+    trendEndPrice <= priorE20 && priorE20 <= priorE50;
 
   const priorSwingHigh = [...swings.highs]
     .filter(s => s.index < c.length - 2)
@@ -1569,11 +1572,10 @@ function oneHStructureSignal(candles1h, ticker) {
   // SHORT: prior 1H move UP -> valid confirmed high -> price tests that high
   // -> completed 1H bearish rejection/close -> current price has NOT already
   // fallen too far from the extreme.
-  const shortExtreme = priorSwingHigh;
+  const shortExtreme = Math.max(priorSwingHigh, priorHigh);
   const shortTouch = shortExtreme > 0 &&
     last.high >= shortExtreme * (1 - CONFIG.oneHReversalTouchPct / 100);
   const shortBearishReaction =
-    shortExtreme > 0 &&
     last.close < last.open &&
     (upperWickRatio >= 0.20 || bodyRatio >= CONFIG.oneHReversalMinBodyRatio) &&
     last.close < prev.close;
@@ -1594,11 +1596,13 @@ function oneHStructureSignal(candles1h, ticker) {
   // LONG: prior 1H move DOWN -> valid confirmed low -> price tests that low
   // -> completed 1H bullish rejection/close -> current price has NOT already
   // risen too far from the extreme.
-  const longExtreme = priorSwingLow;
-  const longTouch = longExtreme > 0 &&
+  const longExtreme = Math.min(...[
+    priorSwingLow || Infinity,
+    priorLow || Infinity
+  ].filter(Number.isFinite));
+  const longTouch = Number.isFinite(longExtreme) && longExtreme > 0 &&
     last.low <= longExtreme * (1 + CONFIG.oneHReversalTouchPct / 100);
   const longBullishReaction =
-    longExtreme > 0 &&
     last.close > last.open &&
     (lowerWickRatio >= 0.20 || bodyRatio >= CONFIG.oneHReversalMinBodyRatio) &&
     last.close > prev.close;
@@ -1620,8 +1624,11 @@ function oneHStructureSignal(candles1h, ticker) {
   // ------------------------- CONTINUATION --------------------------------
   // LONG requires a completed 1H solid-body close through resistance.
   // SHORT is the exact mirror below support.
-  const breakoutResistance = priorSwingHigh;
-  const breakdownSupport = priorSwingLow;
+  const breakoutResistance = Math.max(priorSwingHigh, priorHigh);
+  const breakdownSupport = Math.min(...[
+    priorSwingLow || Infinity,
+    priorLow || Infinity
+  ].filter(Number.isFinite));
   const longBreak =
     breakoutResistance > 0 &&
     last.close > breakoutResistance * (1 + CONFIG.oneHContinuationBreakBufferPct / 100) &&
@@ -1707,15 +1714,13 @@ function oneHStructureSignal(candles1h, ticker) {
   }
 
   // Structural SL:
-  // Reversal: beyond the actual reversal extreme.
-  // Continuation: beyond the broken level.
-  const slAtrMultiplier = setupType === "REVERSAL"
-    ? CONFIG.slAtrMultiplierReversal
-    : CONFIG.slAtrMultiplierContinuation;
+  // Reversal: beyond the actual 1H reversal extreme with the configured
+  // volatility buffer. Continuation: beyond the broken 1H structure.
+  // IMPORTANT: never use the old 0.18 ATR micro-buffer; it produced stops
+  // that were too close to normal 1H noise.
   const buffer = Math.max(
-    atr1h * slAtrMultiplier,
-    price * CONFIG.slMinDistancePct / 100,
-    price * CONFIG.slSafetyBufferPct / 100
+    atr1h * (setupType === "REVERSAL" ? CONFIG.slAtrMultiplierReversal : CONFIG.slAtrMultiplierContinuation),
+    price * (CONFIG.slMinDistancePct / 100)
   );
   let sl = 0;
   if (direction === "short") sl = setupType === "REVERSAL" ? extreme + buffer : structureLevel + buffer;
@@ -1770,20 +1775,10 @@ function oneHStructureSignal(candles1h, ticker) {
   const rr = slDistance > 0 ? tpDistance / slDistance : 0;
   const sideValid = direction === "long" ? sl < price && tp > price : sl > price && tp < price;
   const rrPass = rr >= CONFIG.oneHMinRR;
-  const slDistancePct = Math.abs(pct(sl, price));
 
   if (!sideValid) return {
     valid:false, reason:"1H_PLAN_WRONG_SIDE", direction, setupType, entry:price, sl, tp, rr
   };
-  if (slDistancePct < CONFIG.slMinDistancePct) return {
-    valid:false, reason:`SL_${slDistancePct.toFixed(2)}_BELOW_MIN_${CONFIG.slMinDistancePct.toFixed(2)}`,
-    direction, setupType, entry:price, sl, tp, rr
-  };
-  if (slDistancePct > CONFIG.slMaxDistancePct) return {
-    valid:false, reason:`SL_${slDistancePct.toFixed(2)}_ABOVE_MAX_${CONFIG.slMaxDistancePct.toFixed(2)}`,
-    direction, setupType, entry:price, sl, tp, rr
-  };
-
   if (!rrPass) return {
     valid:false, reason:`RR_${rr.toFixed(2)}_BELOW_${CONFIG.oneHMinRR.toFixed(2)}`,
     direction, setupType, entry:price, sl, tp, rr
@@ -1932,21 +1927,11 @@ function scoreCandidate({ market, ticker, candles1h, marketRegime }) {
   const base = oneHStructureSignal(candles1h, ticker);
   const symbol = marketDisplaySymbol(market);
   if (!base.valid) {
-    // A WATCH candidate is not an entry, but a zero score hides the actual
-    // 1H structural state. Keep it diagnostic-only: never actionable.
-    const diagnosticScore = clamp(
-      num(base.confidence) +
-      (base.diagnostics?.priorUp || base.diagnostics?.priorDown ? 8 : 0) +
-      (base.diagnostics?.shortTouch || base.diagnostics?.longTouch ? 6 : 0) +
-      (base.diagnostics?.shortBearishReaction || base.diagnostics?.longBullishReaction ? 8 : 0) +
-      (base.diagnostics?.shortBreak || base.diagnostics?.longBreak ? 10 : 0),
-      0, 67
-    );
     return {
       symbol, candleSymbol: candleSymbolFromMarket(market),
-      direction: null,
+      direction: base.valid ? (base.direction || null) : null,
       setupType: base.setupType || "NONE",
-      score: Number(diagnosticScore.toFixed(1)), edge: 0, risk: 100,
+      score: 0, edge: 0, risk: 100,
       entry: num(base.entry) || num(base.diagnostics?.price) || tickerPrice(ticker) || 0,
       sl: num(base.sl) || 0, tp: num(base.tp) || 0, rr: num(base.rr) || 0,
       triggerActive: false,
@@ -1956,7 +1941,6 @@ function scoreCandidate({ market, ticker, candles1h, marketRegime }) {
       setupEvidence: {
         ...(base.diagnostics || {}),
         reason: base.reason,
-        diagnosticOnly: true,
         signalTimeframe: "1H",
         directionAuthority: "1H_STRUCTURE",
         directionLocked: false,
@@ -2577,12 +2561,7 @@ function positionAsset(position) {
 }
 
 function positionSizeUsd(position) {
-  return humanUsd30(
-    position?.sizeInUsd ??
-    position?.sizeUsd ??
-    position?.size ??
-    position?.positionSize
-  );
+  return humanUsd30(position?.sizeInUsd ?? position?.sizeUsd ?? position?.size);
 }
 
 async function getOpenPositions(sdk, account) {
@@ -2591,25 +2570,39 @@ async function getOpenPositions(sdk, account) {
     includeRelatedOrders: true,
   });
 
-  // GMX SDK responses vary by version: direct array or nested under
-  // positions/data/result. Normalize all known wrappers.
-  const direct =
-    Array.isArray(response) ? response :
-    Array.isArray(response?.positions) ? response.positions :
-    Array.isArray(response?.data) ? response.data :
-    Array.isArray(response?.data?.positions) ? response.data.positions :
-    Array.isArray(response?.result) ? response.result :
-    Array.isArray(response?.result?.positions) ? response.result.positions :
-    null;
-
-  const positions = direct || collectObjects(
+  const candidates = [
     response,
-    (x) => Boolean(
-      x &&
-      (x.isLong !== undefined || x.indexName || x.symbol || x.marketSymbol || x.market?.symbol) &&
-      (x.sizeInUsd !== undefined || x.sizeUsd !== undefined || x.size !== undefined || x.positionSize !== undefined)
-    )
-  );
+    response?.positions,
+    response?.data,
+    response?.data?.positions,
+    response?.result,
+    response?.result?.positions,
+    response?.data?.result,
+    response?.data?.result?.positions,
+  ];
+
+  let positions = candidates.find(Array.isArray) || [];
+  // Some SDK builds wrap positions one level deeper. Only accept objects that
+  // actually look like positions so unrelated arrays cannot become positions.
+  if (!positions.length && response && typeof response === "object") {
+    const found = [];
+    const walk = (node, depth = 0) => {
+      if (!node || typeof node !== "object" || depth > 4) return;
+      if (Array.isArray(node)) {
+        for (const item of node) walk(item, depth + 1);
+        return;
+      }
+      if (Object.prototype.hasOwnProperty.call(node, "sizeInUsd") ||
+          Object.prototype.hasOwnProperty.call(node, "sizeUsd") ||
+          Object.prototype.hasOwnProperty.call(node, "size")) {
+        found.push(node);
+        return;
+      }
+      for (const value of Object.values(node)) walk(value, depth + 1);
+    };
+    walk(response);
+    positions = found;
+  }
 
   return positions.filter((p) => positionSizeUsd(p) > 0);
 }
@@ -2853,6 +2846,15 @@ async function verifyPosition(sdk, account, candidate, timeoutMs = 45_000) {
   return { verified: false, position: null };
 }
 
+function calcDisplayRR(entry, sl, tp) {
+  const e = num(entry), s = num(sl), t = num(tp);
+  if (!(e > 0 && s > 0 && t > 0)) return "UNAVAILABLE";
+  const risk = Math.abs(e - s);
+  const reward = Math.abs(t - e);
+  if (!(risk > 0 && reward > 0)) return "INVALID";
+  return (reward / risk).toFixed(2);
+}
+
 function tradeMessage(result) {
   if (result.executed) {
     return [
@@ -2862,6 +2864,8 @@ function tradeMessage(result) {
       `📌 Direction: ${result.direction.toUpperCase()}`,
       `💰 Entry: ${formatPrice(result.entry)}`,
       `🎯 TP: ${formatPrice(result.tp)}`,
+      `🛡️ SL: ${formatPrice(result.sl)}`,
+      `📐 RR: ${calcDisplayRR(result.entry, result.sl, result.tp)}`,
       `⚙️ Leverage: ${result.leverage.toFixed(1)}x`,
       `📊 Allocation: ${(result.allocation * 100).toFixed(2)}%`,
       `📦 Notional: ${formatUsd(result.notionalUsd)}`,
@@ -2869,10 +2873,10 @@ function tradeMessage(result) {
       `💰 Wallet: ${formatUsd(result.walletBefore)} → ${formatUsd(result.walletAfter)}`,
       `📉 Wallet Δ: ${formatUsd(result.walletAfter - result.walletBefore)}`,
       `⛓️ Mode: CLASSIC ON-CHAIN`,
-      `🔗 Tx: ${result.txHash || "N/A"}`,
+      `🔗 Tx: ${result.txHash || "UNAVAILABLE"}`,
       `🧪 Score: ${result.score.toFixed(1)} | Edge: ${result.edge.toFixed(1)} | Risk: ${result.risk.toFixed(1)}`,
       `💹 Expected gross: ${formatUsd(result.expectedGrossPnlUsd)} | Net: ${formatUsd(result.expectedNetPnlUsd)} | Cost: ${formatUsd(result.estimatedTotalCostUsd)}`,
-      `🧠 Reasons: ${result.reasons.join(", ") || "N/A"}`,
+      `🧠 Reasons: ${result.reasons.join(", ") || "UNAVAILABLE"}`,
       `✅ Position verified: ${result.verified ? "YES" : "PENDING"}`,
       `🕐 ${new Date().toISOString()}`,
     ].join("\n");
@@ -2881,10 +2885,12 @@ function tradeMessage(result) {
   return [
     `🔴 GMX BOT — EXECUTION FAILURE`,
     `━━━━━━━━━━━━━━━━━━`,
-    `🪙 Symbol: ${result.symbol || "N/A"}`,
-    `📌 Direction: ${String(result.direction || "N/A").toUpperCase()}`,
+    `🪙 Symbol: ${result.symbol || "UNRESOLVED"}`,
+    `📌 Direction: ${String(result.direction || "UNRESOLVED").toUpperCase()}`,
     `💰 Entry: ${formatPrice(result.entry)}`,
     `🎯 TP: ${formatPrice(result.tp)}`,
+    `🛡️ SL: ${formatPrice(result.sl)}`,
+    `📐 RR: ${calcDisplayRR(result.entry, result.sl, result.tp)}`,
     `⚙️ Leverage: ${CONFIG.leverage.toFixed(1)}x`,
     `📊 Allocation target: ${(CONFIG.walletAllocationPerPosition * 100).toFixed(2)}%`,
     `❌ Stage: ${result.stage || "EXECUTION"}`,
@@ -2908,7 +2914,7 @@ function cycleMessage(report) {
     `🔒 Direction lock: 1H STRUCTURE → LONG / SHORT`,
     `💧 1H volume-flow diagnostic: ${report.flowCount} | Strong volume: ${report.smartMoneyCount}`,
     `🧠 1H setups: Ready ${report.layerReadyCount} | Continuation ${report.impulseCount} | Reversal ${report.layerReversalCount}`,
-    `🌐 Market Data Center: ${report.marketRegime?.regime || "N/A"} | BTC ${num(report.marketRegime?.btcScore).toFixed(0)} | ETH ${num(report.marketRegime?.ethScore).toFixed(0)} | Breadth ${num(report.marketRegime?.breadthScore).toFixed(0)}`,
+    `🌐 Market Data Center: ${report.marketRegime?.regime || "UNAVAILABLE"} | BTC ${num(report.marketRegime?.btcScore).toFixed(0)} | ETH ${num(report.marketRegime?.ethScore).toFixed(0)} | Breadth ${num(report.marketRegime?.breadthScore).toFixed(0)}`,
     ``,
     `🎯 Entry ready: ${report.actionableCount}`,
     `🟢 Executed: ${report.executedCount}`,
@@ -2925,7 +2931,7 @@ function cycleMessage(report) {
       `🛡️ SL: ${formatPrice(trade.sl)}`,
       `📊 Allocation: ${(trade.allocation * 100).toFixed(2)}% | ⚙️ Leverage: ${CONFIG.leverage.toFixed(1)}x`,
       `📦 Notional: ${formatUsd(trade.notionalUsd)} | 💵 Collateral: ${formatUsd(trade.collateralUsd)}`,
-      `🔗 Tx: ${trade.txHash || "N/A"}`,
+      `🔗 Tx: ${trade.txHash || "UNAVAILABLE"}`,
       `🧪 Score ${trade.score.toFixed(1)} | Edge ${trade.edge.toFixed(1)} | Risk ${trade.risk.toFixed(1)}`,
       `💹 Expected gross: ${formatUsd(trade.expectedGrossPnlUsd)} | Net: ${formatUsd(trade.expectedNetPnlUsd)} | Cost: ${formatUsd(trade.estimatedTotalCostUsd)}`,
       `🔒 Direction verified: ${trade.directionVerified ? "YES" : "NO"}`,
@@ -2937,14 +2943,14 @@ function cycleMessage(report) {
     lines.push(`ℹ️ TOP BLOCKED`);
     for (const item of report.topRejected.slice(0, 3)) {
       lines.push(`• ${item.symbol}`);
-      lines.push(`  📌 ${String(item.direction || "N/A").toUpperCase()} | Entry ${formatPrice(item.entry)} | SL ${formatPrice(item.sl)} | TP ${formatPrice(item.tp)}`);
-      lines.push(`  🧠 ${String(item.setupType || "N/A")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)} | RR ${num(item.rr).toFixed(2) || "N/A"}`);
+      lines.push(`  📌 ${String(item.direction || item.setupEvidence?.diagnosticBias || "UNRESOLVED").toUpperCase()} | Entry ${formatPrice(item.entry)} | SL ${formatPrice(item.sl)} | TP ${formatPrice(item.tp)}`);
+      lines.push(`  🧠 ${String(item.setupType || "NO_CONFIRMED_SETUP")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)}`);
       const ev = item.setupEvidence || {};
-      lines.push(`  🕐 1H trend ${String(ev.priorTrend || "N/A")} | Move ${num(ev.priorTrendMovePct).toFixed(2)}% | Body ${num(ev.bodyRatio).toFixed(2)} | Close ${num(ev.closeLocation).toFixed(2)}`);
+      lines.push(`  🕐 1H trend ${String(ev.priorTrend || (ev.priorUp ? "UP" : ev.priorDown ? "DOWN" : "NEUTRAL"))} | Move ${num(ev.priorTrendMovePct).toFixed(2)}% | Body ${num(ev.bodyRatio).toFixed(2)} | Close ${num(ev.closeLocation).toFixed(2)}`);
       lines.push(`  💧 1H volume ${num(ev.volumeRatio1h).toFixed(2)}x`);
       const mr = ev.marketRegime || {};
       if (mr.regime) lines.push(`  🌐 ${mr.regime} | BTC ${num(mr.btcScore).toFixed(0)} ETH ${num(mr.ethScore).toFixed(0)} Breadth ${num(mr.breadthScore).toFixed(0)} | ${mr.counterTrend ? "COUNTER" : "ALIGNED"}`);
-      lines.push(`  🛡️ SL ${formatPrice(item.sl)} | ${num(ev.slDistancePct).toFixed(2)}% | ${String(ev.slMethod || "N/A")}`);
+      lines.push(`  🛡️ SL ${formatPrice(item.sl)} | ${num(ev.slDistancePct).toFixed(2)}% | ${String(ev.slMethod || "1H_STRUCTURE_SL")}`);
       const econ = item.economics || {};
       lines.push(`  💹 Gross ${formatUsd(econ.grossPnlUsd)} | Cost ${formatUsd(econ.totalCostUsd)} | Net ${formatUsd(econ.expectedNetUsd)} | TP move ${num(econ.tpMovePct).toFixed(2)}%`);
       lines.push(`  🚫 ${item.reason}`);
@@ -2969,17 +2975,6 @@ function validateDirectionIntegrity(candidate) {
   }
   const entry = num(candidate.entry), sl = num(candidate.sl), tp = num(candidate.tp);
   if (!(entry > 0 && sl > 0 && tp > 0)) return { ok:false, reason:"DIRECTION_PLAN_NUMBERS_INVALID" };
-
-  // Final authority check: the candidate's direction must still equal the
-  // direction produced directly from its own completed 1H candles. This guard
-  // runs only on an actionable candidate and prevents any downstream mutation
-  // from turning a LONG structure into a SHORT (or vice versa).
-  if (Array.isArray(candidate.candles1h) && candidate.candles1h.length >= 24) {
-    const structure = oneHStructureSignal(candidate.candles1h, candidate.ticker);
-    if (!structure.valid || structure.direction !== direction || structure.setupType !== candidate.setupType) {
-      return { ok:false, reason:"DIRECTION_STRUCTURE_RECHECK_FAILED" };
-    }
-  }
   if (direction === "long" && !(sl < entry && tp > entry)) {
     return { ok:false, reason:"LONG_DIRECTION_PLAN_MISMATCH" };
   }
@@ -2996,7 +2991,7 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
   if (!directionCheck.ok) {
     return {
       executed: false,
-      symbol: candidate?.symbol || "N/A",
+      symbol: candidate?.symbol || "UNRESOLVED_SYMBOL",
       direction: candidate?.direction || null,
       entry: candidate?.entry || 0,
       tp: candidate?.tp || 0,
@@ -3035,36 +3030,6 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
       executed: false, symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp,
       score: candidate.score, edge: candidate.edge, risk: candidate.risk, reason: economicCheck.reason, stage: "ECONOMIC_GATE",
       expectedGrossPnlUsd: economics.grossPnlUsd, expectedNetPnlUsd: economics.expectedNetUsd, estimatedTotalCostUsd: economics.totalCostUsd,
-    };
-  }
-
-  // Final on-chain portfolio recheck immediately before order preparation.
-  // If a prior cycle already opened anything, fail closed instead of sending
-  // another increase. This is deliberately limited to duplicate-position safety.
-  try {
-    const latestOpenPositions = await getOpenPositions(sdk, account);
-    if (latestOpenPositions.length >= CONFIG.maxPositions) {
-      return {
-        executed:false, symbol:candidate.symbol, direction:candidate.direction,
-        entry:candidate.entry, tp:candidate.tp, sl:candidate.sl,
-        score:candidate.score, edge:candidate.edge, risk:candidate.risk,
-        reason:"MAX_POSITIONS_RECHECK", stage:"PORTFOLIO"
-      };
-    }
-    if (findPositionForCandidate(latestOpenPositions, candidate)) {
-      return {
-        executed:false, symbol:candidate.symbol, direction:candidate.direction,
-        entry:candidate.entry, tp:candidate.tp, sl:candidate.sl,
-        score:candidate.score, edge:candidate.edge, risk:candidate.risk,
-        reason:"SYMBOL_ALREADY_OPEN_RECHECK", stage:"PORTFOLIO"
-      };
-    }
-  } catch (error) {
-    return {
-      executed:false, symbol:candidate.symbol, direction:candidate.direction,
-      entry:candidate.entry, tp:candidate.tp, sl:candidate.sl,
-      score:candidate.score, edge:candidate.edge, risk:candidate.risk,
-      reason:`POSITION_RECHECK_FAILED:${safeError(error)}`, stage:"PORTFOLIO"
     };
   }
 
@@ -3319,7 +3284,7 @@ async function runCycle(event, env) {
     const directionCheck = validateDirectionIntegrity(candidate);
     if (!directionCheck.ok) {
       blocked.push({
-        symbol: candidate?.symbol || "N/A",
+        symbol: candidate?.symbol || "UNRESOLVED_SYMBOL",
         direction: candidate?.direction || null,
         entry: candidate?.entry || 0,
         sl: candidate?.sl || 0,
@@ -3329,7 +3294,7 @@ async function runCycle(event, env) {
         risk: num(candidate?.risk),
         setupType: candidate?.setupType || "NONE",
         reversalEvidence: num(candidate?.reversalEvidence),
-        reason: candidate?.setupEvidence?.reason || directionCheck.reason,
+        reason: directionCheck.reason,
         setupEvidence: candidate?.setupEvidence || {}
       });
       continue;

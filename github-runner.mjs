@@ -1,5 +1,5 @@
 // Smart Money Futures AI Bot — GitHub Actions adapter
-// V17.5.2-GITHUB-ACTIONS-BIGINT-SAFE-MARKET-RESOLVER
+// V22.8.0-GITHUB-ACTIONS-BIGINT-SAFE-PURE-1H
 // Imports the canonical root worker_core.mjs and fails fast on stale deployments.
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -73,7 +73,6 @@ async function buildEnv() {
     TELEGRAM_TOKEN: envValue("TELEGRAM_TOKEN"),
     TELEGRAM_CHAT_ID: envValue("TELEGRAM_CHAT_ID"),
     EXECUTION_ENABLED: envValue("EXECUTION_ENABLED", "true"),
-    EMERGENCY_CLOSE_SYMBOL: envValue("EMERGENCY_CLOSE_SYMBOL"),
     EXPECTED_VERSION: EXPECTED_WORKER_VERSION,
     BOT_STATE: makeFileKvBinding("bot_state"),
     GMX_CACHE: makeFileKvBinding("gmx_cache")
