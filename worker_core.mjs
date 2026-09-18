@@ -34,7 +34,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V22.5.0-PURE-1H-STRUCTURE-DIRECTION-LOCK";
+export const BOT_VERSION = "V22.6.0-PURE-1H-RISK-DIRECTION-DUPLICATE-FIX";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -71,7 +71,7 @@ const CONFIG = Object.freeze({
   oneHLookbackStructure: 30,
   oneHMinTrendMovePct: 0.80,
   oneHReversalTouchPct: 0.35,
-  oneHReversalMaxDistanceFromExtremePct: 1.80,
+  oneHReversalMaxDistanceFromExtremePct: 0.80,
   oneHReversalMinBodyRatio: 0.35,
   oneHReversalMinEvidence: 3,
   oneHContinuationBreakBufferPct: 0.08,
@@ -1562,13 +1562,18 @@ function oneHStructureSignal(candles1h, ticker) {
   // SHORT: prior 1H move UP -> valid confirmed high -> price tests that high
   // -> completed 1H bearish rejection/close -> current price has NOT already
   // fallen too far from the extreme.
-  const shortExtreme = Math.max(priorSwingHigh, priorHigh);
+  // IMPORTANT: a recent high is not automatically a valid resistance.
+  // Reversal authority requires a CONFIRMED 1H swing high. This prevents a
+  // single red candle inside an ongoing bullish impulse from becoming a SHORT.
+  const shortExtreme = priorSwingHigh;
   const shortTouch = shortExtreme > 0 &&
     last.high >= shortExtreme * (1 - CONFIG.oneHReversalTouchPct / 100);
   const shortBearishReaction =
+    shortExtreme > 0 &&
     last.close < last.open &&
-    (upperWickRatio >= 0.20 || bodyRatio >= CONFIG.oneHReversalMinBodyRatio) &&
-    last.close < prev.close;
+    (upperWickRatio >= 0.25 || bodyRatio >= 0.45) &&
+    last.close < prev.low &&
+    last.close < shortExtreme;
   const shortReversalEvidence = [
     priorUp,
     shortTouch,
@@ -1586,16 +1591,18 @@ function oneHStructureSignal(candles1h, ticker) {
   // LONG: prior 1H move DOWN -> valid confirmed low -> price tests that low
   // -> completed 1H bullish rejection/close -> current price has NOT already
   // risen too far from the extreme.
-  const longExtreme = Math.min(...[
-    priorSwingLow || Infinity,
-    priorLow || Infinity
-  ].filter(Number.isFinite));
-  const longTouch = Number.isFinite(longExtreme) && longExtreme > 0 &&
+  // Mirror rule: a recent low is not automatically valid support.
+  // Reversal authority requires a CONFIRMED 1H swing low and a real bullish
+  // reversal close, not merely a green candle above the previous close.
+  const longExtreme = priorSwingLow;
+  const longTouch = longExtreme > 0 &&
     last.low <= longExtreme * (1 + CONFIG.oneHReversalTouchPct / 100);
   const longBullishReaction =
+    longExtreme > 0 &&
     last.close > last.open &&
-    (lowerWickRatio >= 0.20 || bodyRatio >= CONFIG.oneHReversalMinBodyRatio) &&
-    last.close > prev.close;
+    (lowerWickRatio >= 0.25 || bodyRatio >= 0.45) &&
+    last.close > prev.high &&
+    last.close > longExtreme;
   const longReversalEvidence = [
     priorDown,
     longTouch,
@@ -1614,11 +1621,10 @@ function oneHStructureSignal(candles1h, ticker) {
   // ------------------------- CONTINUATION --------------------------------
   // LONG requires a completed 1H solid-body close through resistance.
   // SHORT is the exact mirror below support.
-  const breakoutResistance = Math.max(priorSwingHigh, priorHigh);
-  const breakdownSupport = Math.min(...[
-    priorSwingLow || Infinity,
-    priorLow || Infinity
-  ].filter(Number.isFinite));
+  // Continuation also uses confirmed 1H structure. Rolling highs/lows are
+  // intentionally NOT treated as resistance/support.
+  const breakoutResistance = priorSwingHigh;
+  const breakdownSupport = priorSwingLow;
   const longBreak =
     breakoutResistance > 0 &&
     last.close > breakoutResistance * (1 + CONFIG.oneHContinuationBreakBufferPct / 100) &&
@@ -1704,9 +1710,18 @@ function oneHStructureSignal(candles1h, ticker) {
   }
 
   // Structural SL:
-  // Reversal: beyond the actual reversal extreme.
-  // Continuation: beyond the broken level.
-  const buffer = Math.max(atr1h * 0.18, price * 0.0010);
+  // Reversal: beyond the confirmed reversal extreme.
+  // Continuation: beyond the confirmed broken level.
+  // Use the configured ATR distances; the old 0.18 ATR buffer was too tight
+  // and ignored the V21.6 SL configuration.
+  const slAtrMultiplier = setupType === "REVERSAL"
+    ? CONFIG.slAtrMultiplierReversal
+    : CONFIG.slAtrMultiplierContinuation;
+  const buffer = Math.max(
+    atr1h * slAtrMultiplier,
+    price * CONFIG.slMinDistancePct / 100,
+    price * CONFIG.slSafetyBufferPct / 100
+  );
   let sl = 0;
   if (direction === "short") sl = setupType === "REVERSAL" ? extreme + buffer : structureLevel + buffer;
   else sl = setupType === "REVERSAL" ? extreme - buffer : structureLevel - buffer;
@@ -1759,10 +1774,21 @@ function oneHStructureSignal(candles1h, ticker) {
   const tpDistance = Math.abs(tp - price);
   const rr = slDistance > 0 ? tpDistance / slDistance : 0;
   const sideValid = direction === "long" ? sl < price && tp > price : sl > price && tp < price;
+  const slDistancePct = Math.abs(pct(sl, price));
   const rrPass = rr >= CONFIG.oneHMinRR;
 
   if (!sideValid) return {
     valid:false, reason:"1H_PLAN_WRONG_SIDE", direction, setupType, entry:price, sl, tp, rr
+  };
+  if (slDistancePct < CONFIG.slMinDistancePct) return {
+    valid:false,
+    reason:`SL_${slDistancePct.toFixed(2)}_BELOW_MIN_${CONFIG.slMinDistancePct.toFixed(2)}`,
+    direction, setupType, entry:price, sl, tp, rr
+  };
+  if (slDistancePct > CONFIG.slMaxDistancePct) return {
+    valid:false,
+    reason:`SL_${slDistancePct.toFixed(2)}_ABOVE_MAX_${CONFIG.slMaxDistancePct.toFixed(2)}`,
+    direction, setupType, entry:price, sl, tp, rr
   };
   if (!rrPass) return {
     valid:false, reason:`RR_${rr.toFixed(2)}_BELOW_${CONFIG.oneHMinRR.toFixed(2)}`,
@@ -2550,11 +2576,33 @@ function positionSizeUsd(position) {
 }
 
 async function getOpenPositions(sdk, account) {
-  const positions = await sdk.fetchPositionsInfo({
+  const response = await sdk.fetchPositionsInfo({
     address: account,
     includeRelatedOrders: true,
   });
-  return (Array.isArray(positions) ? positions : [])
+
+  // GMX SDK versions may return an array directly or wrap it in
+  // positions/data/result. The old code accepted arrays only, which could
+  // turn a real open position into [] and allow the bot to open it again.
+  const direct =
+    Array.isArray(response) ? response :
+    Array.isArray(response?.positions) ? response.positions :
+    Array.isArray(response?.data) ? response.data :
+    Array.isArray(response?.data?.positions) ? response.data.positions :
+    Array.isArray(response?.result) ? response.result :
+    Array.isArray(response?.result?.positions) ? response.result.positions :
+    null;
+
+  const positions = direct || collectObjects(
+    response,
+    (x) => Boolean(
+      x &&
+      (x.isLong !== undefined || x.indexName || x.marketSymbol || x.market?.symbol) &&
+      (x.sizeInUsd !== undefined || x.sizeUsd !== undefined || x.size !== undefined)
+    )
+  );
+
+  return positions
     .filter((p) => positionSizeUsd(p) > 0);
 }
 
@@ -2971,6 +3019,37 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
     };
   }
 
+  // Final pre-broadcast recheck. This is intentionally scoped to the
+  // duplicate-position bug: if another scheduled runner/cycle opened a
+  // position after the first portfolio snapshot, do not broadcast another one.
+  try {
+    const latestOpenPositions = await getOpenPositions(sdk, account);
+    if (latestOpenPositions.length >= CONFIG.maxPositions) {
+      return {
+        executed: false, symbol: candidate.symbol, direction: candidate.direction,
+        entry: candidate.entry, tp: candidate.tp, sl: candidate.sl,
+        score: candidate.score, edge: candidate.edge, risk: candidate.risk,
+        reason: "MAX_POSITIONS_RECHECK", stage: "PORTFOLIO"
+      };
+    }
+    if (findPositionForCandidate(latestOpenPositions, candidate)) {
+      return {
+        executed: false, symbol: candidate.symbol, direction: candidate.direction,
+        entry: candidate.entry, tp: candidate.tp, sl: candidate.sl,
+        score: candidate.score, edge: candidate.edge, risk: candidate.risk,
+        reason: "SYMBOL_ALREADY_OPEN_RECHECK", stage: "PORTFOLIO"
+      };
+    }
+  } catch (error) {
+    // Do not silently bypass the safety check if the position endpoint fails.
+    return {
+      executed: false, symbol: candidate.symbol, direction: candidate.direction,
+      entry: candidate.entry, tp: candidate.tp, sl: candidate.sl,
+      score: candidate.score, edge: candidate.edge, risk: candidate.risk,
+      reason: `POSITION_RECHECK_FAILED:${safeError(error)}`, stage: "PORTFOLIO"
+    };
+  }
+
   let prepared;
   try {
     prepared = await prepareClassicIncrease({
@@ -3240,15 +3319,10 @@ async function runCycle(event, env) {
 
     const check = candidateIsActionable(candidate);
     if (!check.ok) {
-      // Preserve the exact existing block reason, but still calculate economics
-      // for reporting. Previously these candidates skipped attachEconomicOpportunity(),
-      // so Telegram received no economics object and formatted the missing values as 0.
-      const blockedEconomics = attachEconomicOpportunity(candidate, wallet.walletUsd);
       blocked.push({
         symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, sl: candidate.sl, tp: candidate.tp,
         score: candidate.score, edge: candidate.edge, risk: candidate.risk, setupType: candidate.setupType,
         reversalEvidence: candidate.reversalEvidence, reason: check.reason, setupEvidence: candidate.setupEvidence,
-        economics: blockedEconomics.economics,
       });
       continue;
     }
