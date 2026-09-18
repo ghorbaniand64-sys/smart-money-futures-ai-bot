@@ -34,7 +34,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V23.2.3-H1-PLAN-FIRST-EXECUTION";
+export const BOT_VERSION = "V23.2.4-H1-REPORT-AND-SELECTION-FIX";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -1968,7 +1968,7 @@ function scoreCandidate({ market, ticker, candles1h, candles4h, candles1d, marke
       },
       indicators:{d1:d1c,h4:h4c,h1:h1c}
     };
-    return ensureTradePlan(watch);
+    return normalizeReportPlan(ensureTradePlan(watch));
   }
 
   // H1 structural setup is the only signal authority. D1/H4 and BTC/ETH/SOL
@@ -1989,7 +1989,7 @@ function scoreCandidate({ market, ticker, candles1h, candles4h, candles1d, marke
     },
     indicators:{...(base.indicators||{}),d1:d1c,h4:h4c,h1:h1c}
   };
-  return ensureTradePlan(final);
+  return normalizeReportPlan(ensureTradePlan(final));
 }
 
 
@@ -2163,6 +2163,22 @@ function ensureTradePlan(candidate) {
     rr:Number(rr.toFixed(2)),
     planReady:true,
     planMethod:candidate.sl > 0 && candidate.tp > 0 ? (candidate.planMethod || "1H_STRUCTURE") : "1H_STRUCTURE_WATCH_PLAN"
+  };
+}
+
+
+function normalizeReportPlan(candidate) {
+  if (!candidate) return candidate;
+  const entry=num(candidate.entry), sl=num(candidate.sl), tp=num(candidate.tp);
+  if (!(entry>0 && sl>0 && tp>0)) return candidate;
+  const risk=Math.abs(entry-sl), reward=Math.abs(tp-entry);
+  const rr=risk>0 ? reward/risk : 0;
+  return {
+    ...candidate,
+    rr:Number(rr.toFixed(2)),
+    slDistancePct:Number((Math.abs(sl-entry)/entry*100).toFixed(3)),
+    tpMovePct:Number((Math.abs(tp-entry)/entry*100).toFixed(3)),
+    planReady:true
   };
 }
 
@@ -2493,7 +2509,7 @@ async function deepScan(sdk, broadRows, marketRegime = null) {
         return { ...row, error:`INSUFFICIENT_MTF_DATA:D1=${d1.length},H4=${h4.length},H1=${h1.length}` };
       }
       const candidate = scoreCandidate({ market:row.market, ticker:row.ticker, candles1h:h1, candles4h:h4, candles1d:d1, marketRegime });
-      return ensureTradePlan(candidate);
+      return normalizeReportPlan(ensureTradePlan(candidate));
     } catch (error) {
       return { ...row, error:safeError(error) };
     }
@@ -2967,7 +2983,7 @@ function validateDirectionIntegrity(candidate) {
   if (candidate?.directionAuthority !== "1H_STRUCTURE" ||
       candidate?.setupEvidence?.directionAuthority !== "1H_STRUCTURE" ||
       candidate?.setupEvidence?.directionLocked !== true) {
-    return { ok:false, reason:"DIRECTION_NOT_LOCKED_TO_1H_STRUCTURE" };
+    return { ok:false, reason:"DIRECTION_AUTHORITY_INVALID" };
   }
   const entry = num(candidate.entry), sl = num(candidate.sl), tp = num(candidate.tp);
   if (!(entry > 0 && sl > 0 && tp > 0)) return { ok:false, reason:"DIRECTION_PLAN_NUMBERS_INVALID" };
