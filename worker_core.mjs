@@ -2322,13 +2322,16 @@ async function fetchCandles(sdk, marketOrSymbol, timeframe, limit) {
   throw new Error(`OHLCV_ALL_SOURCES_FAILED:${errors.slice(0,4).join("|")}`);
 }
 
-// V22.5.1+: single resilient 1H OHLCV entry point.
-// The previous V22.5 build called this helper but never defined it, causing
-// every market (and BTC/ETH) to fail before the 1H engine could run.
+// V23: resilient OHLCV entry point for the declared MTF pipeline.
+// D1/H4 provide context; completed H1 provides the entry trigger.
+// Do not hard-block non-1H requests here: deepScan() and the market
+// reference-data center explicitly require D1/H4/H1.
 async function fetchCandlesResilient(sdk, marketOrSymbol, timeframe, limit) {
   const tf = String(timeframe || "1h").toLowerCase();
-  if (tf !== "1h") throw new Error(`PURE_1H_ONLY_TIMEFRAME:${tf}`);
-  return fetchCandles(sdk, marketOrSymbol, "1h", limit);
+  if (!["1d", "4h", "1h"].includes(tf)) {
+    throw new Error(`UNSUPPORTED_TIMEFRAME:${tf}`);
+  }
+  return fetchCandles(sdk, marketOrSymbol, tf, limit);
 }
 
 function findMarketValue(marketValues, market) {
