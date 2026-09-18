@@ -34,7 +34,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V23.0.1-MTF-D1-H4-H1-MARKET-LOCK";
+export const BOT_VERSION = "V23.0.2-MTF-D1-H4-H1-MARKET-REGIME-SOFT";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -51,8 +51,9 @@ const CONFIG = Object.freeze({
   maxTotalWalletAllocation: 1.00,
   leverage: 20,
 
-  // V23: strict top-down authority: D1 -> H4 -> H1.
+  // V23.0.2: strict top-down authority: D1 -> H4 -> H1.
   // D1/H4 establish directional context; completed H1 supplies the entry trigger.
+  // BTC/ETH/SOL market regime is a soft quality indicator only; it never blocks a setup.
   signalTimeframe: "1h",
   signalLimit: 120,
   d1Timeframe: "1d",
@@ -1938,12 +1939,6 @@ function scoreCandidate({ market, ticker, candles1h, candles4h, candles1d, marke
   const base = oneHStructureSignal(h1, ticker);
   const price = num(base.entry) || num(h1.at(-1)?.close) || tickerPrice(ticker) || 0;
 
-  // The macro market lock is a hard gate, not a score modifier.
-  if (!marketRegime?.enabled || marketRegime.direction === "neutral" || String(marketRegime.regime).startsWith("BLOCKED")) {
-    return { symbol, direction:null, setupType:"NONE", score:0, edge:0, risk:100, entry:price,
-      error:"GLOBAL_MARKET_DIRECTION_NOT_CONFIRMED", setupEvidence:{marketRegime} };
-  }
-
   if (!base.valid) {
     return { symbol, candleSymbol:candleSymbolFromMarket(market), direction:null, setupType:base.setupType||"NONE",
       score:0, edge:0, risk:100, entry:price, sl:0,tp:0,rr:0, triggerActive:false,
@@ -1954,12 +1949,13 @@ function scoreCandidate({ market, ticker, candles1h, candles4h, candles1d, marke
   }
 
   const dir = base.direction;
-  const macroDir = marketRegime.direction;
-  const counterTrend = dir !== macroDir;
+  const macroDir = marketRegime?.direction || "neutral";
 
-  // D1 and H4 must agree with the macro regime. For a reversal, they still
-  // confirm the prevailing macro trend; H1 is the reversal trigger.
-  const contextAligned = d1c.direction === macroDir && h4c.direction === macroDir;
+  // BTC/ETH/SOL are a macro context indicator only. They NEVER decide whether
+  // a market is scanned, rejected, or executable. The actual top-down authority
+  // remains D1 -> H4 -> H1 for the individual market.
+  const contextDirection = base.setupType === "REVERSAL" ? (dir === "long" ? "short" : "long") : dir;
+  const contextAligned = d1c.direction === contextDirection && h4c.direction === contextDirection;
   if (CONFIG.requireD1H4Agreement && !contextAligned) {
     return { ...base, symbol, candleSymbol:candleSymbolFromMarket(market), market, ticker, candles1h:h1,
       score:0,edge:0,risk:100,triggerActive:false,error:"D1_H4_CONTEXT_NOT_ALIGNED",
@@ -1967,21 +1963,24 @@ function scoreCandidate({ market, ticker, candles1h, candles4h, candles1d, marke
         directionAuthority:"MTF_D1_H4_H1",directionLocked:false,marketRegime} };
   }
 
-  // Continuation follows the macro direction. Reversal is explicitly the
-  // counter-direction H1 reaction against the D1/H4 trend.
-  if (base.setupType === "CONTINUATION" && dir !== macroDir) {
-    return { ...base, symbol, score:0,edge:0,risk:100,triggerActive:false,error:"CONTINUATION_MUST_FOLLOW_MARKET_REGIME" };
-  }
-  if (base.setupType === "REVERSAL" && dir === macroDir) {
-    return { ...base, symbol, score:0,edge:0,risk:100,triggerActive:false,error:"REVERSAL_MUST_COUNTER_MACRO_DIRECTION" };
-  }
-  if (base.setupType === "REVERSAL" && !counterTrend) {
-    return { ...base, symbol, score:0,edge:0,risk:100,triggerActive:false,error:"REVERSAL_DIRECTION_INVALID" };
-  }
+  // Macro alignment is deliberately a soft quality modifier. It can improve
+  // or reduce ranking, but it cannot create a direction or block a valid setup.
+  const refAssets = Object.values(marketRegime?.assets || {}).filter(x => x?.available);
+  const refAligned = refAssets.filter(x => x.direction === dir).length;
+  const refOpposed = refAssets.filter(x => x.direction && x.direction !== "neutral" && x.direction !== dir).length;
+  const refCoverage = refAssets.length;
+  const macroAlignment = refCoverage > 0 ? refAligned / refCoverage : 0.5;
+  const macroQualityModifier = refCoverage === 0 ? 0
+    : refAligned === refCoverage ? 6
+    : refOpposed === refCoverage ? -6
+    : refAligned > refOpposed ? 3
+    : refOpposed > refAligned ? -3
+    : 0;
+  const macroCounterTrend = macroDir !== "neutral" && macroDir !== dir;
 
-  // Every indicator below has decision authority: trend, momentum, strength,
-  // Ichimoku and H1 trigger structure. A setup cannot pass by structure alone.
-  const htf = macroDir;
+  // Every individual-market indicator below has decision authority: D1/H4
+  // trend, momentum, strength, Ichimoku and H1 trigger structure.
+  const htf = contextDirection;
   const d1Ichi = d1c.ichimoku, h4Ichi = h4c.ichimoku;
   const trendOK = htf === "long"
     ? d1c.e20 > d1c.e50 && h4c.e20 > h4c.e50
@@ -2019,8 +2018,8 @@ function scoreCandidate({ market, ticker, candles1h, candles4h, candles1d, marke
   }
 
   const final = { ...base, symbol, candleSymbol:candleSymbolFromMarket(market), market,ticker,candles1h:h1,
-    score:Number(clamp(base.score + indicatorVotes*2 + h1Votes*2,0,100).toFixed(2)),
-    edge:Number(clamp(base.edge + indicatorVotes*2 + h1Votes*2,0,100).toFixed(2)),
+    score:Number(clamp(base.score + indicatorVotes*2 + h1Votes*2 + macroQualityModifier,0,100).toFixed(2)),
+    edge:Number(clamp(base.edge + indicatorVotes*2 + h1Votes*2 + macroQualityModifier * 0.5,0,100).toFixed(2)),
     trendConfluence:indicatorVotes + h1Votes,
     directionAuthority:"MTF_D1_H4_H1",
     setupEvidence:{
@@ -2028,7 +2027,8 @@ function scoreCandidate({ market, ticker, candles1h, candles4h, candles1d, marke
       signalTimeframe:"1H", directionAuthority:"MTF_D1_H4_H1", directionLocked:true,
       d1Confirmation:d1c,h4Confirmation:h4c,h1Confirmation:h1c,
       indicatorVotes,h1Votes,trendOK,macdOK,adxOK,ichimokuOK,rsiOK,
-      marketRegime, counterTrend,
+      marketRegime, macroDir, macroAlignment:Number(macroAlignment.toFixed(3)),
+      macroQualityModifier, macroCounterTrend, refCoverage, refAligned, refOpposed,
       legacy5mDisabled:true,legacy15mDisabled:true
     },
     indicators:{...(base.indicators||{}),d1:d1c,h4:h4c,h1:h1c,indicatorVotes,h1Votes,
@@ -2208,18 +2208,9 @@ function candidateIsActionable(candidate) {
     }
   }
 
-  // Global BTC/ETH/SOL regime is a hard directional context.
-  const macro = candidate.setupEvidence?.marketRegime;
-  if (!macro || macro.direction === "neutral") return { ok:false, reason:"GLOBAL_MARKET_DIRECTION_UNCONFIRMED" };
-  if (candidate.setupType === "CONTINUATION" && direction !== macro.direction) {
-    return { ok:false, reason:"CONTINUATION_NOT_ALIGNED_WITH_GLOBAL_REGIME" };
-  }
-  if (candidate.setupType === "REVERSAL" && direction === macro.direction) {
-    return { ok:false, reason:"REVERSAL_NOT_COUNTER_GLOBAL_REGIME" };
-  }
-  if (macro.btcDirection !== macro.direction || macro.ethDirection !== macro.direction || macro.solDirection !== macro.direction) {
-    return { ok:false, reason:"BTC_ETH_SOL_DIRECTION_DISAGREEMENT" };
-  }
+  // BTC/ETH/SOL regime is diagnostic/ranking context only. It has already been
+  // applied as a soft score modifier in scoreCandidate() and is intentionally
+  // NOT checked here, so disagreement can never block an otherwise valid setup.
 
   const slDistance = Math.abs(pct(sl, entry));
   if (slDistance < CONFIG.slMinDistancePct * 0.95) {
