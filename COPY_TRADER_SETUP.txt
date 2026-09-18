@@ -1,0 +1,27 @@
+GMX V24 COPY-TRADER ENGINE
+
+Signal engine:
+- Reads exactly up to 5 configured GMX trader addresses.
+- Reads live open positions + recent GMX trade history.
+- Ranks traders using recent PnL, win rate, consistency, drawdown and activity.
+- Selects one copy opportunity.
+- Uses source trader direction and leverage.
+- Uses 100% available wallet collateral.
+- Rejects late copies when current price is farther than COPY_MAX_ENTRY_DISTANCE_PCT from source entry.
+- Uses source TP/SL when GMX exposes related orders.
+- If the source has no TP/SL, the copy is tracked for source-close synchronization.
+- Detects source-position closure and closes the bot's copied position using the existing Classic GMX transaction path.
+- Does not use the old 5M/1H technical signal engine, BTC/ETH/SOL macro gate, radar, or old scoring path.
+
+GitHub Actions environment mapping required:
+GMX_COPY_TRADERS: ${{ vars.GMX_COPY_TRADERS }}
+
+Set GMX_COPY_TRADERS to five comma-separated GMX wallet addresses:
+0x...,0x...,0x...,0x...,0x...
+
+Optional:
+COPY_MAX_ENTRY_DISTANCE_PCT: 1.25
+COPY_MAX_LEVERAGE: 100
+
+The worker filename MUST remain exactly:
+worker_core.mjs
