@@ -1,129 +1,86 @@
-// Smart Money Futures AI Bot — GitHub Actions adapter
-// V22.9.0-GITHUB-ACTIONS-BIGINT-SAFE-MARKET-RESOLVER
-// Imports the canonical root worker_core.mjs and fails fast on stale deployments.
+// GMX Smart Money Futures AI Bot — GitHub Actions adapter
+// V23.1.0: canonical worker + fail-fast artifact integrity checks.
 import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import worker, { BOT_VERSION, BOT_BUILD } from "./worker_core.mjs";
 
 const ROOT = process.cwd();
-const STATE_DIR = path.join(ROOT, "state");
+const WORKER_PATH = path.join(ROOT, "worker_core.mjs");
 const EXPECTED_WORKER_VERSION = BOT_VERSION;
-const WORKER_PATH = path.resolve(ROOT, "worker_core.mjs");
+
+async function sha256File(file) {
+  const buf = await fs.readFile(file);
+  return crypto.createHash("sha256").update(buf).digest("hex");
+}
 
 async function ensureStateFiles() {
-  await fs.mkdir(STATE_DIR, { recursive: true });
+  const dir = path.join(ROOT, "state");
+  await fs.mkdir(dir, { recursive: true });
   for (const name of ["bot_state.json", "gmx_cache.json"]) {
-    const file = path.join(STATE_DIR, name);
-    try { await fs.access(file); }
-    catch { await fs.writeFile(file, "{}\n", "utf8"); }
+    const file = path.join(dir, name);
+    try { await fs.access(file); } catch { await fs.writeFile(file, "{}\n", "utf8"); }
   }
-}
-
-async function readStore(namespace) {
-  const file = path.join(STATE_DIR, `${namespace}.json`);
-  try {
-    const raw = await fs.readFile(file, "utf8");
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch (_) { return {}; }
-}
-
-async function writeStore(namespace, store) {
-  const file = path.join(STATE_DIR, `${namespace}.json`);
-  const tmp = `${file}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(store, null, 2) + "\n", "utf8");
-  await fs.rename(tmp, file);
-}
-
-function makeFileKvBinding(namespace) {
-  return {
-    async get(key, type) {
-      const store = await readStore(namespace);
-      const entry = store[String(key)];
-      if (!entry) return null;
-      if (entry.expiresAt && Date.now() >= entry.expiresAt) {
-        delete store[String(key)];
-        await writeStore(namespace, store);
-        return null;
-      }
-      const value = entry.value;
-      if (type === "json") {
-        if (typeof value === "string") { try { return JSON.parse(value); } catch (_) { return null; } }
-        return value ?? null;
-      }
-      return value ?? null;
-    },
-    async put(key, value, options = {}) {
-      const store = await readStore(namespace);
-      let stored = value;
-      if (typeof value === "string") { try { stored = JSON.parse(value); } catch (_) {} }
-      const ttl = Number(options?.expirationTtl || 0);
-      store[String(key)] = { value: stored, expiresAt: ttl > 0 ? Date.now() + ttl * 1000 : null };
-      await writeStore(namespace, store);
-    }
-  };
-}
-
-function envValue(name, fallback = "") { return process.env[name] ?? fallback; }
-
-async function buildEnv() {
-  await ensureStateFiles();
-  return {
-    ARBITRUM_RPC: envValue("ARBITRUM_RPC"),
-    GMX_PRIVATE_KEY: envValue("GMX_PRIVATE_KEY"),
-    TELEGRAM_TOKEN: envValue("TELEGRAM_TOKEN"),
-    TELEGRAM_CHAT_ID: envValue("TELEGRAM_CHAT_ID"),
-    EXECUTION_ENABLED: envValue("EXECUTION_ENABLED", "true"),
-    EXPECTED_VERSION: EXPECTED_WORKER_VERSION,
-    BOT_STATE: makeFileKvBinding("bot_state"),
-    GMX_CACHE: makeFileKvBinding("gmx_cache")
-  };
-}
-
-async function inspectWorkerArtifact() {
-  const source = await fs.readFile(WORKER_PATH, "utf8");
-  const sha256 = crypto.createHash("sha256").update(source).digest("hex");
-  const legacyPure1h = source.includes("PURE_1H_ONLY_TIMEFRAME");
-  const mtfGuard = source.includes("UNSUPPORTED_TIMEFRAME") && source.includes('[' + '"1d", "4h", "1h"' + ']');
-  console.log("[GITHUB][WORKER_ARTIFACT]", {
-    path: WORKER_PATH,
-    bytes: Buffer.byteLength(source, "utf8"),
-    sha256,
-    legacyPure1h,
-    mtfGuard
-  });
-  if (legacyPure1h) throw new Error("STALE_WORKER_DETECTED:PURITY_1H_GUARD_PRESENT");
-  if (!mtfGuard) throw new Error("MTF_WORKER_PATCH_MISSING:D1_H4_H1_GUARD_NOT_FOUND");
-  return { sha256 };
 }
 
 async function main() {
-  const env = await buildEnv();
-  const artifact = await inspectWorkerArtifact();
+  await ensureStateFiles();
+  const artifact = await fs.readFile(WORKER_PATH, "utf8");
+  const workerSha256 = await sha256File(WORKER_PATH);
+
+  if (/PURE_1H_ONLY_TIMEFRAME/.test(artifact)) {
+    throw new Error("STALE_WORKER_ARTIFACT: legacy 1H-only timeframe guard detected");
+  }
+  if (/GLOBAL_MARKET_DIRECTION_NOT_CONFIRMED|BTC_ETH_SOL_DIRECTION_DISAGREEMENT/.test(artifact)) {
+    throw new Error("STALE_WORKER_ARTIFACT: hard BTC/ETH/SOL macro blocker detected");
+  }
+  if (/D1_H4_CONTEXT_NOT_ALIGNED|CONTINUATION_MUST_FOLLOW_MARKET_REGIME|REVERSAL_MUST_COUNTER_GLOBAL_REGIME/.test(artifact)) {
+    throw new Error("STALE_WORKER_ARTIFACT: hard D1/H4 or macro direction gate detected");
+  }
+
+  console.log("[GITHUB][WORKER_ARTIFACT]", {
+    path: WORKER_PATH,
+    bytes: artifact.length,
+    sha256: workerSha256,
+    expectedVersion: EXPECTED_WORKER_VERSION,
+    actualWorkerVersion: BOT_VERSION,
+    build: BOT_BUILD,
+    softMacro: true,
+    h1DirectionAuthority: true
+  });
+
+  if (BOT_VERSION !== EXPECTED_WORKER_VERSION || BOT_BUILD !== EXPECTED_WORKER_VERSION) {
+    throw new Error(`WORKER_VERSION_MISMATCH:${BOT_VERSION}:${BOT_BUILD}:${EXPECTED_WORKER_VERSION}`);
+  }
+
+  const executionEnabled = String(process.env.EXECUTION_ENABLED || "").toLowerCase() === "true";
   const scheduledTime = Date.now();
-  const actualVersion = BOT_VERSION || "UNKNOWN";
+
+  const env = {
+    ...process.env,
+    EXECUTION_ENABLED: executionEnabled ? "true" : "false"
+  };
+
   console.log("[GITHUB][START]", {
     scheduledTime,
     worker: "worker_core.mjs",
-    expectedVersion: env.EXPECTED_VERSION,
-    actualWorkerVersion: actualVersion,
-    build: BOT_BUILD || "UNKNOWN",
-    workerSha256: artifact.sha256,
-    executionEnabled: env.EXECUTION_ENABLED,
-    executionEnabledSource: process.env.EXECUTION_ENABLED == null ? "runner-default-true" : "github-env"
+    expectedVersion: EXPECTED_WORKER_VERSION,
+    actualWorkerVersion: BOT_VERSION,
+    build: BOT_BUILD,
+    workerSha256,
+    executionEnabled: env.EXECUTION_ENABLED
   });
-  if (actualVersion !== env.EXPECTED_VERSION) {
-    throw new Error(`WORKER_VERSION_MISMATCH: expected=${env.EXPECTED_VERSION} actual=${actualVersion}`);
-  }
-  if (typeof worker.scheduled !== "function") throw new Error("WORKER_SCHEDULED_EXPORT_MISSING");
-  await worker.scheduled({ cron: "* * * * *", scheduledTime }, env, {
-    waitUntil(promise) { return promise; }
-  });
-  console.log("[GITHUB][DONE]", { scheduledTime, worker: WORKER_PATH, version: actualVersion, sha256: artifact.sha256 });
+
+  await worker.scheduled(
+    { cron: "* * * * *", scheduledTime },
+    env,
+    { waitUntil(p) { return Promise.resolve(p); } }
+  );
+
+  console.log("[GITHUB][END]", { version: BOT_VERSION, workerSha256 });
 }
 
-main().catch((error) => {
-  console.error("[GITHUB][FATAL]", error?.stack || error?.message || String(error));
-  process.exitCode = 1;
+main().catch((err) => {
+  console.error("[GITHUB][FATAL]", err?.stack || err);
+  process.exit(1);
 });
