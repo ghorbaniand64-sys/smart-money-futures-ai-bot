@@ -34,7 +34,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V23.2.0-H1-SIGNAL-DIRECT-EXECUTION";
+export const BOT_VERSION = "V23.2.1-H1-SIGNAL-DIRECT-EXECUTION";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -2205,18 +2205,7 @@ function candidateIsActionable(candidate) {
     }
   }
 
-  // Global BTC/ETH/SOL regime is a hard directional context.
-  const macro = candidate.setupEvidence?.marketRegime;
-  if (!macro || macro.direction === "neutral") return { ok:false, reason:"GLOBAL_MARKET_DIRECTION_UNCONFIRMED" };
-  if (candidate.setupType === "CONTINUATION" && direction !== macro.direction) {
-    return { ok:false, reason:"CONTINUATION_NOT_ALIGNED_WITH_GLOBAL_REGIME" };
-  }
-  if (candidate.setupType === "REVERSAL" && direction === macro.direction) {
-    return { ok:false, reason:"REVERSAL_NOT_COUNTER_GLOBAL_REGIME" };
-  }
-  if (macro.btcDirection !== macro.direction || macro.ethDirection !== macro.direction || macro.solDirection !== macro.direction) {
-    return { ok:false, reason:"BTC_ETH_SOL_DIRECTION_DISAGREEMENT" };
-  }
+  // BTC/ETH/SOL macro regime is informational only; never block an H1 trade.
 
   const slDistance = Math.abs(pct(sl, entry));
   if (slDistance < CONFIG.slMinDistancePct * 0.95) {
