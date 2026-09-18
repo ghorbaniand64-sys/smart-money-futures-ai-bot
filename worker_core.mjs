@@ -34,7 +34,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V23.2.1-H1-SIGNAL-DIRECT-EXECUTION";
+export const BOT_VERSION = "V23.2.2-H1-SIGNAL-DIRECT-EXECUTION";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -1928,7 +1928,7 @@ function scoreCandidate({ market, ticker, candles1h, candles4h, candles1d, marke
   const h1 = completedCandles(candles1h, "1h");
   const h4 = completedCandles(candles4h, "4h");
   const d1 = completedCandles(candles1d, "1d");
-  if (d1.length < 60 || h4.length < 60 || h1.length < 30) {
+  if (d1.length < 50 || h4.length < 60 || h1.length < 30) {
     return { symbol, direction:null, setupType:"NONE", score:0, edge:0, risk:100, error:"INSUFFICIENT_MTF_DATA" };
   }
 
@@ -2008,13 +2008,8 @@ function scoreCandidate({ market, ticker, candles1h, candles4h, candles1d, marke
   const h1Votes = [h1TrendSide,h1MomentumSide,h1Strength,h1Rsi,Boolean(h1Ichi)].filter(Boolean).length;
   // Reversals are allowed to have H1 Ichimoku/momentum conflict immediately
   // after the rejection; the actual H1 structure trigger remains mandatory.
-  const minH1Votes = base.setupType === "REVERSAL" ? 3 : 4;
-  if (h1Votes < minH1Votes) {
-    return { ...base, symbol, score:0,edge:0,risk:100,triggerActive:false,error:`H1_CONFIRMATION_${h1Votes}_OF_5`,
-      setupEvidence:{...(base.setupEvidence||{}),d1Confirmation:d1c,h4Confirmation:h4c,h1Confirmation:h1c,
-        indicatorVotes,h1Votes,directionAuthority:"1H_STRUCTURE",directionLocked:false} };
-  }
-
+  // H1 indicators are quality confirmation only. The structural 1H trigger
+  // remains the entry authority; indicator disagreement must not block it.
   const final = { ...base, symbol, candleSymbol:candleSymbolFromMarket(market), market,ticker,candles1h:h1,
     score:Number(clamp(base.score + indicatorVotes*2 + h1Votes*2,0,100).toFixed(2)),
     edge:Number(clamp(base.edge + indicatorVotes*2 + h1Votes*2,0,100).toFixed(2)),
@@ -2121,22 +2116,11 @@ function estimateEconomicOpportunity(candidate, walletUsd) {
 
 function economicGate(candidate, walletUsd) {
   const economics = estimateEconomicOpportunity(candidate, walletUsd);
+  // Economics are transparent diagnostics. A structurally valid 1H setup is
+  // not blocked merely because the wallet is small or the expected dollar
+  // profit is below a configurable threshold.
   if (!economics.valid) return { ok: false, reason: "ECONOMIC_INVALID", economics };
-  if (economics.expectedNetUsd < CONFIG.minExpectedNetUsd) {
-    return {
-      ok: false,
-      reason: `EXPECTED_NET_${economics.expectedNetUsd.toFixed(2)}_BELOW_${CONFIG.minExpectedNetUsd.toFixed(2)}`,
-      economics,
-    };
-  }
-  if (economics.netToCostRatio < CONFIG.minNetToCostRatio) {
-    return {
-      ok: false,
-      reason: `NET_COST_RATIO_${economics.netToCostRatio.toFixed(2)}_BELOW_${CONFIG.minNetToCostRatio.toFixed(2)}`,
-      economics,
-    };
-  }
-  return { ok: true, reason: "ECONOMIC_EDGE_OK", economics };
+  return { ok: true, reason: "ECONOMIC_INFO_ONLY", economics };
 }
 
 function attachEconomicOpportunity(candidate, walletUsd) {
@@ -2163,10 +2147,10 @@ function candidateIsActionable(candidate) {
   if (candidate.directionAuthority !== "1H_STRUCTURE" ||
       candidate.setupEvidence?.directionAuthority !== "1H_STRUCTURE" ||
       candidate.setupEvidence?.directionLocked !== true) {
-    return { ok: false, reason: "DIRECTION_AUTHORITY_NOT_MTF" };
+    return { ok: false, reason: "DIRECTION_AUTHORITY_NOT_1H" };
   }
   if (candidate.setupEvidence?.signalTimeframe !== "1H" ||
-       !candidate.setupEvidence?.d1Confirmation?.available || !candidate.setupEvidence?.h4Confirmation?.available || !candidate.setupEvidence?.h1Confirmation?.available) {
+      !candidate.setupEvidence?.h1Confirmation?.available) {
     return { ok: false, reason: "SIGNAL_TIMEFRAME_NOT_1H" };
   }
 
@@ -2181,43 +2165,29 @@ function candidateIsActionable(candidate) {
   }
 
   const rr = Math.abs(tp - entry) / Math.max(Math.abs(entry - sl), 1e-12);
-  if (rr < CONFIG.oneHMinRR) return { ok: false, reason: `RR_${rr.toFixed(2)}_BELOW_${CONFIG.oneHMinRR.toFixed(2)}` };
+  if (rr < CONFIG.oneHMinRR) {
+    return { ok: false, reason: `RR_${rr.toFixed(2)}_BELOW_${CONFIG.oneHMinRR.toFixed(2)}` };
+  }
 
   if (candidate.setupType !== "REVERSAL" && candidate.setupType !== "CONTINUATION") {
     return { ok: false, reason: "NO_CONFIRMED_1H_SETUP" };
   }
 
-  if (candidate.setupType === "REVERSAL") {
-    if (num(candidate.reversalEvidence) < CONFIG.oneHReversalMinEvidence) {
-      return { ok: false, reason: "1H_REVERSAL_EVIDENCE_INSUFFICIENT" };
-    }
-    if (num(candidate.setupEvidence?.continuationChasePct) > CONFIG.oneHReversalMaxDistanceFromExtremePct) {
-      return { ok: false, reason: "REVERSAL_ALREADY_TRAVELLED_TOO_FAR" };
-    }
-  }
-
-  if (candidate.setupType === "CONTINUATION") {
-    if (num(candidate.setupEvidence?.continuationChasePct) > CONFIG.oneHContinuationMaxChasePct) {
-      return { ok: false, reason: "1H_CONTINUATION_CHASE_TOO_FAR" };
-    }
-    if (!candidate.setupEvidence?.continuationBreak) {
-      return { ok: false, reason: "1H_CONTINUATION_BREAK_NOT_CONFIRMED" };
-    }
-  }
-
-  // BTC/ETH/SOL macro regime is informational only; never block an H1 trade.
-
+  // Continuation/reversal structure is already validated by oneHStructureSignal.
+  // Do not duplicate macro, D1/H4, or indicator hard gates here.
   const slDistance = Math.abs(pct(sl, entry));
-  if (slDistance < CONFIG.slMinDistancePct * 0.95) {
+  if (slDistance < CONFIG.slMinDistancePct * 0.90) {
     return { ok: false, reason: `SL_TOO_CLOSE_${slDistance.toFixed(2)}PCT` };
   }
-  if (slDistance > CONFIG.slMaxDistancePct + 0.05) {
+  if (slDistance > CONFIG.slMaxDistancePct + 0.10) {
     return { ok: false, reason: `SL_TOO_FAR_${slDistance.toFixed(2)}PCT` };
   }
 
   return {
     ok: true,
-    reason: candidate.setupType === "REVERSAL" ? "PURE_1H_REVERSAL_READY" : "PURE_1H_CONTINUATION_READY"
+    reason: candidate.setupType === "REVERSAL"
+      ? "PURE_1H_REVERSAL_READY"
+      : "PURE_1H_CONTINUATION_READY"
   };
 }
 
@@ -2352,7 +2322,8 @@ function completedCandles(candles, timeframe = "1h") {
 
 function timeframeTrendConfirmation(candles, timeframe) {
   const rows = completedCandles(candles, timeframe);
-  if (rows.length < 60) return { available:false, direction:"neutral", score:50, confidence:0, confirmations:0, timeframe };
+  const minimumRows = timeframe === "1d" ? 50 : 60;
+  if (rows.length < minimumRows) return { available:false, direction:"neutral", score:50, confidence:0, confirmations:0, timeframe };
   const closes = rows.map(x => num(x.close));
   const price = closes.at(-1);
   const e20 = ema(closes,20), e50 = ema(closes,50), e200 = ema(closes,200);
@@ -2496,7 +2467,7 @@ async function deepScan(sdk, broadRows, marketRegime = null) {
         fetchCandlesResilient(sdk, row.market, "4h", CONFIG.h4Limit),
         fetchCandlesResilient(sdk, row.market, "1h", CONFIG.h1Limit)
       ]);
-      if (d1.length < 60 || h4.length < 60 || h1.length < 30) {
+      if (d1.length < 50 || h4.length < 60 || h1.length < 30) {
         return { ...row, error:`INSUFFICIENT_MTF_DATA:D1=${d1.length},H4=${h4.length},H1=${h1.length}` };
       }
       const candidate = scoreCandidate({ market:row.market, ticker:row.ticker, candles1h:h1, candles4h:h4, candles1d:d1, marketRegime });
@@ -2509,7 +2480,7 @@ async function deepScan(sdk, broadRows, marketRegime = null) {
   const failed = results.filter(x => x?.error);
   console.log("[DEEP][MTF][SUMMARY]", {
     attempted:selected.length, successful:valid.length, failed:failed.length,
-    timeframes:"D1/H4/H1", failures:failed.slice(0,5).map(x=>({symbol:x.symbol,error:x.error}))
+    timeframes:"D1/H4/H1", minimums:"D1>=50,H4>=60,H1>=30", failures:failed.slice(0,5).map(x=>({symbol:x.symbol,error:x.error}))
   });
   const ordered = valid.sort((a,b)=>num(b.score)-num(a.score));
   Object.defineProperty(ordered,"failedCount",{value:failed.length,enumerable:false});
@@ -2860,9 +2831,7 @@ function tradeMessage(result) {
       `🪙 Symbol: ${result.symbol}`,
       `📌 Direction: ${result.direction.toUpperCase()}`,
       `💰 Entry: ${formatPrice(result.entry)}`,
-      `🛑 SL: ${formatPrice(result.sl)}`,
       `🎯 TP: ${formatPrice(result.tp)}`,
-      `📐 RR: ${calculatedRR(result.entry, result.sl, result.tp).toFixed(2)}:1 | Gate: ${rrGateLabel(calculatedRR(result.entry, result.sl, result.tp))}`,
       `⚙️ Leverage: ${result.leverage.toFixed(1)}x`,
       `📊 Allocation: ${(result.allocation * 100).toFixed(2)}%`,
       `📦 Notional: ${formatUsd(result.notionalUsd)}`,
@@ -2885,9 +2854,7 @@ function tradeMessage(result) {
     `🪙 Symbol: ${result.symbol || "N/A"}`,
     `📌 Direction: ${String(result.direction || "N/A").toUpperCase()}`,
     `💰 Entry: ${formatPrice(result.entry)}`,
-    `🛑 SL: ${formatPrice(result.sl)}`,
     `🎯 TP: ${formatPrice(result.tp)}`,
-    `📐 RR: ${calculatedRR(result.entry, result.sl, result.tp) > 0 ? calculatedRR(result.entry, result.sl, result.tp).toFixed(2)+":1" : "N/A"}`,
     `⚙️ Leverage: ${CONFIG.leverage.toFixed(1)}x`,
     `📊 Allocation target: ${(CONFIG.walletAllocationPerPosition * 100).toFixed(2)}%`,
     `❌ Stage: ${result.stage || "EXECUTION"}`,
@@ -2897,19 +2864,6 @@ function tradeMessage(result) {
   ].join("\n");
 }
 
-
-function calculatedRR(entry, sl, tp) {
-  const e = num(entry), s = num(sl), t = num(tp);
-  if (!(e > 0 && s > 0 && t > 0)) return 0;
-  const risk = Math.abs(e - s), reward = Math.abs(t - e);
-  return risk > 0 && reward > 0 ? reward / risk : 0;
-}
-
-function rrGateLabel(rr) {
-  return rr >= CONFIG.oneHMinRR
-    ? `PASS (≥ ${CONFIG.oneHMinRR.toFixed(2)})`
-    : `BLOCK (< ${CONFIG.oneHMinRR.toFixed(2)})`;
-}
 
 function cycleMessage(report) {
   const lines = [
@@ -2921,10 +2875,10 @@ function cycleMessage(report) {
     `🕐 1H signal scan: ${report.deepCount}/${report.deepAttempted || report.deepCount} | Data failures: ${report.deepFailureCount || 0}`,
     `📐 Signal authority: COMPLETED 1H CANDLE STRUCTURE`,
     `🧭 Entry / SL / TP timeframe: 1H`,
-    `🔒 Direction authority: 1H STRUCTURE → LONG / SHORT`,
+    `🔒 Direction authority: 1H STRUCTURE → LONG / SHORT | D1/H4 + BTC/ETH/SOL = SOFT`,
     `💧 1H volume-flow diagnostic: ${report.flowCount} | Strong volume: ${report.smartMoneyCount}`,
     `🧠 1H setups: Ready ${report.layerReadyCount} | Continuation ${report.impulseCount} | Reversal ${report.layerReversalCount}`,
-    `🌐 Market Data Center: ${report.marketRegime?.regime || "N/A"} | BTC ${num(report.marketRegime?.btcScore).toFixed(0)} | ETH ${num(report.marketRegime?.ethScore).toFixed(0)} | Breadth ${num(report.marketRegime?.breadthScore).toFixed(0)}`,
+    `🌐 Market Data Center (SOFT): ${report.marketRegime?.regime || "N/A"} | Dir ${String(report.marketRegime?.direction || "neutral").toUpperCase()} | BTC ${num(report.marketRegime?.btcScore).toFixed(0)} | ETH ${num(report.marketRegime?.ethScore).toFixed(0)} | Breadth ${num(report.marketRegime?.breadthScore).toFixed(0)} | Agreement ${num(report.marketRegime?.agreement).toFixed(0)}%`,
     ``,
     `🎯 Entry ready: ${report.actionableCount}`,
     `🟢 Executed: ${report.executedCount}`,
@@ -2940,6 +2894,9 @@ function cycleMessage(report) {
       `🎯 TP: ${formatPrice(trade.tp)}`,
       `🛡️ SL: ${formatPrice(trade.sl)}`,
       `📐 RR: ${trade.rr > 0 ? Number(trade.rr).toFixed(2) : "N/A"}`,
+      `🧠 WHY ENTERED: ${trade.setupType || "1H_STRUCTURE"} | ${trade.setupEvidence?.reasons?.join(" + ") || "1H structural trigger"}`,
+      `💧 Smart Money/Flow: ${num(trade.indicators?.capitalFlowScore, 50).toFixed(0)} | ${trade.indicators?.capitalFlowDirection || "N/A"} | ${trade.indicators?.capitalFlowState || "N/A"} | Proxy ${num(trade.indicators?.smartMoneyProxy, 50).toFixed(0)}`,
+
       `📊 Allocation: ${(trade.allocation * 100).toFixed(2)}% | ⚙️ Leverage: ${CONFIG.leverage.toFixed(1)}x`,
       `📦 Notional: ${formatUsd(trade.notionalUsd)} | 💵 Collateral: ${formatUsd(trade.collateralUsd)}`,
       `🔗 Tx: ${trade.txHash || "N/A"}`,
@@ -2954,24 +2911,23 @@ function cycleMessage(report) {
     lines.push(`ℹ️ TOP BLOCKED`);
     for (const item of report.topRejected.slice(0, 3)) {
       lines.push(`• ${item.symbol}`);
-      const hasPlan = num(item.entry) > 0 && num(item.sl) > 0 && num(item.tp) > 0;
-      const rr = hasPlan ? calculatedRR(item.entry, item.sl, item.tp) : 0;
-      const sideLabel = item.direction ? String(item.direction).toUpperCase() : "NO DIRECTION — WATCH ONLY";
-      lines.push(`  🧭 وضعیت: ${item.direction ? "سیگنال جهت‌دار" : "فقط پایش؛ ورود ممنوع"} | جهت: ${sideLabel}`);
-      lines.push(`  📍 Entry: ${formatPrice(item.entry)} | 🛑 SL: ${hasPlan ? formatPrice(item.sl) : "محاسبه‌نشده"} | 🎯 TP: ${hasPlan ? formatPrice(item.tp) : "محاسبه‌نشده"}`);
-      lines.push(`  📐 RR واقعیِ قیمت‌ها: ${hasPlan ? rr.toFixed(2) + ":1" : "N/A — پلن کامل نیست"} | فیلتر RR: ${hasPlan ? rrGateLabel(rr) : "BLOCK — قیمت SL/TP موجود نیست"}`);
-      lines.push(`  🧠 Setup: ${String(item.setupType || "N/A")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)}`);
+      lines.push(`  📌 ${item.direction ? String(item.direction).toUpperCase() : `BIAS ${String(item.directionBias || item.setupEvidence?.directionBias || "UNCONFIRMED").toUpperCase()}`} | Entry ${formatPrice(item.entry)} | SL ${item.sl > 0 ? formatPrice(item.sl) : "WAITING"} | TP ${item.tp > 0 ? formatPrice(item.tp) : "WAITING"}`);
+      lines.push(`  🧠 ${String(item.setupType || "N/A")} | ${item.direction ? "SIGNAL" : "WATCH"} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)} | RR ${item.rr > 0 ? num(item.rr).toFixed(2) : "N/A"}`);
       const ev = item.setupEvidence || {};
       lines.push(`  🕐 1H trend ${String(ev.priorTrend || ev.directionBias || "N/A")} | Move ${num(ev.priorTrendMovePct).toFixed(2)}% | Body ${num(ev.bodyRatio).toFixed(2)} | Close ${num(ev.closeLocation).toFixed(2)}`);
       lines.push(`  💧 1H volume ${Number.isFinite(Number(ev.volumeRatio1h)) ? `${num(ev.volumeRatio1h).toFixed(2)}x` : "N/A (feed has no usable volume)"}`);
       const mr = ev.marketRegime || {};
       if (mr.regime) lines.push(`  🌐 ${mr.regime} | BTC ${num(mr.btcScore).toFixed(0)} ETH ${num(mr.ethScore).toFixed(0)} Breadth ${num(mr.breadthScore).toFixed(0)} | ${mr.counterTrend ? "COUNTER" : "ALIGNED"}`);
-      lines.push(`  🛡️ فاصله SL: ${hasPlan ? Math.abs((num(item.entry)-num(item.sl))/num(item.entry)*100).toFixed(2)+"%" : "N/A"} | روش: ${String(ev.slMethod || "ساختار 1H / ATR")}`);
+      lines.push(`  🛡️ SL ${formatPrice(item.sl)} | ${num(ev.slDistancePct).toFixed(2)}% | ${String(ev.slMethod || "N/A")}`);
       const econ = item.economics || {};
       lines.push(`  💹 Gross ${formatUsd(econ.grossPnlUsd)} | Cost ${formatUsd(econ.totalCostUsd)} | Net ${formatUsd(econ.expectedNetUsd)} | TP move ${num(econ.tpMovePct).toFixed(2)}%`);
-      const reasonText = String(item.reason || "علت نامشخص");
-      lines.push(`  🚫 نتیجه: ${reasonText}`);
-      if (!item.direction) lines.push(`  ℹ️ این مورد هنوز LONG/SHORT معتبر ندارد؛ قیمت Entry صرفاً قیمت پایش است، نه سفارش آماده اجرا.`);
+      const flowScore = item.indicators?.capitalFlowScore ?? ev.capitalFlowScore;
+      const flowDir = item.indicators?.capitalFlowDirection ?? ev.capitalFlowDirection;
+      const flowState = item.indicators?.capitalFlowState ?? ev.capitalFlowState;
+      const smProxy = item.indicators?.smartMoneyProxy ?? ev.smartMoneyProxy;
+      lines.push(`  🧠 Smart Money/Flow: ${Number.isFinite(Number(flowScore)) ? num(flowScore).toFixed(0) : "N/A"} | ${flowDir || "N/A"} | ${flowState || "N/A"} | Proxy ${Number.isFinite(Number(smProxy)) ? num(smProxy).toFixed(0) : "N/A"}`);
+      lines.push(`  📐 PLAN: ENTRY ${formatPrice(item.entry)} | SL ${item.sl > 0 ? formatPrice(item.sl) : "WAITING"} | TP ${item.tp > 0 ? formatPrice(item.tp) : "WAITING"} | RR ${item.rr > 0 ? num(item.rr).toFixed(2) : "N/A"}`);
+      lines.push(`  🚫 ${item.reason}`);
     }
   }
 
@@ -3408,8 +3364,14 @@ async function runCycle(event, env) {
   }
 
   const impulseCount = ranked.filter((x) => x.setupType === "CONTINUATION" && x.continuationTrigger).length;
-  const flowCount = ranked.filter((x) => num(x.setupEvidence?.volumeRatio1h) >= 1.25).length;
-  const smartMoneyCount = ranked.filter((x) => num(x.setupEvidence?.volumeRatio1h) >= 1.50).length;
+  const flowCount = ranked.filter((x) =>
+    num(x.indicators?.capitalFlowScore, 50) >= CONFIG.capitalFlowMinScore ||
+    num(x.setupEvidence?.volumeRatio1h) >= CONFIG.volumeExpansionMinRatio
+  ).length;
+  const smartMoneyCount = ranked.filter((x) =>
+    num(x.indicators?.smartMoneyProxy, 50) >= 65 ||
+    num(x.indicators?.capitalFlowScore, 50) >= 65
+  ).length;
   const maCount = ranked.filter((x) => x.trendConfluence >= 3).length;
   const adxCount = ranked.filter((x) => num(x.indicators?.adx) >= 18).length;
   const layerReadyCount = ranked.filter((x) => x.setupEvidence?.directionAuthority === "MTF_D1_H4_H1" && x.triggerActive).length;
