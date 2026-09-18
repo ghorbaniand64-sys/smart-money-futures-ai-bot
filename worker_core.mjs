@@ -1,6 +1,6 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ GMX SMART MONEY FUTURES AI BOT — V22.9 PURE 1H STRUCTURE + DIRECTION LOCK + REPORT DEDUPE      ║
+║ GMX SMART MONEY FUTURES AI BOT — V23.0.1 MTF D1/H4/H1 + DIRECTION LOCK + REPORT DEDUPE      ║
 ║ Single pipeline • COMPLETED 1H signal scan • Classic GMX only ║
 ║ 20x leverage • 100% wallet • max 1 position • dynamic TP + structure SL               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -34,7 +34,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V23.0.0-MTF-D1-H4-H1-MARKET-LOCK";
+export const BOT_VERSION = "V23.0.1-MTF-D1-H4-H1-MARKET-LOCK";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -535,9 +535,8 @@ async function saveState(state) {
 function cycleReportFingerprint(report) {
   const top = (Array.isArray(report?.topRejected) ? report.topRejected : []).slice(0, 3).map((x) => ({
     symbol: x?.symbol || "", direction: x?.direction || "", setupType: x?.setupType || "",
-    entry: num(x?.entry), sl: num(x?.sl), tp: num(x?.tp), rr: reportRR(x),
+    entry: num(x?.entry), sl: num(x?.sl), tp: num(x?.tp), rr: num(x?.rr),
     score: num(x?.score), edge: num(x?.edge), risk: num(x?.risk), reason: String(x?.reason || ""),
-    reasons: Array.isArray(x?.reasons) ? x.reasons.map(String) : [],
     regime: x?.setupEvidence?.marketRegime?.regime || "", macroDirection: x?.setupEvidence?.marketRegime?.direction || "",
   }));
   return JSON.stringify({
@@ -2322,10 +2321,9 @@ async function fetchCandles(sdk, marketOrSymbol, timeframe, limit) {
   throw new Error(`OHLCV_ALL_SOURCES_FAILED:${errors.slice(0,4).join("|")}`);
 }
 
-// V23: resilient OHLCV entry point for the declared MTF pipeline.
-// D1/H4 provide context; completed H1 provides the entry trigger.
-// Do not hard-block non-1H requests here: deepScan() and the market
-// reference-data center explicitly require D1/H4/H1.
+// V23.0.1: resilient OHLCV entry point for the declared MTF pipeline.
+// D1/H4 provide structural context; completed H1 provides the entry trigger.
+// This helper must NOT downgrade D1/H4 requests to 1H or reject them.
 async function fetchCandlesResilient(sdk, marketOrSymbol, timeframe, limit) {
   const tf = String(timeframe || "1h").toLowerCase();
   if (!["1d", "4h", "1h"].includes(tf)) {
@@ -2874,23 +2872,7 @@ async function verifyPosition(sdk, account, candidate, timeoutMs = 45_000) {
   return { verified: false, position: null };
 }
 
-function reportRR(item) {
-  const direct = num(item?.rr, NaN);
-  if (Number.isFinite(direct) && direct > 0) return direct;
-  const entry = num(item?.entry, NaN);
-  const sl = num(item?.sl, NaN);
-  const tp = num(item?.tp, NaN);
-  if (!(entry > 0 && sl > 0 && tp > 0)) return 0;
-  return Math.abs(tp - entry) / Math.max(Math.abs(entry - sl), 1e-12);
-}
-
-function reportReasons(item) {
-  const reasons = Array.isArray(item?.reasons) ? item.reasons.filter(Boolean).map(String) : [];
-  return reasons.length ? reasons : [String(item?.reason || "N/A")];
-}
-
 function tradeMessage(result) {
-  const rr = reportRR(result);
   if (result.executed) {
     return [
       `🟢 GMX BOT — LIVE CLASSIC TRADE`,
@@ -2900,18 +2882,18 @@ function tradeMessage(result) {
       `💰 Entry: ${formatPrice(result.entry)}`,
       `🎯 TP: ${formatPrice(result.tp)}`,
       `🛡️ SL: ${formatPrice(result.sl)}`,
-      `📐 RR: ${rr > 0 ? rr.toFixed(2) : "N/A"}`,
-      `⚙️ Leverage: ${num(result.leverage || CONFIG.leverage).toFixed(1)}x`,
-      `📊 Allocation: ${(num(result.allocation) * 100).toFixed(2)}%`,
+      `📐 RR: ${num(result.rr).toFixed(2)}R`,
+      `⚙️ Leverage: ${result.leverage.toFixed(1)}x`,
+      `📊 Allocation: ${(result.allocation * 100).toFixed(2)}%`,
       `📦 Notional: ${formatUsd(result.notionalUsd)}`,
       `💵 Collateral: ${formatUsd(result.collateralUsd)}`,
       `💰 Wallet: ${formatUsd(result.walletBefore)} → ${formatUsd(result.walletAfter)}`,
       `📉 Wallet Δ: ${formatUsd(result.walletAfter - result.walletBefore)}`,
       `⛓️ Mode: CLASSIC ON-CHAIN`,
       `🔗 Tx: ${result.txHash || "N/A"}`,
-      `🧪 Score: ${num(result.score).toFixed(1)} | Edge: ${num(result.edge).toFixed(1)} | Risk: ${num(result.risk).toFixed(1)}`,
+      `🧪 Score: ${result.score.toFixed(1)} | Edge: ${result.edge.toFixed(1)} | Risk: ${result.risk.toFixed(1)}`,
       `💹 Expected gross: ${formatUsd(result.expectedGrossPnlUsd)} | Net: ${formatUsd(result.expectedNetPnlUsd)} | Cost: ${formatUsd(result.estimatedTotalCostUsd)}`,
-      `🧠 WHY ENTERED: ${reportReasons(result).join(" | ")}`,
+      `🧠 WHY ENTERED: ${result.reasons?.join(", ") || "ACTIONABLE_SETUP_CONFIRMED"}`,
       `✅ Position verified: ${result.verified ? "YES" : "PENDING"}`,
       `🕐 ${new Date().toISOString()}`,
     ].join("\n");
@@ -2925,11 +2907,12 @@ function tradeMessage(result) {
     `💰 Entry: ${formatPrice(result.entry)}`,
     `🎯 TP: ${formatPrice(result.tp)}`,
     `🛡️ SL: ${formatPrice(result.sl)}`,
-    `📐 RR: ${rr > 0 ? rr.toFixed(2) : "N/A"}`,
+    `📐 RR: ${num(result.rr).toFixed(2)}R`,
     `⚙️ Leverage: ${CONFIG.leverage.toFixed(1)}x`,
     `📊 Allocation target: ${(CONFIG.walletAllocationPerPosition * 100).toFixed(2)}%`,
     `❌ Stage: ${result.stage || "EXECUTION"}`,
-    `❌ FAILURE REASON: ${result.reason || "Unknown error"}`,
+    `❌ Reason: ${result.reason || "Unknown error"}`,
+    `🧠 WHY FAILED: ${result.reason || "Unknown error"}`,
     `🧪 Score: ${num(result.score).toFixed(1)} | Edge: ${num(result.edge).toFixed(1)} | Risk: ${num(result.risk).toFixed(1)}`,
     `🕐 ${new Date().toISOString()}`,
   ].join("\n");
@@ -2964,27 +2947,25 @@ function cycleMessage(report) {
       `💰 Entry: ${formatPrice(trade.entry)}`,
       `🎯 TP: ${formatPrice(trade.tp)}`,
       `🛡️ SL: ${formatPrice(trade.sl)}`,
+      `📐 RR: ${num(trade.rr).toFixed(2)}R`,
+      `🧠 WHY ENTERED: ${trade.reasons?.join(", ") || "ACTIONABLE_SETUP_CONFIRMED"}`,
       `📊 Allocation: ${(trade.allocation * 100).toFixed(2)}% | ⚙️ Leverage: ${CONFIG.leverage.toFixed(1)}x`,
       `📦 Notional: ${formatUsd(trade.notionalUsd)} | 💵 Collateral: ${formatUsd(trade.collateralUsd)}`,
       `🔗 Tx: ${trade.txHash || "N/A"}`,
-      `📐 RR: ${reportRR(trade) > 0 ? reportRR(trade).toFixed(2) : "N/A"}`,
-      `🧪 Score ${num(trade.score).toFixed(1)} | Edge ${num(trade.edge).toFixed(1)} | Risk ${num(trade.risk).toFixed(1)}`,
+      `🧪 Score ${trade.score.toFixed(1)} | Edge ${trade.edge.toFixed(1)} | Risk ${trade.risk.toFixed(1)}`,
       `💹 Expected gross: ${formatUsd(trade.expectedGrossPnlUsd)} | Net: ${formatUsd(trade.expectedNetPnlUsd)} | Cost: ${formatUsd(trade.estimatedTotalCostUsd)}`,
-      `🧠 WHY ENTERED: ${reportReasons(trade).join(" | ")}`,
       `🔒 Direction verified: ${trade.directionVerified ? "YES" : "NO"}`,
       `──────────────────`,
     );
   }
 
-  if (Array.isArray(report.failures) && report.failures.length) {
+  if (report.failures?.length) {
     lines.push(`🔴 EXECUTION FAILURES`);
-    for (const [index, failure] of report.failures.slice(0, 3).entries()) {
-      lines.push(`❌ FAILURE #${index + 1} — ${failure.symbol || "N/A"}`);
-      lines.push(`  📌 ${String(failure.direction || "N/A").toUpperCase()} | Entry ${formatPrice(failure.entry)} | SL ${formatPrice(failure.sl)} | TP ${formatPrice(failure.tp)}`);
-      lines.push(`  📐 RR: ${reportRR(failure) > 0 ? reportRR(failure).toFixed(2) : "N/A"}`);
+    for (const [index, failure] of report.failures.slice(0, 5).entries()) {
+      lines.push(`• #${index + 1} ${failure.symbol || "N/A"} | ${String(failure.direction || "N/A").toUpperCase()}`);
       lines.push(`  ❌ Stage: ${failure.stage || "EXECUTION"}`);
-      lines.push(`  ❌ Reason: ${failure.reason || "Unknown error"}`);
-      lines.push(`  🧪 Score ${num(failure.score).toFixed(1)} | Edge ${num(failure.edge).toFixed(1)} | Risk ${num(failure.risk).toFixed(1)}`);
+      lines.push(`  🚫 Reason: ${failure.reason || "Unknown error"}`);
+      lines.push(`  📐 RR: ${num(failure.rr).toFixed(2)}R`);
     }
   }
 
@@ -2994,16 +2975,16 @@ function cycleMessage(report) {
       lines.push(`• ${item.symbol}`);
       lines.push(`  📌 ${String(item.direction || "N/A").toUpperCase()} | Entry ${formatPrice(item.entry)} | SL ${formatPrice(item.sl)} | TP ${formatPrice(item.tp)}`);
       lines.push(`  🧠 ${String(item.setupType || "N/A")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)}`);
-      lines.push(`  📐 RR: ${reportRR(item) > 0 ? reportRR(item).toFixed(2) : "N/A"}`);
       const ev = item.setupEvidence || {};
       lines.push(`  🕐 1H trend ${String(ev.priorTrend || "N/A")} | Move ${num(ev.priorTrendMovePct).toFixed(2)}% | Body ${num(ev.bodyRatio).toFixed(2)} | Close ${num(ev.closeLocation).toFixed(2)}`);
       lines.push(`  💧 1H volume ${num(ev.volumeRatio1h).toFixed(2)}x`);
       const mr = ev.marketRegime || {};
       if (mr.regime) lines.push(`  🌐 ${mr.regime} | BTC ${num(mr.btcScore).toFixed(0)} ETH ${num(mr.ethScore).toFixed(0)} Breadth ${num(mr.breadthScore).toFixed(0)} | ${mr.counterTrend ? "COUNTER" : "ALIGNED"}`);
       lines.push(`  🛡️ SL ${formatPrice(item.sl)} | ${num(ev.slDistancePct).toFixed(2)}% | ${String(ev.slMethod || "N/A")}`);
+      lines.push(`  📐 RR ${num(item.rr).toFixed(2)}R`);
       const econ = item.economics || {};
       lines.push(`  💹 Gross ${formatUsd(econ.grossPnlUsd)} | Cost ${formatUsd(econ.totalCostUsd)} | Net ${formatUsd(econ.expectedNetUsd)} | TP move ${num(econ.tpMovePct).toFixed(2)}%`);
-      lines.push(`  🚫 BLOCK REASON: ${item.reason || "N/A"}`);
+      lines.push(`  🚫 BLOCK REASON: ${item.reason || "UNKNOWN_BLOCK_REASON"}`);
     }
   }
 
@@ -3057,12 +3038,12 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
   }
 
   if (findPositionForCandidate(openPositions, candidate)) {
-    return { executed: false, symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp, score: candidate.score, edge: candidate.edge, risk: candidate.risk, reason: "SYMBOL_ALREADY_OPEN", stage: "PORTFOLIO" };
+    return { executed: false, symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp, score: candidate.score, edge: candidate.edge, risk: candidate.risk, rr: candidate.rr, reason: "SYMBOL_ALREADY_OPEN", stage: "PORTFOLIO" };
   }
 
   const collateral = await resolveCollateral(sdk, candidate.market, wallet);
   if (!collateral) {
-    return { executed: false, symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp, score: candidate.score, edge: candidate.edge, risk: candidate.risk, reason: "NO_USDC_USDT_BALANCE_FOR_MARKET", stage: "BALANCE" };
+    return { executed: false, symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp, score: candidate.score, edge: candidate.edge, risk: candidate.risk, rr: candidate.rr, reason: "NO_USDC_USDT_BALANCE_FOR_MARKET", stage: "BALANCE" };
   }
 
   const walletBefore = wallet.walletUsd;
@@ -3071,14 +3052,14 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
   const economics = estimateEconomicOpportunity(candidate, walletBefore);
 
   if (collateralUsd <= 0) {
-    return { executed: false, symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp, score: candidate.score, edge: candidate.edge, risk: candidate.risk, reason: "ZERO_COLLATERAL", stage: "BALANCE" };
+    return { executed: false, symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp, score: candidate.score, edge: candidate.edge, risk: candidate.risk, rr: candidate.rr, reason: "ZERO_COLLATERAL", stage: "BALANCE" };
   }
 
   const economicCheck = economicGate(candidate, walletBefore);
   if (!economicCheck.ok) {
     return {
       executed: false, symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp,
-      score: candidate.score, edge: candidate.edge, risk: candidate.risk, reason: economicCheck.reason, stage: "ECONOMIC_GATE",
+      score: candidate.score, edge: candidate.edge, risk: candidate.risk, rr: candidate.rr, reason: economicCheck.reason, stage: "ECONOMIC_GATE",
       expectedGrossPnlUsd: economics.grossPnlUsd, expectedNetPnlUsd: economics.expectedNetUsd, estimatedTotalCostUsd: economics.totalCostUsd,
     };
   }
@@ -3107,6 +3088,7 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
       score: candidate.score,
       edge: candidate.edge,
       risk: candidate.risk,
+      rr: candidate.rr,
       reason: safeError(error),
       stage: "PREPARE_CLASSIC",
     };
@@ -3142,6 +3124,7 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
       score: candidate.score,
       edge: candidate.edge,
       risk: candidate.risk,
+      rr: candidate.rr,
       allocation: CONFIG.walletAllocationPerPosition,
       leverage: CONFIG.leverage,
       notionalUsd,
@@ -3167,6 +3150,7 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
       score: candidate.score,
       edge: candidate.edge,
       risk: candidate.risk,
+      rr: candidate.rr,
       reason: safeError(error),
       stage: "CLASSIC_BROADCAST",
     };
@@ -3489,7 +3473,6 @@ async function runCycle(event, env) {
     executedCount: executions.length,
     failureCount: failures.length,
     executions,
-    failures,
     topRejected: blocked,
   };
 

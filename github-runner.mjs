@@ -3,11 +3,13 @@
 // Imports the canonical root worker_core.mjs and fails fast on stale deployments.
 import fs from "node:fs/promises";
 import path from "node:path";
+import crypto from "node:crypto";
 import worker, { BOT_VERSION, BOT_BUILD } from "./worker_core.mjs";
 
 const ROOT = process.cwd();
 const STATE_DIR = path.join(ROOT, "state");
 const EXPECTED_WORKER_VERSION = BOT_VERSION;
+const WORKER_PATH = path.resolve(ROOT, "worker_core.mjs");
 
 async function ensureStateFiles() {
   await fs.mkdir(STATE_DIR, { recursive: true });
@@ -79,8 +81,26 @@ async function buildEnv() {
   };
 }
 
+async function inspectWorkerArtifact() {
+  const source = await fs.readFile(WORKER_PATH, "utf8");
+  const sha256 = crypto.createHash("sha256").update(source).digest("hex");
+  const legacyPure1h = source.includes("PURE_1H_ONLY_TIMEFRAME");
+  const mtfGuard = source.includes("UNSUPPORTED_TIMEFRAME") && source.includes('[' + '"1d", "4h", "1h"' + ']');
+  console.log("[GITHUB][WORKER_ARTIFACT]", {
+    path: WORKER_PATH,
+    bytes: Buffer.byteLength(source, "utf8"),
+    sha256,
+    legacyPure1h,
+    mtfGuard
+  });
+  if (legacyPure1h) throw new Error("STALE_WORKER_DETECTED:PURITY_1H_GUARD_PRESENT");
+  if (!mtfGuard) throw new Error("MTF_WORKER_PATCH_MISSING:D1_H4_H1_GUARD_NOT_FOUND");
+  return { sha256 };
+}
+
 async function main() {
   const env = await buildEnv();
+  const artifact = await inspectWorkerArtifact();
   const scheduledTime = Date.now();
   const actualVersion = BOT_VERSION || "UNKNOWN";
   console.log("[GITHUB][START]", {
@@ -89,6 +109,7 @@ async function main() {
     expectedVersion: env.EXPECTED_VERSION,
     actualWorkerVersion: actualVersion,
     build: BOT_BUILD || "UNKNOWN",
+    workerSha256: artifact.sha256,
     executionEnabled: env.EXECUTION_ENABLED,
     executionEnabledSource: process.env.EXECUTION_ENABLED == null ? "runner-default-true" : "github-env"
   });
@@ -99,7 +120,7 @@ async function main() {
   await worker.scheduled({ cron: "* * * * *", scheduledTime }, env, {
     waitUntil(promise) { return promise; }
   });
-  console.log("[GITHUB][DONE]", { scheduledTime, worker: "worker_core.mjs", version: actualVersion });
+  console.log("[GITHUB][DONE]", { scheduledTime, worker: WORKER_PATH, version: actualVersion, sha256: artifact.sha256 });
 }
 
 main().catch((error) => {
