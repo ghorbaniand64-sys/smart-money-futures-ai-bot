@@ -1,5 +1,5 @@
 // Smart Money Futures AI Bot — GitHub Actions adapter
-// V22.8.0-GITHUB-ACTIONS-BIGINT-SAFE-PURE-1H
+// V22.9.0-GITHUB-ACTIONS-BIGINT-SAFE-MARKET-RESOLVER
 // Imports the canonical root worker_core.mjs and fails fast on stale deployments.
 import fs from "node:fs/promises";
 import path from "node:path";

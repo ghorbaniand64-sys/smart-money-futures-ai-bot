@@ -1,6 +1,6 @@
 /*
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║ GMX SMART MONEY FUTURES AI BOT — V22.8 PURE 1H DIRECTION + STRUCTURE SL + RR + DUPLICATE GUARD ║
+║ GMX SMART MONEY FUTURES AI BOT — V22.9 PURE 1H STRUCTURE + DIRECTION LOCK + REPORT DEDUPE      ║
 ║ Single pipeline • COMPLETED 1H signal scan • Classic GMX only ║
 ║ 20x leverage • 100% wallet • max 1 position • dynamic TP + structure SL               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -34,7 +34,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V22.8.0-PURE-1H-DIRECTION-SL-RR-DUP-GUARD";
+export const BOT_VERSION = "V22.9.0-PURE-1H-REPORT-DEDUPE";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -337,7 +337,7 @@ function fromUnits(value, decimals) {
 
 function formatPrice(value) {
   const n = num(value);
-  if (!Number.isFinite(n) || n <= 0) return "UNAVAILABLE";
+  if (!Number.isFinite(n) || n <= 0) return "N/A";
   if (n >= 1000) return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
   if (n >= 1) return n.toLocaleString("en-US", { maximumFractionDigits: 4 });
   return n.toLocaleString("en-US", { maximumFractionDigits: 8 });
@@ -507,9 +507,11 @@ async function loadState() {
     lastExecution: null,
     executionHistory: [],
     marketSnapshots: {},
+    lastCycleReportFingerprint: null,
   });
   if (!Array.isArray(state.executionHistory)) state.executionHistory = [];
   if (!state.marketSnapshots || typeof state.marketSnapshots !== "object") state.marketSnapshots = {};
+  if (typeof state.lastCycleReportFingerprint !== "string") state.lastCycleReportFingerprint = null;
   return state;
 }
 
@@ -518,6 +520,20 @@ async function saveState(state) {
   state.updatedAt = Date.now();
   state.executionHistory = state.executionHistory.slice(-100);
   await writeJsonFile(CONFIG.stateFile, state);
+}
+
+function cycleReportFingerprint(report) {
+  const top = (Array.isArray(report?.topRejected) ? report.topRejected : []).slice(0, 3).map((x) => ({
+    symbol: x?.symbol || "", direction: x?.direction || "", setupType: x?.setupType || "",
+    entry: num(x?.entry), sl: num(x?.sl), tp: num(x?.tp), rr: num(x?.rr),
+    score: num(x?.score), edge: num(x?.edge), risk: num(x?.risk), reason: String(x?.reason || ""),
+    regime: x?.setupEvidence?.marketRegime?.regime || "", macroDirection: x?.setupEvidence?.marketRegime?.direction || "",
+  }));
+  return JSON.stringify({
+    status: String(report?.status || ""), universe: num(report?.universe), deepCount: num(report?.deepCount),
+    actionableCount: num(report?.actionableCount), executedCount: num(report?.executedCount), failureCount: num(report?.failureCount),
+    marketRegime: report?.marketRegime?.regime || "", marketDirection: report?.marketRegime?.direction || "", topRejected: top,
+  });
 }
 
 function telegramBudget(env) {
@@ -1546,20 +1562,10 @@ function oneHStructureSignal(candles1h, ticker) {
   const upperWickRatio = upperWick / range;
   const lowerWickRatio = lowerWick / range;
 
-  // The prior trend belongs to candles BEFORE the signal candle.
-  // The old engine tested `last.close` against the trend EMAs here, which
-  // could erase a valid reversal exactly when the reversal candle crossed EMA20.
-  const trendWindow = c.slice(-Math.max(7, Number(CONFIG.oneHLookbackTrend) || 8) - 1, -1);
-  const trendCloses = trendWindow.map(x => num(x.close)).filter(x => x > 0);
-  const trendStartPrice = trendCloses[0] || 0;
-  const trendEndPrice = trendCloses.at(-1) || 0;
-  const priorTrendMove = trendStartPrice > 0 ? pct(trendEndPrice, trendStartPrice) : 0;
-  const priorE20 = ema(trendCloses, Math.min(20, Math.max(5, trendCloses.length)));
-  const priorE50 = ema(trendCloses, Math.min(50, Math.max(8, trendCloses.length)));
-  const priorUp = priorTrendMove >= CONFIG.oneHMinTrendMovePct &&
-    trendEndPrice >= priorE20 && priorE20 >= priorE50;
-  const priorDown = priorTrendMove <= -CONFIG.oneHMinTrendMovePct &&
-    trendEndPrice <= priorE20 && priorE20 <= priorE50;
+  const priorUp = trendMove >= CONFIG.oneHMinTrendMovePct &&
+    last.close > e20 && e20 >= e50;
+  const priorDown = trendMove <= -CONFIG.oneHMinTrendMovePct &&
+    last.close < e20 && e20 <= e50;
 
   const priorSwingHigh = [...swings.highs]
     .filter(s => s.index < c.length - 2)
@@ -1714,14 +1720,9 @@ function oneHStructureSignal(candles1h, ticker) {
   }
 
   // Structural SL:
-  // Reversal: beyond the actual 1H reversal extreme with the configured
-  // volatility buffer. Continuation: beyond the broken 1H structure.
-  // IMPORTANT: never use the old 0.18 ATR micro-buffer; it produced stops
-  // that were too close to normal 1H noise.
-  const buffer = Math.max(
-    atr1h * (setupType === "REVERSAL" ? CONFIG.slAtrMultiplierReversal : CONFIG.slAtrMultiplierContinuation),
-    price * (CONFIG.slMinDistancePct / 100)
-  );
+  // Reversal: beyond the actual reversal extreme.
+  // Continuation: beyond the broken level.
+  const buffer = Math.max(atr1h * 0.18, price * 0.0010);
   let sl = 0;
   if (direction === "short") sl = setupType === "REVERSAL" ? extreme + buffer : structureLevel + buffer;
   else sl = setupType === "REVERSAL" ? extreme - buffer : structureLevel - buffer;
@@ -2565,46 +2566,12 @@ function positionSizeUsd(position) {
 }
 
 async function getOpenPositions(sdk, account) {
-  const response = await sdk.fetchPositionsInfo({
+  const positions = await sdk.fetchPositionsInfo({
     address: account,
     includeRelatedOrders: true,
   });
-
-  const candidates = [
-    response,
-    response?.positions,
-    response?.data,
-    response?.data?.positions,
-    response?.result,
-    response?.result?.positions,
-    response?.data?.result,
-    response?.data?.result?.positions,
-  ];
-
-  let positions = candidates.find(Array.isArray) || [];
-  // Some SDK builds wrap positions one level deeper. Only accept objects that
-  // actually look like positions so unrelated arrays cannot become positions.
-  if (!positions.length && response && typeof response === "object") {
-    const found = [];
-    const walk = (node, depth = 0) => {
-      if (!node || typeof node !== "object" || depth > 4) return;
-      if (Array.isArray(node)) {
-        for (const item of node) walk(item, depth + 1);
-        return;
-      }
-      if (Object.prototype.hasOwnProperty.call(node, "sizeInUsd") ||
-          Object.prototype.hasOwnProperty.call(node, "sizeUsd") ||
-          Object.prototype.hasOwnProperty.call(node, "size")) {
-        found.push(node);
-        return;
-      }
-      for (const value of Object.values(node)) walk(value, depth + 1);
-    };
-    walk(response);
-    positions = found;
-  }
-
-  return positions.filter((p) => positionSizeUsd(p) > 0);
+  return (Array.isArray(positions) ? positions : [])
+    .filter((p) => positionSizeUsd(p) > 0);
 }
 
 function findPositionForCandidate(positions, candidate) {
@@ -2846,15 +2813,6 @@ async function verifyPosition(sdk, account, candidate, timeoutMs = 45_000) {
   return { verified: false, position: null };
 }
 
-function calcDisplayRR(entry, sl, tp) {
-  const e = num(entry), s = num(sl), t = num(tp);
-  if (!(e > 0 && s > 0 && t > 0)) return "UNAVAILABLE";
-  const risk = Math.abs(e - s);
-  const reward = Math.abs(t - e);
-  if (!(risk > 0 && reward > 0)) return "INVALID";
-  return (reward / risk).toFixed(2);
-}
-
 function tradeMessage(result) {
   if (result.executed) {
     return [
@@ -2864,8 +2822,6 @@ function tradeMessage(result) {
       `📌 Direction: ${result.direction.toUpperCase()}`,
       `💰 Entry: ${formatPrice(result.entry)}`,
       `🎯 TP: ${formatPrice(result.tp)}`,
-      `🛡️ SL: ${formatPrice(result.sl)}`,
-      `📐 RR: ${calcDisplayRR(result.entry, result.sl, result.tp)}`,
       `⚙️ Leverage: ${result.leverage.toFixed(1)}x`,
       `📊 Allocation: ${(result.allocation * 100).toFixed(2)}%`,
       `📦 Notional: ${formatUsd(result.notionalUsd)}`,
@@ -2873,10 +2829,10 @@ function tradeMessage(result) {
       `💰 Wallet: ${formatUsd(result.walletBefore)} → ${formatUsd(result.walletAfter)}`,
       `📉 Wallet Δ: ${formatUsd(result.walletAfter - result.walletBefore)}`,
       `⛓️ Mode: CLASSIC ON-CHAIN`,
-      `🔗 Tx: ${result.txHash || "UNAVAILABLE"}`,
+      `🔗 Tx: ${result.txHash || "N/A"}`,
       `🧪 Score: ${result.score.toFixed(1)} | Edge: ${result.edge.toFixed(1)} | Risk: ${result.risk.toFixed(1)}`,
       `💹 Expected gross: ${formatUsd(result.expectedGrossPnlUsd)} | Net: ${formatUsd(result.expectedNetPnlUsd)} | Cost: ${formatUsd(result.estimatedTotalCostUsd)}`,
-      `🧠 Reasons: ${result.reasons.join(", ") || "UNAVAILABLE"}`,
+      `🧠 Reasons: ${result.reasons.join(", ") || "N/A"}`,
       `✅ Position verified: ${result.verified ? "YES" : "PENDING"}`,
       `🕐 ${new Date().toISOString()}`,
     ].join("\n");
@@ -2885,12 +2841,10 @@ function tradeMessage(result) {
   return [
     `🔴 GMX BOT — EXECUTION FAILURE`,
     `━━━━━━━━━━━━━━━━━━`,
-    `🪙 Symbol: ${result.symbol || "UNRESOLVED"}`,
-    `📌 Direction: ${String(result.direction || "UNRESOLVED").toUpperCase()}`,
+    `🪙 Symbol: ${result.symbol || "N/A"}`,
+    `📌 Direction: ${String(result.direction || "N/A").toUpperCase()}`,
     `💰 Entry: ${formatPrice(result.entry)}`,
     `🎯 TP: ${formatPrice(result.tp)}`,
-    `🛡️ SL: ${formatPrice(result.sl)}`,
-    `📐 RR: ${calcDisplayRR(result.entry, result.sl, result.tp)}`,
     `⚙️ Leverage: ${CONFIG.leverage.toFixed(1)}x`,
     `📊 Allocation target: ${(CONFIG.walletAllocationPerPosition * 100).toFixed(2)}%`,
     `❌ Stage: ${result.stage || "EXECUTION"}`,
@@ -2914,7 +2868,7 @@ function cycleMessage(report) {
     `🔒 Direction lock: 1H STRUCTURE → LONG / SHORT`,
     `💧 1H volume-flow diagnostic: ${report.flowCount} | Strong volume: ${report.smartMoneyCount}`,
     `🧠 1H setups: Ready ${report.layerReadyCount} | Continuation ${report.impulseCount} | Reversal ${report.layerReversalCount}`,
-    `🌐 Market Data Center: ${report.marketRegime?.regime || "UNAVAILABLE"} | BTC ${num(report.marketRegime?.btcScore).toFixed(0)} | ETH ${num(report.marketRegime?.ethScore).toFixed(0)} | Breadth ${num(report.marketRegime?.breadthScore).toFixed(0)}`,
+    `🌐 Market Data Center: ${report.marketRegime?.regime || "N/A"} | BTC ${num(report.marketRegime?.btcScore).toFixed(0)} | ETH ${num(report.marketRegime?.ethScore).toFixed(0)} | Breadth ${num(report.marketRegime?.breadthScore).toFixed(0)}`,
     ``,
     `🎯 Entry ready: ${report.actionableCount}`,
     `🟢 Executed: ${report.executedCount}`,
@@ -2931,7 +2885,7 @@ function cycleMessage(report) {
       `🛡️ SL: ${formatPrice(trade.sl)}`,
       `📊 Allocation: ${(trade.allocation * 100).toFixed(2)}% | ⚙️ Leverage: ${CONFIG.leverage.toFixed(1)}x`,
       `📦 Notional: ${formatUsd(trade.notionalUsd)} | 💵 Collateral: ${formatUsd(trade.collateralUsd)}`,
-      `🔗 Tx: ${trade.txHash || "UNAVAILABLE"}`,
+      `🔗 Tx: ${trade.txHash || "N/A"}`,
       `🧪 Score ${trade.score.toFixed(1)} | Edge ${trade.edge.toFixed(1)} | Risk ${trade.risk.toFixed(1)}`,
       `💹 Expected gross: ${formatUsd(trade.expectedGrossPnlUsd)} | Net: ${formatUsd(trade.expectedNetPnlUsd)} | Cost: ${formatUsd(trade.estimatedTotalCostUsd)}`,
       `🔒 Direction verified: ${trade.directionVerified ? "YES" : "NO"}`,
@@ -2943,14 +2897,14 @@ function cycleMessage(report) {
     lines.push(`ℹ️ TOP BLOCKED`);
     for (const item of report.topRejected.slice(0, 3)) {
       lines.push(`• ${item.symbol}`);
-      lines.push(`  📌 ${String(item.direction || item.setupEvidence?.diagnosticBias || "UNRESOLVED").toUpperCase()} | Entry ${formatPrice(item.entry)} | SL ${formatPrice(item.sl)} | TP ${formatPrice(item.tp)}`);
-      lines.push(`  🧠 ${String(item.setupType || "NO_CONFIRMED_SETUP")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)}`);
+      lines.push(`  📌 ${String(item.direction || "N/A").toUpperCase()} | Entry ${formatPrice(item.entry)} | SL ${formatPrice(item.sl)} | TP ${formatPrice(item.tp)}`);
+      lines.push(`  🧠 ${String(item.setupType || "N/A")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)}`);
       const ev = item.setupEvidence || {};
-      lines.push(`  🕐 1H trend ${String(ev.priorTrend || (ev.priorUp ? "UP" : ev.priorDown ? "DOWN" : "NEUTRAL"))} | Move ${num(ev.priorTrendMovePct).toFixed(2)}% | Body ${num(ev.bodyRatio).toFixed(2)} | Close ${num(ev.closeLocation).toFixed(2)}`);
+      lines.push(`  🕐 1H trend ${String(ev.priorTrend || "N/A")} | Move ${num(ev.priorTrendMovePct).toFixed(2)}% | Body ${num(ev.bodyRatio).toFixed(2)} | Close ${num(ev.closeLocation).toFixed(2)}`);
       lines.push(`  💧 1H volume ${num(ev.volumeRatio1h).toFixed(2)}x`);
       const mr = ev.marketRegime || {};
       if (mr.regime) lines.push(`  🌐 ${mr.regime} | BTC ${num(mr.btcScore).toFixed(0)} ETH ${num(mr.ethScore).toFixed(0)} Breadth ${num(mr.breadthScore).toFixed(0)} | ${mr.counterTrend ? "COUNTER" : "ALIGNED"}`);
-      lines.push(`  🛡️ SL ${formatPrice(item.sl)} | ${num(ev.slDistancePct).toFixed(2)}% | ${String(ev.slMethod || "1H_STRUCTURE_SL")}`);
+      lines.push(`  🛡️ SL ${formatPrice(item.sl)} | ${num(ev.slDistancePct).toFixed(2)}% | ${String(ev.slMethod || "N/A")}`);
       const econ = item.economics || {};
       lines.push(`  💹 Gross ${formatUsd(econ.grossPnlUsd)} | Cost ${formatUsd(econ.totalCostUsd)} | Net ${formatUsd(econ.expectedNetUsd)} | TP move ${num(econ.tpMovePct).toFixed(2)}%`);
       lines.push(`  🚫 ${item.reason}`);
@@ -2991,7 +2945,7 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
   if (!directionCheck.ok) {
     return {
       executed: false,
-      symbol: candidate?.symbol || "UNRESOLVED_SYMBOL",
+      symbol: candidate?.symbol || "N/A",
       direction: candidate?.direction || null,
       entry: candidate?.entry || 0,
       tp: candidate?.tp || 0,
@@ -3284,7 +3238,7 @@ async function runCycle(event, env) {
     const directionCheck = validateDirectionIntegrity(candidate);
     if (!directionCheck.ok) {
       blocked.push({
-        symbol: candidate?.symbol || "UNRESOLVED_SYMBOL",
+        symbol: candidate?.symbol || "N/A",
         direction: candidate?.direction || null,
         entry: candidate?.entry || 0,
         sl: candidate?.sl || 0,
@@ -3466,7 +3420,17 @@ async function runCycle(event, env) {
   await saveState(state);
 
   try {
-    await sendTelegram(env, cycleMessage(report));
+    const fingerprint = cycleReportFingerprint(report);
+    const unchangedWatching = report.status === "WATCHING" && state.lastCycleReportFingerprint === fingerprint;
+    if (!unchangedWatching) {
+      const telegramResult = await sendTelegram(env, cycleMessage(report));
+      if (telegramResult?.ok) {
+        state.lastCycleReportFingerprint = fingerprint;
+        await saveState(state);
+      }
+    } else {
+      console.log("[TELEGRAM][SKIP_UNCHANGED_WATCHING]", { scanId, reason: "IDENTICAL_CYCLE_REPORT" });
+    }
   } catch (error) {
     console.error("[TELEGRAM][CYCLE_ERROR]", safeError(error));
   }
