@@ -34,7 +34,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V23.1.0-H1-AUTHORITY-SOFT-MACRO-DIAGNOSTICS";
+export const BOT_VERSION = "V23.2.0-H1-SIGNAL-DIRECT-EXECUTION";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -920,37 +920,22 @@ function exhaustiveReversalHint(five, fifteen, direction) {
 
 function candleImpulseMetrics(candles) {
   const a = Array.isArray(candles) ? candles : [];
-  if (a.length < 8) return {
-    available:false, move3:0, move5:0, acceleration:0, rangeExpansion:0,
-    bodyRatio:0, closeLocation:0, volumeRatio:null, volumeAvailable:false
-  };
+  if (a.length < 8) return { available:false, move3:0, move5:0, acceleration:0, rangeExpansion:0, bodyRatio:0, closeLocation:0, volumeRatio:1 };
   const last = a.at(-1), prev = a.at(-2), p3 = a.at(-4), p5 = a.at(-6);
   const close = num(last.close), prevClose = num(prev.close), c3 = num(p3.close), c5 = num(p5.close);
   const move3 = pct(close, c3), move5 = pct(close, c5);
   const prev3 = pct(c3, c5);
   const acceleration = move3 - prev3;
-  const range = Math.max(num(last.high) - num(last.low),1e-12);
+  const range = Math.max(num(last.high) - num(last.low), 1e-12);
   const priorRanges = a.slice(-8,-1).map(x => Math.max(num(x.high)-num(x.low),1e-12));
   const avgRange = priorRanges.reduce((x,y)=>x+y,0)/Math.max(priorRanges.length,1);
   const rangeExpansion = range / Math.max(avgRange,1e-12);
   const bodyRatio = Math.abs(num(last.close)-num(last.open))/range;
   const closeLocation = (num(last.close)-num(last.low))/range;
-
-  // Latest completed candle versus up to 20 previous completed candles.
-  // Missing volume is reported as null, never fabricated as 1.00x.
-  const currentVolume = num(last.volume);
-  const previousVolumes = a.slice(0,-1).slice(-20).map(x=>num(x.volume)).filter(x=>x>0);
-  const volumeAverage = previousVolumes.length
-    ? previousVolumes.reduce((x,y)=>x+y,0) / previousVolumes.length
-    : 0;
-  const volumeRatio = currentVolume > 0 && volumeAverage > 0
-    ? currentVolume / volumeAverage
-    : null;
-
-  return {
-    available:true, move3, move5, acceleration, rangeExpansion, bodyRatio, closeLocation,
-    volumeRatio, volumeAvailable: currentVolume > 0 && volumeAverage > 0
-  };
+  const vols = a.slice(-8).map(x=>num(x.volume));
+  const vAvg = vols.slice(0,-1).filter(x=>x>0).reduce((x,y)=>x+y,0)/Math.max(vols.slice(0,-1).filter(x=>x>0).length,1);
+  const volumeRatio = num(last.volume)>0 && vAvg>0 ? num(last.volume)/vAvg : null;
+  return { available:true, move3, move5, acceleration, rangeExpansion, bodyRatio, closeLocation, volumeRatio };
 }
 
 function reversalMetrics(candles5, candles15, ticker, direction) {
@@ -1909,7 +1894,7 @@ function oneHStructureSignal(candles1h, ticker) {
   };
 
   return {
-    valid:true, symbol:null, direction, directionAuthority:"MTF_D1_H4_H1", setupType,
+    valid:true, symbol:null, direction, directionAuthority:"1H_STRUCTURE", setupType,
     entry:price, sl:Number(sl.toPrecision(12)), tp:Number(tp.toPrecision(12)), rr:Number(rr.toFixed(2)),
     score:Number(score.toFixed(2)), edge:Number(edge.toFixed(2)), risk:Number(risk.toFixed(2)),
     trendConfluence:direction === "long" ? Number(last.close>e20)+Number(e20>=e50)+Number(m.histogram>0) : Number(last.close<e20)+Number(e20<=e50)+Number(m.histogram<0),
@@ -1918,7 +1903,7 @@ function oneHStructureSignal(candles1h, ticker) {
     setupDominance:setupType === "REVERSAL" ? 20:15, triggerActive:true,
     reversalTrigger:setupType === "REVERSAL", continuationTrigger:setupType === "CONTINUATION",
     tpPlan:{tp:Number(tp.toPrecision(12)),method:"PURE_1H_VALID_STRUCTURE",targetType,targetScore:80,probabilityProxy:80,distancePct:Number(Math.abs(pct(tp,price)).toFixed(3)),rr:Number(rr.toFixed(2)),rrPass:true,targetPrice:targetLevel,atrDistance:Number(tpDistance/atr1h).toFixed(2)},
-    setupEvidence:{setupType,directionAuthority:"MTF_D1_H4_H1",directionLocked:true,signalTimeframe:"1H",
+    setupEvidence:{setupType,directionAuthority:"1H_STRUCTURE",directionLocked:true,signalTimeframe:"1H",
       signalCandle:last.timestamp, triggerCandle:trigger.timestamp, confirmationCandle:confirm.timestamp,
       priorTrend:priorUp?"UP":priorDown?"DOWN":"NEUTRAL", priorTrendMovePct:Number(trendMove.toFixed(3)),
       validExtreme:extreme, structureLevel, support, resistance, reversalTouch:setupType === "REVERSAL",
@@ -1943,12 +1928,8 @@ function scoreCandidate({ market, ticker, candles1h, candles4h, candles1d, marke
   const h1 = completedCandles(candles1h, "1h");
   const h4 = completedCandles(candles4h, "4h");
   const d1 = completedCandles(candles1d, "1d");
-
   if (d1.length < 60 || h4.length < 60 || h1.length < 30) {
-    return {
-      symbol, direction:null, directionBias:null, setupType:"NONE", score:0, edge:0, risk:100,
-      error:`INSUFFICIENT_MTF_DATA:D1=${d1.length},H4=${h4.length},H1=${h1.length}`
-    };
+    return { symbol, direction:null, setupType:"NONE", score:0, edge:0, risk:100, error:"INSUFFICIENT_MTF_DATA" };
   }
 
   const d1c = timeframeTrendConfirmation(d1, "1d");
@@ -1956,70 +1937,52 @@ function scoreCandidate({ market, ticker, candles1h, candles4h, candles1d, marke
   const h1c = timeframeTrendConfirmation(h1, "1h");
   const base = oneHStructureSignal(h1, ticker);
   const price = num(base.entry) || num(h1.at(-1)?.close) || tickerPrice(ticker) || 0;
-  const diagnostics = base.diagnostics || {};
 
-  // H1 is the only direction authority. A WATCH may expose a bias, but it is
-  // explicitly not a trade direction until the H1 structure trigger confirms.
-  const directionBias =
-    diagnostics.priorUp ? "long" :
-    diagnostics.priorDown ? "short" :
-    h1c.direction && h1c.direction !== "neutral" ? h1c.direction :
-    null;
+  // BTC/ETH/SOL are soft context only; they never block the H1 scan.
 
   if (!base.valid) {
+    const directionBias =
+      (base.diagnostics?.priorUp ? "long" :
+       base.diagnostics?.priorDown ? "short" :
+       h1c.direction && h1c.direction !== "neutral" ? h1c.direction : null);
     return {
-      symbol,
-      candleSymbol:candleSymbolFromMarket(market),
-      direction:null,
-      directionBias,
-      setupType:base.setupType || "1H_WATCH",
-      state:"WATCH",
-      score:0, edge:0, risk:100,
-      entry:price, sl:0, tp:0, rr:0,
+      symbol, candleSymbol:candleSymbolFromMarket(market),
+      direction:null, directionBias,
+      setupType:base.setupType||"1H_WATCH", state:"WATCH",
+      score:0, edge:0, risk:100, entry:price, sl:0,tp:0,rr:0,
       triggerActive:false, reversalTrigger:false, continuationTrigger:false,
       reversalEvidence:num(base.reversalEvidence),
       setupConfidence:num(base.confidence),
       setupEvidence:{
-        ...diagnostics,
-        reason:base.reason || "NO_CONFIRMED_1H_SETUP",
-        state:"WATCH",
-        directionBias,
-        signalTimeframe:"1H",
-        directionAuthority:"1H_STRUCTURE",
-        directionLocked:false,
-        d1Confirmation:d1c, h4Confirmation:h4c, h1Confirmation:h1c,
-        marketRegime: marketRegime || null,
-        macroIsSoft:true,
-        contextIsSoft:true
+        ...(base.diagnostics||{}), reason:base.reason,
+        signalTimeframe:"1H", directionAuthority:"1H_STRUCTURE",
+        directionLocked:false, directionBias,
+        d1Confirmation:d1c,h4Confirmation:h4c,h1Confirmation:h1c,
+        macroIsSoft:true, contextIsSoft:true
       },
-      indicators:{
-        d1:d1c, h4:h4c, h1:h1c,
-        volumeRatio1h: diagnostics.volumeRatio1h ?? null
-      }
+      indicators:{d1:d1c,h4:h4c,h1:h1c}
     };
   }
 
   const dir = base.direction;
   const macroDir = marketRegime?.direction || "neutral";
 
-  // D1/H4 are quality context only; they can add/subtract a small amount.
+  // D1/H4 are quality context, not gates.
   const contextLong = Number(d1c.direction === "long") + Number(h4c.direction === "long");
   const contextShort = Number(d1c.direction === "short") + Number(h4c.direction === "short");
-  const contextAgreement = Math.max(contextLong, contextShort) / 2;
   const contextAligned = dir === "long" ? contextLong : contextShort;
   const contextQualityModifier = Number(clamp((contextAligned - 1) * 3, -3, 3).toFixed(2));
 
-  // BTC/ETH/SOL are an informational macro indicator only.
-  const assets = Object.values(marketRegime?.assets || {}).filter(x => x?.available);
-  const refAligned = assets.filter(x => x.direction === dir).length;
-  const refOpposed = assets.filter(x => x.direction && x.direction !== "neutral" && x.direction !== dir).length;
+  // BTC/ETH/SOL are a small macro quality modifier only.
+  const refAssets = Object.values(marketRegime?.assets || {}).filter(x => x?.available);
+  const refAligned = refAssets.filter(x => x.direction === dir).length;
+  const refOpposed = refAssets.filter(x => x.direction && x.direction !== "neutral" && x.direction !== dir).length;
   const macroQualityModifier =
-    assets.length === 0 ? 0 :
-    refAligned === assets.length ? 4 :
-    refOpposed === assets.length ? -4 :
+    refAssets.length === 0 ? 0 :
+    refAligned === refAssets.length ? 4 :
+    refOpposed === refAssets.length ? -4 :
     refAligned > refOpposed ? 2 :
     refOpposed > refAligned ? -2 : 0;
-  const macroCounterTrend = macroDir !== "neutral" && macroDir !== dir;
 
   const d1Ichi = d1c.ichimoku, h4Ichi = h4c.ichimoku;
   const trendOK = dir === "long"
@@ -2043,46 +2006,31 @@ function scoreCandidate({ market, ticker, candles1h, candles4h, candles1d, marke
   const h1Rsi = dir === "long" ? h1c.rsi >= 45 && h1c.rsi < 78 : h1c.rsi <= 55 && h1c.rsi > 22;
   const h1Ichi = dir === "long" ? h1c.ichimoku?.bullish : h1c.ichimoku?.bearish;
   const h1Votes = [h1TrendSide,h1MomentumSide,h1Strength,h1Rsi,Boolean(h1Ichi)].filter(Boolean).length;
+  // Reversals are allowed to have H1 Ichimoku/momentum conflict immediately
+  // after the rejection; the actual H1 structure trigger remains mandatory.
+  const minH1Votes = base.setupType === "REVERSAL" ? 3 : 4;
+  if (h1Votes < minH1Votes) {
+    return { ...base, symbol, score:0,edge:0,risk:100,triggerActive:false,error:`H1_CONFIRMATION_${h1Votes}_OF_5`,
+      setupEvidence:{...(base.setupEvidence||{}),d1Confirmation:d1c,h4Confirmation:h4c,h1Confirmation:h1c,
+        indicatorVotes,h1Votes,directionAuthority:"1H_STRUCTURE",directionLocked:false} };
+  }
 
-  const final = {
-    ...base,
-    symbol,
-    candleSymbol:candleSymbolFromMarket(market),
-    market, ticker, candles1h:h1,
-    state:"SIGNAL",
-    directionAuthority:"1H_STRUCTURE",
-    score:Number(clamp(base.score + indicatorVotes*2 + h1Votes*2 + contextQualityModifier + macroQualityModifier,0,100).toFixed(2)),
-    edge:Number(clamp(base.edge + indicatorVotes*2 + h1Votes*2 + contextQualityModifier + macroQualityModifier,0,100).toFixed(2)),
+  const final = { ...base, symbol, candleSymbol:candleSymbolFromMarket(market), market,ticker,candles1h:h1,
+    score:Number(clamp(base.score + indicatorVotes*2 + h1Votes*2,0,100).toFixed(2)),
+    edge:Number(clamp(base.edge + indicatorVotes*2 + h1Votes*2,0,100).toFixed(2)),
     trendConfluence:indicatorVotes + h1Votes,
+    directionAuthority:"1H_STRUCTURE",
     setupEvidence:{
       ...(base.setupEvidence||{}),
-      state:"SIGNAL",
-      signalTimeframe:"1H",
-      directionAuthority:"1H_STRUCTURE",
-      directionLocked:true,
-      directionBias:dir,
-      d1Confirmation:d1c, h4Confirmation:h4c, h1Confirmation:h1c,
+      signalTimeframe:"1H", directionAuthority:"1H_STRUCTURE", directionLocked:true,
+      d1Confirmation:d1c,h4Confirmation:h4c,h1Confirmation:h1c,
       indicatorVotes,h1Votes,trendOK,macdOK,adxOK,ichimokuOK,rsiOK,
-      contextAgreement:Number((contextAgreement*100).toFixed(1)),
-      contextQualityModifier,
-      marketRegime: marketRegime || null,
-      macroQualityModifier,
-      macroCounterTrend,
-      macroIsSoft:true,
-      contextIsSoft:true,
-      legacy5mDisabled:true, legacy15mDisabled:true
+      marketRegime, counterTrend,
+      legacy5mDisabled:true,legacy15mDisabled:true
     },
-    indicators:{
-      ...(base.indicators||{}),
-      d1:d1c,h4:h4c,h1:h1c,
-      indicatorVotes,h1Votes,
+    indicators:{...(base.indicators||{}),d1:d1c,h4:h4c,h1:h1c,indicatorVotes,h1Votes,
       ichimokuD1:d1Ichi,ichimokuH4:h4Ichi,ichimokuH1:h1c.ichimoku,
-      directionAuthority:"1H_STRUCTURE",
-      contextQualityModifier,
-      macroQualityModifier
-    }
-  };
-
+      directionAuthority:"1H_STRUCTURE"} };
   return applyMarketRegimeToCandidate(final, marketRegime);
 }
 
@@ -2257,7 +2205,18 @@ function candidateIsActionable(candidate) {
     }
   }
 
-  // D1/H4 and BTC/ETH/SOL are soft context indicators; never block here.
+  // Global BTC/ETH/SOL regime is a hard directional context.
+  const macro = candidate.setupEvidence?.marketRegime;
+  if (!macro || macro.direction === "neutral") return { ok:false, reason:"GLOBAL_MARKET_DIRECTION_UNCONFIRMED" };
+  if (candidate.setupType === "CONTINUATION" && direction !== macro.direction) {
+    return { ok:false, reason:"CONTINUATION_NOT_ALIGNED_WITH_GLOBAL_REGIME" };
+  }
+  if (candidate.setupType === "REVERSAL" && direction === macro.direction) {
+    return { ok:false, reason:"REVERSAL_NOT_COUNTER_GLOBAL_REGIME" };
+  }
+  if (macro.btcDirection !== macro.direction || macro.ethDirection !== macro.direction || macro.solDirection !== macro.direction) {
+    return { ok:false, reason:"BTC_ETH_SOL_DIRECTION_DISAGREEMENT" };
+  }
 
   const slDistance = Math.abs(pct(sl, entry));
   if (slDistance < CONFIG.slMinDistancePct * 0.95) {
@@ -2364,9 +2323,7 @@ async function fetchCandles(sdk, marketOrSymbol, timeframe, limit) {
 // every market (and BTC/ETH) to fail before the 1H engine could run.
 async function fetchCandlesResilient(sdk, marketOrSymbol, timeframe, limit) {
   const tf = String(timeframe || "1h").toLowerCase();
-  if (!["1d","4h","1h"].includes(tf)) {
-    throw new Error(`UNSUPPORTED_TIMEFRAME:${tf}`);
-  }
+  if (!["1d","4h","1h"].includes(tf)) throw new Error(`UNSUPPORTED_TIMEFRAME:${tf}`);
   return fetchCandles(sdk, marketOrSymbol, tf, limit);
 }
 
@@ -2479,27 +2436,24 @@ async function buildMarketRegimeDataCenter(sdk, markets, _broadRows = []) {
   for (const asset of CONFIG.referenceAssets) assets[asset] = await analyzeAsset(asset);
 
   const usable = Object.values(assets).filter(x => x.available);
+
   const assetDirs = usable.map(x => x.direction);
   const longs = assetDirs.filter(x => x === "long").length;
   const shorts = assetDirs.filter(x => x === "short").length;
-  const direction = longs > shorts ? "long" : shorts > longs ? "short" : "neutral";
-
-  if (!usable.length) {
-    return {
-      enabled:true, regime:"NEUTRAL", direction:"neutral", score:50, confidence:0, assets,
-      agreement:0, reason:"NO_REFERENCE_DATA", timeframe:"D1/H4/H1", softOnly:true,
-      timestamp:Date.now()
-    };
+  let direction = longs === 3 ? "long" : shorts === 3 ? "short" : "neutral";
+  if (direction === "neutral") {
+    return { enabled:true, regime:"MIXED", direction:"neutral", score:50, confidence:0, assets,
+      agreement:Number((Math.max(longs,shorts)/3*100).toFixed(1)), reason:"BTC_ETH_SOL_NOT_UNANIMOUS" };
   }
 
   const selected = usable.map(x => x.frames);
   const scores = selected.map(fr => fr["1d"].score * 0.45 + fr["4h"].score * 0.35 + fr["1h"].score * 0.20);
   const score = Number((scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(1));
-  const agreement = Number((Math.max(longs,shorts)/Math.max(usable.length,1)*100).toFixed(1));
+  const agreement = 100;
   return {
     enabled:true,
     regime: direction === "long" ? (score >= 72 ? "BULLISH_STRONG" : "BULLISH") : (score <= 28 ? "BEARISH_STRONG" : "BEARISH"),
-    direction, score, confidence:Number(Math.abs(score-50).toFixed(1)), assets, agreement, softOnly:true,
+    direction, score, confidence:Number(Math.abs(score-50).toFixed(1)), assets, agreement,
     btc:assets.BTC, eth:assets.ETH, sol:assets.SOL, timeframe:"D1/H4/H1",
     supportReliability:1, resistanceReliability:1, timestamp:Date.now()
   };
@@ -2508,24 +2462,19 @@ async function buildMarketRegimeDataCenter(sdk, markets, _broadRows = []) {
 function applyMarketRegimeToCandidate(candidate, marketRegime) {
   if (!candidate || !marketRegime?.enabled) return candidate;
   const ev = { ...(candidate.setupEvidence || {}) };
-  const macroDir = marketRegime.direction || "neutral";
-  const dir = candidate.direction || candidate.directionBias || null;
-  const counterTrend = Boolean(dir && macroDir !== "neutral" && dir !== macroDir);
-  const aligned = Boolean(dir && macroDir !== "neutral" && dir === macroDir);
+  const macroDir = marketRegime.direction;
+  const dir = candidate.direction;
+  const counterTrend = macroDir !== "neutral" && dir !== macroDir;
   ev.marketRegime = {
     regime: marketRegime.regime, direction: macroDir, score: marketRegime.score,
     confidence: marketRegime.confidence, agreement: marketRegime.agreement,
     btcDirection: marketRegime.btc?.direction ?? marketRegime.assets?.BTC?.direction ?? "neutral",
     ethDirection: marketRegime.eth?.direction ?? marketRegime.assets?.ETH?.direction ?? "neutral",
     solDirection: marketRegime.sol?.direction ?? marketRegime.assets?.SOL?.direction ?? "neutral",
-    counterTrend, aligned, softOnly:true
+    counterTrend, aligned: !counterTrend && macroDir !== "neutral"
   };
-  ev.marketRegimeTag = `${marketRegime.regime}_${String(dir || "UNCONFIRMED").toUpperCase()}${counterTrend ? "_COUNTER" : aligned ? "_ALIGNED" : ""}`;
-  return {
-    ...candidate,
-    setupEvidence:ev,
-    indicators:{...(candidate.indicators||{}), marketRegime:ev.marketRegime}
-  };
+  ev.marketRegimeTag = `${marketRegime.regime}_${dir.toUpperCase()}${counterTrend ? "_COUNTER" : "_ALIGNED"}`;
+  return { ...candidate, setupEvidence:ev, indicators:{...(candidate.indicators||{}), marketRegime:ev.marketRegime} };
 }
 
 async function broadScan(sdk, markets, tickers, marketValues = [], previousSnapshots = {}) {
@@ -2567,7 +2516,7 @@ async function deepScan(sdk, broadRows, marketRegime = null) {
       return { ...row, error:safeError(error) };
     }
   });
-  const valid = results.filter(x => x && !x.error && x.symbol);
+  const valid = results.filter(x => x && x.symbol && (!x.error || x.state === "WATCH"));
   const failed = results.filter(x => x?.error);
   console.log("[DEEP][MTF][SUMMARY]", {
     attempted:selected.length, successful:valid.length, failed:failed.length,
@@ -2966,10 +2915,10 @@ function cycleMessage(report) {
     `🕐 1H signal scan: ${report.deepCount}/${report.deepAttempted || report.deepCount} | Data failures: ${report.deepFailureCount || 0}`,
     `📐 Signal authority: COMPLETED 1H CANDLE STRUCTURE`,
     `🧭 Entry / SL / TP timeframe: 1H`,
-    `🔒 Direction authority: 1H STRUCTURE → LONG / SHORT | D1/H4 + BTC/ETH/SOL = SOFT`,
+    `🔒 Direction authority: 1H STRUCTURE → LONG / SHORT`,
     `💧 1H volume-flow diagnostic: ${report.flowCount} | Strong volume: ${report.smartMoneyCount}`,
     `🧠 1H setups: Ready ${report.layerReadyCount} | Continuation ${report.impulseCount} | Reversal ${report.layerReversalCount}`,
-    `🌐 Market Data Center (SOFT): ${report.marketRegime?.regime || "N/A"} | Direction ${String(report.marketRegime?.direction || "neutral").toUpperCase()} | BTC ${num(report.marketRegime?.btcScore).toFixed(0)} | ETH ${num(report.marketRegime?.ethScore).toFixed(0)} | SOL ${num(report.marketRegime?.solScore).toFixed(0)} | Agreement ${num(report.marketRegime?.agreement).toFixed(0)}%`,
+    `🌐 Market Data Center: ${report.marketRegime?.regime || "N/A"} | BTC ${num(report.marketRegime?.btcScore).toFixed(0)} | ETH ${num(report.marketRegime?.ethScore).toFixed(0)} | Breadth ${num(report.marketRegime?.breadthScore).toFixed(0)}`,
     ``,
     `🎯 Entry ready: ${report.actionableCount}`,
     `🟢 Executed: ${report.executedCount}`,
@@ -2984,6 +2933,7 @@ function cycleMessage(report) {
       `💰 Entry: ${formatPrice(trade.entry)}`,
       `🎯 TP: ${formatPrice(trade.tp)}`,
       `🛡️ SL: ${formatPrice(trade.sl)}`,
+      `📐 RR: ${trade.rr > 0 ? Number(trade.rr).toFixed(2) : "N/A"}`,
       `📊 Allocation: ${(trade.allocation * 100).toFixed(2)}% | ⚙️ Leverage: ${CONFIG.leverage.toFixed(1)}x`,
       `📦 Notional: ${formatUsd(trade.notionalUsd)} | 💵 Collateral: ${formatUsd(trade.collateralUsd)}`,
       `🔗 Tx: ${trade.txHash || "N/A"}`,
@@ -2999,13 +2949,13 @@ function cycleMessage(report) {
     for (const item of report.topRejected.slice(0, 3)) {
       lines.push(`• ${item.symbol}`);
       lines.push(`  📌 ${item.direction ? String(item.direction).toUpperCase() : `BIAS ${String(item.directionBias || item.setupEvidence?.directionBias || "UNCONFIRMED").toUpperCase()}`} | Entry ${formatPrice(item.entry)} | SL ${item.sl > 0 ? formatPrice(item.sl) : "WAITING"} | TP ${item.tp > 0 ? formatPrice(item.tp) : "WAITING"}`);
-      lines.push(`  🧠 ${String(item.setupType || "N/A")} | ${item.direction ? "SIGNAL" : "WATCH"} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)}`);
+      lines.push(`  🧠 ${String(item.setupType || "N/A")} | ${item.direction ? "SIGNAL" : "WATCH"} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)} | RR ${item.rr > 0 ? num(item.rr).toFixed(2) : "N/A"}`);
       const ev = item.setupEvidence || {};
-      lines.push(`  🕐 1H trend ${String(ev.priorTrend || "N/A")} | Move ${num(ev.priorTrendMovePct).toFixed(2)}% | Body ${num(ev.bodyRatio).toFixed(2)} | Close ${num(ev.closeLocation).toFixed(2)}`);
+      lines.push(`  🕐 1H trend ${String(ev.priorTrend || ev.directionBias || "N/A")} | Move ${num(ev.priorTrendMovePct).toFixed(2)}% | Body ${num(ev.bodyRatio).toFixed(2)} | Close ${num(ev.closeLocation).toFixed(2)}`);
       lines.push(`  💧 1H volume ${Number.isFinite(Number(ev.volumeRatio1h)) ? `${num(ev.volumeRatio1h).toFixed(2)}x` : "N/A (feed has no usable volume)"}`);
       const mr = ev.marketRegime || {};
       if (mr.regime) lines.push(`  🌐 ${mr.regime} | BTC ${num(mr.btcScore).toFixed(0)} ETH ${num(mr.ethScore).toFixed(0)} Breadth ${num(mr.breadthScore).toFixed(0)} | ${mr.counterTrend ? "COUNTER" : "ALIGNED"}`);
-      lines.push(`  🛡️ SL ${item.sl > 0 ? formatPrice(item.sl) : "WAITING"} | ${num(ev.slDistancePct).toFixed(2)}% | ${String(ev.slMethod || "N/A")}`);
+      lines.push(`  🛡️ SL ${formatPrice(item.sl)} | ${num(ev.slDistancePct).toFixed(2)}% | ${String(ev.slMethod || "N/A")}`);
       const econ = item.economics || {};
       lines.push(`  💹 Gross ${formatUsd(econ.grossPnlUsd)} | Cost ${formatUsd(econ.totalCostUsd)} | Net ${formatUsd(econ.expectedNetUsd)} | TP move ${num(econ.tpMovePct).toFixed(2)}%`);
       lines.push(`  🚫 ${item.reason}`);
@@ -3014,7 +2964,7 @@ function cycleMessage(report) {
 
   lines.push(`🆔 Scan: ${report.scanId}`);
   lines.push(`🕐 ${new Date().toISOString()}`);
-  lines.push(`ℹ️ مسیر: Universe → Completed 1H Structure → LONG/SHORT Direction Lock → 1H SL/TP → Soft D1/H4 + BTC/ETH/SOL quality → Selection → Classic Execution → Verification`);
+  lines.push(`ℹ️ مسیر: Universe → Completed 1H Structure → Direction Lock → 1H SL/TP → Selection → Classic Execution → Verification`);
   return lines.join("\n");
 }
 
@@ -3361,7 +3311,7 @@ async function runCycle(event, env) {
     const check = candidateIsActionable(candidate);
     if (!check.ok) {
       blocked.push({
-        symbol: candidate.symbol, direction: candidate.direction, directionBias: candidate.directionBias || candidate.setupEvidence?.directionBias || null, entry: candidate.entry, sl: candidate.sl, tp: candidate.tp,
+        symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, sl: candidate.sl, tp: candidate.tp,
         score: candidate.score, edge: candidate.edge, risk: candidate.risk, setupType: candidate.setupType,
         reversalEvidence: candidate.reversalEvidence, reason: check.reason, setupEvidence: candidate.setupEvidence,
       });
@@ -3374,7 +3324,7 @@ async function runCycle(event, env) {
       actionable.push(enriched);
     } else {
       const item = {
-        symbol: candidate.symbol, direction: candidate.direction, directionBias: candidate.directionBias || candidate.setupEvidence?.directionBias || null, entry: candidate.entry, sl: candidate.sl, tp: candidate.tp,
+        symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, sl: candidate.sl, tp: candidate.tp,
         score: candidate.score, edge: candidate.edge, risk: candidate.risk, setupType: candidate.setupType,
         reversalEvidence: candidate.reversalEvidence, reason: economic.reason, setupEvidence: candidate.setupEvidence,
         economics: enriched.economics,
@@ -3444,14 +3394,14 @@ async function runCycle(event, env) {
     }
   }
 
-  const impulseCount = ranked.filter((x) => x.setupType === "CONTINUATION").length;
-  const flowCount = ranked.filter((x) => Number.isFinite(Number(x.setupEvidence?.volumeRatio1h)) && num(x.setupEvidence?.volumeRatio1h) >= 1.25).length;
-  const smartMoneyCount = ranked.filter((x) => Number.isFinite(Number(x.setupEvidence?.volumeRatio1h)) && num(x.setupEvidence?.volumeRatio1h) >= 1.50).length;
+  const impulseCount = ranked.filter((x) => x.setupType === "CONTINUATION" && x.continuationTrigger).length;
+  const flowCount = ranked.filter((x) => num(x.setupEvidence?.volumeRatio1h) >= 1.25).length;
+  const smartMoneyCount = ranked.filter((x) => num(x.setupEvidence?.volumeRatio1h) >= 1.50).length;
   const maCount = ranked.filter((x) => x.trendConfluence >= 3).length;
   const adxCount = ranked.filter((x) => num(x.indicators?.adx) >= 18).length;
-  const layerReadyCount = ranked.filter((x) => x.setupType === "CONTINUATION" || x.setupType === "REVERSAL").length;
+  const layerReadyCount = ranked.filter((x) => x.setupEvidence?.directionAuthority === "MTF_D1_H4_H1" && x.triggerActive).length;
   const layerFlowCount = flowCount;
-  const layerReversalCount = ranked.filter((x) => x.setupType === "REVERSAL").length;
+  const layerReversalCount = ranked.filter((x) => x.setupType === "REVERSAL" && x.reversalTrigger).length;
   const srCount = ranked.filter((x) => x.setupEvidence?.validExtreme > 0).length;
   const positiveMoveCount = ranked.filter((x) => x.direction && x.setupEvidence?.priorTrend && ((x.direction === "long" && num(x.setupEvidence.priorTrendMovePct) > 0) || (x.direction === "short" && num(x.setupEvidence.priorTrendMovePct) < 0))).length;
   const pullbackCount = ranked.filter((x) => x.setupType === "REVERSAL_WATCH").length;
@@ -3476,7 +3426,7 @@ async function runCycle(event, env) {
     layerReadyCount,
     layerFlowCount,
     layerReversalCount,
-    marketRegime: marketRegime ? { regime: marketRegime.regime, direction: marketRegime.direction, score: marketRegime.score, confidence: marketRegime.confidence, btcScore: marketRegime.btc?.score ?? marketRegime.assets?.BTC?.score ?? 50, ethScore: marketRegime.eth?.score ?? marketRegime.assets?.ETH?.score ?? 50, solScore: marketRegime.sol?.score ?? marketRegime.assets?.SOL?.score ?? 50, agreement: marketRegime.agreement ?? 0 } : null,
+    marketRegime: marketRegime ? { regime: marketRegime.regime, direction: marketRegime.direction, score: marketRegime.score, confidence: marketRegime.confidence, btcScore: marketRegime.btc?.score ?? 50, ethScore: marketRegime.eth?.score ?? 50, breadthScore: marketRegime.breadth?.score ?? 50, agreement: marketRegime.agreement ?? 0 } : null,
     srCount,
     positiveMoveCount,
     pullbackCount,
