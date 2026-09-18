@@ -535,8 +535,9 @@ async function saveState(state) {
 function cycleReportFingerprint(report) {
   const top = (Array.isArray(report?.topRejected) ? report.topRejected : []).slice(0, 3).map((x) => ({
     symbol: x?.symbol || "", direction: x?.direction || "", setupType: x?.setupType || "",
-    entry: num(x?.entry), sl: num(x?.sl), tp: num(x?.tp), rr: num(x?.rr),
+    entry: num(x?.entry), sl: num(x?.sl), tp: num(x?.tp), rr: reportRR(x),
     score: num(x?.score), edge: num(x?.edge), risk: num(x?.risk), reason: String(x?.reason || ""),
+    reasons: Array.isArray(x?.reasons) ? x.reasons.map(String) : [],
     regime: x?.setupEvidence?.marketRegime?.regime || "", macroDirection: x?.setupEvidence?.marketRegime?.direction || "",
   }));
   return JSON.stringify({
@@ -2870,7 +2871,23 @@ async function verifyPosition(sdk, account, candidate, timeoutMs = 45_000) {
   return { verified: false, position: null };
 }
 
+function reportRR(item) {
+  const direct = num(item?.rr, NaN);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const entry = num(item?.entry, NaN);
+  const sl = num(item?.sl, NaN);
+  const tp = num(item?.tp, NaN);
+  if (!(entry > 0 && sl > 0 && tp > 0)) return 0;
+  return Math.abs(tp - entry) / Math.max(Math.abs(entry - sl), 1e-12);
+}
+
+function reportReasons(item) {
+  const reasons = Array.isArray(item?.reasons) ? item.reasons.filter(Boolean).map(String) : [];
+  return reasons.length ? reasons : [String(item?.reason || "N/A")];
+}
+
 function tradeMessage(result) {
+  const rr = reportRR(result);
   if (result.executed) {
     return [
       `🟢 GMX BOT — LIVE CLASSIC TRADE`,
@@ -2879,17 +2896,19 @@ function tradeMessage(result) {
       `📌 Direction: ${result.direction.toUpperCase()}`,
       `💰 Entry: ${formatPrice(result.entry)}`,
       `🎯 TP: ${formatPrice(result.tp)}`,
-      `⚙️ Leverage: ${result.leverage.toFixed(1)}x`,
-      `📊 Allocation: ${(result.allocation * 100).toFixed(2)}%`,
+      `🛡️ SL: ${formatPrice(result.sl)}`,
+      `📐 RR: ${rr > 0 ? rr.toFixed(2) : "N/A"}`,
+      `⚙️ Leverage: ${num(result.leverage || CONFIG.leverage).toFixed(1)}x`,
+      `📊 Allocation: ${(num(result.allocation) * 100).toFixed(2)}%`,
       `📦 Notional: ${formatUsd(result.notionalUsd)}`,
       `💵 Collateral: ${formatUsd(result.collateralUsd)}`,
       `💰 Wallet: ${formatUsd(result.walletBefore)} → ${formatUsd(result.walletAfter)}`,
       `📉 Wallet Δ: ${formatUsd(result.walletAfter - result.walletBefore)}`,
       `⛓️ Mode: CLASSIC ON-CHAIN`,
       `🔗 Tx: ${result.txHash || "N/A"}`,
-      `🧪 Score: ${result.score.toFixed(1)} | Edge: ${result.edge.toFixed(1)} | Risk: ${result.risk.toFixed(1)}`,
+      `🧪 Score: ${num(result.score).toFixed(1)} | Edge: ${num(result.edge).toFixed(1)} | Risk: ${num(result.risk).toFixed(1)}`,
       `💹 Expected gross: ${formatUsd(result.expectedGrossPnlUsd)} | Net: ${formatUsd(result.expectedNetPnlUsd)} | Cost: ${formatUsd(result.estimatedTotalCostUsd)}`,
-      `🧠 Reasons: ${result.reasons.join(", ") || "N/A"}`,
+      `🧠 WHY ENTERED: ${reportReasons(result).join(" | ")}`,
       `✅ Position verified: ${result.verified ? "YES" : "PENDING"}`,
       `🕐 ${new Date().toISOString()}`,
     ].join("\n");
@@ -2902,10 +2921,12 @@ function tradeMessage(result) {
     `📌 Direction: ${String(result.direction || "N/A").toUpperCase()}`,
     `💰 Entry: ${formatPrice(result.entry)}`,
     `🎯 TP: ${formatPrice(result.tp)}`,
+    `🛡️ SL: ${formatPrice(result.sl)}`,
+    `📐 RR: ${rr > 0 ? rr.toFixed(2) : "N/A"}`,
     `⚙️ Leverage: ${CONFIG.leverage.toFixed(1)}x`,
     `📊 Allocation target: ${(CONFIG.walletAllocationPerPosition * 100).toFixed(2)}%`,
     `❌ Stage: ${result.stage || "EXECUTION"}`,
-    `❌ Reason: ${result.reason || "Unknown error"}`,
+    `❌ FAILURE REASON: ${result.reason || "Unknown error"}`,
     `🧪 Score: ${num(result.score).toFixed(1)} | Edge: ${num(result.edge).toFixed(1)} | Risk: ${num(result.risk).toFixed(1)}`,
     `🕐 ${new Date().toISOString()}`,
   ].join("\n");
@@ -2943,11 +2964,25 @@ function cycleMessage(report) {
       `📊 Allocation: ${(trade.allocation * 100).toFixed(2)}% | ⚙️ Leverage: ${CONFIG.leverage.toFixed(1)}x`,
       `📦 Notional: ${formatUsd(trade.notionalUsd)} | 💵 Collateral: ${formatUsd(trade.collateralUsd)}`,
       `🔗 Tx: ${trade.txHash || "N/A"}`,
-      `🧪 Score ${trade.score.toFixed(1)} | Edge ${trade.edge.toFixed(1)} | Risk ${trade.risk.toFixed(1)}`,
+      `📐 RR: ${reportRR(trade) > 0 ? reportRR(trade).toFixed(2) : "N/A"}`,
+      `🧪 Score ${num(trade.score).toFixed(1)} | Edge ${num(trade.edge).toFixed(1)} | Risk ${num(trade.risk).toFixed(1)}`,
       `💹 Expected gross: ${formatUsd(trade.expectedGrossPnlUsd)} | Net: ${formatUsd(trade.expectedNetPnlUsd)} | Cost: ${formatUsd(trade.estimatedTotalCostUsd)}`,
+      `🧠 WHY ENTERED: ${reportReasons(trade).join(" | ")}`,
       `🔒 Direction verified: ${trade.directionVerified ? "YES" : "NO"}`,
       `──────────────────`,
     );
+  }
+
+  if (Array.isArray(report.failures) && report.failures.length) {
+    lines.push(`🔴 EXECUTION FAILURES`);
+    for (const [index, failure] of report.failures.slice(0, 3).entries()) {
+      lines.push(`❌ FAILURE #${index + 1} — ${failure.symbol || "N/A"}`);
+      lines.push(`  📌 ${String(failure.direction || "N/A").toUpperCase()} | Entry ${formatPrice(failure.entry)} | SL ${formatPrice(failure.sl)} | TP ${formatPrice(failure.tp)}`);
+      lines.push(`  📐 RR: ${reportRR(failure) > 0 ? reportRR(failure).toFixed(2) : "N/A"}`);
+      lines.push(`  ❌ Stage: ${failure.stage || "EXECUTION"}`);
+      lines.push(`  ❌ Reason: ${failure.reason || "Unknown error"}`);
+      lines.push(`  🧪 Score ${num(failure.score).toFixed(1)} | Edge ${num(failure.edge).toFixed(1)} | Risk ${num(failure.risk).toFixed(1)}`);
+    }
   }
 
   if (report.topRejected.length) {
@@ -2956,6 +2991,7 @@ function cycleMessage(report) {
       lines.push(`• ${item.symbol}`);
       lines.push(`  📌 ${String(item.direction || "N/A").toUpperCase()} | Entry ${formatPrice(item.entry)} | SL ${formatPrice(item.sl)} | TP ${formatPrice(item.tp)}`);
       lines.push(`  🧠 ${String(item.setupType || "N/A")} | Score ${num(item.score).toFixed(1)} | Edge ${num(item.edge).toFixed(1)} | Risk ${num(item.risk).toFixed(1)}`);
+      lines.push(`  📐 RR: ${reportRR(item) > 0 ? reportRR(item).toFixed(2) : "N/A"}`);
       const ev = item.setupEvidence || {};
       lines.push(`  🕐 1H trend ${String(ev.priorTrend || "N/A")} | Move ${num(ev.priorTrendMovePct).toFixed(2)}% | Body ${num(ev.bodyRatio).toFixed(2)} | Close ${num(ev.closeLocation).toFixed(2)}`);
       lines.push(`  💧 1H volume ${num(ev.volumeRatio1h).toFixed(2)}x`);
@@ -2964,7 +3000,7 @@ function cycleMessage(report) {
       lines.push(`  🛡️ SL ${formatPrice(item.sl)} | ${num(ev.slDistancePct).toFixed(2)}% | ${String(ev.slMethod || "N/A")}`);
       const econ = item.economics || {};
       lines.push(`  💹 Gross ${formatUsd(econ.grossPnlUsd)} | Cost ${formatUsd(econ.totalCostUsd)} | Net ${formatUsd(econ.expectedNetUsd)} | TP move ${num(econ.tpMovePct).toFixed(2)}%`);
-      lines.push(`  🚫 ${item.reason}`);
+      lines.push(`  🚫 BLOCK REASON: ${item.reason || "N/A"}`);
     }
   }
 
@@ -3450,6 +3486,7 @@ async function runCycle(event, env) {
     executedCount: executions.length,
     failureCount: failures.length,
     executions,
+    failures,
     topRejected: blocked,
   };
 
