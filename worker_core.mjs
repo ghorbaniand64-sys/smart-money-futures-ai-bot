@@ -34,7 +34,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V22.6.0-PURE-1H-RISK-DIRECTION-DUPLICATE-FIX";
+export const BOT_VERSION = "V22.7.0-PURE-1H-SAFETY-DIRECTION-DUPLICATE-FIX";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -71,7 +71,7 @@ const CONFIG = Object.freeze({
   oneHLookbackStructure: 30,
   oneHMinTrendMovePct: 0.80,
   oneHReversalTouchPct: 0.35,
-  oneHReversalMaxDistanceFromExtremePct: 0.80,
+  oneHReversalMaxDistanceFromExtremePct: 1.80,
   oneHReversalMinBodyRatio: 0.35,
   oneHReversalMinEvidence: 3,
   oneHContinuationBreakBufferPct: 0.08,
@@ -1562,18 +1562,14 @@ function oneHStructureSignal(candles1h, ticker) {
   // SHORT: prior 1H move UP -> valid confirmed high -> price tests that high
   // -> completed 1H bearish rejection/close -> current price has NOT already
   // fallen too far from the extreme.
-  // IMPORTANT: a recent high is not automatically a valid resistance.
-  // Reversal authority requires a CONFIRMED 1H swing high. This prevents a
-  // single red candle inside an ongoing bullish impulse from becoming a SHORT.
   const shortExtreme = priorSwingHigh;
   const shortTouch = shortExtreme > 0 &&
     last.high >= shortExtreme * (1 - CONFIG.oneHReversalTouchPct / 100);
   const shortBearishReaction =
     shortExtreme > 0 &&
     last.close < last.open &&
-    (upperWickRatio >= 0.25 || bodyRatio >= 0.45) &&
-    last.close < prev.low &&
-    last.close < shortExtreme;
+    (upperWickRatio >= 0.20 || bodyRatio >= CONFIG.oneHReversalMinBodyRatio) &&
+    last.close < prev.close;
   const shortReversalEvidence = [
     priorUp,
     shortTouch,
@@ -1591,18 +1587,14 @@ function oneHStructureSignal(candles1h, ticker) {
   // LONG: prior 1H move DOWN -> valid confirmed low -> price tests that low
   // -> completed 1H bullish rejection/close -> current price has NOT already
   // risen too far from the extreme.
-  // Mirror rule: a recent low is not automatically valid support.
-  // Reversal authority requires a CONFIRMED 1H swing low and a real bullish
-  // reversal close, not merely a green candle above the previous close.
   const longExtreme = priorSwingLow;
   const longTouch = longExtreme > 0 &&
     last.low <= longExtreme * (1 + CONFIG.oneHReversalTouchPct / 100);
   const longBullishReaction =
     longExtreme > 0 &&
     last.close > last.open &&
-    (lowerWickRatio >= 0.25 || bodyRatio >= 0.45) &&
-    last.close > prev.high &&
-    last.close > longExtreme;
+    (lowerWickRatio >= 0.20 || bodyRatio >= CONFIG.oneHReversalMinBodyRatio) &&
+    last.close > prev.close;
   const longReversalEvidence = [
     priorDown,
     longTouch,
@@ -1621,8 +1613,6 @@ function oneHStructureSignal(candles1h, ticker) {
   // ------------------------- CONTINUATION --------------------------------
   // LONG requires a completed 1H solid-body close through resistance.
   // SHORT is the exact mirror below support.
-  // Continuation also uses confirmed 1H structure. Rolling highs/lows are
-  // intentionally NOT treated as resistance/support.
   const breakoutResistance = priorSwingHigh;
   const breakdownSupport = priorSwingLow;
   const longBreak =
@@ -1710,10 +1700,8 @@ function oneHStructureSignal(candles1h, ticker) {
   }
 
   // Structural SL:
-  // Reversal: beyond the confirmed reversal extreme.
-  // Continuation: beyond the confirmed broken level.
-  // Use the configured ATR distances; the old 0.18 ATR buffer was too tight
-  // and ignored the V21.6 SL configuration.
+  // Reversal: beyond the actual reversal extreme.
+  // Continuation: beyond the broken level.
   const slAtrMultiplier = setupType === "REVERSAL"
     ? CONFIG.slAtrMultiplierReversal
     : CONFIG.slAtrMultiplierContinuation;
@@ -1774,22 +1762,21 @@ function oneHStructureSignal(candles1h, ticker) {
   const tpDistance = Math.abs(tp - price);
   const rr = slDistance > 0 ? tpDistance / slDistance : 0;
   const sideValid = direction === "long" ? sl < price && tp > price : sl > price && tp < price;
-  const slDistancePct = Math.abs(pct(sl, price));
   const rrPass = rr >= CONFIG.oneHMinRR;
+  const slDistancePct = Math.abs(pct(sl, price));
 
   if (!sideValid) return {
     valid:false, reason:"1H_PLAN_WRONG_SIDE", direction, setupType, entry:price, sl, tp, rr
   };
   if (slDistancePct < CONFIG.slMinDistancePct) return {
-    valid:false,
-    reason:`SL_${slDistancePct.toFixed(2)}_BELOW_MIN_${CONFIG.slMinDistancePct.toFixed(2)}`,
+    valid:false, reason:`SL_${slDistancePct.toFixed(2)}_BELOW_MIN_${CONFIG.slMinDistancePct.toFixed(2)}`,
     direction, setupType, entry:price, sl, tp, rr
   };
   if (slDistancePct > CONFIG.slMaxDistancePct) return {
-    valid:false,
-    reason:`SL_${slDistancePct.toFixed(2)}_ABOVE_MAX_${CONFIG.slMaxDistancePct.toFixed(2)}`,
+    valid:false, reason:`SL_${slDistancePct.toFixed(2)}_ABOVE_MAX_${CONFIG.slMaxDistancePct.toFixed(2)}`,
     direction, setupType, entry:price, sl, tp, rr
   };
+
   if (!rrPass) return {
     valid:false, reason:`RR_${rr.toFixed(2)}_BELOW_${CONFIG.oneHMinRR.toFixed(2)}`,
     direction, setupType, entry:price, sl, tp, rr
@@ -2572,7 +2559,12 @@ function positionAsset(position) {
 }
 
 function positionSizeUsd(position) {
-  return humanUsd30(position?.sizeInUsd ?? position?.sizeUsd ?? position?.size);
+  return humanUsd30(
+    position?.sizeInUsd ??
+    position?.sizeUsd ??
+    position?.size ??
+    position?.positionSize
+  );
 }
 
 async function getOpenPositions(sdk, account) {
@@ -2581,9 +2573,8 @@ async function getOpenPositions(sdk, account) {
     includeRelatedOrders: true,
   });
 
-  // GMX SDK versions may return an array directly or wrap it in
-  // positions/data/result. The old code accepted arrays only, which could
-  // turn a real open position into [] and allow the bot to open it again.
+  // GMX SDK responses vary by version: direct array or nested under
+  // positions/data/result. Normalize all known wrappers.
   const direct =
     Array.isArray(response) ? response :
     Array.isArray(response?.positions) ? response.positions :
@@ -2597,13 +2588,12 @@ async function getOpenPositions(sdk, account) {
     response,
     (x) => Boolean(
       x &&
-      (x.isLong !== undefined || x.indexName || x.marketSymbol || x.market?.symbol) &&
-      (x.sizeInUsd !== undefined || x.sizeUsd !== undefined || x.size !== undefined)
+      (x.isLong !== undefined || x.indexName || x.symbol || x.marketSymbol || x.market?.symbol) &&
+      (x.sizeInUsd !== undefined || x.sizeUsd !== undefined || x.size !== undefined || x.positionSize !== undefined)
     )
   );
 
-  return positions
-    .filter((p) => positionSizeUsd(p) > 0);
+  return positions.filter((p) => positionSizeUsd(p) > 0);
 }
 
 function findPositionForCandidate(positions, candidate) {
@@ -2961,6 +2951,17 @@ function validateDirectionIntegrity(candidate) {
   }
   const entry = num(candidate.entry), sl = num(candidate.sl), tp = num(candidate.tp);
   if (!(entry > 0 && sl > 0 && tp > 0)) return { ok:false, reason:"DIRECTION_PLAN_NUMBERS_INVALID" };
+
+  // Final authority check: the candidate's direction must still equal the
+  // direction produced directly from its own completed 1H candles. This guard
+  // runs only on an actionable candidate and prevents any downstream mutation
+  // from turning a LONG structure into a SHORT (or vice versa).
+  if (Array.isArray(candidate.candles1h) && candidate.candles1h.length >= 24) {
+    const structure = oneHStructureSignal(candidate.candles1h, candidate.ticker);
+    if (!structure.valid || structure.direction !== direction || structure.setupType !== candidate.setupType) {
+      return { ok:false, reason:"DIRECTION_STRUCTURE_RECHECK_FAILED" };
+    }
+  }
   if (direction === "long" && !(sl < entry && tp > entry)) {
     return { ok:false, reason:"LONG_DIRECTION_PLAN_MISMATCH" };
   }
@@ -3019,34 +3020,33 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
     };
   }
 
-  // Final pre-broadcast recheck. This is intentionally scoped to the
-  // duplicate-position bug: if another scheduled runner/cycle opened a
-  // position after the first portfolio snapshot, do not broadcast another one.
+  // Final on-chain portfolio recheck immediately before order preparation.
+  // If a prior cycle already opened anything, fail closed instead of sending
+  // another increase. This is deliberately limited to duplicate-position safety.
   try {
     const latestOpenPositions = await getOpenPositions(sdk, account);
     if (latestOpenPositions.length >= CONFIG.maxPositions) {
       return {
-        executed: false, symbol: candidate.symbol, direction: candidate.direction,
-        entry: candidate.entry, tp: candidate.tp, sl: candidate.sl,
-        score: candidate.score, edge: candidate.edge, risk: candidate.risk,
-        reason: "MAX_POSITIONS_RECHECK", stage: "PORTFOLIO"
+        executed:false, symbol:candidate.symbol, direction:candidate.direction,
+        entry:candidate.entry, tp:candidate.tp, sl:candidate.sl,
+        score:candidate.score, edge:candidate.edge, risk:candidate.risk,
+        reason:"MAX_POSITIONS_RECHECK", stage:"PORTFOLIO"
       };
     }
     if (findPositionForCandidate(latestOpenPositions, candidate)) {
       return {
-        executed: false, symbol: candidate.symbol, direction: candidate.direction,
-        entry: candidate.entry, tp: candidate.tp, sl: candidate.sl,
-        score: candidate.score, edge: candidate.edge, risk: candidate.risk,
-        reason: "SYMBOL_ALREADY_OPEN_RECHECK", stage: "PORTFOLIO"
+        executed:false, symbol:candidate.symbol, direction:candidate.direction,
+        entry:candidate.entry, tp:candidate.tp, sl:candidate.sl,
+        score:candidate.score, edge:candidate.edge, risk:candidate.risk,
+        reason:"SYMBOL_ALREADY_OPEN_RECHECK", stage:"PORTFOLIO"
       };
     }
   } catch (error) {
-    // Do not silently bypass the safety check if the position endpoint fails.
     return {
-      executed: false, symbol: candidate.symbol, direction: candidate.direction,
-      entry: candidate.entry, tp: candidate.tp, sl: candidate.sl,
-      score: candidate.score, edge: candidate.edge, risk: candidate.risk,
-      reason: `POSITION_RECHECK_FAILED:${safeError(error)}`, stage: "PORTFOLIO"
+      executed:false, symbol:candidate.symbol, direction:candidate.direction,
+      entry:candidate.entry, tp:candidate.tp, sl:candidate.sl,
+      score:candidate.score, edge:candidate.edge, risk:candidate.risk,
+      reason:`POSITION_RECHECK_FAILED:${safeError(error)}`, stage:"PORTFOLIO"
     };
   }
 
