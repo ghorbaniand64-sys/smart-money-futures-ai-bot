@@ -50,7 +50,7 @@ const CONFIG = Object.freeze({
   walletAllocationPerPosition: 1.00,
   maxTotalWalletAllocation: 1.00,
   leverage: 20,
-  copyMaxLeverage: 100,
+  copyMaxLeverage: 20,
   copyMaxEntryDistancePct: 1.25,
   copyRecentDays: 30,
   copyTradeLimit: 100,
@@ -3231,12 +3231,34 @@ function enrichWithIntelligence(candidates, intelligence) {
 }
 
 
+// ======================================================
+// V24 COPY-TRADER CONFIGURATION
+// The five wallets below are the five trader CSV wallets supplied for this
+// engine. GitHub Actions Variables can override them one-by-one.
+// Leverage is capped at 20x in code and can be configured with
+// GMX_COPY_MAX_LEVERAGE, but can never exceed 20x.
+// ======================================================
+const COPY_TRADER_DEFAULTS = Object.freeze({
+  1: "0x4f22d0f16E770C7F03726295C86aAEb7D3260baa",
+  2: "0xa9A94929d7ECBF0cB1191C08386e64146c76B9Be",
+  3: "0x1C5288C47EA4c2D56169f5883FCaE6574181fd0D",
+  4: "0x450ABfD5563620cf7d3841276F9c106a9Fb443c1",
+  5: "0xfeEC08Bd35eCEe4532Bf404D4E15395ceeeb1CAe",
+});
+
+function copyMaxLeverage(env) {
+  const requested = Number(env?.GMX_COPY_MAX_LEVERAGE ?? CONFIG.copyMaxLeverage);
+  if (!Number.isFinite(requested) || requested <= 0) return CONFIG.copyMaxLeverage;
+  return clamp(requested, 1, 20);
+}
+
 function copyTraderAddresses(env) {
   const list = [];
   const csv = String(env?.GMX_COPY_TRADERS || "").split(",");
-  for (const x of csv) list.push(x.trim());
+  for (const x of csv) if (x.trim()) list.push(x.trim());
   for (let i = 1; i <= CONFIG.copyTraderCount; i++) {
-    const x = String(env?.[`GMX_COPY_TRADER_${i}`] || "").trim();
+    const fallback = COPY_TRADER_DEFAULTS[i];
+    const x = String(env?.[`GMX_COPY_TRADER_${i}`] || fallback).trim();
     if (x) list.push(x);
   }
   return [...new Set(list.filter(x => /^0x[a-fA-F0-9]{40}$/.test(x)).map(x => x.toLowerCase()))].slice(0, CONFIG.copyTraderCount);
@@ -3415,7 +3437,7 @@ async function buildCopyTraderEngine(sdk, markets, tickers, state, env) {
     const distance = current > 0 && c.entry > 0 ? Math.abs(pct(current,c.entry)) : Infinity;
     const maxDistance = Number(env?.COPY_MAX_ENTRY_DISTANCE_PCT || CONFIG.copyMaxEntryDistancePct);
     const eligible = Number.isFinite(distance) && distance <= maxDistance;
-    const leverage = clamp(c.leverage || 1, 1, Number(env?.COPY_MAX_LEVERAGE || CONFIG.copyMaxLeverage));
+    const leverage = clamp(c.leverage || 1, 1, copyMaxLeverage(env));
     return {
       symbol:c.symbol, direction:c.direction, market:markets.find(m=>normalizeAsset(marketDisplaySymbol(m))===c.asset) || null,
       entry:current, sourceEntry:c.entry, tp:c.tp, sl:c.sl, leverage,

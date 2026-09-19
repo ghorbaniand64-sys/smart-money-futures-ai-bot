@@ -1,27 +1,16 @@
 GMX V24 COPY-TRADER ENGINE
 
-Signal engine:
-- Reads exactly up to 5 configured GMX trader addresses.
-- Reads live open positions + recent GMX trade history.
-- Ranks traders using recent PnL, win rate, consistency, drawdown and activity.
-- Selects one copy opportunity.
-- Uses source trader direction and leverage.
-- Uses 100% available wallet collateral.
-- Rejects late copies when current price is farther than COPY_MAX_ENTRY_DISTANCE_PCT from source entry.
-- Uses source TP/SL when GMX exposes related orders.
-- If the source has no TP/SL, the copy is tracked for source-close synchronization.
-- Detects source-position closure and closes the bot's copied position using the existing Classic GMX transaction path.
-- Does not use the old 5M/1H technical signal engine, BTC/ETH/SOL macro gate, radar, or old scoring path.
+GitHub Actions Repository Variables (recommended explicit configuration):
 
-GitHub Actions environment mapping required:
-GMX_COPY_TRADERS: ${{ vars.GMX_COPY_TRADERS }}
+GMX_COPY_TRADER_1 = 0x4f22d0f16E770C7F03726295C86aAEb7D3260baa
+GMX_COPY_TRADER_2 = 0xa9A94929d7ECBF0cB1191C08386e64146c76B9Be
+GMX_COPY_TRADER_3 = 0x1C5288C47EA4c2D56169f5883FCaE6574181fd0D
+GMX_COPY_TRADER_4 = 0x450ABfD5563620cf7d3841276F9c106a9Fb443c1
+GMX_COPY_TRADER_5 = 0xfeEC08Bd35eCEe4532Bf404D4E15395ceeeb1CAe
+GMX_COPY_MAX_LEVERAGE = 20
+COPY_MAX_ENTRY_DISTANCE_PCT = 1.25
 
-Set GMX_COPY_TRADERS to five comma-separated GMX wallet addresses:
-0x...,0x...,0x...,0x...,0x...
+The worker also contains these five wallet defaults, so the copy engine remains configured even if the five trader variables are omitted.
+GMX_COPY_MAX_LEVERAGE is hard-capped at 20x by code. The execution path uses the selected candidate leverage; GMX order preparation/submission mechanics are unchanged.
 
-Optional:
-COPY_MAX_ENTRY_DISTANCE_PCT: 1.25
-COPY_MAX_LEVERAGE: 100
-
-The worker filename MUST remain exactly:
-worker_core.mjs
+Worker filename MUST remain exactly: worker_core.mjs
