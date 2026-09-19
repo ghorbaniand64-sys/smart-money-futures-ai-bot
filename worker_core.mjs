@@ -34,7 +34,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const BOT_VERSION = "V24.0.0-GMX-COPY-TRADER-ENGINE";
+export const BOT_VERSION = "V23.2.1-H1-SIGNAL-DIRECT-EXECUTION";
 export const BOT_BUILD = BOT_VERSION;
 
 const CHAIN_ID = 42161;
@@ -49,12 +49,18 @@ const CONFIG = Object.freeze({
   maxPositions: 1,
   walletAllocationPerPosition: 1.00,
   maxTotalWalletAllocation: 1.00,
-  leverage: 20,
-  copyMaxLeverage: 100,
-  copyMaxEntryDistancePct: 1.25,
-  copyRecentDays: 30,
-  copyTradeLimit: 100,
-  copyTraderCount: 5,
+
+  // Copy-engine safety cap. The GitHub Actions Variable
+  // GMX_COPY_MAX_LEVERAGE controls the configured leverage, but it
+  // can NEVER exceed the hard safety ceiling of 20x.
+  copyMaxLeverage: Math.min(
+    Math.max(Number(process.env.GMX_COPY_MAX_LEVERAGE || 20), 1),
+    20
+  ),
+  leverage: Math.min(
+    Math.max(Number(process.env.GMX_COPY_MAX_LEVERAGE || 20), 1),
+    20
+  ),
 
   // V23: strict top-down authority: D1 -> H4 -> H1.
   // D1/H4 establish directional context; completed H1 supplies the entry trigger.
@@ -2075,6 +2081,17 @@ function calculateLogicalTp(entry, direction, _candles1h, _unused, _atr1h, setup
   };
 }
 
+function resolveCopyLeverage(candidate) {
+  const requested = Number(
+    candidate?.copyLeverage ??
+    candidate?.traderLeverage ??
+    candidate?.sourceLeverage ??
+    CONFIG.leverage
+  );
+  if (!Number.isFinite(requested) || requested <= 0) return CONFIG.leverage;
+  return Math.min(requested, CONFIG.copyMaxLeverage, 20);
+}
+
 function estimateEconomicOpportunity(candidate, walletUsd) {
   const wallet = Math.max(num(walletUsd), 0);
   const allocation = CONFIG.walletAllocationPerPosition;
@@ -2785,18 +2802,7 @@ async function prepareClassicIncrease({
 }) {
   const size = toUnits(sizeUsd.toFixed(6), 30);
   const collateral = toUnits(collateralUsd.toFixed(6), 6);
-  const tpsl = [
-    ...(Number(tp) > 0 ? [{
-      type: "take-profit",
-      triggerPrice: toUnits(Number(tp).toFixed(12), 30),
-      size,
-    }] : []),
-    ...(CONFIG.stopLossEnabled && Number(sl) > 0 ? [{
-      type: "stop-loss",
-      triggerPrice: toUnits(Number(sl).toFixed(12), 30),
-      size,
-    }] : []),
-  ];
+  const trigger = toUnits(tp.toFixed(12), 30);
 
   return sdk.prepareOrder({
     kind: "increase",
@@ -2813,7 +2819,18 @@ async function prepareClassicIncrease({
     from: account,
     slippage: 50,
     executionFeeBufferBps: 3000,
-    ...(tpsl.length ? { tpsl } : {}),
+    tpsl: [
+      {
+        type: "take-profit",
+        triggerPrice: trigger,
+        size,
+      },
+      ...(CONFIG.stopLossEnabled && Number(sl) > 0 ? [{
+        type: "stop-loss",
+        triggerPrice: toUnits(Number(sl).toFixed(12), 30),
+        size,
+      }] : []),
+    ],
   });
 }
 
@@ -2963,15 +2980,25 @@ function cycleMessage(report) {
 }
 
 function validateDirectionIntegrity(candidate) {
-  const direction=String(candidate?.direction||"").toLowerCase();
-  if (direction!=="long" && direction!=="short") return {ok:false,reason:"DIRECTION_INVALID_OR_MISSING"};
-  const authority=String(candidate?.directionAuthority||candidate?.setupEvidence?.directionAuthority||"");
-  if (authority!=="COPY_TRADER" && authority!=="1H_STRUCTURE") return {ok:false,reason:"DIRECTION_AUTHORITY_INVALID"};
-  const entry=num(candidate.entry);
-  if (!(entry>0)) return {ok:false,reason:"ENTRY_INVALID"};
-  return {ok:true,direction};
+  const direction = String(candidate?.direction || "").toLowerCase();
+  if (direction !== "long" && direction !== "short") {
+    return { ok:false, reason:"DIRECTION_INVALID_OR_MISSING" };
+  }
+  if (candidate?.directionAuthority !== "1H_STRUCTURE" ||
+      candidate?.setupEvidence?.directionAuthority !== "1H_STRUCTURE" ||
+      candidate?.setupEvidence?.directionLocked !== true) {
+    return { ok:false, reason:"DIRECTION_NOT_LOCKED_TO_1H_STRUCTURE" };
+  }
+  const entry = num(candidate.entry), sl = num(candidate.sl), tp = num(candidate.tp);
+  if (!(entry > 0 && sl > 0 && tp > 0)) return { ok:false, reason:"DIRECTION_PLAN_NUMBERS_INVALID" };
+  if (direction === "long" && !(sl < entry && tp > entry)) {
+    return { ok:false, reason:"LONG_DIRECTION_PLAN_MISMATCH" };
+  }
+  if (direction === "short" && !(sl > entry && tp < entry)) {
+    return { ok:false, reason:"SHORT_DIRECTION_PLAN_MISMATCH" };
+  }
+  return { ok:true, direction };
 }
-
 
 async function executeCandidate(runtime, candidate, wallet, openPositions, env) {
   const { sdk, signer, account } = runtime;
@@ -3005,21 +3032,15 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
   }
 
   const walletBefore = wallet.walletUsd;
-  const allocation = num(candidate?.walletAllocation ?? candidate?.allocation, CONFIG.walletAllocationPerPosition);
-  const leverage = num(candidate?.leverage, CONFIG.leverage);
-  const collateralUsd = walletBefore * allocation;
-  const notionalUsd = collateralUsd * leverage;
-  const economics = candidate?.signalMode === "COPY_TRADER"
-    ? { grossPnlUsd:0, expectedNetUsd:0, totalCostUsd:0 }
-    : estimateEconomicOpportunity(candidate, walletBefore);
+  const collateralUsd = walletBefore * CONFIG.walletAllocationPerPosition;
+  const notionalUsd = collateralUsd * CONFIG.leverage;
+  const economics = estimateEconomicOpportunity(candidate, walletBefore);
 
   if (collateralUsd <= 0) {
     return { executed: false, symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp, score: candidate.score, edge: candidate.edge, risk: candidate.risk, reason: "ZERO_COLLATERAL", stage: "BALANCE" };
   }
 
-  const economicCheck = candidate?.signalMode === "COPY_TRADER"
-    ? { ok:true, reason:"COPY_TRADER_ECONOMICS_NON_BLOCKING" }
-    : economicGate(candidate, walletBefore);
+  const economicCheck = economicGate(candidate, walletBefore);
   if (!economicCheck.ok) {
     return {
       executed: false, symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, tp: candidate.tp,
@@ -3087,8 +3108,8 @@ async function executeCandidate(runtime, candidate, wallet, openPositions, env) 
       score: candidate.score,
       edge: candidate.edge,
       risk: candidate.risk,
-      allocation,
-      leverage,
+      allocation: CONFIG.walletAllocationPerPosition,
+      leverage: CONFIG.leverage,
       notionalUsd,
       collateralUsd,
       walletBefore,
@@ -3230,373 +3251,275 @@ function enrichWithIntelligence(candidates, intelligence) {
   });
 }
 
-
-function copyTraderAddresses(env) {
-  const list = [];
-  const csv = String(env?.GMX_COPY_TRADERS || "").split(",");
-  for (const x of csv) list.push(x.trim());
-  for (let i = 1; i <= CONFIG.copyTraderCount; i++) {
-    const x = String(env?.[`GMX_COPY_TRADER_${i}`] || "").trim();
-    if (x) list.push(x);
-  }
-  return [...new Set(list.filter(x => /^0x[a-fA-F0-9]{40}$/.test(x)).map(x => x.toLowerCase()))].slice(0, CONFIG.copyTraderCount);
-}
-
-function tradeRows(payload) {
-  if (Array.isArray(payload)) return payload;
-  return Array.isArray(payload?.trades) ? payload.trades :
-    Array.isArray(payload?.data) ? payload.data :
-    Array.isArray(payload?.items) ? payload.items : [];
-}
-
-function tradePnl(x) {
-  for (const k of ["realizedPnlUsd","realizedPnl","pnlAfterFees","pnlUsd","pnl","profitUsd","profit"]) {
-    if (x?.[k] !== undefined) return humanUsd30(x[k]);
-  }
-  return 0;
-}
-
-function tradeTimestamp(x) {
-  return num(x?.timestamp ?? x?.blockTimestamp ?? x?.createdAt ?? x?.updatedAt ?? x?.executedAt ?? 0);
-}
-
-function positionEntry(position) {
-  return normalizePrice(position?.entryPrice ?? position?.entryPriceUsd ?? position?.averageEntryPrice ?? position?.avgEntryPrice ?? 0);
-}
-
-function positionLeverage(position) {
-  const direct = num(position?.leverage);
-  if (direct > 0) return direct > 1000 ? direct / 100 : direct;
-  const size = humanUsd30(position?.sizeInUsd ?? position?.sizeUsd ?? position?.size);
-  const collateral = humanUsd30(position?.collateralUsd ?? position?.collateral ?? position?.initialCollateralUsd);
-  return size > 0 && collateral > 0 ? size / collateral : 0;
-}
-
-function positionRelatedOrders(position) {
-  const rows = [];
-  const candidates = [
-    ...(Array.isArray(position?.relatedOrders) ? position.relatedOrders : []),
-    ...(Array.isArray(position?.orders) ? position.orders : []),
-  ];
-  for (const x of candidates) rows.push(x);
-  return rows;
-}
-
-function extractExitPrices(position, direction) {
-  let tp = 0, sl = 0;
-  const rows = positionRelatedOrders(position);
-  for (const o of rows) {
-    const type = String(o?.orderType ?? o?.type ?? o?.orderTypeName ?? o?.name ?? "").toLowerCase();
-    const price = normalizePrice(o?.triggerPrice ?? o?.triggerPriceUsd ?? o?.price ?? 0);
-    if (!(price > 0)) continue;
-    if (type.includes("take") || type.includes("profit") || type === "tp") tp = price;
-    if (type.includes("stop") || type.includes("loss") || type === "sl") sl = price;
-  }
-  for (const [keys, target] of [
-    [["takeProfitPrice","takeProfit","tp"], "tp"],
-    [["stopLossPrice","stopLoss","sl"], "sl"],
-  ]) {
-    for (const k of keys) {
-      const v = normalizePrice(position?.[k] ?? 0);
-      if (v > 0) { if (target === "tp") tp = v; else sl = v; break; }
-    }
-  }
-  if (direction === "long") {
-    if (!(tp > 0 && tp > positionEntry(position))) tp = 0;
-    if (!(sl > 0 && sl < positionEntry(position))) sl = 0;
-  } else {
-    if (!(tp > 0 && tp < positionEntry(position))) tp = 0;
-    if (!(sl > 0 && sl > positionEntry(position))) sl = 0;
-  }
-  return { tp, sl };
-}
-
-function positionKeyForCopy(address, position) {
-  return [
-    address.toLowerCase(),
-    positionAsset(position),
-    position?.isLong === false ? "short" : "long",
-    String(position?.positionKey || position?.key || "")
-  ].join("|");
-}
-
-function summarizeTraderPerformance(trades) {
-  const rows = tradeRows(trades).filter(x => tradeTimestamp(x) > 0);
-  const ordered = rows.sort((a,b) => tradeTimestamp(a) - tradeTimestamp(b)).slice(-CONFIG.copyTradeLimit);
-  const pnls = ordered.map(tradePnl);
-  const wins = pnls.filter(x => x > 0).length;
-  const losses = pnls.filter(x => x < 0).length;
-  const decided = wins + losses;
-  let equity = 0, peak = 0, maxDd = 0;
-  for (const p of pnls) {
-    equity += p; peak = Math.max(peak, equity); maxDd = Math.max(maxDd, peak - equity);
-  }
-  const totalPnl = pnls.reduce((a,b)=>a+b,0);
-  const recent = ordered.slice(-20).map(tradePnl);
-  const recentPnl = recent.reduce((a,b)=>a+b,0);
-  const mean = pnls.length ? totalPnl / pnls.length : 0;
-  const variance = pnls.length ? pnls.reduce((s,x)=>s + (x-mean)**2,0)/pnls.length : 0;
-  const stdev = Math.sqrt(variance);
-  const consistency = stdev > 0 ? clamp((mean / stdev + 0.5) * 100, 0, 100) : (mean > 0 ? 75 : 50);
-  const winRate = decided ? wins / decided * 100 : 50;
-  const recentWinRate = recent.length ? recent.filter(x=>x>0).length / Math.max(1,recent.filter(x=>x!==0).length) * 100 : winRate;
-  const drawdownPenalty = totalPnl > 0 ? clamp(maxDd / Math.max(totalPnl,1) * 100,0,100) : 100;
-  const drawdownScore = 100 - drawdownPenalty;
-  const activityScore = clamp(ordered.length / 30 * 100, 0, 100);
-  const recentScore = clamp(50 + recentPnl / Math.max(1, Math.abs(totalPnl) + Math.abs(recentPnl)) * 50, 0, 100);
-  const score = Number(clamp(
-    recentScore*0.25 + winRate*0.25 + recentWinRate*0.10 + consistency*0.20 + drawdownScore*0.10 + activityScore*0.10,
-    0,100
-  ).toFixed(1));
-  return { trades: ordered.length, totalPnl, recentPnl, winRate, recentWinRate, consistency, maxDrawdown:maxDd, drawdownScore, activityScore, score };
-}
-
-async function readCopyTrader(sdk, address) {
-  const since = Math.floor(Date.now()/1000) - CONFIG.copyRecentDays * 86400;
-  const [positionsRaw, tradesRaw] = await Promise.all([
-    sdk.fetchPositionsInfo({ address, includeRelatedOrders:true }),
-    sdk.fetchTrades({ address, since, limit: CONFIG.copyTradeLimit }),
-  ]);
-  const positions = (Array.isArray(positionsRaw) ? positionsRaw : []).filter(p => positionSizeUsd(p) > 0);
-  const performance = summarizeTraderPerformance(tradesRaw);
-  const enriched = positions.map(p => {
-    const direction = p?.isLong === false ? "short" : "long";
-    const entry = positionEntry(p);
-    const exits = extractExitPrices(p, direction);
-    const sizeUsd = positionSizeUsd(p);
-    const leverage = positionLeverage(p);
-    return {
-      key: positionKeyForCopy(address,p),
-      symbol: marketDisplaySymbol(p) || p?.indexName || p?.symbol || positionAsset(p),
-      asset: positionAsset(p),
-      direction, entry, sizeUsd, leverage, tp:exits.tp, sl:exits.sl,
-      pnlUsd: humanUsd30(p?.pnlAfterFees ?? p?.pnl ?? p?.unrealizedPnlUsd ?? 0),
-      positionValueUsd: humanUsd30(p?.positionValueInUsd ?? p?.positionValueUsd ?? 0),
-      raw:p,
-    };
-  });
-  return { address, positions: enriched, performance, ok:true };
-}
-
-function consensusCopyCandidates(traders, tickers) {
-  const all = [];
-  for (const t of traders) for (const p of t.positions) {
-    const ticker = tickers.find(x => normalizeAsset(marketDisplaySymbol(x)) === p.asset || normalizeAsset(x?.symbol) === p.asset);
-    all.push({ ...p, trader:t.address, traderPerformance:t.performance, currentPrice:tickerPrice(ticker), traderScore:t.performance.score });
-  }
-  const groups = new Map();
-  for (const x of all) {
-    const key = `${x.asset}|${x.direction}`;
-    const g = groups.get(key) || {asset:x.asset,direction:x.direction,items:[]};
-    g.items.push(x); groups.set(key,g);
-  }
-  return [...groups.values()].map(g => {
-    const uniqueTraders = new Set(g.items.map(x=>x.trader)).size;
-    const best = [...g.items].sort((a,b)=>b.traderScore-a.traderScore || b.traderPerformance.recentPnl-a.traderPerformance.recentPnl)[0];
-    return {...best, consensusCount:uniqueTraders, consensusBonus:Math.min(20, (uniqueTraders-1)*10)};
-  }).sort((a,b)=>
-    (b.consensusCount*20+b.traderScore+b.consensusBonus) -
-    (a.consensusCount*20+a.traderScore+a.consensusBonus)
-  );
-}
-
-async function buildCopyTraderEngine(sdk, markets, tickers, state, env) {
-  const addresses = copyTraderAddresses(env);
-  if (!addresses.length) {
-    return { configured:false, reason:"COPY_TRADERS_NOT_CONFIGURED", traders:[], candidates:[], selected:null, closeSignals:[] };
-  }
-  const results = await Promise.all(addresses.map(async address => {
-    try { return await readCopyTrader(sdk,address); }
-    catch (error) { return { address, ok:false, error:safeError(error), positions:[], performance:summarizeTraderPerformance([]) }; }
-  }));
-  const okTraders = results.filter(x=>x.ok);
-  const candidates = consensusCopyCandidates(okTraders, tickers).map(c => {
-    const current = num(c.currentPrice) || num(c.entry);
-    const distance = current > 0 && c.entry > 0 ? Math.abs(pct(current,c.entry)) : Infinity;
-    const maxDistance = Number(env?.COPY_MAX_ENTRY_DISTANCE_PCT || CONFIG.copyMaxEntryDistancePct);
-    const eligible = Number.isFinite(distance) && distance <= maxDistance;
-    const leverage = clamp(c.leverage || 1, 1, Number(env?.COPY_MAX_LEVERAGE || CONFIG.copyMaxLeverage));
-    return {
-      symbol:c.symbol, direction:c.direction, market:markets.find(m=>normalizeAsset(marketDisplaySymbol(m))===c.asset) || null,
-      entry:current, sourceEntry:c.entry, tp:c.tp, sl:c.sl, leverage,
-      allocation:1, walletAllocation:1, consensusCount:c.consensusCount, trader:c.trader,
-      traderScore:c.traderScore, copyDistancePct:distance, copyMaxDistancePct:maxDistance,
-      setupType:"COPY_TRADE", signalMode:"COPY_TRADER", directionAuthority:"COPY_TRADER",
-      setupEvidence:{ signalMode:"COPY_TRADER", directionAuthority:"COPY_TRADER", directionLocked:true,
-        sourceTrader:c.trader, sourceEntry:c.entry, copyDistancePct:distance, consensusCount:c.consensusCount,
-        sourceLeverage:c.leverage, sourcePnlUsd:c.pnlUsd, traderScore:c.traderScore,
-        recentPnl:c.traderPerformance.recentPnl, winRate:c.traderPerformance.winRate,
-        consistency:c.traderPerformance.consistency, maxDrawdown:c.traderPerformance.maxDrawdown,
-        exitSource:c.tp||c.sl ? "TRADER_RELATED_ORDER" : "TRADER_CLOSE_ACTION" },
-      score:Number(clamp(c.traderScore + c.consensusBonus,0,100).toFixed(1)),
-      edge:Number(clamp(c.traderScore + c.consensusBonus,0,100).toFixed(1)),
-      risk:Number(clamp(100-c.traderScore,0,100).toFixed(1)),
-      rr: c.tp>0 && c.sl>0 ? Math.abs(c.tp-current)/Math.max(Math.abs(current-c.sl),1e-12) : 0,
-      eligible, ineligibleReason:eligible?null:`ENTRY_TOO_FAR_${distance.toFixed(2)}PCT`,
-      reasons:[`COPY_${c.consensusCount}TRADER_CONSENSUS`, `SOURCE_SCORE_${c.traderScore.toFixed(1)}`, `SOURCE_LEVERAGE_${leverage.toFixed(1)}X`]
-    };
-  });
-  const active = state?.copyActive || null;
-  const closeSignals = [];
-  if (active) {
-    const source = okTraders.find(t=>t.address === String(active.trader).toLowerCase());
-    const stillOpen = source?.positions.some(p => p.asset === active.asset && p.direction === active.direction);
-    if (!stillOpen) closeSignals.push({ ...active, reason:"SOURCE_POSITION_CLOSED" });
-  }
-  const eligible = candidates.filter(x=>x.eligible);
-  const selected = eligible[0] || null;
-  return { configured:true, traders:results, candidates, selected, closeSignals };
-}
-
-async function closeCopiedPosition(runtime, active) {
-  const positions = await getOpenPositions(runtime.sdk, runtime.account);
-  const wanted = normalizeAsset(active.asset || active.symbol);
-  const position = positions.find(p => positionAsset(p) === wanted &&
-    ((p?.isLong === false ? "short":"long") === active.direction));
-  if (!position) return { executed:false, reason:"COPY_POSITION_ALREADY_CLOSED", symbol:active.symbol };
-  const symbol = position?.symbol || position?.indexName || active.symbol;
-  const direction = position?.isLong === false ? "short" : "long";
-  const sizeUsd = positionSizeUsd(position);
-  const prepared = await runtime.sdk.prepareOrder({
-    kind:"decrease", symbol, direction, orderType:"market",
-    size:toUnits(sizeUsd.toFixed(6),30), collateralToken:"USDC", receiveToken:"USDC",
-    mode:"classic", from:runtime.account
-  });
-  const txHash = await sendClassicTransaction(runtime.signer,prepared);
-  return { executed:true, symbol:active.symbol, direction, txHash, sizeUsd, reason:"SOURCE_POSITION_CLOSED" };
-}
-
-function copyTraderTelegram(report) {
-  const lines = [
-    "🟣 GMX SMART COPY-TRADER ENGINE","━━━━━━━━━━━━━━━━━━",
-    `📡 Status: ${report.status}`,
-    `👥 Traders: ${report.traders.length}/${CONFIG.copyTraderCount}`,
-    `📍 Open source positions: ${report.sourcePositions}`,
-  ];
-  for (const [i,t] of report.traders.slice(0,5).entries()) {
-    const p=t.performance||{};
-    lines.push(`\n#${i+1} ${t.address.slice(0,6)}…${t.address.slice(-4)} | Score ${num(p.score).toFixed(1)}`,
-      `📊 Trades ${p.trades} | Win ${num(p.winRate).toFixed(1)}% | Recent PnL ${formatUsd(p.recentPnl)}`,
-      `📉 Max DD ${formatUsd(p.maxDrawdown)} | Consistency ${num(p.consistency).toFixed(1)}`);
-    if (t.error) lines.push(`❌ ${t.error}`);
-    for (const x of (t.positions||[]).slice(0,3))
-      lines.push(`  • ${x.asset} ${x.direction.toUpperCase()} | Entry ${formatPrice(x.entry)} | Lev ${num(x.leverage).toFixed(1)}x | Size ${formatUsd(x.sizeUsd)} | PnL ${formatUsd(x.pnlUsd)}`);
-  }
-  if (report.closeActions?.length) for (const c of report.closeActions)
-    lines.push(`\n🔻 COPY CLOSE: ${c.symbol} ${c.direction.toUpperCase()} | ${c.reason} | Tx ${c.txHash||"N/A"}`);
-  const s=report.selected;
-  if (s) lines.push(`\n🎯 SELECTED COPY: ${s.symbol} ${s.direction.toUpperCase()}`,
-    `👤 Trader ${s.trader.slice(0,6)}…${s.trader.slice(-4)} | Score ${s.traderScore.toFixed(1)}`,
-    `💰 Source entry ${formatPrice(s.sourceEntry)} | Current ${formatPrice(s.entry)} | Distance ${num(s.copyDistancePct).toFixed(2)}%`,
-    `⚙️ Source leverage ${num(s.leverage).toFixed(1)}x | Consensus ${s.consensusCount}`,
-    `🎯 TP ${s.tp>0?formatPrice(s.tp):"FOLLOW SOURCE CLOSE"} | 🛡️ SL ${s.sl>0?formatPrice(s.sl):"FOLLOW SOURCE CLOSE"}`,
-    `💵 Wallet allocation 100% | Signal authority COPY TRADER`);
-  else lines.push(`\n👀 No eligible copy trade. ${report.reason||"Waiting for source position / entry distance."}`);
-  lines.push(`\n🕐 ${new Date().toISOString()}`);
-  return lines.join("\n");
-}
-
 async function runCycle(event, env) {
-  const scanId = String(event?.scanId || `scheduled-${event?.scheduledTime || Date.now()}-${Math.random().toString(36).slice(2,8)}`);
+  const scanId = String(
+    event?.scanId ||
+    `scheduled-${event?.scheduledTime || Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  );
+
   const runtime = await createRuntime(env);
   const state = await loadState();
 
-  console.log("[CYCLE][START]", {scanId, version:BOT_VERSION, executionEnabled:executionEnabled(env), chainId:CHAIN_ID});
+  console.log("[CYCLE][START]", {
+    scanId,
+    version: BOT_VERSION,
+    executionEnabled: executionEnabled(env),
+    chainId: CHAIN_ID,
+  });
 
-  const [markets,tickers,wallet,openPositions] = await Promise.all([
+  const [markets, tickers, wallet, openPositions, marketValues] = await Promise.all([
     runtime.sdk.fetchMarkets(),
     runtime.sdk.fetchMarketsTickers(),
-    getWalletSnapshot(runtime.sdk,runtime.account),
-    getOpenPositions(runtime.sdk,runtime.account),
+    getWalletSnapshot(runtime.sdk, runtime.account),
+    getOpenPositions(runtime.sdk, runtime.account),
+    typeof runtime.sdk.fetchMarketsValues === "function" ? runtime.sdk.fetchMarketsValues().catch(() => []) : Promise.resolve([]),
   ]);
+
   const universe = Array.isArray(markets) ? markets.filter(isLikelyPerpMarket) : [];
   const tickerRows = Array.isArray(tickers) ? tickers : [];
 
-  const copy = await buildCopyTraderEngine(runtime.sdk, universe, tickerRows, state, env);
-  const executions=[], failures=[], closeActions=[];
+  const broad = await broadScan(runtime.sdk, universe, tickerRows, marketValues, state.marketSnapshots);
+  // GLOBAL MARKET DATA CENTER runs before deep signal classification. BTC/ETH
+  // + breadth become the macro prior for every individual market.
+  const marketRegime = await buildMarketRegimeDataCenter(runtime.sdk, universe, broad.rows);
+  console.log("[MARKET_DATA_CENTER]", {
+    regime: marketRegime.regime, direction: marketRegime.direction, score: marketRegime.score,
+    confidence: marketRegime.confidence, btc: marketRegime.btc?.score, eth: marketRegime.eth?.score,
+    breadth: marketRegime.breadth?.score, agreement: marketRegime.agreement,
+  });
+  const deep = await deepScan(runtime.sdk, broad.rows, marketRegime);
+  const deepAttempted = Number(deep.attemptedCount || Math.min(CONFIG.deepCandidates, broad.rows.length));
+  const deepFailureCount = Number(deep.failedCount || 0);
+  // External news/social sentiment has no signal authority in V23.
+  // It is intentionally excluded so no secondary engine can override the
+  // deterministic D1/H4/H1 + BTC/ETH/SOL decision path.
+  const ranked = deep;
 
-  // Follow the previously copied source position until that source closes.
-  for (const closeSignal of copy.closeSignals || []) {
-    try {
-      const result = await closeCopiedPosition(runtime, closeSignal);
-      closeActions.push(result);
-      if (result.executed) {
-        state.copyActive = null;
-        state.copyLastClose = {...result, at:Date.now(), scanId};
-      }
-    } catch (error) {
-      closeActions.push({...closeSignal, executed:false, reason:safeError(error)});
+  const blocked = [];
+  const actionable = [];
+  const economicBlocked = [];
+  for (const candidate of ranked) {
+    const directionCheck = validateDirectionIntegrity(candidate);
+    if (!directionCheck.ok) {
+      blocked.push({
+        symbol: candidate?.symbol || "N/A",
+        direction: candidate?.direction || null,
+        directionBias: candidate?.directionBias || candidate?.setupEvidence?.directionBias || null,
+        entry: candidate?.entry || 0,
+        sl: candidate?.sl || 0,
+        tp: candidate?.tp || 0,
+        score: num(candidate?.score),
+        edge: num(candidate?.edge),
+        risk: num(candidate?.risk),
+        setupType: candidate?.setupType || "NONE",
+        reversalEvidence: num(candidate?.reversalEvidence),
+        reason: directionCheck.reason,
+        setupEvidence: candidate?.setupEvidence || {}
+      });
+      continue;
+    }
+
+    const check = candidateIsActionable(candidate);
+    if (!check.ok) {
+      blocked.push({
+        symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, sl: candidate.sl, tp: candidate.tp,
+        score: candidate.score, edge: candidate.edge, risk: candidate.risk, setupType: candidate.setupType,
+        reversalEvidence: candidate.reversalEvidence, reason: check.reason, setupEvidence: candidate.setupEvidence,
+      });
+      continue;
+    }
+
+    const economic = economicGate(candidate, wallet.walletUsd);
+    const enriched = attachEconomicOpportunity(candidate, wallet.walletUsd);
+    if (economic.ok) {
+      actionable.push(enriched);
+    } else {
+      const item = {
+        symbol: candidate.symbol, direction: candidate.direction, entry: candidate.entry, sl: candidate.sl, tp: candidate.tp,
+        score: candidate.score, edge: candidate.edge, risk: candidate.risk, setupType: candidate.setupType,
+        reversalEvidence: candidate.reversalEvidence, reason: economic.reason, setupEvidence: candidate.setupEvidence,
+        economics: enriched.economics,
+      };
+      blocked.push(item);
+      economicBlocked.push(item);
     }
   }
 
-  let currentPositions = await getOpenPositions(runtime.sdk,runtime.account);
-  let selected = copy.selected;
-  if (state.copyActive && !copy.closeSignals?.length) {
-    selected = null; // keep following the existing copied position; never switch sources mid-trade
-  }
+  // Select by validated setup quality first. Economics may block a trade,
+  // but it cannot make a weaker signal outrank a stronger one.
+  actionable.sort((a,b) => {
+    const q = (num(b.score) + num(b.edge)*0.35 + num(b.rr)*4) -
+              (num(a.score) + num(a.edge)*0.35 + num(a.rr)*4);
+    if (Math.abs(q) > 0.01) return q;
+    return num(b.expectedNetPnlUsd) - num(a.expectedNetPnlUsd);
+  });
+  const selected = actionable.slice(0, CONFIG.finalCandidates);
+  console.log("[SELECTION][TOP]", selected[0] ? {
+    symbol: selected[0].symbol, direction: selected[0].direction, entry: selected[0].entry, tp: selected[0].tp,
+    setupType: selected[0].setupType, reversalEvidence: selected[0].reversalEvidence, score: selected[0].score,
+    edge: selected[0].edge, risk: selected[0].risk, allocation: CONFIG.walletAllocationPerPosition, leverage: CONFIG.leverage,
+    expectedGrossPnlUsd: selected[0].expectedGrossPnlUsd, expectedNetPnlUsd: selected[0].expectedNetPnlUsd,
+    estimatedTotalCostUsd: selected[0].estimatedTotalCostUsd, netToCostRatio: selected[0].economics?.netToCostRatio,
+    tpMovePct: selected[0].economics?.tpMovePct,
+    tpMethod: selected[0].tpPlan?.method, tpTargetType: selected[0].tpPlan?.targetType,
+    tpTargetScore: selected[0].tpPlan?.targetScore, tpProbabilityProxy: selected[0].tpPlan?.probabilityProxy,
+    sharpMove: selected[0].setupEvidence?.sharpMove, lateChase: selected[0].setupEvidence?.lateChase,
+    moveMaturity: selected[0].setupEvidence?.moveMaturity, moveMaturityLabel: selected[0].setupEvidence?.moveMaturityLabel, lateMove: selected[0].setupEvidence?.lateMove,
+    zoneState: selected[0].setupEvidence?.zoneState, impulseQuality: selected[0].setupEvidence?.impulseQuality,
+    earlyTrend: selected[0].setupEvidence?.earlyTrend, earlyBreak: selected[0].setupEvidence?.earlyBreak, earlyTimingBonus: selected[0].setupEvidence?.earlyTimingBonus,
+    reversalConfidence: selected[0].reversalConfidence, continuationConfidence: selected[0].continuationConfidence, setupDominance: selected[0].setupDominance,
+    triggerActive: selected[0].triggerActive, reversalTrigger: selected[0].reversalTrigger, continuationTrigger: selected[0].continuationTrigger,
+    capitalFlowScore: selected[0].indicators?.capitalFlowScore, capitalFlowDirection: selected[0].indicators?.capitalFlowDirection, capitalFlowState: selected[0].indicators?.capitalFlowState,
+    smartMoneyProxy: selected[0].indicators?.smartMoneyProxy, oiDeltaPct: selected[0].indicators?.oiDeltaPct, volumeRatio5m: selected[0].indicators?.volumeRatio5m,
+    volumeRatio15m: selected[0].indicators?.volumeRatio15m, volumeProfileZone: selected[0].indicators?.volumeProfileZone,
+  } : { selected: 0 });
 
-  if (selected && executionEnabled(env) && currentPositions.length < CONFIG.maxPositions) {
-    if (findPositionForCandidate(currentPositions,selected)) {
-      selected = null;
-    } else {
-      const result = await executeCandidate(runtime,selected,wallet,currentPositions,env);
+  const executions = [];
+  const failures = [];
+  let currentPositions = [...openPositions];
+  let currentWallet = wallet;
+
+  if (executionEnabled(env)) {
+    for (const candidate of selected) {
+      if (currentPositions.length >= CONFIG.maxPositions) break;
+
+      const result = await executeCandidate(
+        runtime,
+        candidate,
+        currentWallet,
+        currentPositions,
+        env
+      );
+
       if (result.executed) {
         executions.push(result);
-        currentPositions.push(result.position || {symbol:selected.symbol,sizeInUsd:String(toUnits(result.notionalUsd.toFixed(6),30))});
-        state.copyActive = {
-          trader:selected.trader, asset:normalizeAsset(selected.symbol), symbol:selected.symbol,
-          direction:selected.direction, sourceEntry:selected.sourceEntry, leverage:selected.leverage,
-          openedAt:Date.now(), txHash:result.txHash
-        };
-      } else failures.push(result);
+        currentPositions.push(result.position || { symbol: candidate.symbol, sizeInUsd: String(toUnits(result.notionalUsd.toFixed(6), 30)) });
+        currentWallet = await getWalletSnapshot(runtime.sdk, runtime.account);
+      } else {
+        failures.push(result);
+      }
+
+      if (result.executed || failures.length) {
+        try { await sendTelegram(env, tradeMessage(result)); } catch {}
+      }
     }
   }
 
-  const sourcePositions = copy.traders.reduce((n,t)=>n+(t.positions?.length||0),0);
+  const impulseCount = ranked.filter((x) => x.setupType === "CONTINUATION" && x.continuationTrigger).length;
+  const flowCount = ranked.filter((x) => num(x.setupEvidence?.volumeRatio1h) >= 1.25).length;
+  const smartMoneyCount = ranked.filter((x) => num(x.setupEvidence?.volumeRatio1h) >= 1.50).length;
+  const maCount = ranked.filter((x) => x.trendConfluence >= 3).length;
+  const adxCount = ranked.filter((x) => num(x.indicators?.adx) >= 18).length;
+  const layerReadyCount = ranked.filter((x) => x.setupEvidence?.directionAuthority === "MTF_D1_H4_H1" && x.triggerActive).length;
+  const layerFlowCount = flowCount;
+  const layerReversalCount = ranked.filter((x) => x.setupType === "REVERSAL" && x.reversalTrigger).length;
+  const srCount = ranked.filter((x) => x.setupEvidence?.validExtreme > 0).length;
+  const positiveMoveCount = ranked.filter((x) => x.direction && x.setupEvidence?.priorTrend && ((x.direction === "long" && num(x.setupEvidence.priorTrendMovePct) > 0) || (x.direction === "short" && num(x.setupEvidence.priorTrendMovePct) < 0))).length;
+  const pullbackCount = ranked.filter((x) => x.setupType === "REVERSAL_WATCH").length;
+  const scoreReadyCount = ranked.filter((x) => x.score >= CONFIG.minScore).length;
+  const edgeReadyCount = ranked.filter((x) => x.edge >= CONFIG.minEdge).length;
+
   const report = {
     scanId,
-    status: executions.length ? "EXECUTED" : closeActions.some(x=>x.executed) ? "CLOSED" :
-      !copy.configured ? "CONFIG_MISSING" : selected ? "ENTRY_READY" : "WATCHING",
-    universe:universe.length,
-    universeScanSuccess:universe.length,
-    deepCount:copy.traders.filter(t=>t.ok).length,
-    deepAttempted:copy.traders.length,
-    deepFailureCount:copy.traders.filter(t=>!t.ok).length,
-    actionableCount:selected ? 1 : 0,
-    sourcePositions,
-    traders:copy.traders,
-    candidates:copy.candidates,
-    selected,
-    closeActions,
+    status: executions.length ? "EXECUTED" : actionable.length ? "ENTRY_READY" : "WATCHING",
+    universe: universe.length,
+    universeScanSuccess: broad.successful,
+    deepCount: deep.length,
+    deepSuccess: deep.length,
+    deepAttempted,
+    deepFailureCount,
+    actionableCount: actionable.length,
+    impulseCount,
+    flowCount,
+    smartMoneyCount,
+    maCount,
+    adxCount,
+    layerReadyCount,
+    layerFlowCount,
+    layerReversalCount,
+    marketRegime: marketRegime ? { regime: marketRegime.regime, direction: marketRegime.direction, score: marketRegime.score, confidence: marketRegime.confidence, btcScore: marketRegime.btc?.score ?? 50, ethScore: marketRegime.eth?.score ?? 50, breadthScore: marketRegime.breadth?.score ?? 50, agreement: marketRegime.agreement ?? 0 } : null,
+    srCount,
+    positiveMoveCount,
+    pullbackCount,
+    scoreReadyCount,
+    edgeReadyCount,
+    rejectMove: blocked.filter(x => /TRAVELLED_TOO_FAR|CHASE/.test(String(x.reason))).length,
+    rejectBody: blocked.filter(x => /SOLID_BODY|BODY/.test(String(x.reason))).length,
+    rejectActivity: 0,
+    rejectAccel: 0,
+    rejectExt: 0,
+    rejectZone: blocked.filter(x => /VALID_(HIGH|LOW)|EXTREME/.test(String(x.reason))).length,
+    rejectPre: blocked.filter(x => /NO_CONFIRMED_1H_SETUP/.test(String(x.reason))).length,
+    rejectScore: blocked.filter((x) => x.reason.startsWith("SCORE_")).length,
+    rejectEdge: blocked.filter((x) => x.reason.startsWith("EDGE_")).length,
+    rejectSetup: blocked.filter((x) => !x.reason.startsWith("SCORE_") && !x.reason.startsWith("EDGE_")).length,
+    executedCount: executions.length,
+    failureCount: failures.length,
     executions,
-    failures,
-    reason:copy.reason,
-    flowCount:0,smartMoneyCount:0,maCount:0,adxCount:0,layerReadyCount:selected?1:0,
-    impulseCount:0,layerFlowCount:0,layerReversalCount:0,srCount:0,positiveMoveCount:0,pullbackCount:0,
-    scoreReadyCount:selected?1:0,edgeReadyCount:selected?1:0,topRejected:copy.candidates.filter(x=>!x.eligible).slice(0,5),
+    topRejected: blocked,
   };
 
+  state.marketSnapshots = state.marketSnapshots || {};
+  for (const row of broad.rows) {
+    const symbol = row.symbol;
+    const t = row.ticker || {};
+    const mv = row.marketValue || {};
+    state.marketSnapshots[symbol] = { at: Date.now(), price: tickerPrice(t), openInterest: tickerOpenInterest({ ...(t || {}), ...(mv || {}) }), volume24h: tickerVolume({ ...(t || {}), ...(mv || {}) }) };
+  }
+
   state.scans += 1;
-  state.lastScanId=scanId;
-  state.lastExecution=executions.at(-1)||state.lastExecution;
-  state.executionHistory.push(...executions.map(x=>({at:Date.now(),scanId,symbol:x.symbol,direction:x.direction,entry:x.entry,tp:x.tp,notionalUsd:x.notionalUsd,collateralUsd:x.collateralUsd,txHash:x.txHash})));
+  state.lastScanId = scanId;
+  state.lastExecution = executions.at(-1) || state.lastExecution;
+  state.executionHistory.push(...executions.map((x) => ({
+    at: Date.now(),
+    scanId,
+    symbol: x.symbol,
+    direction: x.direction,
+    entry: x.entry,
+    tp: x.tp,
+    notionalUsd: x.notionalUsd,
+    collateralUsd: x.collateralUsd,
+    txHash: x.txHash,
+  })));
   await saveState(state);
 
   try {
-    const msg=copyTraderTelegram(report);
-    const fp=JSON.stringify({
-      status:report.status, selected:report.selected?.symbol||"", direction:report.selected?.direction||"",
-      distance:num(report.selected?.copyDistancePct), source:report.selected?.trader||"",
-      closes:report.closeActions.map(x=>x.symbol+":"+x.executed), traders:report.traders.map(x=>[x.address,x.positions?.length,x.performance?.score])
-    });
-    if (report.status!=="WATCHING" || state.lastCycleReportFingerprint!==fp) {
-      const sent=await sendTelegram(env,msg);
-      if(sent?.ok){state.lastCycleReportFingerprint=fp;await saveState(state);}
+    const fingerprint = cycleReportFingerprint(report);
+    const unchangedWatching = report.status === "WATCHING" && state.lastCycleReportFingerprint === fingerprint;
+    if (!unchangedWatching) {
+      const telegramResult = await sendTelegram(env, cycleMessage(report));
+      if (telegramResult?.ok) {
+        state.lastCycleReportFingerprint = fingerprint;
+        await saveState(state);
+      }
+    } else {
+      console.log("[TELEGRAM][SKIP_UNCHANGED_WATCHING]", { scanId, reason: "IDENTICAL_CYCLE_REPORT" });
     }
-  } catch(error) { console.error("[TELEGRAM][CYCLE_ERROR]",safeError(error)); }
+  } catch (error) {
+    console.error("[TELEGRAM][CYCLE_ERROR]", safeError(error));
+  }
 
-  console.log("[CYCLE][END]",{scanId,status:report.status,traders:report.deepCount,selected:report.actionableCount,executed:report.executions.length,closes:report.closeActions.length,failures:report.failures.length});
-  return {ok:true,version:BOT_VERSION,scanId,report,wallet:{before:wallet.walletUsd,after:(await getWalletSnapshot(runtime.sdk,runtime.account)).walletUsd}};
+  console.log("[CYCLE][END]", {
+    scanId,
+    status: report.status,
+    universe: report.universe,
+    universeScan: report.universeScanSuccess,
+    deep: report.deepCount,
+    entryReady: report.actionableCount,
+    executed: report.executedCount,
+    failures: report.failureCount,
+  });
+
+  return {
+    ok: true,
+    version: BOT_VERSION,
+    scanId,
+    report,
+    wallet: {
+      before: wallet.walletUsd,
+      after: currentWallet.walletUsd,
+    },
+  };
 }
 
 export default {
