@@ -51,7 +51,7 @@ const CONFIG = Object.freeze({
   maxTotalWalletAllocation: 1.00,
   leverage: 20,
   copyMaxLeverage: 20,
-  copyMaxEntryDistancePct: 1.25,
+  copyMaxEntryDistancePct: 0.50,
   copyRecentDays: 30,
   copyTradeLimit: 100,
   copyTraderCount: 3,
