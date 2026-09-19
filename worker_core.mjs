@@ -3233,15 +3233,15 @@ function enrichWithIntelligence(candidates, intelligence) {
 
 // ======================================================
 // V24 COPY-TRADER CONFIGURATION
-// The five wallets below are the five trader CSV wallets supplied for this
-// engine. GitHub Actions Variables can override them one-by-one.
+// The three configured trader wallets for this engine.
+// GitHub Actions Variables can override them one-by-one.
 // Leverage is capped at 20x in code and can be configured with
 // GMX_COPY_MAX_LEVERAGE, but can never exceed 20x.
 // ======================================================
 const COPY_TRADER_DEFAULTS = Object.freeze({
-  1: "0x4f22d0f16E770C7F03726295C86aAEb7D3260baa",
-  2: "0xa9A94929d7ECBF0cB1191C08386e64146c76B9Be",
-  3: "0x1C5288C47EA4c2D56169f5883FCaE6574181fd0D",
+  1: "0x314686cdcfF77C6b7878d3584e34fED3ec76aF50",
+  2: "0x1C5288C47EA4c2D56169f5883FCaE6574181fd0D",
+  3: "0xd49d22f2a2f05B2088fD42503409E430a8a7D827",
 });
 
 function copyMaxLeverage(env) {
