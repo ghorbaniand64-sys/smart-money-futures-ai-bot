@@ -3477,13 +3477,73 @@ async function closeCopiedPosition(runtime, active) {
   const symbol = position?.symbol || position?.indexName || active.symbol;
   const direction = position?.isLong === false ? "short" : "long";
   const sizeUsd = positionSizeUsd(position);
+  const preClosePrice = normalizePrice(
+    position?.markPrice ?? position?.markPriceUsd ?? position?.currentPrice ?? position?.price ?? 0
+  );
+  const preClosePnlUsd = humanUsd30(
+    position?.pnlAfterFees ?? position?.pnl ?? position?.unrealizedPnlUsd ?? 0
+  );
   const prepared = await runtime.sdk.prepareOrder({
     kind:"decrease", symbol, direction, orderType:"market",
     size:toUnits(sizeUsd.toFixed(6),30), collateralToken:"USDC", receiveToken:"USDC",
     mode:"classic", from:runtime.account
   });
   const txHash = await sendClassicTransaction(runtime.signer,prepared);
-  return { executed:true, symbol:active.symbol, direction, txHash, sizeUsd, reason:"SOURCE_POSITION_CLOSED" };
+  return {
+    executed:true, symbol:active.symbol, direction, txHash, sizeUsd,
+    preClosePrice, preClosePnlUsd, reason:"SOURCE_POSITION_CLOSED"
+  };
+}
+
+async function findLatestOwnCloseTrade(sdk, account, active, sinceMs) {
+  try {
+    const rows = tradeRows(await sdk.fetchTrades({
+      address: account,
+      since: Math.floor((sinceMs - 30_000) / 1000),
+      limit: 50,
+    }));
+    const wanted = normalizeAsset(active.asset || active.symbol);
+    const direction = String(active.direction || "").toLowerCase();
+    const candidates = rows.filter(x => {
+      const asset = normalizeAsset(
+        x?.indexName ?? x?.symbol ?? x?.marketSymbol ?? x?.market?.symbol ?? x?.market?.name ?? ""
+      );
+      if (asset !== wanted) return false;
+      const isLong = x?.isLong ?? x?.long ?? (String(x?.direction || "").toLowerCase() === "long" ? true : undefined);
+      if (isLong !== undefined && isLong !== null) {
+        const d = isLong === false ? "short" : "long";
+        if (d !== direction) return false;
+      }
+      const ts = tradeTimestamp(x);
+      return ts >= Math.floor(sinceMs / 1000) - 10;
+    }).sort((a,b) => tradeTimestamp(b) - tradeTimestamp(a));
+    const x = candidates[0];
+    if (!x) return null;
+    const closePrice = normalizePrice(
+      x?.executionPrice ?? x?.executionPriceUsd ?? x?.fillPrice ?? x?.price ?? x?.priceUsd ?? x?.avgPrice ?? 0
+    );
+    return {
+      closePrice,
+      pnlUsd: tradePnl(x),
+      timestamp: tradeTimestamp(x),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function copyCloseTelegram(close) {
+  const price = num(close.closePrice) > 0 ? formatPrice(close.closePrice) : "N/A";
+  const pnl = Number.isFinite(num(close.pnlUsd)) ? formatUsd(close.pnlUsd) : "N/A";
+  return [
+    "🔻 GMX COPY-TRADE CLOSED",
+    "━━━━━━━━━━━━━━━━━━",
+    `📌 Position: ${close.symbol} ${String(close.direction || "").toUpperCase()}`,
+    `💰 Closed at: ${price}`,
+    `📊 PnL: ${pnl}`,
+    `👤 Source trader: ${String(close.trader || "").slice(0,6)}…${String(close.trader || "").slice(-4)}`,
+    `🕐 ${new Date().toISOString()}`,
+  ].join("\n");
 }
 
 function copyTraderTelegram(report) {
@@ -3541,8 +3601,17 @@ async function runCycle(event, env) {
       const result = await closeCopiedPosition(runtime, closeSignal);
       closeActions.push(result);
       if (result.executed) {
+        const closeStartedAt = Date.now();
+        const trade = await findLatestOwnCloseTrade(runtime.sdk, runtime.account, closeSignal, closeStartedAt);
+        const closeNotice = {
+          ...result,
+          trader: closeSignal.trader,
+          closePrice: trade?.closePrice || result.preClosePrice || 0,
+          pnlUsd: trade ? trade.pnlUsd : result.preClosePnlUsd,
+        };
+        await sendTelegram(env, copyCloseTelegram(closeNotice));
         state.copyActive = null;
-        state.copyLastClose = {...result, at:Date.now(), scanId};
+        state.copyLastClose = {...closeNotice, at:Date.now(), scanId};
       }
     } catch (error) {
       closeActions.push({...closeSignal, executed:false, reason:safeError(error)});
