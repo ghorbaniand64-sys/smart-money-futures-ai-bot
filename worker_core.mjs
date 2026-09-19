@@ -54,7 +54,7 @@ const CONFIG = Object.freeze({
   copyMaxEntryDistancePct: 1.25,
   copyRecentDays: 30,
   copyTradeLimit: 100,
-  copyTraderCount: 5,
+  copyTraderCount: 3,
 
   // V23: strict top-down authority: D1 -> H4 -> H1.
   // D1/H4 establish directional context; completed H1 supplies the entry trigger.
@@ -3242,8 +3242,6 @@ const COPY_TRADER_DEFAULTS = Object.freeze({
   1: "0x4f22d0f16E770C7F03726295C86aAEb7D3260baa",
   2: "0xa9A94929d7ECBF0cB1191C08386e64146c76B9Be",
   3: "0x1C5288C47EA4c2D56169f5883FCaE6574181fd0D",
-  4: "0x450ABfD5563620cf7d3841276F9c106a9Fb443c1",
-  5: "0xfeEC08Bd35eCEe4532Bf404D4E15395ceeeb1CAe",
 });
 
 function copyMaxLeverage(env) {
