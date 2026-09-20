@@ -13,7 +13,7 @@ const MIN_PNL = num('HYPERLIQUID_HUNTER_MIN_7D_PNL', 0);
 const MIN_PF = num('HYPERLIQUID_HUNTER_MIN_PROFIT_FACTOR', 1.5);
 const MAX_MEDIAN_HOLD = (() => { const x=Number(process.env.HYPERLIQUID_HUNTER_MAX_MEDIAN_HOLD_HOURS); return Number.isFinite(x) && x > 0 ? Math.min(6,x) : 6; })();
 const MAX_AVG_HOLD = (() => { const x=Number(process.env.HYPERLIQUID_HUNTER_MAX_AVG_HOLD_HOURS); return Number.isFinite(x) && x > 0 ? Math.min(12,x) : 12; })();
-const MIN_ACTIVE_DAYS = integer('HYPERLIQUID_HUNTER_MIN_ACTIVE_DAYS', 4);
+const MIN_ACTIVE_DAYS = (() => { const x=Number(process.env.HYPERLIQUID_HUNTER_MIN_ACTIVE_DAYS); return Number.isFinite(x) && x > 0 ? Math.min(3, Math.floor(x)) : 3; })();
 const MAX_LOSING_STREAK = integer('HYPERLIQUID_HUNTER_MAX_LOSING_STREAK', 8);
 const MAX_LIQ = integer('HYPERLIQUID_HUNTER_MAX_LIQUIDATIONS', 1);
 const MIN_RR = num('HYPERLIQUID_HUNTER_MIN_SETUP_RR', 1.5);
@@ -46,8 +46,10 @@ function median(a){if(!a.length)return NaN;const s=[...a].sort((a,b)=>a-b),m=Mat
 function quantile(a,q){if(!a.length)return NaN;const s=[...a].sort((a,b)=>a-b),p=(s.length-1)*q,l=Math.floor(p),h=Math.ceil(p);return l===h?s[l]:s[l]+(s[h]-s[l])*(p-l)}
 function category(e){const s=String(e?.message||e||'');if(/HTTP 429/i.test(s))return'HTTP_429';if(/HTTP 5\d\d/i.test(s))return'HTTP_5XX';if(/timeout/i.test(s))return'TIMEOUT';if(/fetch|network|ECONN|socket|ENOTFOUND/i.test(s))return'NETWORK';if(/JSON/i.test(s))return'BAD_JSON';if(/fills/i.test(s))return'FILLS';return'OTHER'}
 
+let GLOBAL_COOLDOWN_UNTIL=0;
 async function fetchJson(url, options={}, label='request'){
   let last;
+  if(Date.now()<GLOBAL_COOLDOWN_UNTIL) await sleep(GLOBAL_COOLDOWN_UNTIL-Date.now());
   for(let attempt=0;attempt<=RETRIES;attempt++){
     const c=new AbortController(), t=setTimeout(()=>c.abort(),TIMEOUT);
     try{
@@ -55,7 +57,7 @@ async function fetchJson(url, options={}, label='request'){
       clearTimeout(t);
       if(r.ok){const text=await r.text();try{return JSON.parse(text)}catch{throw new Error(`${label}: invalid JSON`)}}
       const body=(await r.text()).slice(0,240); const e=new Error(`${label}: HTTP ${r.status} ${body}`);e.status=r.status;e.retryAfterMs=Number(r.headers.get('retry-after')||0)*1000;throw e;
-    }catch(e){clearTimeout(t);last=e?.name==='AbortError'?new Error(`${label}: timeout`):e;const s=Number(last?.status||0);if(!([429,...Array.from({length:100},(_,i)=>500+i)].includes(s)||!s)||attempt>=RETRIES)break;const retryAfter=Number(last?.retryAfterMs||0);const backoff=BASE_DELAY*(2**attempt)+Math.floor(Math.random()*250);const wait=Math.max(backoff,retryAfter);console.log(`[RETRY] ${label} ${attempt+1}/${RETRIES} wait=${wait}ms ${category(last)}${retryAfter>0?' retry-after='+retryAfter+'ms':''}`);await sleep(wait)}
+    }catch(e){clearTimeout(t);last=e?.name==='AbortError'?new Error(`${label}: timeout`):e;const s=Number(last?.status||0);if(!([429,...Array.from({length:100},(_,i)=>500+i)].includes(s)||!s)||attempt>=RETRIES)break;const retryAfter=Number(last?.retryAfterMs||0);const backoff=BASE_DELAY*(2**attempt)+Math.floor(Math.random()*250);const wait=Math.max(backoff,retryAfter,1500);if(s===429)GLOBAL_COOLDOWN_UNTIL=Math.max(GLOBAL_COOLDOWN_UNTIL,Date.now()+wait);console.log(`[RETRY] ${label} ${attempt+1}/${RETRIES} wait=${wait}ms ${category(last)}${retryAfter>0?' retry-after='+retryAfter+'ms':''}`);await sleep(wait)}
   }
   throw last||new Error(`${label}: failed`)
 }
@@ -121,11 +123,36 @@ async function getFills(user,start,end){
 }
 function delta(f){const sz=Math.abs(Number(f?.sz||0));return String(f?.side||'').toUpperCase()==='B'?sz:-sz}
 function reconstruct(fills){
-  const books=new Map(),trades=[];let liquidations=0;
-  for(const f of fills){const coin=String(f.coin||'');if(!coin)continue;const dir=String(f.dir||'').toLowerCase();if(dir.includes('liquid'))liquidations++;const d=delta(f);if(!d)continue;const lots=books.get(coin)||[];books.set(coin,lots);const start=Number(f.startPosition||0);const isClose=(start>0&&d<0)||(start<0&&d>0);if(!isClose){lots.push({side:d>0?'long':'short',qty:Math.abs(d),px:Number(f.px),time:Number(f.time)});continue}
-    let rem=Math.abs(d);const closing=d>0?'short':'long';while(rem>1e-12&&lots.length){const lot=lots[0];if(lot.side!==closing)break;const used=Math.min(rem,lot.qty),px=Number(f.px),cp=Number(f.closedPnl),fq=Math.abs(Number(f.sz||0));const pnl=Number.isFinite(cp)&&fq>0?cp*(used/fq):(lot.side==='long'?(px-lot.px)*used:(lot.px-px)*used);trades.push({coin,side:lot.side,qty:used,entryPx:lot.px,exitPx:px,openTime:lot.time,closeTime:Number(f.time),holdHours:Math.max(0,(Number(f.time)-lot.time)/3600000),pnl});lot.qty-=used;rem-=used;if(lot.qty<=1e-12)lots.shift()}
-    if(rem>1e-12)lots.push({side:d>0?'long':'short',qty:rem,px:Number(f.px),time:Number(f.time)})
-  }return{trades,liquidations}
+  const states=new Map(),trades=[];let liquidations=0;
+  const closePnl=(f,used)=>{const cp=Number(f.closedPnl),fq=Math.abs(Number(f.sz||0));return Number.isFinite(cp)&&fq>0?cp*(used/fq):NaN};
+  const emit=(st,f,qty,px,pnl)=>{const closeTime=Number(f.time),holdHours=Math.max(0,(closeTime-st.openTime)/3600000);trades.push({coin:st.coin,side:st.side,qty,entryPx:st.avgEntry,exitPx:px,openTime:st.openTime,closeTime,holdHours,pnl:Number.isFinite(pnl)?pnl:0})};
+  for(const f of fills){
+    const coin=String(f.coin||'');if(!coin)continue;
+    const dir=String(f.dir||'').toLowerCase();if(dir.includes('liquid'))liquidations++;
+    const d=delta(f);if(!d)continue;
+    const px=Number(f.px),time=Number(f.time),start=Number(f.startPosition||0),end=start+d;
+    let st=states.get(coin)||null;
+    if(!st && Math.abs(start)>1e-12){ st={coin,side:start>0?'long':'short',qty:Math.abs(start),avgEntry:px,openTime:time,realizedPnl:0};states.set(coin,st); }
+    if(!st){
+      st={coin,side:d>0?'long':'short',qty:Math.abs(d),avgEntry:px,openTime:time,realizedPnl:0};states.set(coin,st);
+      continue;
+    }
+    const sameDir=(st.side==='long'&&d>0)||(st.side==='short'&&d<0);
+    if(sameDir){
+      const add=Math.abs(d),oldQty=st.qty;st.avgEntry=((st.avgEntry*oldQty)+(px*add))/(oldQty+add);st.qty+=add;continue;
+    }
+    const closeQty=Math.min(st.qty,Math.abs(d));
+    const cp=closePnl(f,closeQty);
+    const pnl=Number.isFinite(cp)?cp:(st.side==='long'?(px-st.avgEntry)*closeQty:(st.avgEntry-px)*closeQty);
+    st.realizedPnl+=pnl;st.qty-=closeQty;
+    const remaining=Math.abs(d)-closeQty;
+    if(st.qty<=1e-12){
+      if(remaining<=1e-12) emit(st,f,closeQty,px,st.realizedPnl);
+      states.delete(coin);
+      if(remaining>1e-12){states.set(coin,{coin,side:d>0?'long':'short',qty:remaining,avgEntry:px,openTime:time,realizedPnl:0});}
+    }
+  }
+  return{trades,liquidations};
 }
 function metrics(fills,r){const ts=r.trades,w=ts.filter(t=>t.pnl>0),l=ts.filter(t=>t.pnl<0),holds=ts.map(t=>t.holdHours).filter(Number.isFinite),gw=w.reduce((s,t)=>s+t.pnl,0),gl=Math.abs(l.reduce((s,t)=>s+t.pnl,0)),pnl=ts.reduce((s,t)=>s+t.pnl,0),days=new Set(ts.map(t=>new Date(t.closeTime).toISOString().slice(0,10)));let st=0,maxst=0;for(const t of [...ts].sort((a,b)=>a.closeTime-b.closeTime)){if(t.pnl<0){st++;maxst=Math.max(maxst,st)}else if(t.pnl>0)st=0}return{fills:fills.length,closedTrades:ts.length,winRate:ts.length?w.length/ts.length*100:0,pnl,grossWin:gw,grossLossAbs:gl,profitFactor:gl>0?gw/gl:(gw>0?Infinity:0),medianHoldHours:median(holds),avgHoldHours:holds.length?holds.reduce((a,b)=>a+b,0)/holds.length:NaN,p25HoldHours:quantile(holds,.25),p75HoldHours:quantile(holds,.75),activeDays:days.size,maxLosingStreak:maxst,liquidations:r.liquidations}}
 function gates(m,meta={}){const a=[];if(m.closedTrades<MIN_TRADES)a.push(`TRADES<${MIN_TRADES}`);if(m.winRate<MIN_WR)a.push(`WR<${MIN_WR}%`);if(m.closedTrades>0&&!(m.profitFactor>=MIN_PF))a.push(`PF<${MIN_PF}`);if(m.closedTrades>=MIN_TRADES&&Number.isFinite(m.medianHoldHours)&&m.medianHoldHours>MAX_MEDIAN_HOLD)a.push(`MEDIAN_HOLD>${MAX_MEDIAN_HOLD}h`);if(m.closedTrades>=MIN_TRADES&&Number.isFinite(m.avgHoldHours)&&m.avgHoldHours>MAX_AVG_HOLD)a.push(`AVG_HOLD>${MAX_AVG_HOLD}h`);if(m.activeDays<MIN_ACTIVE_DAYS)a.push(`ACTIVE_DAYS<${MIN_ACTIVE_DAYS}`);if(m.maxLosingStreak>MAX_LOSING_STREAK)a.push(`LOSING_STREAK>${MAX_LOSING_STREAK}`);if(m.liquidations>MAX_LIQ)a.push(`LIQUIDATIONS>${MAX_LIQ}`);if(meta.truncated)a.push('HISTORY_TRUNCATED');return{ok:!a.length,reasons:a}}
@@ -158,7 +185,7 @@ function finalScore(x){
 }
 
 async function main(){
- console.log(`[HUNTER V5.7][START] ${JSON.stringify({rawLookbackDays:RAW_LOOKBACK_DAYS,lookbackDays:LOOKBACK_DAYS,maxCandidates:MAX_CANDIDATES,finalists:FINALISTS,autoSelect:AUTO_SELECT,maxEntryDistancePct:MAX_ENTRY_DIST,maxMedianHoldHours:MAX_MEDIAN_HOLD,maxAvgHoldHours:MAX_AVG_HOLD,betweenTradersMs:BETWEEN,betweenPagesMs:BETWEEN_PAGES,discoveryRanking:'hunter_ranked_v1'})}`);
+ console.log(`[HUNTER V5.8][START] ${JSON.stringify({rawLookbackDays:RAW_LOOKBACK_DAYS,lookbackDays:LOOKBACK_DAYS,maxCandidates:MAX_CANDIDATES,finalists:FINALISTS,autoSelect:AUTO_SELECT,maxEntryDistancePct:MAX_ENTRY_DIST,maxMedianHoldHours:MAX_MEDIAN_HOLD,maxAvgHoldHours:MAX_AVG_HOLD,betweenTradersMs:BETWEEN,betweenPagesMs:BETWEEN_PAGES,discoveryRanking:'hunter_ranked_v1',tradeModel:'position_lifecycle_v2',losingStreak:'closed_position_lifecycle',activeDaysHardCap:3,global429Cooldown:true})}`);
  if(RAW_LOOKBACK_DAYS<=0)console.warn('[CONFIG][WARN] HYPERLIQUID_HUNTER_LOOKBACK_DAYS<=0; using safe default 7d');
  let d;try{d=await discover()}catch(e){console.error(`[DISCOVERY][ERROR] ${e.message}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.3\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return}
  console.log(`[DISCOVERY] validLeaderboardAddresses=${d.discovered} prefilteredCandidates=${d.candidates.length} cap=${MAX_CANDIDATES} source=${d.source}`);
@@ -172,10 +199,10 @@ async function main(){
  const blocks={};for(const x of scanned)for(const r of x.gate.reasons)blocks[r]=(blocks[r]||0)+1;const top=Object.entries(blocks).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k,v])=>`${k}:${v}`).join(' | ')||'none';
  const funnel={scanned:scanned.length,trades:scanned.filter(x=>x.metrics.closedTrades>=MIN_TRADES).length,wr:scanned.filter(x=>x.metrics.closedTrades>=MIN_TRADES&&x.metrics.winRate>=MIN_WR).length,pf:scanned.filter(x=>x.metrics.closedTrades>=MIN_TRADES&&x.metrics.winRate>=MIN_WR&&x.metrics.profitFactor>=MIN_PF).length,fullPass:passed.length,finalists:finalists.length,copyEligible:eligible.length,autoSelected:selected.length};
  const noRecentFills=scanned.filter(x=>x.metrics.fills===0).length;const withFills=scanned.filter(x=>x.metrics.fills>0).length;
- const lines=['🟣 HYPERLIQUID TRADER HUNTER V5.7','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Discovery: ${d.discovered}`,`🎯 Pre-filtered: ${d.candidates.length}/${MAX_CANDIDATES}`,`📊 Full scanned: ${scanned.length}/${d.candidates.length}`,`⚠️ Scan failures: ${errors.length}`,`📦 Fills returned: ${withFills}/${scanned.length}`,`📭 No recent fills: ${noRecentFills}`,`❌ Error types: ${errSummary(errors)}`,`🎯 Statistical PASS: ${passed.length}`,`🏆 Finalists: ${finalists.length}/${FINALISTS}`,`🟢 Copy eligible: ${eligible.length}`,`🤖 Auto selected: ${selected.length}`,`🧪 Funnel: TRADES ${funnel.trades} → WR ${funnel.wr} → PF ${funnel.pf} → PASS ${funnel.fullPass}` ,`🧱 Top filter blocks: ${top}`,`📚 Lookback: ${LOOKBACK_DAYS}d | Entry distance cap: ${MAX_ENTRY_DIST}%`,'','🏆 TOP 5 FINALISTS'];
+ const lines=['🟣 HYPERLIQUID TRADER HUNTER V5.8','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Discovery: ${d.discovered}`,`🎯 Pre-filtered: ${d.candidates.length}/${MAX_CANDIDATES}`,`📊 Full scanned: ${scanned.length}/${d.candidates.length}`,`⚠️ Scan failures: ${errors.length}`,`📦 Fills returned: ${withFills}/${scanned.length}`,`📭 No recent fills: ${noRecentFills}`,`❌ Error types: ${errSummary(errors)}`,`🎯 Statistical PASS: ${passed.length}`,`🏆 Finalists: ${finalists.length}/${FINALISTS}`,`🟢 Copy eligible: ${eligible.length}`,`🤖 Auto selected: ${selected.length}`,`🧪 Funnel: TRADES ${funnel.trades} → WR ${funnel.wr} → PF ${funnel.pf} → PASS ${funnel.fullPass}` ,`🧱 Top filter blocks: ${top}`,`📚 Lookback: ${LOOKBACK_DAYS}d | Entry distance cap: ${MAX_ENTRY_DIST}%`,'','🏆 TOP 5 FINALISTS'];
  if(!finalists.length)lines.push('No trader passed the statistical filters.');else finalists.forEach((x,i)=>{const m=x.metrics,p=x.plan;lines.push('',`#${i+1} ${short(x.address)}${x.autoSelected?' 🤖 AUTO COPY':''}`,`📈 7D: trades=${m.closedTrades} | WR=${pct(m.winRate)} | PnL=${fmt(m.pnl)} | PF=${fmt(m.profitFactor)}`,`⏱ Hold: median=${fmt(m.medianHoldHours)}h | avg=${fmt(m.avgHoldHours)}h | activeDays=${m.activeDays}`,`🧯 Streak=${m.maxLosingStreak} | liq=${m.liquidations} | fills=${m.fills}`,p?`📌 Plan: ${p.side} | source=${fmt(p.sourceEntry)} | now=${fmt(p.entry)} | dist=${pct(p.distancePct,2)} | RR=${fmt(p.rr)} | ${p.eligible?'ELIGIBLE':'BLOCKED '+p.reason}`:'📌 Plan: not enriched' )});
  if(selected[0]){const x=selected[0],p=x.plan,m=x.metrics;lines.push('','🤖 AUTO-COPY SELECTION','━━━━━━━━━━━━━━━━━━',`${short(x.address)}`,`💪 Strength score: ${fmt(x.statScore,1)}`,`📈 WR=${pct(m.winRate)} | PF=${fmt(m.profitFactor)} | Trades=${m.closedTrades}`,`⏱ Median hold=${fmt(m.medianHoldHours,1)}h`,`📍 Entry distance=${pct(p.distancePct,2)} <= ${MAX_ENTRY_DIST}%`,`📐 RR=${fmt(p.rr)} >= ${MIN_RR}`,`🟢 Status: SELECTED FOR COPY PLAN`)}else lines.push('','🤖 AUTO-COPY SELECTION','No eligible trader among the top finalists.');
  if(errors.length){lines.push('','🧪 FIRST SCAN ERRORS');errors.slice(0,10).forEach(e=>lines.push(`${short(e.address)} → ${e.cat} → ${e.message.slice(0,180)}`))}
- lines.push('','ℹ️ Entry/SL/TP are READ-ONLY copy-plan diagnostics.','ℹ️ Source TP/SL is not copied.','ℹ️ No orders are created by this worker.',`🕐 ${new Date().toISOString()}`);console.log(`[HUNTER V5.7][DONE] discovered=${d.discovered} candidates=${d.candidates.length} scanned=${scanned.length} failed=${errors.length} pass=${passed.length} finalists=${finalists.length} eligible=${eligible.length} selected=${selected.length}`);await telegram(lines.join('\n'));
+ lines.push('','ℹ️ Entry/SL/TP are READ-ONLY copy-plan diagnostics.','ℹ️ Source TP/SL is not copied.','ℹ️ No orders are created by this worker.',`🕐 ${new Date().toISOString()}`);console.log(`[HUNTER V5.8][DONE] discovered=${d.discovered} candidates=${d.candidates.length} scanned=${scanned.length} failed=${errors.length} pass=${passed.length} finalists=${finalists.length} eligible=${eligible.length} selected=${selected.length}`);await telegram(lines.join('\n'));
 }
 main().catch(async e=>{console.error(`[HUNTER V5][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
