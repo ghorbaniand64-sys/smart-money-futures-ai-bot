@@ -10,15 +10,36 @@ permissions:
 
 jobs:
   monitor:
+    environment: production
     runs-on: ubuntu-latest
     timeout-minutes: 5
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Verify Telegram environment
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -n "$TELEGRAM_TOKEN" ]; then
+            echo "[TELEGRAM] TOKEN: PRESENT"
+          else
+            echo "[TELEGRAM] TOKEN: MISSING"
+          fi
+
+          if [ -n "$TELEGRAM_CHAT_ID" ]; then
+            echo "[TELEGRAM] CHAT_ID: PRESENT"
+          else
+            echo "[TELEGRAM] CHAT_ID: MISSING"
+          fi
+
       - name: Run Hyperliquid read-only monitor
         env:
           HYPERLIQUID_TRADERS: ${{ vars.HYPERLIQUID_TRADERS }}
