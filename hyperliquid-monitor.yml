@@ -1,0 +1,60 @@
+name: Hyperliquid Trader Hunter V4
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */2 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  hunter:
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run Hyperliquid Trader Hunter V4
+        env:
+          HYPERLIQUID_API_URL: ${{ vars.HYPERLIQUID_API_URL }}
+          HYPERLIQUID_TRADERS: ${{ vars.HYPERLIQUID_TRADERS }}
+          HYPERLIQUID_HUNTER_CANDIDATES: ${{ vars.HYPERLIQUID_HUNTER_CANDIDATES }}
+          HYPERLIQUID_HUNTER_DISCOVERY_ENABLED: ${{ vars.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED }}
+          HYPERLIQUID_HUNTER_DISCOVERY_URL: ${{ vars.HYPERLIQUID_HUNTER_DISCOVERY_URL }}
+          HYPERLIQUID_HUNTER_LOOKBACK_DAYS: ${{ vars.HYPERLIQUID_HUNTER_LOOKBACK_DAYS }}
+          HYPERLIQUID_HUNTER_MAX_CANDIDATES: ${{ vars.HYPERLIQUID_HUNTER_MAX_CANDIDATES }}
+          HYPERLIQUID_HUNTER_MIN_7D_TRADES: ${{ vars.HYPERLIQUID_HUNTER_MIN_7D_TRADES }}
+          HYPERLIQUID_HUNTER_MIN_7D_WIN_RATE: ${{ vars.HYPERLIQUID_HUNTER_MIN_7D_WIN_RATE }}
+          HYPERLIQUID_HUNTER_MIN_7D_PNL: ${{ vars.HYPERLIQUID_HUNTER_MIN_7D_PNL }}
+          HYPERLIQUID_HUNTER_MIN_PROFIT_FACTOR: ${{ vars.HYPERLIQUID_HUNTER_MIN_PROFIT_FACTOR }}
+          HYPERLIQUID_HUNTER_MAX_MEDIAN_HOLD_HOURS: ${{ vars.HYPERLIQUID_HUNTER_MAX_MEDIAN_HOLD_HOURS }}
+          HYPERLIQUID_HUNTER_MAX_AVG_HOLD_HOURS: ${{ vars.HYPERLIQUID_HUNTER_MAX_AVG_HOLD_HOURS }}
+          HYPERLIQUID_HUNTER_MIN_ACTIVE_DAYS: ${{ vars.HYPERLIQUID_HUNTER_MIN_ACTIVE_DAYS }}
+          HYPERLIQUID_HUNTER_MAX_LOSING_STREAK: ${{ vars.HYPERLIQUID_HUNTER_MAX_LOSING_STREAK }}
+          HYPERLIQUID_HUNTER_MAX_LIQUIDATIONS: ${{ vars.HYPERLIQUID_HUNTER_MAX_LIQUIDATIONS }}
+          HYPERLIQUID_HUNTER_MIN_SETUP_RR: ${{ vars.HYPERLIQUID_HUNTER_MIN_SETUP_RR }}
+          HYPERLIQUID_HUNTER_MAX_ENTRY_DISTANCE_PCT: ${{ vars.HYPERLIQUID_HUNTER_MAX_ENTRY_DISTANCE_PCT }}
+          HYPERLIQUID_HUNTER_SL_ATR_MULT: ${{ vars.HYPERLIQUID_HUNTER_SL_ATR_MULT }}
+          HYPERLIQUID_HUNTER_TP_ATR_MULT: ${{ vars.HYPERLIQUID_HUNTER_TP_ATR_MULT }}
+          HYPERLIQUID_HUNTER_MAX_PLANNED_HOLD_HOURS: ${{ vars.HYPERLIQUID_HUNTER_MAX_PLANNED_HOLD_HOURS }}
+          HYPERLIQUID_HUNTER_STATE_FILE: ${{ vars.HYPERLIQUID_HUNTER_STATE_FILE }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node hyperliquid_trader_hunter.mjs
+
+      - name: Save hunter state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/hyperliquid_trader_hunter_v4.json
+          git diff --cached --quiet || git commit -m "chore: update Hyperliquid hunter V4 state"
+          git push
