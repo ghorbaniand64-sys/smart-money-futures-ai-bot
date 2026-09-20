@@ -11,13 +11,16 @@ const MIN_TRADES = integer('HYPERLIQUID_HUNTER_MIN_7D_TRADES', 30);
 const MIN_WR = num('HYPERLIQUID_HUNTER_MIN_7D_WIN_RATE', 65);
 const MIN_PNL = num('HYPERLIQUID_HUNTER_MIN_7D_PNL', 0);
 const MIN_PF = num('HYPERLIQUID_HUNTER_MIN_PROFIT_FACTOR', 1.5);
-const MAX_MEDIAN_HOLD = num('HYPERLIQUID_HUNTER_MAX_MEDIAN_HOLD_HOURS', 6);
-const MAX_AVG_HOLD = num('HYPERLIQUID_HUNTER_MAX_AVG_HOLD_HOURS', 12);
+const RAW_MAX_MEDIAN_HOLD = num('HYPERLIQUID_HUNTER_MAX_MEDIAN_HOLD_HOURS', 6);
+const MAX_MEDIAN_HOLD = RAW_MAX_MEDIAN_HOLD > 0 ? RAW_MAX_MEDIAN_HOLD : 6;
+const RAW_MAX_AVG_HOLD = num('HYPERLIQUID_HUNTER_MAX_AVG_HOLD_HOURS', 12);
+const MAX_AVG_HOLD = RAW_MAX_AVG_HOLD > 0 ? RAW_MAX_AVG_HOLD : 12;
 const MIN_ACTIVE_DAYS = integer('HYPERLIQUID_HUNTER_MIN_ACTIVE_DAYS', 4);
 const MAX_LOSING_STREAK = integer('HYPERLIQUID_HUNTER_MAX_LOSING_STREAK', 8);
 const MAX_LIQ = integer('HYPERLIQUID_HUNTER_MAX_LIQUIDATIONS', 1);
 const MIN_RR = num('HYPERLIQUID_HUNTER_MIN_SETUP_RR', 1.5);
-const MAX_ENTRY_DIST = num('HYPERLIQUID_HUNTER_MAX_ENTRY_DISTANCE_PCT', 0.5);
+const RAW_MAX_ENTRY_DIST = num('HYPERLIQUID_HUNTER_MAX_ENTRY_DISTANCE_PCT', 0.5);
+const MAX_ENTRY_DIST = Math.min(0.5, Math.max(0, RAW_MAX_ENTRY_DIST));
 const SL_ATR = num('HYPERLIQUID_HUNTER_SL_ATR_MULT', 1.2);
 const TP_ATR = num('HYPERLIQUID_HUNTER_TP_ATR_MULT', 2.0);
 const MAX_HOLD = num('HYPERLIQUID_HUNTER_MAX_PLANNED_HOLD_HOURS', 12);
@@ -115,7 +118,7 @@ function finalScore(x){
 }
 
 async function main(){
- console.log(`[HUNTER V5.3][START] ${JSON.stringify({rawLookbackDays:RAW_LOOKBACK_DAYS,lookbackDays:LOOKBACK_DAYS,maxCandidates:MAX_CANDIDATES,finalists:FINALISTS,autoSelect:AUTO_SELECT,maxEntryDistancePct:MAX_ENTRY_DIST,betweenTradersMs:BETWEEN})}`);
+ console.log(`[HUNTER V5.3][START] ${JSON.stringify({rawLookbackDays:RAW_LOOKBACK_DAYS,lookbackDays:LOOKBACK_DAYS,maxCandidates:MAX_CANDIDATES,finalists:FINALISTS,autoSelect:AUTO_SELECT,maxEntryDistancePct:MAX_ENTRY_DIST,maxMedianHoldHours:MAX_MEDIAN_HOLD,maxAvgHoldHours:MAX_AVG_HOLD,betweenTradersMs:BETWEEN})}`);
  if(RAW_LOOKBACK_DAYS<=0)console.warn('[CONFIG][WARN] HYPERLIQUID_HUNTER_LOOKBACK_DAYS<=0; using safe default 7d');
  let d;try{d=await discover()}catch(e){console.error(`[DISCOVERY][ERROR] ${e.message}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.3\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return}
  console.log(`[DISCOVERY] validLeaderboardAddresses=${d.discovered} prefilteredCandidates=${d.candidates.length} cap=${MAX_CANDIDATES} source=${d.source}`);
