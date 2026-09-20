@@ -1,0 +1,27 @@
+HYPERLIQUID TRADER HUNTER V2
+
+Keep all existing V2 Monitor variables unchanged.
+The Hunter is READ-ONLY and never sends orders/private keys.
+Existing HYPERLIQUID_TRADERS are seed/fallback addresses, not the final selection.
+
+Add these Environment=production variables:
+HYPERLIQUID_HUNTER_CANDIDATES = optional comma/newline-separated address pool
+HYPERLIQUID_HUNTER_LOOKBACK_DAYS = 7
+HYPERLIQUID_HUNTER_MAX_CANDIDATES = 300
+HYPERLIQUID_HUNTER_MIN_7D_TRADES = 30
+HYPERLIQUID_HUNTER_MIN_7D_WIN_RATE = 65
+HYPERLIQUID_HUNTER_MIN_7D_PNL = 0
+HYPERLIQUID_HUNTER_MIN_PROFIT_FACTOR = 1.5
+HYPERLIQUID_HUNTER_MAX_MEDIAN_HOLD_HOURS = 6
+HYPERLIQUID_HUNTER_MAX_AVG_HOLD_HOURS = 12
+HYPERLIQUID_HUNTER_MIN_ACTIVE_DAYS = 4
+HYPERLIQUID_HUNTER_MAX_LOSING_STREAK = 8
+HYPERLIQUID_HUNTER_MAX_LIQUIDATIONS = 1
+HYPERLIQUID_HUNTER_STATE_FILE = state/hyperliquid_trader_hunter_v2.json
+
+IMPORTANT: this version intentionally does NOT fake a leaderboard/discovery API.
+If HYPERLIQUID_HUNTER_CANDIDATES is empty, it scans the existing HYPERLIQUID_TRADERS seeds.
+For a true 300-wallet discovery run, populate HYPERLIQUID_HUNTER_CANDIDATES from a public leaderboard/export or later add a documented discovery adapter.
+
+The trade count is reconstructed from Open Long/Close Long/Open Short/Close Short using FIFO.
+Partial closes become measurable closed round-trip slices. Raw fill count is not used as the trade count.
