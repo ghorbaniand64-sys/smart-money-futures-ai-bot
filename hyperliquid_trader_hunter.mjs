@@ -13,7 +13,7 @@ const MIN_PNL = num('HYPERLIQUID_HUNTER_MIN_7D_PNL', 0);
 const MIN_PF = num('HYPERLIQUID_HUNTER_MIN_PROFIT_FACTOR', 1.5);
 const MAX_MEDIAN_HOLD = (() => { const x=Number(process.env.HYPERLIQUID_HUNTER_MAX_MEDIAN_HOLD_HOURS); return Number.isFinite(x) && x > 0 ? Math.min(6,x) : 6; })();
 const MAX_AVG_HOLD = (() => { const x=Number(process.env.HYPERLIQUID_HUNTER_MAX_AVG_HOLD_HOURS); return Number.isFinite(x) && x > 0 ? Math.min(12,x) : 12; })();
-const MIN_ACTIVE_DAYS = (()=>{ const x=Number(process.env.HYPERLIQUID_HUNTER_MIN_ACTIVE_DAYS); return Number.isFinite(x)&&x>0 ? Math.min(3,Math.floor(x)) : 3; })();
+const MIN_ACTIVE_DAYS = integer('HYPERLIQUID_HUNTER_MIN_ACTIVE_DAYS', 4);
 const MAX_LOSING_STREAK = integer('HYPERLIQUID_HUNTER_MAX_LOSING_STREAK', 8);
 const MAX_LIQ = integer('HYPERLIQUID_HUNTER_MAX_LIQUIDATIONS', 1);
 const MIN_RR = num('HYPERLIQUID_HUNTER_MIN_SETUP_RR', 1.5);
@@ -61,18 +61,57 @@ async function fetchJson(url, options={}, label='request'){
 }
 async function info(payload,label=payload.type){return fetchJson(API_URL,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)},label)}
 
-function leaderboardMetrics(row){const wp=Array.isArray(row?.windowPerformances)?row.windowPerformances:[];const m=Object.fromEntries(wp.filter(Array.isArray).map(x=>[x[0],x[1]]));const d=m.day||{},w=m.week||{};return{pnl:Number(w.pnl??d.pnl??0),vol:Number(w.vlm??d.vlm??0),roi:Number(w.roi??d.roi??0)}}
-function activity(row){const m=leaderboardMetrics(row);const vol=Math.max(0,Number(m.vol)||0),pnl=Number(m.pnl)||0,roi=Number(m.roi)||0;return Math.log1p(vol)*100 + Math.max(0,pnl)*2 + Math.max(0,roi)*20}
+function leaderboardMetrics(row){
+  const wp=Array.isArray(row?.windowPerformances)?row.windowPerformances:[];
+  const m=Object.fromEntries(wp.filter(Array.isArray).map(x=>[x[0],x[1]]));
+  const d=m.day||{},w=m.week||{};
+  return {
+    pnl:Number(w.pnl??d.pnl??0),
+    vol:Number(w.vlm??d.vlm??0),
+    roi:Number(w.roi??d.roi??0),
+    dayPnl:Number(d.pnl??0),
+    dayVol:Number(d.vlm??0),
+    dayRoi:Number(d.roi??0)
+  };
+}
+function hunterDiscoveryScore(row){
+  const m=leaderboardMetrics(row);
+  const roi=Math.max(-100,Math.min(100,Number(m.roi)||0));
+  const pnl=Math.max(-1e12,Math.min(1e12,Number(m.pnl)||0));
+  const vol=Math.max(0,Number(m.vol)||0);
+  const dayRoi=Math.max(-100,Math.min(100,Number(m.dayRoi)||0));
+  const dayPnl=Number(m.dayPnl)||0;
+  const dayVol=Math.max(0,Number(m.dayVol)||0);
+  const consistency=(roi>0?1:0)+(dayRoi>0?1:0)+(pnl>0?1:0)+(dayPnl>0?1:0);
+  return {
+    roi,pnl,vol,dayRoi,dayPnl,dayVol,consistency,
+    raw:Math.max(0,roi)*5 + Math.max(0,dayRoi)*2 + Math.log1p(Math.max(0,pnl))*1.5 + Math.log1p(Math.max(0,dayPnl))*0.75 + Math.log1p(vol)*0.5 + consistency*2
+  };
+}
+function discoveryRank(rows){
+  const items=rows.map(row=>({row,score:hunterDiscoveryScore(row)}));
+  const rank=(key,desc=true)=>{
+    const sorted=[...items].sort((a,b)=>desc?b.score[key]-a.score[key]:a.score[key]-b.score[key]);
+    const out=new Map();sorted.forEach((x,i)=>out.set(x.row,sorted.length-i));return out;
+  };
+  const ranks={roi:rank('roi'),pnl:rank('pnl'),vol:rank('vol'),dayRoi:rank('dayRoi'),dayPnl:rank('dayPnl'),consistency:rank('consistency')};
+  for(const x of items){
+    const n=items.length||1;
+    x.rankScore=(ranks.roi.get(x.row)/n)*35+(ranks.pnl.get(x.row)/n)*20+(ranks.vol.get(x.row)/n)*10+(ranks.dayRoi.get(x.row)/n)*15+(ranks.dayPnl.get(x.row)/n)*5+(ranks.consistency.get(x.row)/n)*15;
+  }
+  return items.sort((a,b)=>b.rankScore-a.rankScore).map(x=>x.row);
+}
 async function discover(){
   const map=new Map();for(const a of [...SEEDS,...MANUAL])if(addr(a))map.set(norm(a),{ethAddress:norm(a)});
   if(!DISCOVERY_ENABLED)return{discovered:map.size,candidates:[...map.keys()].slice(0,MAX_CANDIDATES),source:'manual_only'};
   const data=await fetchJson(DISCOVERY_URL,{},'leaderboard discovery');
   const rows=Array.isArray(data?.leaderboardRows)?data.leaderboardRows:[];
   const valid=[];for(const row of rows){if(addr(row?.ethAddress)){const a=norm(row.ethAddress);map.set(a,row);valid.push(a)}}
-  const candidates=[...map.values()].filter(r=>leaderboardMetrics(r).vol>0).sort((a,b)=>activity(b)-activity(a)).map(r=>norm(r.ethAddress)).slice(0,MAX_CANDIDATES);
-  const fallback=[...map.values()].sort((a,b)=>activity(b)-activity(a)).map(r=>norm(r.ethAddress)).slice(0,MAX_CANDIDATES);
+  const ranked=discoveryRank([...map.values()].filter(r=>leaderboardMetrics(r).vol>0));
+  const candidates=ranked.map(r=>norm(r.ethAddress)).slice(0,MAX_CANDIDATES);
+  const fallback=discoveryRank([...map.values()]).map(r=>norm(r.ethAddress)).slice(0,MAX_CANDIDATES);
   const finalCandidates=candidates.length>=MAX_CANDIDATES?candidates:[...new Set([...candidates,...fallback])].slice(0,MAX_CANDIDATES);
-  return{discovered:new Set(valid).size,candidates:finalCandidates,source:'leaderboardRows.ethAddress'};
+  return{discovered:new Set(valid).size,candidates:finalCandidates,source:'leaderboardRows.ethAddress:hunter_ranked'};
 }
 function fillKey(f){return [f?.tid??'',f?.hash??'',f?.time??'',f?.coin??'',f?.px??'',f?.sz??'',f?.side??''].join('|')}
 async function getFills(user,start,end){
@@ -119,7 +158,7 @@ function finalScore(x){
 }
 
 async function main(){
- console.log(`[HUNTER V5.5][START] ${JSON.stringify({rawLookbackDays:RAW_LOOKBACK_DAYS,lookbackDays:LOOKBACK_DAYS,maxCandidates:MAX_CANDIDATES,finalists:FINALISTS,autoSelect:AUTO_SELECT,maxEntryDistancePct:MAX_ENTRY_DIST,maxMedianHoldHours:MAX_MEDIAN_HOLD,maxAvgHoldHours:MAX_AVG_HOLD,betweenTradersMs:BETWEEN,betweenPagesMs:BETWEEN_PAGES})}`);
+ console.log(`[HUNTER V5.7][START] ${JSON.stringify({rawLookbackDays:RAW_LOOKBACK_DAYS,lookbackDays:LOOKBACK_DAYS,maxCandidates:MAX_CANDIDATES,finalists:FINALISTS,autoSelect:AUTO_SELECT,maxEntryDistancePct:MAX_ENTRY_DIST,maxMedianHoldHours:MAX_MEDIAN_HOLD,maxAvgHoldHours:MAX_AVG_HOLD,betweenTradersMs:BETWEEN,betweenPagesMs:BETWEEN_PAGES,discoveryRanking:'hunter_ranked_v1'})}`);
  if(RAW_LOOKBACK_DAYS<=0)console.warn('[CONFIG][WARN] HYPERLIQUID_HUNTER_LOOKBACK_DAYS<=0; using safe default 7d');
  let d;try{d=await discover()}catch(e){console.error(`[DISCOVERY][ERROR] ${e.message}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.3\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return}
  console.log(`[DISCOVERY] validLeaderboardAddresses=${d.discovered} prefilteredCandidates=${d.candidates.length} cap=${MAX_CANDIDATES} source=${d.source}`);
@@ -133,10 +172,10 @@ async function main(){
  const blocks={};for(const x of scanned)for(const r of x.gate.reasons)blocks[r]=(blocks[r]||0)+1;const top=Object.entries(blocks).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k,v])=>`${k}:${v}`).join(' | ')||'none';
  const funnel={scanned:scanned.length,trades:scanned.filter(x=>x.metrics.closedTrades>=MIN_TRADES).length,wr:scanned.filter(x=>x.metrics.closedTrades>=MIN_TRADES&&x.metrics.winRate>=MIN_WR).length,pf:scanned.filter(x=>x.metrics.closedTrades>=MIN_TRADES&&x.metrics.winRate>=MIN_WR&&x.metrics.profitFactor>=MIN_PF).length,fullPass:passed.length,finalists:finalists.length,copyEligible:eligible.length,autoSelected:selected.length};
  const noRecentFills=scanned.filter(x=>x.metrics.fills===0).length;const withFills=scanned.filter(x=>x.metrics.fills>0).length;
- const lines=['🟣 HYPERLIQUID TRADER HUNTER V5.4','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Discovery: ${d.discovered}`,`🎯 Pre-filtered: ${d.candidates.length}/${MAX_CANDIDATES}`,`📊 Full scanned: ${scanned.length}/${d.candidates.length}`,`⚠️ Scan failures: ${errors.length}`,`📦 Fills returned: ${withFills}/${scanned.length}`,`📭 No recent fills: ${noRecentFills}`,`❌ Error types: ${errSummary(errors)}`,`🎯 Statistical PASS: ${passed.length}`,`🏆 Finalists: ${finalists.length}/${FINALISTS}`,`🟢 Copy eligible: ${eligible.length}`,`🤖 Auto selected: ${selected.length}`,`🧪 Funnel: TRADES ${funnel.trades} → WR ${funnel.wr} → PF ${funnel.pf} → PASS ${funnel.fullPass}` ,`🧱 Top filter blocks: ${top}`,`📚 Lookback: ${LOOKBACK_DAYS}d | Entry distance cap: ${MAX_ENTRY_DIST}%`,'','🏆 TOP 5 FINALISTS'];
+ const lines=['🟣 HYPERLIQUID TRADER HUNTER V5.7','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Discovery: ${d.discovered}`,`🎯 Pre-filtered: ${d.candidates.length}/${MAX_CANDIDATES}`,`📊 Full scanned: ${scanned.length}/${d.candidates.length}`,`⚠️ Scan failures: ${errors.length}`,`📦 Fills returned: ${withFills}/${scanned.length}`,`📭 No recent fills: ${noRecentFills}`,`❌ Error types: ${errSummary(errors)}`,`🎯 Statistical PASS: ${passed.length}`,`🏆 Finalists: ${finalists.length}/${FINALISTS}`,`🟢 Copy eligible: ${eligible.length}`,`🤖 Auto selected: ${selected.length}`,`🧪 Funnel: TRADES ${funnel.trades} → WR ${funnel.wr} → PF ${funnel.pf} → PASS ${funnel.fullPass}` ,`🧱 Top filter blocks: ${top}`,`📚 Lookback: ${LOOKBACK_DAYS}d | Entry distance cap: ${MAX_ENTRY_DIST}%`,'','🏆 TOP 5 FINALISTS'];
  if(!finalists.length)lines.push('No trader passed the statistical filters.');else finalists.forEach((x,i)=>{const m=x.metrics,p=x.plan;lines.push('',`#${i+1} ${short(x.address)}${x.autoSelected?' 🤖 AUTO COPY':''}`,`📈 7D: trades=${m.closedTrades} | WR=${pct(m.winRate)} | PnL=${fmt(m.pnl)} | PF=${fmt(m.profitFactor)}`,`⏱ Hold: median=${fmt(m.medianHoldHours)}h | avg=${fmt(m.avgHoldHours)}h | activeDays=${m.activeDays}`,`🧯 Streak=${m.maxLosingStreak} | liq=${m.liquidations} | fills=${m.fills}`,p?`📌 Plan: ${p.side} | source=${fmt(p.sourceEntry)} | now=${fmt(p.entry)} | dist=${pct(p.distancePct,2)} | RR=${fmt(p.rr)} | ${p.eligible?'ELIGIBLE':'BLOCKED '+p.reason}`:'📌 Plan: not enriched' )});
  if(selected[0]){const x=selected[0],p=x.plan,m=x.metrics;lines.push('','🤖 AUTO-COPY SELECTION','━━━━━━━━━━━━━━━━━━',`${short(x.address)}`,`💪 Strength score: ${fmt(x.statScore,1)}`,`📈 WR=${pct(m.winRate)} | PF=${fmt(m.profitFactor)} | Trades=${m.closedTrades}`,`⏱ Median hold=${fmt(m.medianHoldHours,1)}h`,`📍 Entry distance=${pct(p.distancePct,2)} <= ${MAX_ENTRY_DIST}%`,`📐 RR=${fmt(p.rr)} >= ${MIN_RR}`,`🟢 Status: SELECTED FOR COPY PLAN`)}else lines.push('','🤖 AUTO-COPY SELECTION','No eligible trader among the top finalists.');
  if(errors.length){lines.push('','🧪 FIRST SCAN ERRORS');errors.slice(0,10).forEach(e=>lines.push(`${short(e.address)} → ${e.cat} → ${e.message.slice(0,180)}`))}
- lines.push('','ℹ️ Entry/SL/TP are READ-ONLY copy-plan diagnostics.','ℹ️ Source TP/SL is not copied.','ℹ️ No orders are created by this worker.',`🕐 ${new Date().toISOString()}`);console.log(`[HUNTER V5.5][DONE] discovered=${d.discovered} candidates=${d.candidates.length} scanned=${scanned.length} failed=${errors.length} pass=${passed.length} finalists=${finalists.length} eligible=${eligible.length} selected=${selected.length}`);await telegram(lines.join('\n'));
+ lines.push('','ℹ️ Entry/SL/TP are READ-ONLY copy-plan diagnostics.','ℹ️ Source TP/SL is not copied.','ℹ️ No orders are created by this worker.',`🕐 ${new Date().toISOString()}`);console.log(`[HUNTER V5.7][DONE] discovered=${d.discovered} candidates=${d.candidates.length} scanned=${scanned.length} failed=${errors.length} pass=${passed.length} finalists=${finalists.length} eligible=${eligible.length} selected=${selected.length}`);await telegram(lines.join('\n'));
 }
 main().catch(async e=>{console.error(`[HUNTER V5][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
