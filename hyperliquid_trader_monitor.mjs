@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 
 const CONFIG = Object.freeze({
   apiUrl: process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info',
-  traders: (process.env.HYPERLIQUID_TRADERS || '').split(',').map(s => s.trim()).filter(Boolean),
+  traders: (process.env.HYPERLIQUID_TRADERS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
   lookbackHours: Number(process.env.HYPERLIQUID_LOOKBACK_HOURS || 24),
   tradeWindowDays: Number(process.env.HYPERLIQUID_TRADE_WINDOW_DAYS || 7),
   minTrades24h: Number(process.env.HYPERLIQUID_MIN_TRADES_24H || 5),
@@ -20,27 +20,23 @@ const DEFAULT_TRADERS = [
   '0xe867fbdad3291530e41530301ecb77693850c78e',
   '0xa9b95f2a2e7ef219021efc5c04c32761b8553bbd',
 ];
-
 const TRADERS = CONFIG.traders.length ? CONFIG.traders : DEFAULT_TRADERS;
 
-function num(v, d = 0) { const n = Number(v); return Number.isFinite(n) ? n : d; }
+function num(v, d = 0) { const x = Number(v); return Number.isFinite(x) ? x : d; }
 function short(a) { return `${a.slice(0, 6)}…${a.slice(-4)}`; }
-function money(v) { return `${v >= 0 ? '+' : ''}$${Math.abs(v).toFixed(2)}`; }
-function pct(v) { return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`; }
+function money(v) { return `${v >= 0 ? '+' : '-'}$${Math.abs(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}`; }
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
 async function post(body) {
   const r = await fetch(CONFIG.apiUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  if (!r.ok) throw new Error(`Hyperliquid HTTP ${r.status}`);
-  return r.json();
+  const text = await r.text();
+  if (!r.ok) throw new Error(`Hyperliquid HTTP ${r.status}: ${text.slice(0,300)}`);
+  return JSON.parse(text);
 }
 
-async function getState(user) {
-  return post({ type: 'clearinghouseState', user });
-}
-
-async function getFills(user, startTime) {
-  return post({ type: 'userFillsByTime', user, startTime, aggregateByTime: false });
+async function getState(user) { return post({ type: 'clearinghouseState', user }); }
+async function getFills(user, startTime, endTime) {
+  return post({ type: 'userFillsByTime', user, startTime, endTime, aggregateByTime: false });
 }
 
 function positions(state) {
@@ -60,125 +56,187 @@ function positions(state) {
   }).filter(p => p.side !== 'FLAT' && p.size > 0);
 }
 
-function fillStats(fills) {
-  let volume = 0, fees = 0, realized = 0, wins = 0, losses = 0, closed = 0;
-  const byCoin = new Map();
-  for (const f of fills) {
-    const px = num(f.px), sz = num(f.sz), pnl = num(f.closedPnl);
-    volume += Math.abs(px * sz);
-    fees += num(f.fee);
-    realized += pnl;
-    if (Math.abs(pnl) > 0) { closed++; if (pnl > 0) wins++; else if (pnl < 0) losses++; }
-    const coin = f.coin || 'UNKNOWN';
-    const arr = byCoin.get(coin) || [];
-    arr.push({ time: num(f.time), px, sz, dir: f.dir || '', closedPnl: pnl, startPosition: num(f.startPosition) });
-    byCoin.set(coin, arr);
-  }
-  return { volume, fees, realized, closed, wins, losses, byCoin };
+function dirClass(f) {
+  const d = String(f?.dir || '').toLowerCase();
+  if (d.includes('open long')) return 'LONG_OPEN';
+  if (d.includes('close long')) return 'LONG_CLOSE';
+  if (d.includes('open short')) return 'SHORT_OPEN';
+  if (d.includes('close short')) return 'SHORT_CLOSE';
+  return '';
 }
 
-function estimateAvgHoldHours(fills) {
-  // FIFO position reconstruction per coin. This is an estimate, intentionally conservative.
-  const books = new Map();
-  const holds = [];
-  const sorted = [...fills].sort((a,b) => num(a.time) - num(b.time));
-  for (const f of sorted) {
-    const coin = f.coin || 'UNKNOWN';
-    const side = /LONG/i.test(f.dir || '') || f.side === 'B' ? 1 : -1;
-    const sz = Math.abs(num(f.sz));
-    if (!sz) continue;
-    const book = books.get(coin) || { long: [], short: [] };
-    const closing = side < 0 ? book.long : book.short;
-    const opening = side > 0 ? book.long : book.short;
-    let remaining = sz;
-    // Hyperliquid dir strings are richer than side; startPosition helps but this remains an estimate.
-    if (/Close/i.test(f.dir || '')) {
-      while (remaining > 0 && closing.length) {
-        const lot = closing[0];
-        const take = Math.min(remaining, lot.sz);
-        holds.push((num(f.time) - lot.time) / 3600000);
-        lot.sz -= take; remaining -= take;
-        if (lot.sz <= 1e-12) closing.shift();
-      }
-    } else {
-      opening.push({ time: num(f.time), sz: remaining });
+// Fills are executions, not trades. Reconstruct closed trades from explicit
+// Hyperliquid Open/Close direction labels. Hold time is FIFO-estimated and
+// may be fragmented by partial fills/adds/reductions.
+function reconstructClosedTrades(fills) {
+  const rows = [...fills].filter(f => num(f.time) > 0).sort((a,b) => num(a.time)-num(b.time));
+  const book = { LONG: [], SHORT: [] };
+  const closed = [];
+
+  for (const f of rows) {
+    const cls = dirClass(f);
+    const time = num(f.time);
+    const size = Math.abs(num(f.sz));
+    if (!cls || !time || !size) continue;
+    const side = cls.startsWith('LONG') ? 'LONG' : 'SHORT';
+
+    if (cls.endsWith('_OPEN')) {
+      book[side].push({ time, size });
+      continue;
     }
-    books.set(coin, book);
+
+    let remaining = size;
+    let matched = 0;
+    let weightedHoldMs = 0;
+    while (remaining > 1e-12 && book[side].length) {
+      const lot = book[side][0];
+      const take = Math.min(remaining, lot.size);
+      weightedHoldMs += take * Math.max(0, time - lot.time);
+      matched += take;
+      lot.size -= take;
+      remaining -= take;
+      if (lot.size <= 1e-12) book[side].shift();
+    }
+    closed.push({
+      coin: String(f.coin || 'UNKNOWN'),
+      direction: side,
+      time,
+      px: num(f.px),
+      size,
+      closedPnl: num(f.closedPnl),
+      holdMs: matched > 0 ? weightedHoldMs / matched : null,
+    });
   }
-  if (!holds.length) return null;
-  return holds.reduce((a,b)=>a+b,0) / holds.length;
+  return closed;
 }
 
-function rankMetric(s) {
-  const wr = s.closed ? s.wins / s.closed : 0;
-  const activity = clamp(s.volume24h / 1_000_000, 0, 20) / 20;
-  const trades = clamp(s.fills24h / 50, 0, 1);
-  const hold = s.avgHoldHours == null ? 0.5 : 1 - clamp(s.avgHoldHours / Math.max(CONFIG.maxAvgHoldHours, 1), 0, 1);
-  const pnl = Math.tanh(s.realized24h / 5000) * 0.5 + 0.5;
-  return 100 * (0.30 * wr + 0.25 * activity + 0.20 * trades + 0.15 * hold + 0.10 * pnl);
+function calculateStats(allFills, closed) {
+  const cutoff24 = Date.now() - 24*3600000;
+  const fills24 = allFills.filter(f => num(f.time) >= cutoff24);
+  const volume24h = fills24.reduce((s,f) => s + Math.abs(num(f.px) * num(f.sz)), 0);
+  const decided = closed.filter(t => t.closedPnl !== 0);
+  const wins = decided.filter(t => t.closedPnl > 0).length;
+  const losses = decided.filter(t => t.closedPnl < 0).length;
+  const realized = closed.reduce((s,t) => s + t.closedPnl, 0);
+  const holds = closed.filter(t => Number.isFinite(t.holdMs)).map(t => t.holdMs);
+  const sorted = [...holds].sort((a,b)=>a-b);
+  const avgHoldMs = holds.length ? holds.reduce((a,b)=>a+b,0)/holds.length : null;
+  const medianHoldMs = sorted.length ? sorted[Math.floor(sorted.length/2)] : null;
+  const activeDays = new Set(closed.map(t => new Date(t.time).toISOString().slice(0,10))).size;
+  const profit = closed.filter(t=>t.closedPnl>0).reduce((s,t)=>s+t.closedPnl,0);
+  const loss = Math.abs(closed.filter(t=>t.closedPnl<0).reduce((s,t)=>s+t.closedPnl,0));
+  const profitFactor = loss > 0 ? profit/loss : (profit > 0 ? Infinity : null);
+  const tradesPerDay = closed.length / Math.max(1, CONFIG.tradeWindowDays);
+
+  const wr = decided.length ? wins/decided.length*100 : null;
+  const holdHours = avgHoldMs == null ? null : avgHoldMs/3600000;
+  const enoughClosed = closed.length >= CONFIG.minClosedTrades;
+  const enoughRecent = fills24.length >= CONFIG.minTrades24h;
+  const holdOk = holdHours == null ? false : holdHours <= CONFIG.maxAvgHoldHours;
+  const eligible = enoughClosed && enoughRecent && holdOk && realized > 0;
+
+  // Score is a screening metric, not a claim of future performance.
+  const wrPart = wr == null ? 0 : clamp(wr/100,0,1)*30;
+  const activityPart = clamp(fills24.length/Math.max(CONFIG.minTrades24h*4,1),0,1)*20;
+  const pnlPart = realized > 0 ? 20 : 0;
+  const holdPart = holdHours == null ? 0 : clamp(1 - holdHours/Math.max(CONFIG.maxAvgHoldHours,1),0,1)*20;
+  const samplePart = clamp(closed.length/Math.max(CONFIG.minClosedTrades*4,1),0,1)*10;
+  const score = wrPart + activityPart + pnlPart + holdPart + samplePart;
+
+  return { fills24h:fills24.length, volume24h, closedTrades:closed.length, wins, losses,
+    winRate:wr, realizedPnl:realized, avgHoldMs, medianHoldMs, tradesPerDay, activeDays,
+    profitFactor, eligible, score };
+}
+
+function fmtHold(ms) {
+  if (ms == null) return 'N/A';
+  const h = ms/3600000;
+  return h < 48 ? `${h.toFixed(1)}h` : `${(h/24).toFixed(1)}d`;
+}
+
+function status(r) {
+  if (r.error) return '🔴 ERROR';
+  if (r.stats.eligible) return '🟢 DAY-TRADER CANDIDATE';
+  if (r.stats.closedTrades < CONFIG.minClosedTrades) return '⚪ INSUFFICIENT CLOSED-TRADE DATA';
+  return '🟡 FILTERED';
+}
+
+function buildReport(results) {
+  const lines = [
+    '🟣 HYPERLIQUID DAY-TRADER MONITOR V2',
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+    `📡 READ-ONLY | Traders ${results.length}/${results.length}`,
+    `🕐 ${new Date().toISOString()}`,
+    ''
+  ];
+  results.forEach((r,i) => {
+    if (r.error) {
+      lines.push(`${i+1}. ${short(r.address)} | ${status(r)}`);
+      lines.push(`❌ ${r.error}`);
+      lines.push('');
+      return;
+    }
+    const s = r.stats;
+    lines.push(`${i+1}. ${short(r.address)} | Score ${s.score.toFixed(1)} | ${status(r)}`);
+    lines.push(`📊 24h fills ${s.fills24h} | 24h volume $${s.volume24h.toLocaleString('en-US',{maximumFractionDigits:0})}`);
+    lines.push(`📈 CLOSED ${s.closedTrades} | WR ${s.winRate == null ? 'N/A' : s.winRate.toFixed(1)+'%'} | Realized PnL ${s.closedTrades ? money(s.realizedPnl) : 'N/A'}`);
+    lines.push(`⏱ Avg hold ${fmtHold(s.avgHoldMs)} | Median ${fmtHold(s.medianHoldMs)} | Trades/day ${s.tradesPerDay.toFixed(2)}`);
+    lines.push(`📅 Active days ${s.activeDays}/${CONFIG.tradeWindowDays} | PF ${s.profitFactor == null ? 'N/A' : Number.isFinite(s.profitFactor) ? s.profitFactor.toFixed(2) : '∞'}`);
+    if (r.positions.length) {
+      for (const p of r.positions.slice(0,5)) lines.push(`  • ${p.coin} ${p.side} | entry ${p.entry} | lev ${p.leverage}x | uPnL ${money(p.unrealizedPnl)}`);
+      if (r.positions.length > 5) lines.push(`  • +${r.positions.length-5} more open positions`);
+    } else lines.push('  • No open positions');
+    lines.push('');
+  });
+  lines.push('ℹ️ WR/PnL use reconstructed CLOSED trades, not raw fills.');
+  lines.push('ℹ️ Hold time is FIFO-estimated from Open/Close fills; partial fills can fragment trades.');
+  return lines.join('\n');
 }
 
 async function telegram(text) {
-  if (!CONFIG.telegramToken || !CONFIG.telegramChatId) return;
+  if (!CONFIG.telegramToken || !CONFIG.telegramChatId) {
+    console.error('[TELEGRAM] CONFIG MISSING: TELEGRAM_TOKEN or TELEGRAM_CHAT_ID');
+    return false;
+  }
   const url = `https://api.telegram.org/bot${CONFIG.telegramToken}/sendMessage`;
-  await fetch(url, { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify({ chat_id: CONFIG.telegramChatId, text }) });
+  try {
+    const r = await fetch(url, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({chat_id:CONFIG.telegramChatId,text,disable_web_page_preview:true}) });
+    const body = await r.text();
+    if (!r.ok) { console.error(`[TELEGRAM] HTTP ${r.status}: ${body}`); return false; }
+    console.log('[TELEGRAM] SENT');
+    return true;
+  } catch (e) { console.error('[TELEGRAM] ERROR:', e?.message || e); return false; }
 }
 
 async function main() {
-  const now = Date.now();
-  const start = now - CONFIG.lookbackHours * 3600000;
+  const end = Date.now();
+  // The 24h variable is for the activity metric. The historical trade window
+  // must be used to reconstruct enough closed trades for WR/PnL/hold time.
+  const start = end - CONFIG.tradeWindowDays*86400000;
   const results = [];
   for (const user of TRADERS) {
     try {
-      const [state, fills] = await Promise.all([getState(user), getFills(user, start)]);
-      const ps = positions(state);
-      const stats = fillStats(fills);
-      const avgHoldHours = estimateAvgHoldHours(fills);
-      const wins = stats.wins, closed = stats.closed;
-      const wr = closed ? wins / closed * 100 : 0;
-      const r = {
-        address: user,
-        short: short(user),
-        accountValue: num(state?.marginSummary?.accountValue),
-        withdrawable: num(state?.withdrawable),
-        positions: ps,
-        positionCount: ps.length,
-        volume24h: stats.volume,
-        fills24h: fills.length,
-        closedTrades24h: closed,
-        wins24h: wins,
-        losses24h: stats.losses,
-        winRate24h: wr,
-        realized24h: stats.realized,
-        fees24h: stats.fees,
-        avgHoldHours,
-      };
-      r.score = rankMetric(r);
-      r.dayTraderEligible = r.fills24h >= CONFIG.minTrades24h && r.closedTrades24h >= CONFIG.minClosedTrades && (r.avgHoldHours == null || r.avgHoldHours <= CONFIG.maxAvgHoldHours);
-      results.push(r);
+      const [state, fills] = await Promise.all([getState(user), getFills(user,start,end)]);
+      const closed = reconstructClosedTrades(fills);
+      const stats = calculateStats(fills,closed);
+      results.push({address:user,positions:positions(state),stats});
     } catch (e) {
-      results.push({ address: user, short: short(user), error: e.message, score: 0, dayTraderEligible: false });
+      results.push({address:user,positions:[],error:e?.message || String(e),stats:{score:0,closedTrades:0}});
     }
   }
-  results.sort((a,b) => b.score - a.score);
-  await fs.mkdir(CONFIG.stateFile.split('/').slice(0,-1).join('/') || '.', { recursive: true });
-  const payload = { generatedAt: new Date(now).toISOString(), config: { ...CONFIG, telegramToken: undefined }, traders: results };
-  await fs.writeFile(CONFIG.stateFile, JSON.stringify(payload, null, 2));
+  results.sort((a,b)=>num(b.stats.score)-num(a.stats.score));
 
-  console.log('\n🟣 HYPERLIQUID DAY-TRADER MONITOR');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  for (const [i, r] of results.entries()) {
-    console.log(`${i+1}. ${r.short} | score ${num(r.score).toFixed(1)} | 24h fills ${r.fills24h ?? 0} | volume $${num(r.volume24h).toLocaleString()} | WR ${num(r.winRate24h).toFixed(1)}% | PnL ${money(num(r.realized24h))} | avg hold ${r.avgHoldHours == null ? 'N/A' : r.avgHoldHours.toFixed(1)+'h'} | ${r.dayTraderEligible ? 'DAY-TRADER OK' : 'FILTERED'}`);
-    if (r.positions) for (const p of r.positions) console.log(`   ${p.coin} ${p.side} | entry ${p.entry} | lev ${p.leverage}x | uPnL ${money(p.unrealizedPnl)}`);
-    if (r.error) console.log(`   ERROR: ${r.error}`);
-  }
-  const eligible = results.filter(r => r.dayTraderEligible);
-  const top = eligible.slice(0, 5);
-  if (top.length) {
-    const lines = ['🟣 HYPERLIQUID — DAY-TRADER WATCH', '━━━━━━━━━━━━━━━━━━'];
-    for (const r of top) lines.push(`👤 ${r.short}\n📈 WR ${r.winRate24h.toFixed(1)}% | 24h trades ${r.fills24h} | Vol $${(r.volume24h/1e6).toFixed(2)}M\n💰 PnL ${money(r.realized24h)} | Hold ${r.avgHoldHours == null ? 'N/A' : r.avgHoldHours.toFixed(1)+'h'} | Score ${r.score.toFixed(1)}`);
-    await telegram(lines.join('\n'));
-  }
+  const report = buildReport(results);
+  console.log('\n'+report+'\n');
+  await fs.mkdir(CONFIG.stateFile.split('/').slice(0,-1).join('/') || '.', {recursive:true});
+  await fs.writeFile(CONFIG.stateFile, JSON.stringify({generatedAt:new Date().toISOString(),traders:results},null,2));
+
+  const sent = await telegram(report);
+  if (!sent) process.exitCode = 2;
 }
 
-main().catch(e => { console.error(e); process.exitCode = 1; });
+main().catch(async e => {
+  console.error('[FATAL]',e?.stack||e);
+  await telegram(`🔴 HYPERLIQUID MONITOR ERROR\n━━━━━━━━━━━━━━━━━━\n${e?.message||e}`);
+  process.exitCode = 1;
+});
