@@ -1,24 +1,26 @@
-HYPERLIQUID TRADER HUNTER V4
+HYPERLIQUID TRADER HUNTER V5
+============================
 
-This package is a READ-ONLY Hyperliquid trader discovery and copy-trade planning engine.
+FILES
+-----
+hyperliquid_trader_hunter.mjs   repo root; read-only hunter
+HYPERLIQUID_SETUP.txt           repo root; setup reference
+.github/workflows/hyperliquid-monitor.yml   GitHub Actions workflow
 
-It does NOT replace:
-- github-runner.mjs
+PROTECTED GMX FILES
+-------------------
+Do not touch:
 - worker_core.mjs
-- hyperliquid_trader_monitor.mjs
+- github-runner.mjs
 
-Files:
-- hyperliquid_trader_hunter.mjs
-- .github/workflows/hyperliquid-trader-hunter-v4.yml
-- HYPERLIQUID_TRADER_HUNTER_V4_SETUP.txt
+ENVIRONMENT
+-----------
+GitHub Environment: production
 
-EXISTING VARIABLES TO KEEP:
-HYPERLIQUID_API_URL
-HYPERLIQUID_TRADERS
-TELEGRAM_TOKEN
-TELEGRAM_CHAT_ID
-
-NEW PRODUCTION VARIABLES:
+KEEP EXISTING VARIABLES
+-----------------------
+HYPERLIQUID_API_URL=https://api.hyperliquid.xyz/info
+HYPERLIQUID_TRADERS=<existing comma-separated seed addresses>
 HYPERLIQUID_HUNTER_DISCOVERY_ENABLED=true
 HYPERLIQUID_HUNTER_DISCOVERY_URL=https://stats-data.hyperliquid.xyz/Mainnet/leaderboard
 HYPERLIQUID_HUNTER_CANDIDATES=
@@ -33,46 +35,43 @@ HYPERLIQUID_HUNTER_MAX_AVG_HOLD_HOURS=12
 HYPERLIQUID_HUNTER_MIN_ACTIVE_DAYS=4
 HYPERLIQUID_HUNTER_MAX_LOSING_STREAK=8
 HYPERLIQUID_HUNTER_MAX_LIQUIDATIONS=1
-
-COPY-PLAN VARIABLES:
 HYPERLIQUID_HUNTER_MIN_SETUP_RR=1.5
 HYPERLIQUID_HUNTER_MAX_ENTRY_DISTANCE_PCT=1.0
 HYPERLIQUID_HUNTER_SL_ATR_MULT=1.2
 HYPERLIQUID_HUNTER_TP_ATR_MULT=2.0
 HYPERLIQUID_HUNTER_MAX_PLANNED_HOLD_HOURS=12
 
-HYPERLIQUID_HUNTER_STATE_FILE=state/hyperliquid_trader_hunter_v4.json
+OPTIONAL RELIABILITY VARIABLES
+-------------------------------
+HYPERLIQUID_HUNTER_API_RETRIES=4
+HYPERLIQUID_HUNTER_API_BASE_DELAY_MS=700
+HYPERLIQUID_HUNTER_BETWEEN_TRADERS_MS=180
+HYPERLIQUID_HUNTER_MAX_FILL_PAGES=8
+HYPERLIQUID_HUNTER_REQUEST_TIMEOUT_MS=30000
 
-TELEGRAM REPORT:
-The report includes:
-- selected trader address
-- 7D closed trades
-- win rate
-- realized PnL
-- profit factor
-- median/average/P25/P75 hold statistics in state
-- active days
-- trades per active day
-- max losing streak
-- liquidation count
-- reason for selection
-- source open position
-- source entry
-- current market mid
-- entry distance
-- source leverage as information only
-- source unrealized PnL
-- planned entry
-- planned SL
-- planned TP
-- planned RR
-- planned maximum holding time
-- COPY PLAN eligibility/block reason
+TELEGRAM SECRETS
+----------------
+TELEGRAM_TOKEN
+TELEGRAM_CHAT_ID
 
-IMPORTANT:
-Entry/SL/TP/RR are a READ-ONLY planning layer. They are NOT source trader TP/SL and this version sends NO orders.
+V5 CHANGES
+----------
+1. Discovery reads only leaderboardRows[].ethAddress; no recursive 0x extraction.
+2. Every failed trader scan is logged with an error category.
+3. 429/5xx/network failures retry with exponential backoff.
+4. userFillsByTime uses aggregateByTime=false and overlapping pagination with deduplication.
+5. Telegram separates discovered, candidates, successful scans, failures, filter blocks and selected traders.
+6. Current position/book/1H candle calls happen only after statistical filters pass.
+7. Read-only: no order/private-key/execution code.
+8. Hyperliquid's userFillsByTime data is finite; very active accounts can have incomplete history. V5 flags long scans as HISTORY_TRUNCATED.
 
-The source trader's leverage is informational only. It is NOT copied as execution leverage.
+EXPECTED DIAGNOSTICS
+--------------------
+[HUNTER V5][START] ...
+[DISCOVERY] validLeaderboardAddresses=... candidates=300
+[SCAN] 1/300 ...
+...
+[HUNTER V5][DONE] discovered=... candidates=300 scanned=... failed=... pass=... selected=...
 
-Run:
-GitHub Actions -> Hyperliquid Trader Hunter V4 -> Run workflow
+Run manually:
+Actions -> Hyperliquid Trader Monitor -> Run workflow

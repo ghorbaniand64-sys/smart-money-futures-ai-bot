@@ -1,671 +1,108 @@
-import fs from "node:fs/promises";
+// Hyperliquid Trader Hunter V5 - READ ONLY
+const API_URL = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
+const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL || 'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';
+const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED ?? 'true').toLowerCase() === 'true';
+const LOOKBACK_DAYS = num('HYPERLIQUID_HUNTER_LOOKBACK_DAYS', 7);
+const MAX_CANDIDATES = integer('HYPERLIQUID_HUNTER_MAX_CANDIDATES', 300);
+const MIN_TRADES = integer('HYPERLIQUID_HUNTER_MIN_7D_TRADES', 30);
+const MIN_WR = num('HYPERLIQUID_HUNTER_MIN_7D_WIN_RATE', 65);
+const MIN_PNL = num('HYPERLIQUID_HUNTER_MIN_7D_PNL', 0);
+const MIN_PF = num('HYPERLIQUID_HUNTER_MIN_PROFIT_FACTOR', 1.5);
+const MAX_MEDIAN_HOLD = num('HYPERLIQUID_HUNTER_MAX_MEDIAN_HOLD_HOURS', 6);
+const MAX_AVG_HOLD = num('HYPERLIQUID_HUNTER_MAX_AVG_HOLD_HOURS', 12);
+const MIN_ACTIVE_DAYS = integer('HYPERLIQUID_HUNTER_MIN_ACTIVE_DAYS', 4);
+const MAX_LOSING_STREAK = integer('HYPERLIQUID_HUNTER_MAX_LOSING_STREAK', 8);
+const MAX_LIQ = integer('HYPERLIQUID_HUNTER_MAX_LIQUIDATIONS', 1);
+const MIN_RR = num('HYPERLIQUID_HUNTER_MIN_SETUP_RR', 1.5);
+const MAX_ENTRY_DIST = num('HYPERLIQUID_HUNTER_MAX_ENTRY_DISTANCE_PCT', 1.0);
+const SL_ATR = num('HYPERLIQUID_HUNTER_SL_ATR_MULT', 1.2);
+const TP_ATR = num('HYPERLIQUID_HUNTER_TP_ATR_MULT', 2.0);
+const MAX_HOLD = num('HYPERLIQUID_HUNTER_MAX_PLANNED_HOLD_HOURS', 12);
+const RETRIES = integer('HYPERLIQUID_HUNTER_API_RETRIES', 4);
+const BASE_DELAY = integer('HYPERLIQUID_HUNTER_API_BASE_DELAY_MS', 700);
+const BETWEEN = integer('HYPERLIQUID_HUNTER_BETWEEN_TRADERS_MS', 180);
+const MAX_PAGES = integer('HYPERLIQUID_HUNTER_MAX_FILL_PAGES', 8);
+const TIMEOUT = integer('HYPERLIQUID_HUNTER_REQUEST_TIMEOUT_MS', 30000);
+const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
+const TG_CHAT = process.env.TELEGRAM_CHAT_ID || '';
+const SEEDS = csv('HYPERLIQUID_TRADERS');
+const MANUAL = csv('HYPERLIQUID_HUNTER_CANDIDATES');
+const TG_LIMIT = 3800;
 
-/*
- HYPERLIQUID TRADER HUNTER V4
- READ-ONLY discovery + trader analytics + copy-trade planning.
- NO ORDERS / NO PRIVATE KEY / NO EXECUTION.
+function num(k,d){const x=Number(process.env[k]);return Number.isFinite(x)?x:d}
+function integer(k,d){const x=parseInt(process.env[k]||'',10);return Number.isFinite(x)?x:d}
+function csv(k){return String(process.env[k]||'').split(',').map(x=>x.trim()).filter(Boolean)}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+function addr(x){return /^0x[a-fA-F0-9]{40}$/.test(String(x||''))}
+function norm(x){return String(x).toLowerCase()}
+function short(x){return `${x.slice(0,8)}…${x.slice(-6)}`}
+function fmt(x,d=2){return Number.isFinite(Number(x))?Number(x).toFixed(d):'n/a'}
+function pct(x,d=1){return Number.isFinite(Number(x))?`${Number(x).toFixed(d)}%`:'n/a'}
+function median(a){if(!a.length)return NaN;const s=[...a].sort((a,b)=>a-b),m=Math.floor(s.length/2);return s.length%2?s[m]:(s[m-1]+s[m])/2}
+function quantile(a,q){if(!a.length)return NaN;const s=[...a].sort((a,b)=>a-b),p=(s.length-1)*q,l=Math.floor(p),h=Math.ceil(p);return l===h?s[l]:s[l]+(s[h]-s[l])*(p-l)}
+function category(e){const s=String(e?.message||e||'');if(/HTTP 429/i.test(s))return'HTTP_429';if(/HTTP 5\d\d/i.test(s))return'HTTP_5XX';if(/timeout/i.test(s))return'TIMEOUT';if(/fetch|network|ECONN|socket|ENOTFOUND/i.test(s))return'NETWORK';if(/JSON/i.test(s))return'BAD_JSON';if(/fills/i.test(s))return'FILLS';return'OTHER'}
 
- Important:
- - A trader is selected from CLOSED trades over the configured lookback.
- - Entry/SL/TP below are a PLANNING layer for a potential future copy.
- - They are NOT the source trader's TP/SL and are NOT executed by this file.
-*/
-
-const INFO = process.env.HYPERLIQUID_API_URL || "https://api.hyperliquid.xyz/info";
-const LOOKBACK_DAYS = Number(process.env.HYPERLIQUID_HUNTER_LOOKBACK_DAYS || 7);
-const MAX_CANDIDATES = Number(process.env.HYPERLIQUID_HUNTER_MAX_CANDIDATES || 300);
-
-const MIN_TRADES = Number(process.env.HYPERLIQUID_HUNTER_MIN_7D_TRADES || 30);
-const MIN_WR = Number(process.env.HYPERLIQUID_HUNTER_MIN_7D_WIN_RATE || 65);
-const MIN_PNL = Number(process.env.HYPERLIQUID_HUNTER_MIN_7D_PNL || 0);
-const MIN_PF = Number(process.env.HYPERLIQUID_HUNTER_MIN_PROFIT_FACTOR || 1.5);
-const MAX_MEDIAN_HOLD = Number(process.env.HYPERLIQUID_HUNTER_MAX_MEDIAN_HOLD_HOURS || 6);
-const MAX_AVG_HOLD = Number(process.env.HYPERLIQUID_HUNTER_MAX_AVG_HOLD_HOURS || 12);
-const MIN_ACTIVE_DAYS = Number(process.env.HYPERLIQUID_HUNTER_MIN_ACTIVE_DAYS || 4);
-const MAX_LOSING_STREAK = Number(process.env.HYPERLIQUID_HUNTER_MAX_LOSING_STREAK || 8);
-const MAX_LIQUIDATIONS = Number(process.env.HYPERLIQUID_HUNTER_MAX_LIQUIDATIONS || 1);
-
-const MIN_SETUP_RR = Number(process.env.HYPERLIQUID_HUNTER_MIN_SETUP_RR || 1.5);
-const MAX_ENTRY_DISTANCE_PCT = Number(process.env.HYPERLIQUID_HUNTER_MAX_ENTRY_DISTANCE_PCT || 1.0);
-const SL_ATR_MULT = Number(process.env.HYPERLIQUID_HUNTER_SL_ATR_MULT || 1.2);
-const TP_ATR_MULT = Number(process.env.HYPERLIQUID_HUNTER_TP_ATR_MULT || 2.0);
-const MAX_HOLD_PLAN_HOURS = Number(process.env.HYPERLIQUID_HUNTER_MAX_PLANNED_HOLD_HOURS || 12);
-
-const STATE_FILE = process.env.HYPERLIQUID_HUNTER_STATE_FILE ||
-  "state/hyperliquid_trader_hunter_v4.json";
-
-const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL ||
-  "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard";
-
-const DISCOVERY_ENABLED =
-  String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED ?? "true").toLowerCase() !== "false";
-
-const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
-
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-function addresses(raw) {
-  return [...new Set(String(raw || "")
-    .split(/[\s,;\n]+/)
-    .map(x => x.trim().toLowerCase())
-    .filter(x => ADDRESS_RE.test(x)))];
-}
-
-async function info(body) {
-  const r = await fetch(INFO, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  if (!r.ok) throw new Error(`Info API ${r.status}`);
-  return r.json();
-}
-
-function extractAddresses(v, out = []) {
-  if (typeof v === "string") {
-    if (ADDRESS_RE.test(v)) out.push(v.toLowerCase());
-    return out;
+async function fetchJson(url, options={}, label='request'){
+  let last;
+  for(let attempt=0;attempt<=RETRIES;attempt++){
+    const c=new AbortController(), t=setTimeout(()=>c.abort(),TIMEOUT);
+    try{
+      const r=await fetch(url,{...options,signal:c.signal});
+      clearTimeout(t);
+      if(r.ok){const text=await r.text();try{return JSON.parse(text)}catch{throw new Error(`${label}: invalid JSON`)}}
+      const body=(await r.text()).slice(0,240); const e=new Error(`${label}: HTTP ${r.status} ${body}`);e.status=r.status;throw e;
+    }catch(e){clearTimeout(t);last=e?.name==='AbortError'?new Error(`${label}: timeout`):e;const s=Number(last?.status||0);if(!([429,...Array.from({length:100},(_,i)=>500+i)].includes(s)||!s)||attempt>=RETRIES)break;const wait=BASE_DELAY*(2**attempt)+Math.floor(Math.random()*250);console.log(`[RETRY] ${label} ${attempt+1}/${RETRIES} wait=${wait}ms ${category(last)}`);await sleep(wait)}
   }
-  if (Array.isArray(v)) {
-    for (const x of v) extractAddresses(x, out);
-    return out;
-  }
-  if (v && typeof v === "object") {
-    for (const x of Object.values(v)) extractAddresses(x, out);
-  }
-  return out;
+  throw last||new Error(`${label}: failed`)
 }
+async function info(payload,label=payload.type){return fetchJson(API_URL,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)},label)}
 
-async function discover() {
-  let publicPool = [];
-
-  if (DISCOVERY_ENABLED) {
-    try {
-      const r = await fetch(DISCOVERY_URL, {
-        headers: { accept: "application/json,*/*" }
-      });
-      if (!r.ok) throw new Error(`Discovery ${r.status}`);
-      publicPool = extractAddresses(await r.json());
-      console.log(`[DISCOVERY] public=${publicPool.length}`);
-    } catch (e) {
-      console.log(`[DISCOVERY] unavailable: ${e.message}`);
-    }
-  }
-
-  const manual = addresses(process.env.HYPERLIQUID_HUNTER_CANDIDATES);
-  const seeds = addresses(process.env.HYPERLIQUID_TRADERS);
-
-  const pool = [...new Set([...publicPool, ...manual, ...seeds])]
-    .slice(0, MAX_CANDIDATES);
-
-  return {
-    pool,
-    publicCount: publicPool.length,
-    manualCount: manual.length,
-    seedCount: seeds.length
-  };
+function activity(row){const wp=Array.isArray(row?.windowPerformances)?row.windowPerformances:[];const m=Object.fromEntries(wp.filter(Array.isArray).map(x=>[x[0],x[1]]));const d=m.day||{},w=m.week||{};const pnl=Number(w.pnl??d.pnl??0),vol=Number(w.vlm??d.vlm??0),roi=Number(w.roi??d.roi??0);return (vol>0?1e12:0)+Math.max(0,pnl)*1e6+Math.max(0,roi)*1e4+Math.log10(Math.max(1,vol))}
+async function discover(){
+  const map=new Map();for(const a of [...SEEDS,...MANUAL])if(addr(a))map.set(norm(a),{ethAddress:norm(a)});
+  if(!DISCOVERY_ENABLED)return{discovered:map.size,candidates:[...map.keys()].slice(0,MAX_CANDIDATES),source:'manual_only'};
+  const data=await fetchJson(DISCOVERY_URL,{},'leaderboard discovery');
+  const rows=Array.isArray(data?.leaderboardRows)?data.leaderboardRows:[];
+  const valid=[];for(const row of rows){if(addr(row?.ethAddress)){const a=norm(row.ethAddress);map.set(a,row);valid.push(a)}}
+  const candidates=[...map.values()].sort((a,b)=>activity(b)-activity(a)).map(r=>norm(r.ethAddress)).slice(0,MAX_CANDIDATES);
+  return{discovered:new Set(valid).size,candidates,source:'leaderboardRows.ethAddress'};
 }
-
-async function fetchFills(user, startTime, endTime) {
-  const result = [];
-  let cursor = startTime;
-
-  for (let page = 0; page < 20; page++) {
-    const rows = await info({
-      type: "userFillsByTime",
-      user,
-      startTime: cursor,
-      endTime
-    });
-
-    if (!Array.isArray(rows) || !rows.length) break;
-
-    result.push(...rows);
-
-    if (rows.length < 2000) break;
-
-    const newest = Math.max(...rows.map(x => Number(x.time || 0)));
-    if (!newest || newest < cursor) break;
-
-    cursor = newest + 1;
-    await sleep(60);
-  }
-
-  const seen = new Set();
-
-  return result.filter(x => {
-    const key = [
-      x.tid, x.hash, x.time, x.oid, x.coin, x.px, x.sz, x.dir
-    ].join("|");
-
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+function fillKey(f){return [f?.tid??'',f?.hash??'',f?.time??'',f?.coin??'',f?.px??'',f?.sz??'',f?.side??''].join('|')}
+async function getFills(user,start,end){
+  let cursor=start,pages=0;const map=new Map();let newest=0;
+  while(pages<MAX_PAGES){pages++;const b=await info({type:'userFillsByTime',user,startTime:cursor,endTime:end,aggregateByTime:false},`fills ${short(user)} page=${pages}`);if(!Array.isArray(b))throw new Error('fills: unexpected response');for(const f of b){if(f?.time)map.set(fillKey(f),f);newest=Math.max(newest,Number(f?.time||0))}if(b.length===0||b.length<2000)break;const max=Math.max(...b.map(f=>Number(f?.time||0)));if(!max||max>=end)break;const next=Math.max(cursor+1,max);if(next<=cursor)break;cursor=next;await sleep(100)}
+  const fills=[...map.values()].sort((a,b)=>Number(a.time)-Number(b.time));return{fills,pages,truncated:pages>=MAX_PAGES||fills.length>=10000,newest};
 }
-
-function direction(dir) {
-  const d = String(dir || "");
-  if (d === "Open Long") return "OPEN_LONG";
-  if (d === "Close Long") return "CLOSE_LONG";
-  if (d === "Open Short") return "OPEN_SHORT";
-  if (d === "Close Short") return "CLOSE_SHORT";
-  return null;
+function delta(f){const sz=Math.abs(Number(f?.sz||0));return String(f?.side||'').toUpperCase()==='B'?sz:-sz}
+function reconstruct(fills){
+  const books=new Map(),trades=[];let liquidations=0;
+  for(const f of fills){const coin=String(f.coin||'');if(!coin)continue;const dir=String(f.dir||'').toLowerCase();if(dir.includes('liquid'))liquidations++;const d=delta(f);if(!d)continue;const lots=books.get(coin)||[];books.set(coin,lots);const start=Number(f.startPosition||0);const isClose=(start>0&&d<0)||(start<0&&d>0);if(!isClose){lots.push({side:d>0?'long':'short',qty:Math.abs(d),px:Number(f.px),time:Number(f.time)});continue}
+    let rem=Math.abs(d);const closing=d>0?'short':'long';while(rem>1e-12&&lots.length){const lot=lots[0];if(lot.side!==closing)break;const used=Math.min(rem,lot.qty),px=Number(f.px),cp=Number(f.closedPnl),fq=Math.abs(Number(f.sz||0));const pnl=Number.isFinite(cp)&&fq>0?cp*(used/fq):(lot.side==='long'?(px-lot.px)*used:(lot.px-px)*used);trades.push({coin,side:lot.side,qty:used,entryPx:lot.px,exitPx:px,openTime:lot.time,closeTime:Number(f.time),holdHours:Math.max(0,(Number(f.time)-lot.time)/3600000),pnl});lot.qty-=used;rem-=used;if(lot.qty<=1e-12)lots.shift()}
+    if(rem>1e-12)lots.push({side:d>0?'long':'short',qty:rem,px:Number(f.px),time:Number(f.time)})
+  }return{trades,liquidations}
 }
+function metrics(fills,r){const ts=r.trades,w=ts.filter(t=>t.pnl>0),l=ts.filter(t=>t.pnl<0),holds=ts.map(t=>t.holdHours).filter(Number.isFinite),gw=w.reduce((s,t)=>s+t.pnl,0),gl=Math.abs(l.reduce((s,t)=>s+t.pnl,0)),pnl=ts.reduce((s,t)=>s+t.pnl,0),days=new Set(ts.map(t=>new Date(t.closeTime).toISOString().slice(0,10)));let st=0,maxst=0;for(const t of [...ts].sort((a,b)=>a.closeTime-b.closeTime)){if(t.pnl<0){st++;maxst=Math.max(maxst,st)}else if(t.pnl>0)st=0}return{fills:fills.length,closedTrades:ts.length,winRate:ts.length?w.length/ts.length*100:0,pnl,grossWin:gw,grossLossAbs:gl,profitFactor:gl>0?gw/gl:(gw>0?Infinity:0),medianHoldHours:median(holds),avgHoldHours:holds.length?holds.reduce((a,b)=>a+b,0)/holds.length:NaN,p25HoldHours:quantile(holds,.25),p75HoldHours:quantile(holds,.75),activeDays:days.size,maxLosingStreak:maxst,liquidations:r.liquidations}}
+function gates(m){const a=[];if(m.closedTrades<MIN_TRADES)a.push(`TRADES<${MIN_TRADES}`);if(m.winRate<MIN_WR)a.push(`WR<${MIN_WR}%`);if(m.pnl<MIN_PNL)a.push(`PNL<${MIN_PNL}`);if(!(m.profitFactor>=MIN_PF))a.push(`PF<${MIN_PF}`);if(!(m.medianHoldHours<=MAX_MEDIAN_HOLD))a.push(`MEDIAN_HOLD>${MAX_MEDIAN_HOLD}h`);if(!(m.avgHoldHours<=MAX_AVG_HOLD))a.push(`AVG_HOLD>${MAX_AVG_HOLD}h`);if(m.activeDays<MIN_ACTIVE_DAYS)a.push(`ACTIVE_DAYS<${MIN_ACTIVE_DAYS}`);if(m.maxLosingStreak>MAX_LOSING_STREAK)a.push(`LOSING_STREAK>${MAX_LOSING_STREAK}`);if(m.liquidations>MAX_LIQ)a.push(`LIQUIDATIONS>${MAX_LIQ}`);return{ok:!a.length,reasons:a}}
+async function position(user){const s=await info({type:'clearinghouseState',user},`position ${short(user)}`);return(Array.isArray(s?.assetPositions)?s.assetPositions:[]).map(x=>x?.position).filter(Boolean).filter(p=>Math.abs(Number(p.szi||0))>0).sort((a,b)=>Math.abs(Number(b.szi||0))-Math.abs(Number(a.szi||0)))[0]||null}
+async function book(coin){const b=await info({type:'l2Book',coin},`book ${coin}`),lv=Array.isArray(b?.levels)?b.levels:[],bid=Number(lv?.[0]?.[0]?.px),ask=Number(lv?.[1]?.[0]?.px);if(!Number.isFinite(bid)||!Number.isFinite(ask))throw new Error(`book ${coin}: no bid/ask`);return{bid,ask,mid:(bid+ask)/2}}
+async function atr(coin,end){const c=await info({type:'candleSnapshot',req:{coin,interval:'1h',startTime:end-72*3600000,endTime:end}},`candles ${coin}`);const r=(Array.isArray(c)?c:[]).map(x=>Number(x.h)-Number(x.l)).filter(x=>x>0&&Number.isFinite(x));if(r.length<5)throw new Error(`candles ${coin}: insufficient 1h data`);return r.reduce((a,b)=>a+b,0)/r.length}
+function plan(pos,m,atrv){const s=Number(pos?.szi||0),source=Number(pos?.entryPx||0),side=s>0?'LONG':'SHORT',dist=source>0?Math.abs(m.mid-source)/source*100:Infinity;if(dist>MAX_ENTRY_DIST)return{eligible:false,reason:`ENTRY_DISTANCE>${MAX_ENTRY_DIST}%`,side,sourceEntry:source,entry:m.mid,distancePct:dist};const sl=side==='LONG'?m.mid-SL_ATR*atrv:m.mid+SL_ATR*atrv,tp=side==='LONG'?m.mid+TP_ATR*atrv:m.mid-TP_ATR*atrv,risk=Math.abs(m.mid-sl),reward=Math.abs(tp-m.mid),rr=risk?reward/risk:0;if(rr<MIN_RR)return{eligible:false,reason:`RR<${MIN_RR}`,side,sourceEntry:source,entry:m.mid,distancePct:dist,sl,tp,rr};return{eligible:true,side,sourceEntry:source,entry:m.mid,distancePct:dist,sl,tp,rr,atr:atrv,maxHoldHours:MAX_HOLD}}
+async function telegram(text){if(!TG_TOKEN||!TG_CHAT){console.log('[TELEGRAM] missing credentials');return}for(let i=0;i<text.length;i+=TG_LIMIT){try{await fetchJson(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:TG_CHAT,text:text.slice(i,i+TG_LIMIT),disable_web_page_preview:true})},'telegram')}catch(e){console.error(`[TELEGRAM][ERROR] ${e.message}`)}}}
+function errSummary(es){const m={};for(const e of es)m[e.cat]=(m[e.cat]||0)+1;return Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${k}:${v}`).join(' | ')||'none'}
 
-/*
- FIFO reconstruction.
- Every partial close creates a measurable closed slice.
- closedPnl is allocated pro-rata to the portion of the closing fill.
-*/
-function reconstruct(fills) {
-  const books = new Map();
-  const trades = [];
-  let liquidations = 0;
-
-  const ordered = [...fills].sort(
-    (a, b) => Number(a.time || 0) - Number(b.time || 0)
-  );
-
-  for (const f of ordered) {
-    if (/liquidat/i.test(String(f.dir || ""))) liquidations++;
-
-    const d = direction(f.dir);
-    if (!d) continue;
-
-    const coin = String(f.coin || "");
-    const qty = Math.abs(Number(f.sz || 0));
-    const px = Number(f.px || 0);
-    const time = Number(f.time || 0);
-
-    if (!coin || !qty || !time) continue;
-
-    if (!books.has(coin)) books.set(coin, { long: [], short: [] });
-
-    const side = d.includes("LONG") ? "long" : "short";
-    const q = books.get(coin)[side];
-
-    if (d.startsWith("OPEN")) {
-      q.push({
-        qty,
-        px,
-        time,
-        fill: f
-      });
-      continue;
-    }
-
-    let remaining = qty;
-
-    while (remaining > 1e-12 && q.length) {
-      const lot = q[0];
-      const take = Math.min(remaining, lot.qty);
-      const ratio = take / qty;
-
-      trades.push({
-        coin,
-        side,
-        openTime: lot.time,
-        closeTime: time,
-        openPx: lot.px,
-        closePx: px,
-        qty: take,
-        holdHours: Math.max(0, time - lot.time) / 3600000,
-        pnl: Number(f.closedPnl || 0) * ratio
-      });
-
-      lot.qty -= take;
-      remaining -= take;
-
-      if (lot.qty <= 1e-12) q.shift();
-    }
-  }
-
-  return { trades, liquidations };
+async function main(){
+ console.log(`[HUNTER V5][START] ${JSON.stringify({lookbackDays:LOOKBACK_DAYS,maxCandidates:MAX_CANDIDATES})}`);
+ let d;try{d=await discover()}catch(e){console.error(`[DISCOVERY][ERROR] ${e.message}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return}
+ console.log(`[DISCOVERY] validLeaderboardAddresses=${d.discovered} candidates=${d.candidates.length} source=${d.source}`);
+ const start=Date.now()-LOOKBACK_DAYS*86400000,now=Date.now(),scanned=[],errors=[],passed=[];
+ for(let i=0;i<d.candidates.length;i++){
+  const a=d.candidates[i];try{const f=await getFills(a,start,now),r=reconstruct(f.fills),m=metrics(f.fills,r),g=gates(m);const item={address:a,metrics:m,gate:g,truncated:f.truncated};scanned.push(item);if(g.ok)passed.push(item);console.log(`[SCAN] ${i+1}/${d.candidates.length} ${short(a)} fills=${m.fills} trades=${m.closedTrades} WR=${fmt(m.winRate,1)} PF=${fmt(m.profitFactor)} PASS=${g.ok?'YES':'NO'}${g.ok?'':' block='+g.reasons.slice(0,3).join(',')}${f.truncated?' HISTORY_TRUNCATED':''}`)}catch(e){const cat=category(e);errors.push({address:a,cat,message:String(e.message||e)});console.error(`[SCAN][ERROR] ${i+1}/${d.candidates.length} ${short(a)} ${cat} :: ${e.message}`)}if(i+1<d.candidates.length)await sleep(BETWEEN)}
+ passed.sort((a,b)=>(b.metrics.winRate-a.metrics.winRate)||(b.metrics.profitFactor-a.metrics.profitFactor));const selected=[];
+ for(const x of passed.slice(0,5)){try{const p=await position(x.address);if(!p){x.enrichmentBlock='NO_OPEN_POSITION';continue}const coin=String(p.coin||''),bk=await book(coin),av=await atr(coin,now),pl=plan(p,bk,av);x.plan=pl;if(pl.eligible)selected.push(x)}catch(e){x.enrichmentBlock=`${category(e)}:${e.message}`;console.error(`[ENRICH][ERROR] ${short(x.address)} ${x.enrichmentBlock}`)}}
+ const blocks={};for(const x of scanned)for(const r of x.gate.reasons)blocks[r]=(blocks[r]||0)+1;const top=Object.entries(blocks).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k,v])=>`${k}:${v}`).join(' | ')||'none';
+ const lines=['🟣 HYPERLIQUID TRADER HUNTER V5','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Discovery: ${d.discovered}`,`👥 Candidates: ${d.candidates.length}/${MAX_CANDIDATES}`,`📊 Scanned OK: ${scanned.length}/${d.candidates.length}`,`⚠️ Scan failures: ${errors.length}`,`❌ Error types: ${errSummary(errors)}`,`🎯 Statistical PASS: ${passed.length}`,`🧱 Top filter blocks: ${top}`,`📚 Lookback: ${LOOKBACK_DAYS}d | Hyperliquid retains a finite recent fill history`,'','🏆 SELECTED TRADERS'];
+ if(!selected.length)lines.push('No trader currently satisfies the statistical filters + open-position + copy-plan checks.');else selected.forEach((x,i)=>{const m=x.metrics,p=x.plan;lines.push('',`#${i+1} ${short(x.address)}`,`📈 7D: trades=${m.closedTrades} | WR=${pct(m.winRate)} | PnL=${fmt(m.pnl)} | PF=${fmt(m.profitFactor)}`,`⏱ Hold: median=${fmt(m.medianHoldHours)}h | avg=${fmt(m.avgHoldHours)}h | activeDays=${m.activeDays}`,`🧯 Streak=${m.maxLosingStreak} | liq=${m.liquidations} | fills=${m.fills}`,`📌 Copy-plan: ${p.side} | source=${fmt(p.sourceEntry)} | now=${fmt(p.entry)} | dist=${pct(p.distancePct,2)} | SL=${fmt(p.sl)} | TP=${fmt(p.tp)} | RR=${fmt(p.rr)} | maxHold=${p.maxHoldHours}h`)});
+ if(errors.length){lines.push('','🧪 FIRST SCAN ERRORS');errors.slice(0,10).forEach(e=>lines.push(`${short(e.address)} → ${e.cat} → ${e.message.slice(0,180)}`))}
+ lines.push('','ℹ️ Entry/SL/TP are READ-ONLY copy-plan diagnostics.','ℹ️ Source TP/SL is not copied.','ℹ️ No orders are created by this worker.',`🕐 ${new Date().toISOString()}`);console.log(`[HUNTER V5][DONE] discovered=${d.discovered} candidates=${d.candidates.length} scanned=${scanned.length} failed=${errors.length} pass=${passed.length} selected=${selected.length}`);await telegram(lines.join('\n'));
 }
-
-function median(values) {
-  if (!values.length) return null;
-  const a = [...values].sort((x, y) => x - y);
-  const m = Math.floor(a.length / 2);
-  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
-}
-
-function percentile(values, p) {
-  if (!values.length) return null;
-  const a = [...values].sort((x, y) => x - y);
-  const i = (a.length - 1) * p;
-  const lo = Math.floor(i);
-  const hi = Math.ceil(i);
-  if (lo === hi) return a[lo];
-  return a[lo] + (a[hi] - a[lo]) * (i - lo);
-}
-
-function losingStreak(trades) {
-  let cur = 0;
-  let max = 0;
-
-  for (const t of trades) {
-    if (t.pnl < 0) {
-      cur++;
-      max = Math.max(max, cur);
-    } else {
-      cur = 0;
-    }
-  }
-
-  return max;
-}
-
-function metrics(address, fills) {
-  const { trades, liquidations } = reconstruct(fills);
-  const pnls = trades.map(x => x.pnl);
-  const wins = pnls.filter(x => x > 0);
-  const losses = pnls.filter(x => x < 0);
-  const holds = trades.map(x => x.holdHours);
-
-  const pnl = pnls.reduce((a, b) => a + b, 0);
-  const grossWin = wins.reduce((a, b) => a + b, 0);
-  const grossLoss = Math.abs(losses.reduce((a, b) => a + b, 0));
-
-  const closeDates = new Set(
-    trades.map(t => new Date(t.closeTime).toISOString().slice(0, 10))
-  );
-
-  return {
-    address,
-    fills: fills.length,
-    trades,
-    closedTrades: trades.length,
-    winRate: trades.length ? wins.length / trades.length * 100 : null,
-    pnl,
-    grossWin,
-    grossLoss,
-    profitFactor:
-      grossLoss > 0 ? grossWin / grossLoss :
-      grossWin > 0 ? Infinity : null,
-    medianHoldHours: median(holds),
-    avgHoldHours: holds.length
-      ? holds.reduce((a, b) => a + b, 0) / holds.length
-      : null,
-    p25HoldHours: percentile(holds, 0.25),
-    p75HoldHours: percentile(holds, 0.75),
-    activeDays: closeDates.size,
-    tradesPerActiveDay: closeDates.size
-      ? trades.length / closeDates.size
-      : 0,
-    maxLosingStreak: losingStreak(
-      [...trades].sort((a, b) => a.closeTime - b.closeTime)
-    ),
-    liquidations
-  };
-}
-
-function passes(m) {
-  return (
-    m.closedTrades >= MIN_TRADES &&
-    m.winRate !== null &&
-    m.winRate >= MIN_WR &&
-    m.pnl >= MIN_PNL &&
-    (m.profitFactor === Infinity ||
-      (m.profitFactor !== null && m.profitFactor >= MIN_PF)) &&
-    m.medianHoldHours !== null &&
-    m.medianHoldHours <= MAX_MEDIAN_HOLD &&
-    m.avgHoldHours !== null &&
-    m.avgHoldHours <= MAX_AVG_HOLD &&
-    m.activeDays >= MIN_ACTIVE_DAYS &&
-    m.maxLosingStreak <= MAX_LOSING_STREAK &&
-    m.liquidations <= MAX_LIQUIDATIONS
-  );
-}
-
-/*
- Build a proposed copy plan from the trader's latest still-open position.
-
- We deliberately use only public market data:
- - current mid from l2Book
- - recent candle range from candleSnapshot
- - source position direction/entry from clearinghouseState
-
- This is a PLAN ONLY. No order is sent.
-*/
-async function latestPosition(address) {
-  const state = await info({
-    type: "clearinghouseState",
-    user: address
-  });
-
-  const positions = Array.isArray(state?.assetPositions)
-    ? state.assetPositions
-    : [];
-
-  const active = [];
-
-  for (const p of positions) {
-    const pos = p?.position || p;
-    const szi = Number(pos?.szi || 0);
-    if (!szi) continue;
-
-    active.push({
-      coin: String(pos.coin || ""),
-      side: szi > 0 ? "LONG" : "SHORT",
-      size: Math.abs(szi),
-      entry: Number(pos.entryPx || 0),
-      unrealizedPnl: Number(pos.unrealizedPnl || 0),
-      leverage:
-        typeof pos.leverage === "object"
-          ? Number(pos.leverage.value || 0)
-          : Number(pos.leverage || 0)
-    });
-  }
-
-  if (!active.length) return null;
-
-  active.sort((a, b) =>
-    Math.abs(b.unrealizedPnl) - Math.abs(a.unrealizedPnl)
-  );
-
-  const p = active[0];
-
-  try {
-    const book = await info({ type: "l2Book", coin: p.coin });
-    const levels = book?.levels || [];
-    const bid = Number(levels?.[0]?.[0]?.px || 0);
-    const ask = Number(levels?.[1]?.[0]?.px || 0);
-    const mid = bid && ask ? (bid + ask) / 2 : bid || ask;
-
-    const candles = await info({
-      type: "candleSnapshot",
-      req: {
-        coin: p.coin,
-        interval: "1h",
-        startTime: Date.now() - 48 * 3600000,
-        endTime: Date.now()
-      }
-    });
-
-    const rows = Array.isArray(candles) ? candles : [];
-    const completed = rows.slice(0, -1);
-
-    const ranges = completed
-      .map(c => Number(c.h) - Number(c.l))
-      .filter(x => Number.isFinite(x) && x > 0);
-
-    const atr =
-      ranges.length
-        ? ranges.slice(-14).reduce((a, b) => a + b, 0) /
-          Math.min(14, ranges.length)
-        : 0;
-
-    const distancePct = p.entry && mid
-      ? Math.abs(mid - p.entry) / p.entry * 100
-      : null;
-
-    if (!mid || !atr) {
-      return {
-        ...p,
-        mid,
-        atr,
-        distancePct,
-        eligiblePlan: false,
-        planReason: "INSUFFICIENT_MARKET_DATA"
-      };
-    }
-
-    const rawSL =
-      p.side === "LONG"
-        ? p.entry - atr * SL_ATR_MULT
-        : p.entry + atr * SL_ATR_MULT;
-
-    const rawTP =
-      p.side === "LONG"
-        ? p.entry + atr * TP_ATR_MULT
-        : p.entry - atr * TP_ATR_MULT;
-
-    const risk = Math.abs(p.entry - rawSL);
-    const reward = Math.abs(rawTP - p.entry);
-    const rr = risk > 0 ? reward / risk : 0;
-
-    const eligible =
-      distancePct !== null &&
-      distancePct <= MAX_ENTRY_DISTANCE_PCT &&
-      rr >= MIN_SETUP_RR;
-
-    return {
-      ...p,
-      mid,
-      atr,
-      distancePct,
-      sl: rawSL,
-      tp: rawTP,
-      rr,
-      plannedHoldHours: Math.min(MAX_HOLD_PLAN_HOURS, MAX_AVG_HOLD),
-      eligiblePlan: eligible,
-      planReason:
-        eligible
-          ? "SOURCE_POSITION_NEAR_CURRENT_MARKET_AND_RR_VALID"
-          : distancePct > MAX_ENTRY_DISTANCE_PCT
-            ? "ENTRY_TOO_FAR_FROM_SOURCE_ENTRY"
-            : "RR_BELOW_MINIMUM"
-    };
-  } catch (e) {
-    return {
-      ...p,
-      eligiblePlan: false,
-      planReason: `MARKET_DATA_ERROR: ${e.message}`
-    };
-  }
-}
-
-function fmtMoney(x) {
-  if (!Number.isFinite(x)) return "N/A";
-  return `${x >= 0 ? "+" : "-"}$${Math.abs(x).toLocaleString("en-US", {
-    maximumFractionDigits: 2
-  })}`;
-}
-
-function fmtNum(x, d = 4) {
-  return Number.isFinite(x) ? x.toFixed(d) : "N/A";
-}
-
-function reason(m) {
-  const parts = [];
-
-  if (m.winRate >= MIN_WR) parts.push(`WR ${m.winRate.toFixed(1)}%≥${MIN_WR}%`);
-  if (m.profitFactor === Infinity || m.profitFactor >= MIN_PF)
-    parts.push(`PF ${m.profitFactor === Infinity ? "∞" : m.profitFactor.toFixed(2)}≥${MIN_PF}`);
-  if (m.medianHoldHours <= MAX_MEDIAN_HOLD)
-    parts.push(`Median ${m.medianHoldHours.toFixed(2)}h`);
-  if (m.avgHoldHours <= MAX_AVG_HOLD)
-    parts.push(`Avg ${m.avgHoldHours.toFixed(2)}h`);
-  if (m.activeDays >= MIN_ACTIVE_DAYS)
-    parts.push(`${m.activeDays}/7 active days`);
-  if (m.pnl > 0) parts.push(`PnL ${fmtMoney(m.pnl)}`);
-
-  return parts.join(" | ");
-}
-
-async function telegram(text) {
-  const token = process.env.TELEGRAM_TOKEN;
-  const chat = process.env.TELEGRAM_CHAT_ID;
-
-  if (!token || !chat) {
-    console.log("[TELEGRAM] credentials missing");
-    return;
-  }
-
-  const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chat,
-      text
-    })
-  });
-
-  if (!r.ok) throw new Error(`Telegram ${r.status}`);
-}
-
-const end = Date.now();
-const start = end - LOOKBACK_DAYS * 86400000;
-
-console.log("[HUNTER V4][START]", {
-  lookbackDays: LOOKBACK_DAYS,
-  maxCandidates: MAX_CANDIDATES
-});
-
-const discovery = await discover();
-const results = [];
-
-for (let i = 0; i < discovery.pool.length; i++) {
-  const address = discovery.pool[i];
-
-  try {
-    const fills = await fetchFills(address, start, end);
-    const m = metrics(address, fills);
-    results.push(m);
-  } catch (e) {
-    results.push({ address, error: e.message });
-  }
-
-  if ((i + 1) % 25 === 0) {
-    console.log(`[SCAN] ${i + 1}/${discovery.pool.length}`);
-  }
-}
-
-const scanned = results.filter(x => !x.error);
-const passed = scanned.filter(passes);
-
-passed.sort((a, b) => {
-  if (b.winRate !== a.winRate) return b.winRate - a.winRate;
-  if (b.profitFactor !== a.profitFactor)
-    return (b.profitFactor === Infinity ? 1e9 : b.profitFactor) -
-           (a.profitFactor === Infinity ? 1e9 : a.profitFactor);
-  return b.pnl - a.pnl;
-});
-
-const plans = [];
-
-for (const trader of passed.slice(0, 5)) {
-  try {
-    const p = await latestPosition(trader.address);
-    plans.push({
-      trader,
-      position: p,
-      selectionReason: reason(trader)
-    });
-  } catch (e) {
-    plans.push({
-      trader,
-      position: null,
-      selectionReason: reason(trader),
-      error: e.message
-    });
-  }
-}
-
-const lines = [
-  "🟣 HYPERLIQUID TRADER HUNTER V4",
-  "📡 READ-ONLY | NO ORDERS",
-  "━━━━━━━━━━━━━━━━━━",
-  `🔎 Discovery: ${discovery.publicCount}`,
-  `👥 Candidates: ${discovery.pool.length}/${MAX_CANDIDATES}`,
-  `📊 Scanned: ${scanned.length}`,
-  `✅ PASS: ${passed.length}`,
-  "",
-  "🏆 SELECTED TRADERS"
-];
-
-if (!passed.length) {
-  lines.push("No trader currently satisfies all statistical filters.");
-} else {
-  for (let i = 0; i < plans.length; i++) {
-    const x = plans[i].trader;
-    const p = plans[i].position;
-
-    lines.push(
-      "",
-      `#${i + 1} ${x.address.slice(0, 6)}…${x.address.slice(-4)}`,
-      `📊 Trades ${x.closedTrades} | WR ${x.winRate.toFixed(1)}%`,
-      `💰 7D PnL ${fmtMoney(x.pnl)} | PF ${x.profitFactor === Infinity ? "∞" : x.profitFactor.toFixed(2)}`,
-      `⏱ Hold median ${x.medianHoldHours.toFixed(2)}h | avg ${x.avgHoldHours.toFixed(2)}h`,
-      `📅 Active ${x.activeDays}/7 | ${x.tradesPerActiveDay.toFixed(1)} trades/active day`,
-      `⚠️ Losing streak ${x.maxLosingStreak} | Liquidations ${x.liquidations}`,
-      `🧠 WHY: ${plans[i].selectionReason}`
-    );
-
-    if (!p) {
-      lines.push("📍 Position: NONE / unavailable");
-      continue;
-    }
-
-    lines.push(
-      `📍 Source: ${p.coin} ${p.side}`,
-      `🎯 Source entry: ${fmtNum(p.entry, 6)}`,
-      `💵 Current mid: ${fmtNum(p.mid, 6)}`,
-      `📏 Entry distance: ${p.distancePct == null ? "N/A" : p.distancePct.toFixed(3) + "%"}`,
-      `📐 Source leverage (info only): ${fmtNum(p.leverage, 2)}x`,
-      `📈 Source uPnL: ${fmtMoney(p.unrealizedPnl)}`
-    );
-
-    if (p.sl && p.tp) {
-      lines.push(
-        `🛡 Planned SL: ${fmtNum(p.sl, 6)}`,
-        `🎯 Planned TP: ${fmtNum(p.tp, 6)}`,
-        `⚖️ Planned RR: ${p.rr.toFixed(2)}R`,
-        `⏳ Planned max hold: ${p.plannedHoldHours.toFixed(1)}h`,
-        `🚦 COPY PLAN: ${p.eligiblePlan ? "ELIGIBLE" : "BLOCKED"}`,
-        `🔍 Plan reason: ${p.planReason}`
-      );
-    } else {
-      lines.push(`🚦 COPY PLAN: BLOCKED | ${p.planReason}`);
-    }
-  }
-}
-
-lines.push(
-  "",
-  "ℹ️ TP/SL/Entry above are a read-only COPY PLAN, not source TP/SL and not executed.",
-  `🕐 ${new Date().toISOString()}`
-);
-
-await telegram(lines.join("\n"));
-
-await fs.mkdir("state", { recursive: true });
-await fs.writeFile(
-  STATE_FILE,
-  JSON.stringify(
-    {
-      version: "V4",
-      generatedAt: new Date().toISOString(),
-      discovery,
-      thresholds: {
-        MIN_TRADES,
-        MIN_WR,
-        MIN_PNL,
-        MIN_PF,
-        MAX_MEDIAN_HOLD,
-        MAX_AVG_HOLD,
-        MIN_ACTIVE_DAYS,
-        MAX_LOSING_STREAK,
-        MAX_LIQUIDATIONS,
-        MIN_SETUP_RR,
-        MAX_ENTRY_DISTANCE_PCT,
-        SL_ATR_MULT,
-        TP_ATR_MULT,
-        MAX_HOLD_PLAN_HOURS
-      },
-      selected: plans.map(x => ({
-        trader: x.trader,
-        position: x.position,
-        selectionReason: x.selectionReason
-      })),
-      passed,
-      results
-    },
-    null,
-    2
-  )
-);
-
-console.log(`[HUNTER V4][DONE] scanned=${scanned.length} pass=${passed.length}`);
+main().catch(async e=>{console.error(`[HUNTER V5][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
