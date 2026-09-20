@@ -1,22 +1,43 @@
-import fs from 'node:fs/promises';
-const API=process.env.HYPERLIQUID_API_URL||'https://api.hyperliquid.xyz/info';
-const DAYS=Number(process.env.HYPERLIQUID_HUNTER_LOOKBACK_DAYS||7), MAX=Number(process.env.HYPERLIQUID_HUNTER_MAX_CANDIDATES||300);
-const MIN_T=Number(process.env.HYPERLIQUID_HUNTER_MIN_7D_TRADES||30), MIN_WR=Number(process.env.HYPERLIQUID_HUNTER_MIN_7D_WIN_RATE||65), MIN_PNL=Number(process.env.HYPERLIQUID_HUNTER_MIN_7D_PNL||0), MIN_PF=Number(process.env.HYPERLIQUID_HUNTER_MIN_PROFIT_FACTOR||1.5), MAX_MED=Number(process.env.HYPERLIQUID_HUNTER_MAX_MEDIAN_HOLD_HOURS||6), MAX_AVG=Number(process.env.HYPERLIQUID_HUNTER_MAX_AVG_HOLD_HOURS||12), MIN_D=Number(process.env.HYPERLIQUID_HUNTER_MIN_ACTIVE_DAYS||4), MAX_STREAK=Number(process.env.HYPERLIQUID_HUNTER_MAX_LOSING_STREAK||8), MAX_LIQ=Number(process.env.HYPERLIQUID_HUNTER_MAX_LIQUIDATIONS||1);
-const STATE=process.env.HYPERLIQUID_HUNTER_STATE_FILE||'state/hyperliquid_trader_hunter_v2.json', TG=process.env.TELEGRAM_TOKEN, CHAT=process.env.TELEGRAM_CHAT_ID;
-const seeds=(process.env.HYPERLIQUID_TRADERS||'').split(/[,\s;]+/).map(x=>x.toLowerCase()).filter(x=>/^0x[a-f0-9]{40}$/.test(x));
-const sleep=ms=>new Promise(r=>setTimeout(r,ms)); const n=x=>{const v=Number(x);return Number.isFinite(v)?v:0};
-async function info(body){const r=await fetch(API,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw Error(`HTTP ${r.status}`);return r.json()}
-function med(a){if(!a.length)return null;const b=[...a].sort((x,y)=>x-y),m=Math.floor(b.length/2);return b.length%2?b[m]:(b[m-1]+b[m])/2}
-function pct(a,p){if(!a.length)return null;const b=[...a].sort((x,y)=>x-y),i=(b.length-1)*p,l=Math.floor(i),h=Math.ceil(i);return l===h?b[l]:b[l]+(b[h]-b[l])*(i-l)}
-async function fills(addr,start,end){let cur=start,all=[],pages=0;while(cur<end&&pages<30){const a=await info({type:'userFillsByTime',user:addr,startTime:cur,endTime:end,aggregateByTime:false});if(!Array.isArray(a)||!a.length)break;all.push(...a);pages++;const last=Math.max(...a.map(x=>n(x.time)));if(!(last>=cur))break;cur=last+1;if(a.length<2000)break;await sleep(80)}const seen=new Set();return {fills:all.filter(f=>{const k=`${f.tid}|${f.oid}|${f.time}|${f.coin}|${f.sz}|${f.px}`;if(seen.has(k))return false;seen.add(k);return true}),pages}}
-function reconstruct(fs){const q=new Map(),closed=[];let liq=0;for(const f of [...fs].sort((a,b)=>n(a.time)-n(b.time))){const d=String(f.dir||''),coin=String(f.coin||''),sz=Math.abs(n(f.sz)),px=n(f.px),t=n(f.time);if(!coin||!sz||!px||!t)continue;if(/liquidat/i.test(d)){liq++;continue}let act,side;if(d==='Open Long'){act='o';side='L'}else if(d==='Close Long'){act='c';side='L'}else if(d==='Open Short'){act='o';side='S'}else if(d==='Close Short'){act='c';side='S'}else continue;const k=coin+'|'+side;if(!q.has(k))q.set(k,[]);const a=q.get(k);if(act==='o'){a.push({r:sz,px,t});continue}let rem=sz;while(rem>1e-12&&a.length){const o=a[0],take=Math.min(rem,o.r),cp=n(f.closedPnl),p=Number.isFinite(cp)?cp*(take/sz):(side==='L'?(px-o.px)*take:(o.px-px)*take);closed.push({coin,side,pnl:p,hold:(t-o.t)/3600000,ct:t});o.r-=take;rem-=take;if(o.r<=1e-12)a.shift()}}return {closed,liq}}
-function stats(addr,fs){const r=reconstruct(fs),c=r.closed,w=c.filter(x=>x.pnl>0),l=c.filter(x=>x.pnl<0),holds=c.map(x=>x.hold).filter(Number.isFinite),days=new Set(c.map(x=>new Date(x.ct).toISOString().slice(0,10)));let streak=0,max=0;for(const x of [...c].sort((a,b)=>a.ct-b.ct)){if(x.pnl<0){streak++;max=Math.max(max,streak)}else if(x.pnl>0)streak=0}const gw=w.reduce((s,x)=>s+x.pnl,0),gl=Math.abs(l.reduce((s,x)=>s+x.pnl,0)),p=c.reduce((s,x)=>s+x.pnl,0);return {address,closed:c.length,wr:c.length?w.length/c.length*100:null,pnl:p,pf:gl?gw/gl:(gw?Infinity:null),avg:holds.length?holds.reduce((s,x)=>s+x,0)/holds.length:null,med:med(holds),p75:pct(holds,.75),active:days.size,streak,max,liq:r.liq}}
-function pass(s){return s.closed>=MIN_T&&s.wr>=MIN_WR&&s.pnl>MIN_PNL&&s.pf>=MIN_PF&&s.med!=null&&s.med<=MAX_MED&&s.avg!=null&&s.avg<=MAX_AVG&&s.active>=MIN_D&&s.streak<=MAX_STREAK&&s.liq<=MAX_LIQ}
-function score(s){if(!s.closed)return 0;const wr=Math.min(100,s.wr||0),pf=s.pf===Infinity?100:Math.min(100,(s.pf||0)/3*100),hold=s.med==null?0:Math.max(0,100*(1-Math.min(s.med,MAX_MED*2)/(MAX_MED*2))),act=Math.min(100,s.active/DAYS*100),vol=Math.min(100,s.closed/100*100),st=Math.max(0,100-s.streak/Math.max(1,MAX_STREAK)*100);return .30*wr+.20*pf+.20*hold+.15*act+.10*vol+.05*st}
-async function telegram(t){if(!TG||!CHAT)return;await fetch(`https://api.telegram.org/bot${TG}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:CHAT,text:t,disable_web_page_preview:true})})}
-const cand=[...new Set([...seeds,...(process.env.HYPERLIQUID_HUNTER_CANDIDATES||'').split(/[,\s;]+/).map(x=>x.toLowerCase()).filter(x=>/^0x[a-f0-9]{40}$/.test(x)))].slice(0,MAX); if(!cand.length)throw Error('No candidates: set HYPERLIQUID_HUNTER_CANDIDATES or HYPERLIQUID_TRADERS');
-const now=Date.now(),start=now-DAYS*86400000,rows=[];for(const a of cand){try{const r=await fills(a,start,now),s=stats(a,r.fills);s.score=score(s);s.pass=pass(s);s.pages=r.pages;rows.push(s)}catch(e){rows.push({address:a,error:String(e.message||e),score:0,pass:false,closed:0})}await sleep(60)}
-rows.sort((a,b)=>(b.pass-a.pass)||(b.score-a.score)||(b.closed-a.closed));const passRows=rows.filter(x=>x.pass).slice(0,5),fmt=(x,d=2)=>Number.isFinite(x)?x.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}):'N/A',sh=a=>a.slice(0,6)+'…'+a.slice(-4);
-const out=['🟣 HYPERLIQUID TRADER HUNTER V2','━━━━━━━━━━━━━━━━━━━━',`📡 READ-ONLY | Candidates ${cand.length}`,`🕐 ${new Date(now).toISOString()}`,`🎯 7D CLOSED ROUND-TRIP SCREEN | PASS ${passRows.length}`,`Rules: ≥${MIN_T} trades | WR ≥${MIN_WR}% | PF ≥${MIN_PF} | median ≤${MAX_MED}h | avg ≤${MAX_AVG}h | active ≥${MIN_D}d`,''];
-if(!passRows.length)out.push('⚪ NO PASS — current candidate pool did not meet all thresholds.');passRows.forEach((s,i)=>{out.push(`${i+1}. ${sh(s.address)} | Score ${s.score.toFixed(1)} | 🟢 PASS`);out.push(`📈 ${s.closed} closed | WR ${fmt(s.wr,1)}% | PnL ${s.pnl>=0?'+':''}$${fmt(s.pnl)}`);out.push(`⏱ Median ${fmt(s.med,2)}h | Avg ${fmt(s.avg,2)}h | P75 ${fmt(s.p75,2)}h`);out.push(`📅 Active ${s.active}/${DAYS}d | PF ${s.pf===Infinity?'∞':fmt(s.pf,2)} | Loss streak ${s.streak} | Liq ${s.liq}`);out.push('')});out.push('🔎 TOP 10 SCANNED');rows.slice(0,10).forEach((s,i)=>{if(s.error)out.push(`${i+1}. ${sh(s.address)} | ERROR ${s.error}`);else out.push(`${i+1}. ${sh(s.address)} | ${s.pass?'PASS':'FILTERED'} | ${s.closed} trades | WR ${s.wr==null?'N/A':fmt(s.wr,1)+'%'} | Med ${s.med==null?'N/A':fmt(s.med,2)+'h'} | Avg ${s.avg==null?'N/A':fmt(s.avg,2)+'h'} | Active ${s.active}d | PnL ${s.pnl>=0?'+':''}$${fmt(s.pnl)}`)});out.push('','ℹ️ Trade count = reconstructed CLOSED round-trip slices, not raw fills.','ℹ️ userFillsByTime is paginated by timestamp.');
-await fs.mkdir(STATE.split('/').slice(0,-1).join('/')||'.',{recursive:true});await fs.writeFile(STATE,JSON.stringify({at:now,days:DAYS,candidates:cand,pass:passRows,rows},null,2));console.log(out.join('\n'));await telegram(out.join('\n'));
+import fs from "node:fs/promises";
+const A=process.env.HYPERLIQUID_API_URL||"https://api.hyperliquid.xyz/info";
+const days=+(process.env.HYPERLIQUID_HUNTER_LOOKBACK_DAYS||7), max=+(process.env.HYPERLIQUID_HUNTER_MAX_CANDIDATES||300);
+const MIN=+(process.env.HYPERLIQUID_HUNTER_MIN_7D_TRADES||30), WR=+(process.env.HYPERLIQUID_HUNTER_MIN_7D_WIN_RATE||65);
+const PNL=+(process.env.HYPERLIQUID_HUNTER_MIN_7D_PNL||0), PF=+(process.env.HYPERLIQUID_HUNTER_MIN_PROFIT_FACTOR||1.5);
+const MED=+(process.env.HYPERLIQUID_HUNTER_MAX_MEDIAN_HOLD_HOURS||6), AVG=+(process.env.HYPERLIQUID_HUNTER_MAX_AVG_HOLD_HOURS||12);
+const ACTIVE=+(process.env.HYPERLIQUID_HUNTER_MIN_ACTIVE_DAYS||4), STREAK=+(process.env.HYPERLIQUID_HUNTER_MAX_LOSING_STREAK||8), LIQ=+(process.env.HYPERLIQUID_HUNTER_MAX_LIQUIDATIONS||1);
+const STATE=process.env.HYPERLIQUID_HUNTER_STATE_FILE||"state/hyperliquid_trader_hunter_v3.json";
+const DISC=process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL||"https://stats-data.hyperliquid.xyz/Mainnet/leaderboard";
+const re=/^0x[a-f0-9]{40}$/i, uniq=a=>[...new Set(a)];
+const addrs=s=>uniq(String(s||"").split(/[\s,;\n]+/).map(x=>x.toLowerCase()).filter(x=>re.test(x)));
+async function post(body){let r=await fetch(A,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});if(!r.ok)throw Error("Info "+r.status);return r.json()}
+function extract(v,o=[]){if(typeof v==="string"){if(re.test(v))o.push(v.toLowerCase());return o}if(Array.isArray(v)){v.forEach(x=>extract(x,o));return o}if(v&&typeof v==="object")Object.values(v).forEach(x=>extract(x,o));return o}
+async function discover(){
+ let out=[];try{let r=await fetch(DISC);if(!r.ok)throw Error("Discovery "+r.status);out=extract(await r.json());console.log("[DISCOVERY]",out.length)}catch(e){console.log("[DISCOVERY] unavailable:",e.message)}
+ return uniq([...out,...addrs(process.env.HYPERLIQUID_HUNTER_CANDIDATES),...addrs(process.env.HYPERLIQUID_TRADERS)]).slice(0,max)
+}
+async function fills(user,start,end){
+ let all=[], cursor=start;
+ for(let i=0;i<10;i++){let r=await post({type:"userFillsByTime",user,startTime:cursor,endTime:end});if(!Array.isArray(r)||!r.length)break;all.push(...r);if(r.length<2000)break;let t=Math.max(...r.map(x=>+x.time||0));if(t<cursor)break;cursor=t+1}
+ let s=new Set();return all.filter(x=>{let k=[x.tid,x.hash,x.time,x.oid,x.px,x.sz].join(":");if(s.has(k))return false;s.add(k);return true})
+}
+const side=d=>({Open:"O",Close:"C"}[String(d).split(" ")[0]]||null), dir=d=>String(d).endsWith("Long")?"L":"S";
+function calc(fs){
+ let b=new Map(),c=[],liq=0;
+ for(let f of fs.sort((a,b)=>a.time-b.time)){if(/liquidat/i.test(f.dir))liq++;let t=side(f.dir);if(!t||!f.coin)continue;let k=f.coin,s=dir(f.dir);if(!b.has(k))b.set(k,{L:[],S:[]});let q=b.get(k)[s],n=Math.abs(+f.sz||0);
+  if(t==="O")q.push({n,p:+f.px||0,t:+f.time});else{let rem=n;while(rem>1e-12&&q.length){let z=q[0],take=Math.min(rem,z.n);c.push({t:+f.time-z.t,p:+f.closedPnl||0});z.n-=take;rem-=take;if(z.n<=1e-12)q.shift()}}
+ }
+ let p=c.map(x=>x.p),w=p.filter(x=>x>0),l=p.filter(x=>x<0),h=c.map(x=>x.t/36e5).sort((a,b)=>a-b), med=h.length?(h.length%2?h[(h.length-1)/2]:(h[h.length/2-1]+h[h.length/2])/2):null;
+ let pnl=p.reduce((a,b)=>a+b,0),gp=w.reduce((a,b)=>a+b,0),gl=Math.abs(l.reduce((a,b)=>a+b,0)), days=new Set(c.map(x=>new Date(x.t+Date.now()).toISOString().slice(0,10))).size;
+ let streak=0,mx=0;for(let x of p){if(x<0){streak++;mx=Math.max(mx,streak)}else streak=0}
+ return {trades:c.length,pnl,wr:c.length?w.length/c.length*100:null,pf:gl?gp/gl:(gp?Infinity:null),med,avg:h.length?h.reduce((a,b)=>a+b,0)/h.length:null,activeDays:days,streak,liq}
+}
+function pass(x){return x.trades>=MIN&&x.wr>=WR&&x.pnl>=PNL&&(x.pf===Infinity||x.pf>=PF)&&x.med!=null&&x.med<=MED&&x.avg!=null&&x.avg<=AVG&&x.activeDays>=ACTIVE&&x.streak<=STREAK&&x.liq<=LIQ}
+const now=Date.now(),start=now-days*864e5, candidates=await discover(),res=[];
+for(let i=0;i<candidates.length;i++){try{res.push({address:candidates[i],...calc(await fills(candidates[i],start,now))})}catch(e){res.push({address:candidates[i],error:e.message})}if((i+1)%25===0)console.log("[SCAN]",i+1,candidates.length)}
+const ok=res.filter(pass).sort((a,b)=>(b.pnl-a.pnl)),top=res.filter(x=>x.trades!=null).sort((a,b)=>((b.wr||0)-(a.wr||0))).slice(0,10);
+const money=x=>x==null?"N/A":(x>=0?"+":"-")+"$"+Math.abs(x).toLocaleString("en-US",{maximumFractionDigits:2});
+let msg=["🟣 HYPERLIQUID TRADER HUNTER V3","📡 READ-ONLY | 7D FIFO CLOSED-TRADE SCAN",`👥 Candidates ${candidates.length} | PASS ${ok.length}`,"","🏆 TOP PASS"];
+(ok.length?ok.slice(0,5):[{address:"NONE"}]).forEach((x,i)=>msg.push(`\n#${i+1} ${x.address.slice(0,6)}…${x.address.slice(-4)}\nTrades ${x.trades||0} | WR ${x.wr==null?"N/A":x.wr.toFixed(1)+"%"} | PnL ${money(x.pnl)}\nHold ${x.med==null?"N/A":x.med.toFixed(2)+"h"} median / ${x.avg==null?"N/A":x.avg.toFixed(2)+"h"} avg | Active ${x.activeDays||0}/7\nPF ${x.pf===Infinity?"∞":x.pf==null?"N/A":x.pf.toFixed(2)} | Lose ${x.streak||0} | Liq ${x.liq||0}`));
+if(process.env.TELEGRAM_TOKEN&&process.env.TELEGRAM_CHAT_ID)await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_TOKEN}/sendMessage`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:process.env.TELEGRAM_CHAT_ID,text:msg.join("\n")})});
+await fs.mkdir("state",{recursive:true});await fs.writeFile(STATE,JSON.stringify({version:"V3",generatedAt:new Date().toISOString(),candidates:candidates.length,pass:ok,top10:top,results:res},null,2));
+console.log("[DONE]",{candidates:candidates.length,pass:ok.length});
