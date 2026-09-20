@@ -1,0 +1,29 @@
+name: Hyperliquid Day-Trader Monitor
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run read-only monitor
+        env:
+          HYPERLIQUID_TRADERS: ${{ vars.HYPERLIQUID_TRADERS }}
+          HYPERLIQUID_LOOKBACK_HOURS: ${{ vars.HYPERLIQUID_LOOKBACK_HOURS }}
+          HYPERLIQUID_TRADE_WINDOW_DAYS: ${{ vars.HYPERLIQUID_TRADE_WINDOW_DAYS }}
+          HYPERLIQUID_MIN_TRADES_24H: ${{ vars.HYPERLIQUID_MIN_TRADES_24H }}
+          HYPERLIQUID_MIN_CLOSED_TRADES: ${{ vars.HYPERLIQUID_MIN_CLOSED_TRADES }}
+          HYPERLIQUID_MAX_AVG_HOLD_HOURS: ${{ vars.HYPERLIQUID_MAX_AVG_HOLD_HOURS }}
+          HYPERLIQUID_API_URL: ${{ vars.HYPERLIQUID_API_URL }}
+          HYPERLIQUID_STATE_FILE: ${{ vars.HYPERLIQUID_STATE_FILE }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node hyperliquid_trader_monitor.mjs
