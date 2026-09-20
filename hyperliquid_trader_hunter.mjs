@@ -13,7 +13,7 @@ const MIN_PNL = num('HYPERLIQUID_HUNTER_MIN_7D_PNL', 0);
 const MIN_PF = num('HYPERLIQUID_HUNTER_MIN_PROFIT_FACTOR', 1.5);
 const MAX_MEDIAN_HOLD = (() => { const x=Number(process.env.HYPERLIQUID_HUNTER_MAX_MEDIAN_HOLD_HOURS); return Number.isFinite(x) && x > 0 ? Math.min(6,x) : 6; })();
 const MAX_AVG_HOLD = (() => { const x=Number(process.env.HYPERLIQUID_HUNTER_MAX_AVG_HOLD_HOURS); return Number.isFinite(x) && x > 0 ? Math.min(12,x) : 12; })();
-const MIN_ACTIVE_DAYS = integer('HYPERLIQUID_HUNTER_MIN_ACTIVE_DAYS', 4);
+const MIN_ACTIVE_DAYS = (()=>{ const x=Number(process.env.HYPERLIQUID_HUNTER_MIN_ACTIVE_DAYS); return Number.isFinite(x)&&x>0 ? Math.min(3,Math.floor(x)) : 3; })();
 const MAX_LOSING_STREAK = integer('HYPERLIQUID_HUNTER_MAX_LOSING_STREAK', 8);
 const MAX_LIQ = integer('HYPERLIQUID_HUNTER_MAX_LIQUIDATIONS', 1);
 const MIN_RR = num('HYPERLIQUID_HUNTER_MIN_SETUP_RR', 1.5);
