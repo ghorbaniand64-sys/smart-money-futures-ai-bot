@@ -1,0 +1,71 @@
+HYPERLIQUID TRADER HUNTER V1
+============================
+
+Purpose
+-------
+Read-only research workflow. It does NOT place orders and does not use a private key.
+It discovers a candidate pool from HyperStats plus seed addresses, then verifies each
+candidate directly against Hyperliquid's public Info API.
+
+IMPORTANT
+---------
+This workflow is separate from the existing GMX worker and does not modify worker_core.mjs
+or github-runner.mjs.
+
+GitHub Environment
+------------------
+The workflow uses Environment: production so the existing Telegram Secrets work:
+- TELEGRAM_TOKEN
+- TELEGRAM_CHAT_ID
+
+No new GitHub Variables are required.
+
+What it verifies over EXACTLY the latest 7 days
+-----------------------------------------------
+- Closed round-trips: >= 30
+- Win rate: >= 65%
+- Realized PnL: > $0
+- Profit factor: >= 1.5
+- Median holding time: <= 6 hours
+- Average holding time: <= 12 hours
+- Active exit days: >= 4/7
+- Maximum losing streak: <= 8
+- Liquidation fills: <= 1
+
+The report also includes:
+- 7D trade count / trades per day
+- 90th-percentile hold time
+- Long and short win rates
+- Average win / loss
+- liquidation count
+- screening score
+
+Trade reconstruction
+--------------------
+A logical closed trade is counted when a coin position returns to flat. Partial closes are
+aggregated into the same round-trip. The engine uses startPosition + side as the primary
+classification rather than trusting dir text alone.
+
+Discovery
+---------
+The workflow requests up to 6 HyperStats leaderboard pages (~300 visible rows when the
+site exposes 50 rows/page), extracts full wallet addresses from wallet links, and combines
+them with a seed list. If HyperStats cannot be reached, the seed list is still scanned.
+
+Hyperliquid userFillsByTime is paginated by advancing startTime beyond the last returned fill.
+This avoids the old 24h-only / raw-fill problem.
+
+Schedule
+--------
+Manual dispatch is available. Scheduled run: every 2 hours at minute 17.
+
+Output
+------
+Telegram message contains up to 5 PASS candidates plus the Top 10 after the exact 7D screen.
+State is saved to:
+state/hyperliquid_trader_hunter.json
+
+NEXT STEP
+---------
+Do NOT connect these traders to execution yet. Let the hunter run for 24-48 hours and compare
+which addresses repeatedly pass the same 7D filters. Only then select the copy-trader pool.
