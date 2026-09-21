@@ -1,4 +1,4 @@
-// Hyperliquid Trader Hunter V5.15 - READ ONLY
+// Hyperliquid Trader Hunter V5.14 - READ ONLY
 // Professional ranking: statistical quality + current-position copyability.
 // NO ORDERS. NO PRIVATE KEYS.
 
@@ -7,12 +7,8 @@ const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL || 'https://s
 const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED ?? 'true').toLowerCase() === 'true';
 
 const LOOKBACK_DAYS = num('HYPERLIQUID_HUNTER_LOOKBACK_DAYS', 7);
-const QUALIFIED_TARGET = integer('HYPERLIQUID_HUNTER_QUALIFIED_TARGET', 100);
-const SCREEN_PREFILTER = integer('HYPERLIQUID_HUNTER_SCREEN_PREFILTER', 500);
-const SCREEN_CONCURRENCY = integer('HYPERLIQUID_HUNTER_SCREEN_CONCURRENCY', 10);
-const DEEP_CONCURRENCY = integer('HYPERLIQUID_HUNTER_DEEP_CONCURRENCY', 6);
-const MAX_CANDIDATES = integer('HYPERLIQUID_HUNTER_MAX_CANDIDATES', 500);
-const STAT_POOL_SIZE = QUALIFIED_TARGET;
+const MAX_CANDIDATES = integer('HYPERLIQUID_HUNTER_MAX_CANDIDATES', 150);
+const STAT_POOL_SIZE = integer('HYPERLIQUID_HUNTER_STAT_POOL_SIZE', 20);
 const FINALISTS = integer('HYPERLIQUID_HUNTER_FINALISTS', 5);
 const AUTO_SELECT = integer('HYPERLIQUID_HUNTER_AUTO_SELECT', 1);
 
@@ -35,8 +31,8 @@ const MAX_HOLD = num('HYPERLIQUID_HUNTER_MAX_PLANNED_HOLD_HOURS', 12);
 
 const RETRIES = integer('HYPERLIQUID_HUNTER_API_RETRIES', 4);
 const BASE_DELAY = integer('HYPERLIQUID_HUNTER_API_BASE_DELAY_MS', 700);
-const BETWEEN = integer('HYPERLIQUID_HUNTER_BETWEEN_TRADERS_MS', 0);
-const MAX_PAGES = integer('HYPERLIQUID_HUNTER_MAX_FILL_PAGES', 6);
+const BETWEEN = integer('HYPERLIQUID_HUNTER_BETWEEN_TRADERS_MS', 700);
+const MAX_PAGES = integer('HYPERLIQUID_HUNTER_MAX_FILL_PAGES', 8);
 const TIMEOUT = integer('HYPERLIQUID_HUNTER_REQUEST_TIMEOUT_MS', 30000);
 
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
@@ -93,52 +89,22 @@ async function fetchJson(url, options={}, label='request'){
 }
 async function info(payload,label=payload.type){return fetchJson(API_URL,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)},label)}
 
-function weekStats(row){
-  const wp=Array.isArray(row?.windowPerformances)?row.windowPerformances:[];
-  const m=Object.fromEntries(wp.filter(Array.isArray).map(x=>[String(x[0]).toLowerCase(),x[1]||{}]));
-  return m.week||m["7d"]||m.day||{};
-}
-function rowMetric(row, keys, fallback=NaN){
-  for(const k of keys){
-    const parts=k.split('.');
-    let v=row;
-    for(const p of parts)v=v?.[p];
-    if(v!==undefined&&v!==null&&Number.isFinite(Number(v)))return Number(v);
-    const w=weekStats(row);
-    v=w;
-    for(const p of parts)v=v?.[p];
-    if(v!==undefined&&v!==null&&Number.isFinite(Number(v)))return Number(v);
-  }
-  return fallback;
-}
 function hunterPreScore(row){
-  const w=weekStats(row);
-  const pnl=rowMetric(row,['pnl','accountValue.pnl','performance.pnl'],0);
-  const roi=rowMetric(row,['roi','returnOnEquity','performance.roi'],0);
-  const vol=rowMetric(row,['vlm','volume','volumeUsd','performance.vlm'],0);
-  // Cheap leaderboard-only pre-rank. Raw PnL is deliberately not dominant.
-  return Math.max(0,pnl)*0.35 + Math.max(0,roi)*1000*0.30 + Math.log10(Math.max(1,vol))*10*0.20
-       + (Number.isFinite(Number(w.accountValue))?Math.log10(Math.max(1,Number(w.accountValue)))*2:0)*0.15;
+  const wp=Array.isArray(row?.windowPerformances)?row.windowPerformances:[];
+  const m=Object.fromEntries(wp.filter(Array.isArray).map(x=>[x[0],x[1]]));
+  const w=m.week||m.day||{},p=Number(w.pnl||0),r=Number(w.roi||0),v=Number(w.vlm||0);
+  return (v>0?1e9:0)+Math.max(0,p)*1e3+Math.max(0,r)*1e2+Math.log10(Math.max(1,v));
 }
 async function discover(){
   const map=new Map();
   for(const a of [...SEEDS,...MANUAL])if(addr(a))map.set(norm(a),{ethAddress:norm(a)});
-  if(!DISCOVERY_ENABLED){
-    const candidates=[...map.values()].map(r=>norm(r.ethAddress)).slice(0,SCREEN_PREFILTER);
-    return{discovered:map.size,candidates,rows:[],source:'manual_only'};
-  }
+  if(!DISCOVERY_ENABLED)return{discovered:map.size,candidates:[...map.keys()].slice(0,MAX_CANDIDATES),source:'manual_only'};
   const data=await fetchJson(DISCOVERY_URL,{},'leaderboard discovery');
   const rows=Array.isArray(data?.leaderboardRows)?data.leaderboardRows:[];
   const valid=[];
-  for(const row of rows)if(addr(row?.ethAddress)){
-    const a=norm(row.ethAddress);map.set(a,row);valid.push(a);
-  }
-  const candidates=[...map.values()]
-    .sort((a,b)=>hunterPreScore(b)-hunterPreScore(a))
-    .slice(0,Math.max(SCREEN_PREFILTER,QUALIFIED_TARGET))
-    .map(r=>norm(r.ethAddress));
-  const rowMap=new Map([...map.values()].filter(r=>addr(r?.ethAddress)).map(r=>[norm(r.ethAddress),r]));
-  return{discovered:new Set(valid).size,candidates,rows:rowMap,source:'leaderboardRows.ethAddress:fast_prefilter'};
+  for(const row of rows)if(addr(row?.ethAddress)){const a=norm(row.ethAddress);map.set(a,row);valid.push(a)}
+  const candidates=[...map.values()].sort((a,b)=>hunterPreScore(b)-hunterPreScore(a)).map(r=>norm(r.ethAddress)).slice(0,MAX_CANDIDATES);
+  return{discovered:new Set(valid).size,candidates,source:'leaderboardRows.ethAddress:hunter_pre_rank'};
 }
 
 function fillKey(f){return [f?.tid??'',f?.hash??'',f?.time??'',f?.coin??'',f?.px??'',f?.sz??'',f?.side??''].join('|')}
@@ -185,28 +151,15 @@ function reconstruct(fills){
     const lots=books.get(coin)||[];
     books.set(coin,lots);
 
-    // Prefer Hyperliquid's explicit lifecycle direction when present.
-    // startPosition is only the fallback. This prevents a missing/ambiguous
-    // startPosition field from turning every fill into an "open" and producing
-    // the old NO_CLOSED_TRADES false-negative.
-    const explicitCloseLong=/close\s*long/i.test(dir);
-    const explicitCloseShort=/close\s*short/i.test(dir);
-    const explicitOpenLong=/open\s*long/i.test(dir);
-    const explicitOpenShort=/open\s*short/i.test(dir);
-    const explicitClose=explicitCloseLong||explicitCloseShort;
-    const explicitOpen=explicitOpenLong||explicitOpenShort;
-
-    let reducing;
-    if(explicitClose) reducing=true;
-    else if(explicitOpen) reducing=false;
-    else {
-      const before=Math.abs(Number.isFinite(start)?start:0);
-      reducing=before>0 && ((start>0&&d<0)||(start<0&&d>0));
-    }
+    // Hyperliquid startPosition is the position immediately before this fill.
+    // Use it to determine whether the fill closes/reduces or opens/increases.
+    const before=Math.abs(Number.isFinite(start)?start:0);
+    const reducing=(before>0 && Math.sign(start)===Math.sign(d) ? false :
+                    before>0 && ((start>0&&d<0)||(start<0&&d>0)));
 
     if(!reducing){
       lots.push({
-        side:explicitOpenShort?'short':explicitOpenLong?'long':(d>0?'long':'short'),
+        side:d>0?'long':'short',
         qty:Math.abs(d),
         px,
         time
@@ -215,7 +168,7 @@ function reconstruct(fills){
     }
 
     let rem=Math.abs(d);
-    const closingSide=explicitCloseLong?'long':explicitCloseShort?'short':(start>0?'long':'short');
+    const closingSide=start>0?'long':'short';
 
     while(rem>1e-12){
       // Drop incompatible stale lots rather than manufacturing a trade.
@@ -427,43 +380,6 @@ async function enrich(x,now){
     return x
   }
 }
-
-async function mapConcurrent(items,limit,worker){
-  const out=new Array(items.length),errors=[];
-  let next=0;
-  async function runner(){
-    while(true){
-      const i=next++;
-      if(i>=items.length)return;
-      try{out[i]=await worker(items[i],i)}catch(e){errors.push({item:items[i],index:i,cat:category(e),message:String(e?.message||e)})}
-    }
-  }
-  await Promise.all(Array.from({length:Math.max(1,Math.min(limit,items.length))},runner));
-  return{out:out.filter(Boolean),errors};
-}
-function fastRowFlags(row){
-  const w=weekStats(row);
-  const trades=rowMetric(row,['trades','closedTrades','numTrades','performance.trades'],NaN);
-  const pnl=rowMetric(row,['pnl','accountValue.pnl','performance.pnl'],NaN);
-  const roi=rowMetric(row,['roi','returnOnEquity','performance.roi'],NaN);
-  return{trades,pnl,roi,w};
-}
-async function scanOne(address,start,now){
-  const f=await getFills(address,start,now);
-  const r=reconstruct(f.fills);
-  const m=metrics(f.fills,r);
-  const sg=safetyGate(m,f.truncated);
-  return{address,metrics:m,safety:sg,truncated:f.truncated,qualityScore:Math.round(qualityScore(m)),softFlags:softFlags(m)};
-}
-function rankQualified(a,b){
-  return rankStat(a,b) || (b.metrics.pnl-a.metrics.pnl);
-}
-function elapsed(t){return `${((Date.now()-t)/1000).toFixed(1)}s`}
-function countsByReason(xs,key){
-  const m={};for(const x of xs){for(const r of (x[key]||[]))m[r]=(m[r]||0)+1}
-  return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`${k}:${v}`).join(' | ')||'none';
-}
-
 async function telegram(text){
   if(!TG_TOKEN||!TG_CHAT){console.log('[TELEGRAM] missing credentials');return}
   for(let i=0;i<text.length;i+=TG_LIMIT){
@@ -482,129 +398,50 @@ function errSummary(es){const m={};for(const e of es)m[e.cat]=(m[e.cat]||0)+1;re
 function icon(s){return s==='COPY_READY'?'🟢':s==='WATCH_NO_POSITION'?'🟡':s==='POSITION_BLOCKED'?'🟠':'🔴'}
 
 async function main(){
-  const t0=Date.now();
-  console.log(`[HUNTER V5.15][START] ${JSON.stringify({lookbackDays:LOOKBACK_DAYS,qualifiedTarget:QUALIFIED_TARGET,screenPrefilter:SCREEN_PREFILTER,finalists:FINALISTS})}`);
-
+  console.log(`[HUNTER V5.14][START] ${JSON.stringify({lookbackDays:LOOKBACK_DAYS,maxCandidates:MAX_CANDIDATES,statPool:STAT_POOL_SIZE,finalists:FINALISTS})}`);
   let d;
-  try{d=await discover()}
-  catch(e){
-    console.error(`[DISCOVERY][ERROR] ${e.message}`);
-    await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.15\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);
-    process.exitCode=1;return;
+  try{d=await discover()}catch(e){console.error(`[DISCOVERY][ERROR] ${e.message}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.14\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return}
+  console.log(`[DISCOVERY] validLeaderboardAddresses=${d.discovered} candidates=${d.candidates.length} source=${d.source}`);
+
+  const start=Date.now()-LOOKBACK_DAYS*86400000,now=Date.now(),scanned=[],errors=[];
+  for(let i=0;i<d.candidates.length;i++){
+    const a=d.candidates[i];
+    try{
+      const f=await getFills(a,start,now),r=reconstruct(f.fills),m=metrics(f.fills,r),sg=safetyGate(m,f.truncated);
+      const x={address:a,metrics:m,safety:sg,truncated:f.truncated,qualityScore:Math.round(qualityScore(m)),softFlags:softFlags(m)};
+      scanned.push(x);
+      console.log(`[SCAN] ${i+1}/${d.candidates.length} ${short(a)} fills=${m.fills} trades=${m.closedTrades} WR=${fmt(m.winRate,1)} PF=${fmt(m.profitFactor)} Q=${x.qualityScore} SAFETY=${sg.ok?'PASS':'BLOCK'}${sg.ok?'':' block='+sg.reasons.join(',')}${x.softFlags.length?' soft='+x.softFlags.slice(0,3).join(','):''}`);
+    }catch(e){const cat=category(e);errors.push({address:a,cat,message:String(e.message||e)});console.error(`[SCAN][ERROR] ${i+1}/${d.candidates.length} ${short(a)} ${cat} :: ${e.message}`)}
+    if(i+1<d.candidates.length)await sleep(BETWEEN);
   }
 
-  const t1=Date.now();
-  console.log(`[DISCOVERY] leaderboard=${d.discovered} prefilter=${d.candidates.length}`);
+  const safe=scanned.filter(x=>x.safety.ok),statPool=safe.sort(rankStat).slice(0,Math.max(1,STAT_POOL_SIZE));
+  for(const x of statPool)await enrich(x,now);
 
-  const start=Date.now()-LOOKBACK_DAYS*86400000,now=Date.now();
-
-  // Phase 1: parallel statistical screening. No artificial inter-trader delay.
-  const screen=await mapConcurrent(d.candidates,SCREEN_CONCURRENCY,(a)=>scanOne(a,start,now));
-  const scanned=screen.out;
-  const errors=screen.errors;
-  const t2=Date.now();
-
-  // Only truly safe/statistically qualified traders enter the 100-person deep pool.
-  // Soft flags remain visible, but the explicit quality gates are now enforced here.
-  const qualified=scanned
-    .filter(x=>x.safety.ok)
-    .filter(x=>x.metrics.closedTrades>=MIN_TRADES)
-    .filter(x=>x.metrics.winRate>=MIN_WR)
-    .filter(x=>x.metrics.pnl>=MIN_PNL)
-    .filter(x=>x.metrics.profitFactor>=MIN_PF)
-    .filter(x=>x.metrics.activeDays>=MIN_ACTIVE_DAYS)
-    .filter(x=>x.metrics.maxLosingStreak<=MAX_LOSING_STREAK)
-    .filter(x=>x.metrics.liquidations<=MAX_LIQ)
-    .sort(rankQualified)
-    .slice(0,QUALIFIED_TARGET);
-
-  const t3=Date.now();
-
-  // Phase 2: deep scan ONLY the qualified pool.
-  const deep=await mapConcurrent(qualified,DEEP_CONCURRENCY,(x)=>enrich(x,now));
-  const deepPool=deep.out;
-  const deepErrors=deep.errors;
-  const t4=Date.now();
-
-  // Finalists are selected from the fully enriched 100.
-  const finalists=[...deepPool]
-    .sort((a,b)=>(b.copyabilityScore-a.copyabilityScore)||rankQualified(a,b))
-    .slice(0,Math.max(1,FINALISTS));
-
+  const finalists=[...statPool].sort((a,b)=>(b.copyabilityScore-a.copyabilityScore)||rankStat(a,b)).slice(0,Math.max(1,FINALISTS));
   const selected=AUTO_SELECT?finalists.filter(x=>x.enrichmentStatus==='COPY_READY').slice(0,1):[];
-  const t5=Date.now();
 
-  const safetyBlocks={};
-  for(const x of scanned)for(const r of x.safety.reasons)safetyBlocks[r]=(safetyBlocks[r]||0)+1;
-  const hardRejected=scanned.filter(x=>!x.safety.ok||x.metrics.closedTrades<MIN_TRADES||x.metrics.winRate<MIN_WR||x.metrics.pnl<MIN_PNL||x.metrics.profitFactor<MIN_PF||x.metrics.activeDays<MIN_ACTIVE_DAYS||x.metrics.maxLosingStreak>MAX_LOSING_STREAK||x.metrics.liquidations>MAX_LIQ);
+  const safetyBlocks={},softBlocks={};
+  for(const x of scanned){for(const r of x.safety.reasons)safetyBlocks[r]=(safetyBlocks[r]||0)+1;for(const r of x.softFlags)softBlocks[r]=(softBlocks[r]||0)+1}
+  const topSafety=Object.entries(safetyBlocks).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`${k}:${v}`).join(' | ')||'none';
+  const topSoft=Object.entries(softBlocks).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`${k}:${v}`).join(' | ')||'none';
 
-  const enrichCounts={};
-  for(const x of deepPool)enrichCounts[x.enrichmentStatus]=(enrichCounts[x.enrichmentStatus]||0)+1;
-  for(const e of deepErrors)enrichCounts[`ERROR:${e.cat}`]=(enrichCounts[`ERROR:${e.cat}`]||0)+1;
+  const lines=['🟣 HYPERLIQUID TRADER HUNTER V5.14','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Discovery: ${d.discovered}`,`👥 Candidates: ${d.candidates.length}/${MAX_CANDIDATES}`,`📊 Scanned OK: ${scanned.length}/${d.candidates.length}`,`⚠️ Scan failures: ${errors.length}`,`❌ Error types: ${errSummary(errors)}`,`🧠 Statistical quality pool: ${statPool.length}/${Math.min(STAT_POOL_SIZE,safe.length)}`,`🛡️ Safety blocks: ${scanned.length-safe.length}`,`🏆 Finalists: ${finalists.length}/${Math.min(FINALISTS,statPool.length)}`,`🟢 Copy eligible: ${selected.length}`,`⚡ Auto selected: ${selected.length}`,`📚 Lookback: ${LOOKBACK_DAYS}d | Quality scoring is primary`,
+    `⚙️ Pool config: maxCandidates=${MAX_CANDIDATES} | statPool=${STAT_POOL_SIZE} | finalists=${FINALISTS}`,'','🧱 SAFETY BLOCKS',topSafety,'📌 SOFT FLAGS (informational)',topSoft,'','🏆 FINALISTS'];
 
-  const lines=[
-    '🟣 HYPERLIQUID TRADER HUNTER V5.15',
-    '📡 READ-ONLY | NO ORDERS',
-    '━━━━━━━━━━━━━━━━━━',
-    `🔎 Leaderboard: ${d.discovered}`,
-    `⚡ Fast prefilter: ${d.candidates.length}`,
-    `📊 Screened: ${scanned.length}/${d.candidates.length}`,
-    `✅ Qualified: ${qualified.length}/${QUALIFIED_TARGET}`,
-    `🧠 Deep-scanned: ${deepPool.length}/${qualified.length}`,
-    `🏆 Finalists: ${finalists.length}/${Math.min(FINALISTS,deepPool.length)}`,
-    `🟢 Copy eligible: ${selected.length}`,
-    `⚠️ Screen errors: ${errors.length}`,
-    `⚠️ Deep errors: ${deepErrors.length}`,
-    '',
-    '⏱ PIPELINE TIME',
-    `Discovery: ${elapsed(t0)}`,
-    `Fast screen: ${((t2-t1)/1000).toFixed(1)}s`,
-    `Qualification: ${((t3-t2)/1000).toFixed(1)}s`,
-    `Deep scan: ${((t4-t3)/1000).toFixed(1)}s`,
-    `Final ranking: ${((t5-t4)/1000).toFixed(1)}s`,
-    `TOTAL: ${((t5-t0)/1000).toFixed(1)}s`,
-    '',
-    '🧱 TOP SCREEN BLOCKS',
-    Object.entries(safetyBlocks).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`${k}:${v}`).join(' | ')||'none',
-    '📌 QUALIFICATION RULES',
-    `Trades≥${MIN_TRADES} | WR≥${MIN_WR}% | PnL≥${MIN_PNL} | PF≥${MIN_PF} | ActiveDays≥${MIN_ACTIVE_DAYS} | LosingStreak≤${MAX_LOSING_STREAK} | Liq≤${MAX_LIQ}`,
-    '',
-    '🏆 FINALISTS'
-  ];
-
-  if(!finalists.length)lines.push('No finalist reached the deep-scan stage.');
+  if(!finalists.length)lines.push('No statistically safe candidate reached the enrichment pool.');
   else finalists.forEach((x,i)=>{
     const m=x.metrics,p=x.plan;
-    lines.push(
-      '',
-      `#${i+1} ${short(x.address)}`,
-      `${icon(x.enrichmentStatus)} ${x.enrichmentStatus} | Quality=${x.qualityScore}/100 | Copyability=${x.copyabilityScore}/100`,
-      `📈 7D: trades=${m.closedTrades} | WR=${pct(m.winRate)} | PnL=${fmt(m.pnl)} | PF=${fmt(m.profitFactor)} | lifecycleErr=${m.invalidLifecycle}`,
-      `⏱ Hold: median=${fmt(m.medianHoldHours)}h | avg=${fmt(m.avgHoldHours)}h | activeDays=${m.activeDays}`,
-      `🧯 Streak=${m.maxLosingStreak} | liq=${m.liquidations} | fills=${m.fills}`,
-      p?`📌 ${p.side} ${p.coin} | source=${fmt(p.sourceEntry)} | now=${fmt(p.entry)} | dist=${pct(p.distancePct,2)} | SL=${fmt(p.sl)} | TP=${fmt(p.tp)} | RR=${fmt(p.rr)} | age=${fmt(p.positionAgeHours)}h`
-       :'📌 Position: NONE | Copy now: NO | Watchlist: YES',
-      x.softFlags.length?`ℹ️ Soft: ${x.softFlags.slice(0,4).join(', ')}`:'',
-      x.enrichmentError?`⚠️ Enrichment: ${x.enrichmentError.slice(0,180)}`:''
-    );
+    lines.push('',`#${i+1} ${short(x.address)}`,`${icon(x.enrichmentStatus)} ${x.enrichmentStatus} | Quality=${x.qualityScore}/100 | Copyability=${x.copyabilityScore}/100`,`📈 7D: trades=${m.closedTrades} | WR=${pct(m.winRate)} | PnL=${fmt(m.pnl)} | PF=${fmt(m.profitFactor)} | lifecycleErr=${m.invalidLifecycle}`,`⏱ Hold: median=${fmt(m.medianHoldHours)}h | avg=${fmt(m.avgHoldHours)}h | activeDays=${m.activeDays}`,`🧯 Streak=${m.maxLosingStreak} | liq=${m.liquidations} | fills=${m.fills}`,p?`📌 ${p.side} ${p.coin} | source=${fmt(p.sourceEntry)} | now=${fmt(p.entry)} | dist=${pct(p.distancePct,2)} | SL=${fmt(p.sl)} | TP=${fmt(p.tp)} | RR=${fmt(p.rr)} | age=${fmt(p.positionAgeHours)}h`:`📌 Position: NONE | Copy now: NO | Watchlist: YES`,x.softFlags.length?`ℹ️ Soft: ${x.softFlags.slice(0,4).join(', ')}`:'');
+    if(x.enrichmentError)lines.push(`⚠️ Enrichment: ${x.enrichmentError.slice(0,180)}`);
   });
 
-  lines.push(
-    '',
-    '🚀 AUTO SELECTED',
-    selected.length
-      ? `${short(selected[0].address)} | ${selected[0].plan.side} ${selected[0].plan.coin} | Quality=${selected[0].qualityScore}/100 | Copyability=${selected[0].copyabilityScore}/100`
-      : 'None — no current position passed copyability checks.',
-    '',
-    'ℹ️ V5.15 pipeline: Leaderboard → fast screen → 100 qualified → deep scan → 5 finalists → 1 auto-selected.',
-    'ℹ️ Qualification gates are hard gates; soft flags are diagnostic only.',
-    'ℹ️ Deep enrichment is NEVER executed for unqualified traders.',
-    'ℹ️ Entry/SL/TP are READ-ONLY diagnostics. Source TP/SL is not copied.',
-    'ℹ️ No orders are created by this worker.',
-    `🕐 ${new Date().toISOString()}`
-  );
+  lines.push('','🚀 AUTO SELECTED',selected.length?`${short(selected[0].address)} | ${selected[0].plan.side} ${selected[0].plan.coin} | Quality=${selected[0].qualityScore}/100 | Copyability=${selected[0].copyabilityScore}/100 | Entry=${fmt(selected[0].plan.entry)} | SL=${fmt(selected[0].plan.sl)} | TP=${fmt(selected[0].plan.tp)} | RR=${fmt(selected[0].plan.rr)}`:'None — no current position passed copyability checks.');
+  if(errors.length){lines.push('','🧪 FIRST SCAN ERRORS');errors.slice(0,8).forEach(e=>lines.push(`${short(e.address)} → ${e.cat} → ${e.message.slice(0,160)}`))}
+  lines.push('','ℹ️ V5.13: WR/PF/hold/active-days are soft scoring signals, not automatic rejection gates.','ℹ️ Only safety/data conditions hard-block statistical candidates.','ℹ️ No-open-position candidates remain on the watchlist.',
+    'ℹ️ Invalid position/ATR data never produces fake SL/TP/RR values.','ℹ️ Entry/SL/TP are READ-ONLY diagnostics. Source TP/SL is not copied.','ℹ️ No orders are created by this worker.',`🕐 ${new Date().toISOString()}`);
 
-  console.log(`[HUNTER V5.15][DONE] leaderboard=${d.discovered} prefilter=${d.candidates.length} scanned=${scanned.length} qualified=${qualified.length} deep=${deepPool.length} finalists=${finalists.length} selected=${selected.length} total=${((t5-t0)/1000).toFixed(1)}s`);
+  console.log(`[HUNTER V5.14][DONE] discovered=${d.discovered} candidates=${d.candidates.length} scanned=${scanned.length} failed=${errors.length} statPool=${statPool.length} finalists=${finalists.length} selected=${selected.length}`);
   await telegram(lines.join('\n'));
 }
-main().catch(async e=>{console.error(`[HUNTER V5.15][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.15\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
+main().catch(async e=>{console.error(`[HUNTER V5.14][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.14\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
