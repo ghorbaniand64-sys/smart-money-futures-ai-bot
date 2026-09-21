@@ -1,4 +1,4 @@
-// Hyperliquid Trader Hunter V5.13 - READ ONLY
+// Hyperliquid Trader Hunter V5.14 - READ ONLY
 // Professional ranking: statistical quality + current-position copyability.
 // NO ORDERS. NO PRIVATE KEYS.
 
@@ -31,7 +31,7 @@ const MAX_HOLD = num('HYPERLIQUID_HUNTER_MAX_PLANNED_HOLD_HOURS', 12);
 
 const RETRIES = integer('HYPERLIQUID_HUNTER_API_RETRIES', 4);
 const BASE_DELAY = integer('HYPERLIQUID_HUNTER_API_BASE_DELAY_MS', 700);
-const BETWEEN = integer('HYPERLIQUID_HUNTER_BETWEEN_TRADERS_MS', 500);
+const BETWEEN = integer('HYPERLIQUID_HUNTER_BETWEEN_TRADERS_MS', 700);
 const MAX_PAGES = integer('HYPERLIQUID_HUNTER_MAX_FILL_PAGES', 8);
 const TIMEOUT = integer('HYPERLIQUID_HUNTER_REQUEST_TIMEOUT_MS', 30000);
 
@@ -124,38 +124,120 @@ async function getFills(user,start,end){
   const fills=[...map.values()].sort((a,b)=>Number(a.time)-Number(b.time));
   return{fills,pages,truncated:pages>=MAX_PAGES||fills.length>=10000,newest};
 }
-function delta(f){const sz=Math.abs(Number(f?.sz||0));return String(f?.side||'').toUpperCase()==='B'?sz:-sz}
-function reconstruct(fills){
-  const books=new Map(),trades=[];let liquidations=0;
-  for(const f of fills){
-    const coin=String(f.coin||'');if(!coin)continue;
-    if(String(f.dir||'').toLowerCase().includes('liquid'))liquidations++;
-    const d=delta(f);if(!d)continue;const lots=books.get(coin)||[];books.set(coin,lots);
-    const start=Number(f.startPosition||0),isClose=(start>0&&d<0)||(start<0&&d>0);
-    if(!isClose){lots.push({side:d>0?'long':'short',qty:Math.abs(d),px:Number(f.px),time:Number(f.time)});continue}
-    let rem=Math.abs(d),closing=d>0?'short':'long';
-    while(rem>1e-12&&lots.length){
-      const lot=lots[0];if(lot.side!==closing)break;
-      const used=Math.min(rem,lot.qty),px=Number(f.px),cp=Number(f.closedPnl),fq=Math.abs(Number(f.sz||0));
-      const pnl=Number.isFinite(cp)&&fq>0?cp*(used/fq):(lot.side==='long'?(px-lot.px)*used:(lot.px-px)*used);
-      trades.push({coin,side:lot.side,qty:used,entryPx:lot.px,exitPx:px,openTime:lot.time,closeTime:Number(f.time),holdHours:Math.max(0,(Number(f.time)-lot.time)/3600000),pnl});
-      lot.qty-=used;rem-=used;if(lot.qty<=1e-12)lots.shift();
-    }
-    if(rem>1e-12)lots.push({side:d>0?'long':'short',qty:rem,px:Number(f.px),time:Number(f.time)})
-  }
-  return{trades,liquidations}
+function delta(f){
+  const sz=Math.abs(Number(f?.sz||0));
+  if(!Number.isFinite(sz)||sz<=0)return 0;
+  const side=String(f?.side||'').toUpperCase();
+  return side==='B'?sz:side==='A'?-sz:0;
 }
+
+function reconstruct(fills){
+  const books=new Map(),trades=[];
+  let liquidations=0,invalidLifecycle=0;
+
+  for(const f of fills){
+    const coin=String(f?.coin||'');
+    if(!coin)continue;
+
+    const dir=String(f?.dir||'').toLowerCase();
+    if(dir.includes('liquid'))liquidations++;
+
+    const d=delta(f);
+    if(!d)continue;
+
+    const px=Number(f?.px),time=Number(f?.time),start=Number(f?.startPosition);
+    if(!Number.isFinite(px)||!Number.isFinite(time))continue;
+
+    const lots=books.get(coin)||[];
+    books.set(coin,lots);
+
+    // Hyperliquid startPosition is the position immediately before this fill.
+    // Use it to determine whether the fill closes/reduces or opens/increases.
+    const before=Math.abs(Number.isFinite(start)?start:0);
+    const reducing=(before>0 && Math.sign(start)===Math.sign(d) ? false :
+                    before>0 && ((start>0&&d<0)||(start<0&&d>0)));
+
+    if(!reducing){
+      lots.push({
+        side:d>0?'long':'short',
+        qty:Math.abs(d),
+        px,
+        time
+      });
+      continue;
+    }
+
+    let rem=Math.abs(d);
+    const closingSide=start>0?'long':'short';
+
+    while(rem>1e-12){
+      // Drop incompatible stale lots rather than manufacturing a trade.
+      while(lots.length && lots[0].side!==closingSide)lots.shift();
+      if(!lots.length){
+        invalidLifecycle++;
+        break;
+      }
+
+      const lot=lots[0];
+      const used=Math.min(rem,lot.qty);
+      const fq=Math.abs(Number(f?.sz||0));
+      const cp=Number(f?.closedPnl);
+
+      let pnl;
+      if(Number.isFinite(cp)&&fq>0){
+        pnl=cp*(used/fq);
+      }else{
+        pnl=lot.side==='long'?(px-lot.px)*used:(lot.px-px)*used;
+      }
+
+      if(!Number.isFinite(pnl)){
+        invalidLifecycle++;
+        break;
+      }
+
+      trades.push({
+        coin,
+        side:lot.side,
+        qty:used,
+        entryPx:lot.px,
+        exitPx:px,
+        openTime:lot.time,
+        closeTime:time,
+        holdHours:Math.max(0,(time-lot.time)/3600000),
+        pnl
+      });
+
+      lot.qty-=used;
+      rem-=used;
+      if(lot.qty<=1e-12)lots.shift();
+    }
+
+    // If the fill flips the position, the residual becomes a new lifecycle.
+    if(rem>1e-12){
+      lots.push({
+        side:d>0?'long':'short',
+        qty:rem,
+        px,
+        time
+      });
+    }
+  }
+
+  return{trades,liquidations,invalidLifecycle};
+}
+
 function metrics(fills,r){
   const ts=r.trades,w=ts.filter(t=>t.pnl>0),l=ts.filter(t=>t.pnl<0),holds=ts.map(t=>t.holdHours).filter(Number.isFinite);
   const gw=w.reduce((s,t)=>s+t.pnl,0),gl=Math.abs(l.reduce((s,t)=>s+t.pnl,0)),pnl=ts.reduce((s,t)=>s+t.pnl,0);
   const days=new Set(ts.map(t=>new Date(t.closeTime).toISOString().slice(0,10)));
   let st=0,maxst=0;for(const t of [...ts].sort((a,b)=>a.closeTime-b.closeTime)){if(t.pnl<0){st++;maxst=Math.max(maxst,st)}else if(t.pnl>0)st=0}
-  return{fills:fills.length,closedTrades:ts.length,winRate:ts.length?w.length/ts.length*100:0,pnl,grossWin:gw,grossLossAbs:gl,profitFactor:gl>0?gw/gl:(gw>0?Infinity:0),medianHoldHours:median(holds),avgHoldHours:holds.length?holds.reduce((a,b)=>a+b,0)/holds.length:NaN,p25HoldHours:quantile(holds,.25),p75HoldHours:quantile(holds,.75),activeDays:days.size,maxLosingStreak:maxst,liquidations:r.liquidations}
+  return{fills:fills.length,closedTrades:ts.length,invalidLifecycle:Number(r.invalidLifecycle||0),winRate:ts.length?w.length/ts.length*100:0,pnl,grossWin:gw,grossLossAbs:gl,profitFactor:gl>0?gw/gl:(gw>0?Infinity:0),medianHoldHours:median(holds),avgHoldHours:holds.length?holds.reduce((a,b)=>a+b,0)/holds.length:NaN,p25HoldHours:quantile(holds,.25),p75HoldHours:quantile(holds,.75),activeDays:days.size,maxLosingStreak:maxst,liquidations:r.liquidations}
 }
 function safetyGate(m,truncated){
   const reasons=[];
   if(truncated)reasons.push('HISTORY_TRUNCATED');
   if(m.closedTrades<=0)reasons.push('NO_CLOSED_TRADES');
+  if(m.invalidLifecycle>Math.max(3,Math.ceil(m.fills*0.02)))reasons.push(`INVALID_LIFECYCLE>${Math.max(3,Math.ceil(m.fills*0.02))}`);
   if(!Number.isFinite(m.profitFactor)&&m.profitFactor!==Infinity)reasons.push('INVALID_PROFIT_FACTOR');
   if(m.liquidations>Math.max(MAX_LIQ,3))reasons.push(`LIQUIDATIONS>${Math.max(MAX_LIQ,3)}`);
   if(m.maxLosingStreak>Math.max(MAX_LOSING_STREAK,12))reasons.push(`EXTREME_LOSING_STREAK>${Math.max(MAX_LOSING_STREAK,12)}`);
@@ -197,23 +279,77 @@ async function book(coin){
   return{bid,ask,mid:(bid+ask)/2}
 }
 async function atr(coin,end){
-  const c=await info({type:'candleSnapshot',req:{coin,interval:'1h',startTime:end-72*3600000,endTime:end}},`candles ${coin}`);
-  const r=(Array.isArray(c)?c:[]).map(x=>Number(x.h)-Number(x.l)).filter(x=>x>0&&Number.isFinite(x));
-  if(r.length<5)throw new Error(`candles ${coin}: insufficient 1h data`);
-  return r.reduce((a,b)=>a+b,0)/r.length
+  const c=await info({
+    type:'candleSnapshot',
+    req:{coin,interval:'1h',startTime:end-96*3600000,endTime:end}
+  },`candles ${coin}`);
+
+  const rows=Array.isArray(c)?c:[];
+  const parsed=rows.map(x=>({
+    h:Number(x?.h),l:Number(x?.l),o:Number(x?.o),c:Number(x?.c)
+  })).filter(x=>Number.isFinite(x.h)&&Number.isFinite(x.l)&&x.h>x.l);
+
+  if(parsed.length<12)throw new Error(`candles ${coin}: insufficient 1h data (${parsed.length})`);
+
+  let prevClose=NaN;
+  const tr=[];
+  for(const x of parsed){
+    const range=x.h-x.l;
+    const trueRange=Number.isFinite(prevClose)
+      ? Math.max(range,Math.abs(x.h-prevClose),Math.abs(x.l-prevClose))
+      : range;
+    if(Number.isFinite(trueRange)&&trueRange>0)tr.push(trueRange);
+    prevClose=Number.isFinite(x.c)?x.c:prevClose;
+  }
+
+  if(tr.length<12)throw new Error(`candles ${coin}: invalid 1h true-range data`);
+  const recent=tr.slice(-72);
+  const value=recent.reduce((a,b)=>a+b,0)/recent.length;
+
+  if(!Number.isFinite(value)||value<=0)throw new Error(`candles ${coin}: ATR invalid ${value}`);
+  return value;
 }
+
 function plan(pos,m,atrv,now){
-  const s=Number(pos?.szi||0),source=Number(pos?.entryPx||0),side=s>0?'LONG':'SHORT';
-  const dist=source>0?Math.abs(m.mid-source)/source*100:Infinity,atrPct=m.mid>0?atrv/m.mid*100:Infinity;
-  const sl=side==='LONG'?m.mid-SL_ATR*atrv:m.mid+SL_ATR*atrv,tp=side==='LONG'?m.mid+TP_ATR*atrv:m.mid-TP_ATR*atrv;
-  const risk=Math.abs(m.mid-sl),reward=Math.abs(tp-m.mid),rr=risk?reward/risk:0;
-  const age=Number(pos?.timestamp||pos?.entryTimestamp||0),ageH=age>0?Math.max(0,(now-age)/3600000):NaN;
-  return{eligible:dist<=MAX_ENTRY_DIST&&rr>=MIN_RR,reason:dist>MAX_ENTRY_DIST?`ENTRY_DISTANCE>${MAX_ENTRY_DIST}%`:rr<MIN_RR?`RR<${MIN_RR}`:'READY',side,coin:String(pos?.coin||''),sourceEntry:source,entry:m.mid,distancePct:dist,sl,tp,rr,atr:atrv,atrPct,maxHoldHours:MAX_HOLD,positionAgeHours:ageH}
+  const s=Number(pos?.szi||0),source=Number(pos?.entryPx||0);
+  if(!Number.isFinite(s)||s===0)throw new Error('position: invalid size');
+
+  const side=s>0?'LONG':'SHORT';
+  if(!Number.isFinite(source)||source<=0)throw new Error('position: invalid entryPx');
+
+  const dist=Math.abs(m.mid-source)/source*100;
+  const atrPct=m.mid>0?atrv/m.mid*100:Infinity;
+
+  if(!Number.isFinite(atrv)||atrv<=0)throw new Error('ATR_INVALID');
+  if(!Number.isFinite(m.mid)||m.mid<=0)throw new Error('BOOK_MID_INVALID');
+  if(!Number.isFinite(atrPct)||atrPct<=0||atrPct>25)throw new Error(`ATR_SANITY_FAIL:${fmt(atrPct,2)}%`);
+
+  const sl=side==='LONG'?m.mid-SL_ATR*atrv:m.mid+SL_ATR*atrv;
+  const tp=side==='LONG'?m.mid+TP_ATR*atrv:m.mid-TP_ATR*atrv;
+
+  if(!Number.isFinite(sl)||!Number.isFinite(tp))throw new Error('SL_TP_INVALID');
+  if(sl<=0||tp<=0)throw new Error(`SL_TP_NONPOSITIVE:sl=${sl},tp=${tp}`);
+  if(Math.abs(sl-m.mid)<Math.max(atrv*0.05,m.mid*0.00005))throw new Error('SL_TOO_CLOSE');
+  if(Math.abs(tp-m.mid)<Math.max(atrv*0.05,m.mid*0.00005))throw new Error('TP_TOO_CLOSE');
+
+  const risk=Math.abs(m.mid-sl),reward=Math.abs(tp-m.mid),rr=risk>0?reward/risk:0;
+  if(!Number.isFinite(rr)||rr<=0)throw new Error('RR_INVALID');
+
+  const age=Number(pos?.timestamp||pos?.entryTimestamp||0);
+  const ageH=age>0?Math.max(0,(now-age)/3600000):NaN;
+
+  return{
+    eligible:dist<=MAX_ENTRY_DIST&&rr>=MIN_RR,
+    reason:dist>MAX_ENTRY_DIST?`ENTRY_DISTANCE>${MAX_ENTRY_DIST}%`:rr<MIN_RR?`RR<${MIN_RR}`:'READY',
+    side,coin:String(pos?.coin||''),sourceEntry:source,entry:m.mid,distancePct:dist,
+    sl,tp,rr,atr:atrv,atrPct,maxHoldHours:MAX_HOLD,positionAgeHours:ageH
+  };
 }
+
 function copyability(x){
   let s=x.qualityScore*.35;
   if(x.position)s+=20;
-  if(x.plan){
+  if(x.plan && x.plan.eligible!==undefined){
     s+=Math.max(0,15-Math.min(15,(x.plan.distancePct||99)/Math.max(MAX_ENTRY_DIST,.01)*15));
     s+=Math.max(0,10-Math.min(10,(x.positionAgeHours||0)/12*10));
     if(x.plan.rr>=MIN_RR)s+=10;
@@ -225,10 +361,24 @@ async function enrich(x,now){
   try{
     const p=await position(x.address);
     if(!p){x.enrichmentStatus='WATCH_NO_POSITION';x.position=null;x.copyabilityScore=Math.round(x.qualityScore*.35);return x}
-    x.position=p;const bk=await book(String(p.coin||'')),av=await atr(String(p.coin||''),now);
-    x.plan=plan(p,bk,av,now);x.positionAgeHours=x.plan.positionAgeHours;x.copyabilityScore=Math.round(copyability(x));x.enrichmentStatus=x.plan.eligible?'COPY_READY':'POSITION_BLOCKED';
+    x.position=p;
+    const coin=String(p.coin||'');
+    if(!coin)throw new Error('POSITION_COIN_MISSING');
+
+    const bk=await book(coin);
+    const av=await atr(coin,now);
+    x.plan=plan(p,bk,av,now);
+    x.positionAgeHours=x.plan.positionAgeHours;
+    x.copyabilityScore=Math.round(copyability(x));
+    x.enrichmentStatus=x.plan.eligible?'COPY_READY':'POSITION_BLOCKED';
     return x;
-  }catch(e){x.enrichmentStatus=`ENRICH_${category(e)}`;x.enrichmentError=e.message;x.copyabilityScore=Math.round(x.qualityScore*.25);return x}
+  }catch(e){
+    x.plan=null;
+    x.enrichmentStatus=`POSITION_DATA_INVALID:${category(e)}`;
+    x.enrichmentError=e.message;
+    x.copyabilityScore=0;
+    return x
+  }
 }
 async function telegram(text){
   if(!TG_TOKEN||!TG_CHAT){console.log('[TELEGRAM] missing credentials');return}
@@ -248,9 +398,9 @@ function errSummary(es){const m={};for(const e of es)m[e.cat]=(m[e.cat]||0)+1;re
 function icon(s){return s==='COPY_READY'?'🟢':s==='WATCH_NO_POSITION'?'🟡':s==='POSITION_BLOCKED'?'🟠':'🔴'}
 
 async function main(){
-  console.log(`[HUNTER V5.13][START] ${JSON.stringify({lookbackDays:LOOKBACK_DAYS,maxCandidates:MAX_CANDIDATES,statPool:STAT_POOL_SIZE,finalists:FINALISTS})}`);
+  console.log(`[HUNTER V5.14][START] ${JSON.stringify({lookbackDays:LOOKBACK_DAYS,maxCandidates:MAX_CANDIDATES,statPool:STAT_POOL_SIZE,finalists:FINALISTS})}`);
   let d;
-  try{d=await discover()}catch(e){console.error(`[DISCOVERY][ERROR] ${e.message}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.13\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return}
+  try{d=await discover()}catch(e){console.error(`[DISCOVERY][ERROR] ${e.message}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.14\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return}
   console.log(`[DISCOVERY] validLeaderboardAddresses=${d.discovered} candidates=${d.candidates.length} source=${d.source}`);
 
   const start=Date.now()-LOOKBACK_DAYS*86400000,now=Date.now(),scanned=[],errors=[];
@@ -276,20 +426,22 @@ async function main(){
   const topSafety=Object.entries(safetyBlocks).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`${k}:${v}`).join(' | ')||'none';
   const topSoft=Object.entries(softBlocks).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`${k}:${v}`).join(' | ')||'none';
 
-  const lines=['🟣 HYPERLIQUID TRADER HUNTER V5.13','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Discovery: ${d.discovered}`,`👥 Candidates: ${d.candidates.length}/${MAX_CANDIDATES}`,`📊 Scanned OK: ${scanned.length}/${d.candidates.length}`,`⚠️ Scan failures: ${errors.length}`,`❌ Error types: ${errSummary(errors)}`,`🧠 Statistical quality pool: ${statPool.length}/${Math.min(STAT_POOL_SIZE,safe.length)}`,`🛡️ Safety blocks: ${scanned.length-safe.length}`,`🏆 Finalists: ${finalists.length}/${Math.min(FINALISTS,statPool.length)}`,`🟢 Copy eligible: ${selected.length}`,`⚡ Auto selected: ${selected.length}`,`📚 Lookback: ${LOOKBACK_DAYS}d | Quality scoring is primary`,'','🧱 SAFETY BLOCKS',topSafety,'📌 SOFT FLAGS (informational)',topSoft,'','🏆 FINALISTS'];
+  const lines=['🟣 HYPERLIQUID TRADER HUNTER V5.14','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Discovery: ${d.discovered}`,`👥 Candidates: ${d.candidates.length}/${MAX_CANDIDATES}`,`📊 Scanned OK: ${scanned.length}/${d.candidates.length}`,`⚠️ Scan failures: ${errors.length}`,`❌ Error types: ${errSummary(errors)}`,`🧠 Statistical quality pool: ${statPool.length}/${Math.min(STAT_POOL_SIZE,safe.length)}`,`🛡️ Safety blocks: ${scanned.length-safe.length}`,`🏆 Finalists: ${finalists.length}/${Math.min(FINALISTS,statPool.length)}`,`🟢 Copy eligible: ${selected.length}`,`⚡ Auto selected: ${selected.length}`,`📚 Lookback: ${LOOKBACK_DAYS}d | Quality scoring is primary`,
+    `⚙️ Pool config: maxCandidates=${MAX_CANDIDATES} | statPool=${STAT_POOL_SIZE} | finalists=${FINALISTS}`,'','🧱 SAFETY BLOCKS',topSafety,'📌 SOFT FLAGS (informational)',topSoft,'','🏆 FINALISTS'];
 
   if(!finalists.length)lines.push('No statistically safe candidate reached the enrichment pool.');
   else finalists.forEach((x,i)=>{
     const m=x.metrics,p=x.plan;
-    lines.push('',`#${i+1} ${short(x.address)}`,`${icon(x.enrichmentStatus)} ${x.enrichmentStatus} | Quality=${x.qualityScore}/100 | Copyability=${x.copyabilityScore}/100`,`📈 7D: trades=${m.closedTrades} | WR=${pct(m.winRate)} | PnL=${fmt(m.pnl)} | PF=${fmt(m.profitFactor)}`,`⏱ Hold: median=${fmt(m.medianHoldHours)}h | avg=${fmt(m.avgHoldHours)}h | activeDays=${m.activeDays}`,`🧯 Streak=${m.maxLosingStreak} | liq=${m.liquidations} | fills=${m.fills}`,p?`📌 ${p.side} ${p.coin} | source=${fmt(p.sourceEntry)} | now=${fmt(p.entry)} | dist=${pct(p.distancePct,2)} | SL=${fmt(p.sl)} | TP=${fmt(p.tp)} | RR=${fmt(p.rr)} | age=${fmt(p.positionAgeHours)}h`:`📌 Position: NONE | Copy now: NO | Watchlist: YES`,x.softFlags.length?`ℹ️ Soft: ${x.softFlags.slice(0,4).join(', ')}`:'');
+    lines.push('',`#${i+1} ${short(x.address)}`,`${icon(x.enrichmentStatus)} ${x.enrichmentStatus} | Quality=${x.qualityScore}/100 | Copyability=${x.copyabilityScore}/100`,`📈 7D: trades=${m.closedTrades} | WR=${pct(m.winRate)} | PnL=${fmt(m.pnl)} | PF=${fmt(m.profitFactor)} | lifecycleErr=${m.invalidLifecycle}`,`⏱ Hold: median=${fmt(m.medianHoldHours)}h | avg=${fmt(m.avgHoldHours)}h | activeDays=${m.activeDays}`,`🧯 Streak=${m.maxLosingStreak} | liq=${m.liquidations} | fills=${m.fills}`,p?`📌 ${p.side} ${p.coin} | source=${fmt(p.sourceEntry)} | now=${fmt(p.entry)} | dist=${pct(p.distancePct,2)} | SL=${fmt(p.sl)} | TP=${fmt(p.tp)} | RR=${fmt(p.rr)} | age=${fmt(p.positionAgeHours)}h`:`📌 Position: NONE | Copy now: NO | Watchlist: YES`,x.softFlags.length?`ℹ️ Soft: ${x.softFlags.slice(0,4).join(', ')}`:'');
     if(x.enrichmentError)lines.push(`⚠️ Enrichment: ${x.enrichmentError.slice(0,180)}`);
   });
 
   lines.push('','🚀 AUTO SELECTED',selected.length?`${short(selected[0].address)} | ${selected[0].plan.side} ${selected[0].plan.coin} | Quality=${selected[0].qualityScore}/100 | Copyability=${selected[0].copyabilityScore}/100 | Entry=${fmt(selected[0].plan.entry)} | SL=${fmt(selected[0].plan.sl)} | TP=${fmt(selected[0].plan.tp)} | RR=${fmt(selected[0].plan.rr)}`:'None — no current position passed copyability checks.');
   if(errors.length){lines.push('','🧪 FIRST SCAN ERRORS');errors.slice(0,8).forEach(e=>lines.push(`${short(e.address)} → ${e.cat} → ${e.message.slice(0,160)}`))}
-  lines.push('','ℹ️ V5.13: WR/PF/hold/active-days are soft scoring signals, not automatic rejection gates.','ℹ️ Only safety/data conditions hard-block statistical candidates.','ℹ️ No-open-position candidates remain on the watchlist.','ℹ️ Entry/SL/TP are READ-ONLY diagnostics. Source TP/SL is not copied.','ℹ️ No orders are created by this worker.',`🕐 ${new Date().toISOString()}`);
+  lines.push('','ℹ️ V5.13: WR/PF/hold/active-days are soft scoring signals, not automatic rejection gates.','ℹ️ Only safety/data conditions hard-block statistical candidates.','ℹ️ No-open-position candidates remain on the watchlist.',
+    'ℹ️ Invalid position/ATR data never produces fake SL/TP/RR values.','ℹ️ Entry/SL/TP are READ-ONLY diagnostics. Source TP/SL is not copied.','ℹ️ No orders are created by this worker.',`🕐 ${new Date().toISOString()}`);
 
-  console.log(`[HUNTER V5.13][DONE] discovered=${d.discovered} candidates=${d.candidates.length} scanned=${scanned.length} failed=${errors.length} statPool=${statPool.length} finalists=${finalists.length} selected=${selected.length}`);
+  console.log(`[HUNTER V5.14][DONE] discovered=${d.discovered} candidates=${d.candidates.length} scanned=${scanned.length} failed=${errors.length} statPool=${statPool.length} finalists=${finalists.length} selected=${selected.length}`);
   await telegram(lines.join('\n'));
 }
-main().catch(async e=>{console.error(`[HUNTER V5.13][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.13\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
+main().catch(async e=>{console.error(`[HUNTER V5.14][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.14\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
