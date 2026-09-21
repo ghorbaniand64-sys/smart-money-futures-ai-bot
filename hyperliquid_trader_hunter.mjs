@@ -1,4 +1,4 @@
-// Hyperliquid Trader Hunter V5.17-CURRENT-POSITION-FIRST - READ ONLY
+// Hyperliquid Trader Hunter V5.18-STRATIFIED-CURRENT-POSITION-FIRST - READ ONLY
 // Professional ranking: statistical quality + current-position copyability.
 // NO ORDERS. NO PRIVATE KEYS.
 
@@ -9,6 +9,8 @@ const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLE
 const LOOKBACK_DAYS = num('HYPERLIQUID_HUNTER_LOOKBACK_DAYS', 7);
 const MAX_CANDIDATES = integer('HYPERLIQUID_HUNTER_MAX_CANDIDATES', 2000);
 const POSITION_DISCOVERY_TARGET = integer('HYPERLIQUID_HUNTER_POSITION_DISCOVERY_TARGET', 1000);
+const POSITION_PROBE_MAX = integer('HYPERLIQUID_HUNTER_POSITION_PROBE_MAX', 2000);
+const POSITION_COHORT_SIZE = integer('HYPERLIQUID_HUNTER_POSITION_COHORT_SIZE', 250);
 const POSITION_PROBE_CONCURRENCY = integer('HYPERLIQUID_HUNTER_POSITION_PROBE_CONCURRENCY', 8);
 const POSITION_PROBE_BATCH = integer('HYPERLIQUID_HUNTER_POSITION_PROBE_BATCH', 250);
 const POSITION_NEAR_TARGET = integer('HYPERLIQUID_HUNTER_POSITION_NEAR_TARGET', 10);
@@ -111,37 +113,85 @@ function hunterPreScore(row){
 async function discover(){
   const map=new Map();
   for(const a of [...SEEDS,...MANUAL])if(addr(a))map.set(norm(a),{ethAddress:norm(a)});
-  if(!DISCOVERY_ENABLED)return{discovered:map.size,candidates:[...map.keys()].slice(0,MAX_CANDIDATES),source:'manual_only'};
+  if(!DISCOVERY_ENABLED){
+    const candidates=[...map.keys()].slice(0,Math.min(POSITION_PROBE_MAX,Math.max(POSITION_DISCOVERY_TARGET,1)));
+    return{discovered:map.size,candidates,source:'manual_only'};
+  }
+
   const data=await fetchJson(DISCOVERY_URL,{},'leaderboard discovery');
   const rows=Array.isArray(data?.leaderboardRows)?data.leaderboardRows:[];
   const valid=[];
-  for(const row of rows)if(addr(row?.ethAddress)){const a=norm(row.ethAddress);map.set(a,row);valid.push(a)}
-  // Stratified discovery: do NOT collapse 46k+ leaderboard rows into one tiny score-ranked slice.
-  // We union several independent leaderboard cohorts so active/high-PnL traders are not crowded out.
-  const parsed=valid.map(a=>map.get(a)).filter(Boolean);
-  const cohort=(rows,limit)=>rows.filter(r=>addr(r?.ethAddress)).slice(0,limit).map(r=>norm(r.ethAddress));
-  const byScore=[...parsed].sort((a,b)=>hunterPreScore(b)-hunterPreScore(a));
+  for(const row of rows){
+    if(!addr(row?.ethAddress))continue;
+    const a=norm(row.ethAddress);
+    map.set(a,row);
+    valid.push(a);
+  }
+
+  // IMPORTANT: current-position discovery is intentionally decoupled from
+  // HYPERLIQUID_HUNTER_MAX_CANDIDATES / PREFILTER_SIZE. Those legacy limits
+  // must never shrink the wallet pool used to find REAL open positions.
+  const parsed=[...new Set(valid)].map(a=>map.get(a)).filter(Boolean);
   const metricValue=(row,window,field)=>{
     const wp=Array.isArray(row?.windowPerformances)?row.windowPerformances:[];
     const hit=wp.find(x=>Array.isArray(x)&&String(x[0]).toLowerCase()===window);
-    return Number(hit?.[1]?.[field]||0);
+    const n=Number(hit?.[1]?.[field]);
+    return Number.isFinite(n)?n:0;
   };
-  const byWeekPnl=[...parsed].sort((a,b)=>metricValue(b,'week','pnl')-metricValue(a,'week','pnl'));
-  const byDayPnl=[...parsed].sort((a,b)=>metricValue(b,'day','pnl')-metricValue(a,'day','pnl'));
-  const byWeekRoi=[...parsed].sort((a,b)=>metricValue(b,'week','roi')-metricValue(a,'week','roi'));
-  const byDayRoi=[...parsed].sort((a,b)=>metricValue(b,'day','roi')-metricValue(a,'day','roi'));
-  const byWeekVol=[...parsed].sort((a,b)=>metricValue(b,'week','vlm')-metricValue(a,'week','vlm'));
-  const byDayVol=[...parsed].sort((a,b)=>metricValue(b,'day','vlm')-metricValue(a,'day','vlm'));
-  const out=new Set([...SEEDS,...MANUAL].filter(addr).map(norm));
-  const add=list=>{for(const a of list){if(out.size>=MAX_CANDIDATES)break;out.add(a)}};
-  const tranche=Math.max(50,Math.ceil(Math.min(MAX_CANDIDATES,POSITION_DISCOVERY_TARGET)/6));
-  add(cohort(byScore,tranche));add(cohort(byWeekPnl,tranche));add(cohort(byDayPnl,tranche));
-  add(cohort(byWeekRoi,tranche));add(cohort(byDayRoi,tranche));add(cohort(byWeekVol,tranche));
-  // Fill remaining capacity with the blended score ranking.
-  add(byScore);
-  return{discovered:new Set(valid).size,candidates:[...out].slice(0,MAX_CANDIDATES),source:'leaderboard:STRATIFIED_WEEK_PNL+DAY_PNL+WEEK_ROI+DAY_ROI+VOLUME+BLENDED'};
-}
+  const by=(fn)=>[...parsed].sort((a,b)=>{
+    const d=fn(b)-fn(a);
+    return d||hunterPreScore(b)-hunterPreScore(a);
+  }).map(r=>norm(r.ethAddress));
 
+  const byWeekPnl=by(r=>metricValue(r,'week','pnl'));
+  const byDayPnl=by(r=>metricValue(r,'day','pnl'));
+  const byWeekRoi=by(r=>metricValue(r,'week','roi'));
+  const byDayRoi=by(r=>metricValue(r,'day','roi'));
+  const byWeekVol=by(r=>metricValue(r,'week','vlm'));
+  const byDayVol=by(r=>metricValue(r,'day','vlm'));
+  const byBlended=[...parsed].sort((a,b)=>hunterPreScore(b)-hunterPreScore(a)).map(r=>norm(r.ethAddress));
+
+  const target=Math.max(1,Math.min(POSITION_DISCOVERY_TARGET,POSITION_PROBE_MAX));
+  const cap=Math.max(target,POSITION_PROBE_MAX);
+  const out=new Set([...SEEDS,...MANUAL].filter(addr).map(norm));
+  const add=(list,limit=POSITION_COHORT_SIZE)=>{
+    let n=0;
+    for(const a of list){
+      if(out.size>=cap||n>=limit)break;
+      if(!out.has(a)){out.add(a);n++;}
+    }
+  };
+
+  // Stratified cohorts prevent one metric (for example volume) from crowding
+  // out profitable/active traders in the current-position search.
+  add(byWeekPnl);add(byDayPnl);add(byWeekRoi);add(byDayRoi);add(byWeekVol);add(byDayVol);
+  add(byBlended,POSITION_COHORT_SIZE);
+
+  // Fill to the actual probe target from the blended leaderboard, then allow
+  // expansion up to POSITION_PROBE_MAX if the first 1000 do not yield enough
+  // near-entry positions. This is the key V5.18 fix for the old 30-wallet cap.
+  if(out.size<target)add(byBlended,Number.POSITIVE_INFINITY);
+  if(out.size<target){
+    for(const a of valid){
+      if(out.size>=target)break;
+      out.add(a);
+    }
+  }
+  // Build an expansion pool up to POSITION_PROBE_MAX without ever consulting
+  // MAX_CANDIDATES/PREFILTER_SIZE.
+  if(out.size<cap){
+    for(const a of byBlended){
+      if(out.size>=cap)break;
+      out.add(a);
+    }
+  }
+
+  return{
+    discovered:new Set(valid).size,
+    candidates:[...out].slice(0,cap),
+    source:'leaderboard:STRATIFIED_WEEK_PNL+DAY_PNL+WEEK_ROI+DAY_ROI+VOLUME+BLENDED'
+  };
+}
 function fillKey(f){return [f?.tid??'',f?.hash??'',f?.time??'',f?.coin??'',f?.px??'',f?.sz??'',f?.side??''].join('|')}
 async function getFills(user,start,end){
   let cursor=start,pages=0;const map=new Map(),newest=0;
@@ -533,14 +583,17 @@ async function enrichBatch(pool,now){
 
 async function main(){
   const t0=Date.now();
-  console.log(`[HUNTER V5.17-CURRENT-POSITION-FIRST][START] ${JSON.stringify({maxCandidates:MAX_CANDIDATES,positionTarget:POSITION_DISCOVERY_TARGET,nearTarget:POSITION_NEAR_TARGET})}`);
+  console.log(`[HUNTER V5.18-STRATIFIED-CURRENT-POSITION-FIRST][START] ${JSON.stringify({legacyMaxCandidates:MAX_CANDIDATES,positionTarget:target,positionProbeMax:probeMax,cohortSize:POSITION_COHORT_SIZE,nearTarget:POSITION_NEAR_TARGET})}`);
   let d;
   try{d=await discover()}catch(e){
     console.error(`[DISCOVERY][ERROR] ${e.message}`);
-    await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.17-CURRENT-POSITION-FIRST\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return;
+    await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.18-STRATIFIED-CURRENT-POSITION-FIRST\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return;
   }
-  const addresses=d.candidates.slice(0,Math.min(MAX_CANDIDATES,Math.max(POSITION_DISCOVERY_TARGET,POSITION_PROBE_BATCH)));
+  const target=Math.max(1,Math.min(POSITION_DISCOVERY_TARGET,POSITION_PROBE_MAX));
+  const probeMax=Math.max(target,POSITION_PROBE_MAX);
+  const addresses=d.candidates.slice(0,Math.min(target,d.candidates.length));
   const now=Date.now(),startTime=now-LOOKBACK_DAYS*86400000,errors=[];
+  console.log(`[POSITION-POOL] target=${target} max=${probeMax} candidates=${d.candidates.length} legacyMaxCandidates=${MAX_CANDIDATES}`);
   let mids={};
   try{mids=await allMids()}catch(e){errors.push({cat:category(e),message:e.message});}
   let positionHits=[];
@@ -548,7 +601,7 @@ async function main(){
 
   // Expand current-position discovery in tranches when the first tranche does not produce enough near-entry positions.
   let cursor=addresses.length;
-  while(positionHits.filter(x=>x.distancePct<=MAX_ENTRY_DIST).length<POSITION_NEAR_TARGET && cursor<d.candidates.length){
+  while(positionHits.filter(x=>x.distancePct<=MAX_ENTRY_DIST).length<POSITION_NEAR_TARGET && cursor<Math.min(d.candidates.length,probeMax)){
     const batch=d.candidates.slice(cursor,Math.min(cursor+POSITION_PROBE_BATCH,d.candidates.length));
     console.log(`[POSITION-PROBE] expanding ${cursor+1}-${cursor+batch.length}/${d.candidates.length}`);
     const more=await probeCurrentPositions(batch,mids);
@@ -599,7 +652,7 @@ async function main(){
   const topSafety=Object.entries(safetyBlocks).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`${k}:${v}`).join(' | ')||'none';
   const topSoft=Object.entries(softBlocks).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`${k}:${v}`).join(' | ')||'none';
 
-  const lines=['🟣 HYPERLIQUID TRADER HUNTER V5.17-CURRENT-POSITION-FIRST','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`⚡ Position discovery: ${Math.min(cursor,d.candidates.length)}/${d.candidates.length}`,`📌 Open positions found: ${positionHits.length}`,`🎯 Positions within ${MAX_ENTRY_DIST}%: ${near.length}`,`📊 Statistical verification: ${scanned.length}/${currentTraders.length}`,`🛡️ Strong traders: ${strong.length}`,`🧠 Current-position deep scan: ${enriched.length}`,`🏆 Copy candidates: ${finalists.length}/${MIN_COPY5}`,`🟢 Auto-selected: ${selected?'1':'0'}`,`⚠️ Errors: ${errors.length}`,`⏱ Total: ${((Date.now()-t0)/1000).toFixed(1)}s`,'','🧱 TOP SAFETY BLOCKS',topSafety,'📌 SOFT DIAGNOSTICS',topSoft,'','🏆 TOP COPY-TRADE CANDIDATES'];
+  const lines=['🟣 HYPERLIQUID TRADER HUNTER V5.18-STRATIFIED-CURRENT-POSITION-FIRST','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`⚡ Position discovery: ${Math.min(cursor,d.candidates.length)}/${d.candidates.length}`,`📌 Open positions found: ${positionHits.length}`,`🎯 Positions within ${MAX_ENTRY_DIST}%: ${near.length}`,`📊 Statistical verification: ${scanned.length}/${currentTraders.length}`,`🛡️ Strong traders: ${strong.length}`,`🧠 Current-position deep scan: ${enriched.length}`,`🏆 Copy candidates: ${finalists.length}/${MIN_COPY5}`,`🟢 Auto-selected: ${selected?'1':'0'}`,`⚠️ Errors: ${errors.length}`,`⏱ Total: ${((Date.now()-t0)/1000).toFixed(1)}s`,'','🧱 TOP SAFETY BLOCKS',topSafety,'📌 SOFT DIAGNOSTICS',topSoft,'','🏆 TOP COPY-TRADE CANDIDATES'];
   if(!finalists.length)lines.push(`No strong trader with a REAL current position inside the ${MAX_ENTRY_DIST}% entry-distance window was found in this scan.`);
   finalists.forEach((x,i)=>{
     const p=x.plan,m=x.metrics;
@@ -609,8 +662,8 @@ async function main(){
   if(selected){const p=selected.plan;lines.push(`1️⃣ ${selected.address}`,`📌 ${p.coin} | ${p.side}`,`💵 Trader Entry=${fmt(p.sourceEntry)} | Current=${fmt(p.entry)} | Distance=${pct(p.distancePct,2)}`,`⚙️ Trader leverage=${fmt(leverageValue(selected.position),2)}x`,`🏆 Opportunity=${Math.round(opportunityScore(selected))}/100 | Quality=${selected.qualityScore}/100`)}else lines.push('None — no strong current position was within the entry-distance window.');
   if(errors.length){lines.push('','🧪 SAMPLE ERRORS');errors.slice(0,10).forEach(e=>lines.push(`${e.address?short(e.address)+' → ':''}${e.cat} → ${String(e.message||'').slice(0,180)}`))}
   lines.push('','ℹ️ Architecture: stratified leaderboard discovery → broad current-position probe → real entry-distance filter → historical quality verification → position ranking → top five → one auto-selection.','ℹ️ The entry-distance rule is a REAL copy eligibility gate.','ℹ️ Diagnostic SL/TP/RR never blocks a real current position; source TP/SL is never copied.','ℹ️ NO ORDERS are created by this worker.',`🕐 ${new Date().toISOString()}`);
-  console.log(`[HUNTER V5.17][DONE] leaderboard=${d.discovered} probed=${cursor} open=${positionHits.length} near=${near.length} verified=${scanned.length} strong=${strong.length} finalists=${finalists.length} selected=${selected?short(selected.address):'none'} errors=${errors.length}`);
+  console.log(`[HUNTER V5.18][DONE] leaderboard=${d.discovered} probed=${cursor} open=${positionHits.length} near=${near.length} verified=${scanned.length} strong=${strong.length} finalists=${finalists.length} selected=${selected?short(selected.address):'none'} errors=${errors.length}`);
   await telegram(lines.join('\n'));
 }
 
-main().catch(async e=>{console.error(`[HUNTER V5.15-COPY5][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.15-COPY5\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
+main().catch(async e=>{console.error(`[HUNTER V5.18][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.15-COPY5\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
