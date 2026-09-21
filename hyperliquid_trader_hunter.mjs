@@ -583,14 +583,14 @@ async function enrichBatch(pool,now){
 
 async function main(){
   const t0=Date.now();
+  const target=Math.max(1,Math.min(POSITION_DISCOVERY_TARGET,POSITION_PROBE_MAX));
+  const probeMax=Math.max(target,POSITION_PROBE_MAX);
   console.log(`[HUNTER V5.18-STRATIFIED-CURRENT-POSITION-FIRST][START] ${JSON.stringify({legacyMaxCandidates:MAX_CANDIDATES,positionTarget:target,positionProbeMax:probeMax,cohortSize:POSITION_COHORT_SIZE,nearTarget:POSITION_NEAR_TARGET})}`);
   let d;
   try{d=await discover()}catch(e){
     console.error(`[DISCOVERY][ERROR] ${e.message}`);
     await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.18-STRATIFIED-CURRENT-POSITION-FIRST\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return;
   }
-  const target=Math.max(1,Math.min(POSITION_DISCOVERY_TARGET,POSITION_PROBE_MAX));
-  const probeMax=Math.max(target,POSITION_PROBE_MAX);
   const addresses=d.candidates.slice(0,Math.min(target,d.candidates.length));
   const now=Date.now(),startTime=now-LOOKBACK_DAYS*86400000,errors=[];
   console.log(`[POSITION-POOL] target=${target} max=${probeMax} candidates=${d.candidates.length} legacyMaxCandidates=${MAX_CANDIDATES}`);
