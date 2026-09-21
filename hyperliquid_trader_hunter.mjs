@@ -1,4 +1,4 @@
-// Hyperliquid Trader Hunter V5.15-COPY5-FIXED - READ ONLY
+// Hyperliquid Trader Hunter V5.17-CURRENT-POSITION-FIRST - READ ONLY
 // Professional ranking: statistical quality + current-position copyability.
 // NO ORDERS. NO PRIVATE KEYS.
 
@@ -8,17 +8,14 @@ const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLE
 
 const LOOKBACK_DAYS = num('HYPERLIQUID_HUNTER_LOOKBACK_DAYS', 7);
 const MAX_CANDIDATES = integer('HYPERLIQUID_HUNTER_MAX_CANDIDATES', 2000);
+const POSITION_DISCOVERY_TARGET = integer('HYPERLIQUID_HUNTER_POSITION_DISCOVERY_TARGET', 1000);
+const POSITION_PROBE_CONCURRENCY = integer('HYPERLIQUID_HUNTER_POSITION_PROBE_CONCURRENCY', 8);
+const POSITION_PROBE_BATCH = integer('HYPERLIQUID_HUNTER_POSITION_PROBE_BATCH', 250);
+const POSITION_NEAR_TARGET = integer('HYPERLIQUID_HUNTER_POSITION_NEAR_TARGET', 10);
 const PREFILTER_SIZE = integer('HYPERLIQUID_HUNTER_PREFILTER_SIZE', 500);
 const STAT_SCAN_TARGET = integer('HYPERLIQUID_HUNTER_STAT_SCAN_TARGET', 120);
 const MIN_COPY5 = integer('HYPERLIQUID_HUNTER_MIN_COPY5', 5);
-const CURRENT_POSITION_PROBE_CONCURRENCY = integer('HYPERLIQUID_HUNTER_CURRENT_POSITION_PROBE_CONCURRENCY', 6);
-const POSITION_DISTANCE_HARD_MAX = num('HYPERLIQUID_HUNTER_COPY_MAX_ENTRY_DISTANCE_PCT', 0.5);
-const POSITION_PROBE_TRANCHE = integer('HYPERLIQUID_HUNTER_POSITION_PROBE_TRANCHE', 250);
-const MIN_STRONG_ACTIVE_DAYS = integer('HYPERLIQUID_HUNTER_MIN_STRONG_ACTIVE_DAYS', 2);
-const MIN_STRONG_TRADES = integer('HYPERLIQUID_HUNTER_MIN_STRONG_TRADES', 12);
 const ENRICH_POOL_SIZE = integer('HYPERLIQUID_HUNTER_ENRICH_POOL_SIZE', 40);
-const STAT_CHUNK_SIZE = integer('HYPERLIQUID_HUNTER_STAT_CHUNK_SIZE', 80);
-const POSITION_TARGET = integer('HYPERLIQUID_HUNTER_POSITION_TARGET', 5);
 const POSITION_CONCURRENCY = integer('HYPERLIQUID_HUNTER_POSITION_CONCURRENCY', 3);
 const STAT_POOL_SIZE = integer('HYPERLIQUID_HUNTER_STAT_POOL_SIZE', 20);
 const FINALISTS = integer('HYPERLIQUID_HUNTER_FINALISTS', 5);
@@ -108,13 +105,8 @@ async function info(payload,label=payload.type){return fetchJson(API_URL,{method
 function hunterPreScore(row){
   const wp=Array.isArray(row?.windowPerformances)?row.windowPerformances:[];
   const m=Object.fromEntries(wp.filter(Array.isArray).map(x=>[x[0],x[1]]));
-  const w=m.week||{},d=m.day||{}, p=Number(w.pnl||0), dp=Number(d.pnl||0), r=Number(w.roi||0), dr=Number(d.roi||0), v=Number(w.vlm||0);
-  // Discovery is deliberately NOT PnL-only. We want active, profitable traders,
-  // so a huge one-off account does not crowd out traders who are actually trading now.
-  const activity=Math.log10(Math.max(1,v));
-  const profit=Math.max(0,p)*0.8 + Math.max(0,dp)*2;
-  const roi=Math.max(0,r)*40 + Math.max(0,dr)*60;
-  return activity*100 + profit + roi;
+  const w=m.week||m.day||{},p=Number(w.pnl||0),r=Number(w.roi||0),v=Number(w.vlm||0);
+  return (v>0?1e9:0)+Math.max(0,p)*1e3+Math.max(0,r)*1e2+Math.log10(Math.max(1,v));
 }
 async function discover(){
   const map=new Map();
@@ -123,52 +115,31 @@ async function discover(){
   const data=await fetchJson(DISCOVERY_URL,{},'leaderboard discovery');
   const rows=Array.isArray(data?.leaderboardRows)?data.leaderboardRows:[];
   const valid=[];
-  for(const row of rows){
-    if(!addr(row?.ethAddress))continue;
-    const a=norm(row.ethAddress);map.set(a,row);valid.push(a);
-  }
-  const ranked=[...map.values()]
-    .sort((a,b)=>hunterPreScore(b)-hunterPreScore(a))
-    .map(r=>norm(r.ethAddress));
-  return{
-    discovered:new Set(valid).size,
-    candidates:ranked.slice(0,Math.min(MAX_CANDIDATES,ranked.length)),
-    source:'leaderboardRows.ethAddress:activity_profit_prerank'
+  for(const row of rows)if(addr(row?.ethAddress)){const a=norm(row.ethAddress);map.set(a,row);valid.push(a)}
+  // Stratified discovery: do NOT collapse 46k+ leaderboard rows into one tiny score-ranked slice.
+  // We union several independent leaderboard cohorts so active/high-PnL traders are not crowded out.
+  const parsed=valid.map(a=>map.get(a)).filter(Boolean);
+  const cohort=(rows,limit)=>rows.filter(r=>addr(r?.ethAddress)).slice(0,limit).map(r=>norm(r.ethAddress));
+  const byScore=[...parsed].sort((a,b)=>hunterPreScore(b)-hunterPreScore(a));
+  const metricValue=(row,window,field)=>{
+    const wp=Array.isArray(row?.windowPerformances)?row.windowPerformances:[];
+    const hit=wp.find(x=>Array.isArray(x)&&String(x[0]).toLowerCase()===window);
+    return Number(hit?.[1]?.[field]||0);
   };
-}
-
-async function allMids(){
-  const x=await info({type:'allMids'},'all mids');
-  if(!x||typeof x!=='object')throw new Error('allMids: invalid response');
-  return x;
-}
-
-async function probeCurrentPositions(addresses,mids){
-  const out=[];let idx=0;
-  async function worker(){
-    while(true){
-      const i=idx++;if(i>=addresses.length)break;
-      const address=addresses[i];
-      try{
-        const positions=await position(address);
-        const current=[];
-        for(const p of positions){
-          const coin=String(p?.coin||'');
-          const entry=Number(p?.entryPx);
-          const mid=Number(mids?.[coin]);
-          if(!coin||!Number.isFinite(entry)||entry<=0||!Number.isFinite(mid)||mid<=0)continue;
-          const distance=Math.abs(mid-entry)/entry*100;
-          current.push({position:p,coin,entry,current:mid,distancePct:distance});
-        }
-        out.push({address,positions:current,positionCount:positions.length});
-      }catch(e){
-        out.push({address,positions:[],positionCount:0,error:{cat:category(e),message:String(e.message||e)}});
-      }
-      await sleep(50);
-    }
-  }
-  await Promise.all(Array.from({length:Math.max(1,CURRENT_POSITION_PROBE_CONCURRENCY)},worker));
-  return out;
+  const byWeekPnl=[...parsed].sort((a,b)=>metricValue(b,'week','pnl')-metricValue(a,'week','pnl'));
+  const byDayPnl=[...parsed].sort((a,b)=>metricValue(b,'day','pnl')-metricValue(a,'day','pnl'));
+  const byWeekRoi=[...parsed].sort((a,b)=>metricValue(b,'week','roi')-metricValue(a,'week','roi'));
+  const byDayRoi=[...parsed].sort((a,b)=>metricValue(b,'day','roi')-metricValue(a,'day','roi'));
+  const byWeekVol=[...parsed].sort((a,b)=>metricValue(b,'week','vlm')-metricValue(a,'week','vlm'));
+  const byDayVol=[...parsed].sort((a,b)=>metricValue(b,'day','vlm')-metricValue(a,'day','vlm'));
+  const out=new Set([...SEEDS,...MANUAL].filter(addr).map(norm));
+  const add=list=>{for(const a of list){if(out.size>=MAX_CANDIDATES)break;out.add(a)}};
+  const tranche=Math.max(50,Math.ceil(Math.min(MAX_CANDIDATES,POSITION_DISCOVERY_TARGET)/6));
+  add(cohort(byScore,tranche));add(cohort(byWeekPnl,tranche));add(cohort(byDayPnl,tranche));
+  add(cohort(byWeekRoi,tranche));add(cohort(byDayRoi,tranche));add(cohort(byWeekVol,tranche));
+  // Fill remaining capacity with the blended score ranking.
+  add(byScore);
+  return{discovered:new Set(valid).size,candidates:[...out].slice(0,MAX_CANDIDATES),source:'leaderboard:STRATIFIED_WEEK_PNL+DAY_PNL+WEEK_ROI+DAY_ROI+VOLUME+BLENDED'};
 }
 
 function fillKey(f){return [f?.tid??'',f?.hash??'',f?.time??'',f?.coin??'',f?.px??'',f?.sz??'',f?.side??''].join('|')}
@@ -339,6 +310,43 @@ async function position(user){
     .filter(p=>Math.abs(Number(p.szi||0))>0)
     .sort((a,b)=>Math.abs(Number(b.szi||0))-Math.abs(Number(a.szi||0)));
 }
+async function allMids(){
+  const x=await info({type:'allMids'},'allMids');
+  if(!x||typeof x!=='object')throw new Error('allMids: invalid response');
+  return x;
+}
+
+async function probeCurrentPositions(addresses,mids){
+  const out=[]; let idx=0;
+  async function worker(){
+    while(true){
+      const i=idx++; if(i>=addresses.length)break;
+      const address=addresses[i];
+      try{
+        const positions=await position(address);
+        for(const p of positions){
+          const coin=String(p?.coin||'');
+          const entry=Number(p?.entryPx||0), mid=Number(mids?.[coin]);
+          if(!coin||!Number.isFinite(entry)||entry<=0||!Number.isFinite(mid)||mid<=0)continue;
+          const distancePct=Math.abs(mid-entry)/entry*100;
+          out.push({address,position:p,coin,mid,distancePct});
+        }
+      }catch(e){
+        console.log(`[POSITION-PROBE][WARN] ${short(address)} ${category(e)} :: ${e.message}`);
+      }
+    }
+  }
+  await Promise.all(Array.from({length:Math.max(1,POSITION_PROBE_CONCURRENCY)},worker));
+  out.sort((a,b)=>a.distancePct-b.distancePct);
+  return out;
+}
+
+function leverageValue(pos){
+  const v=pos?.leverage;
+  if(v&&typeof v==='object')return Number(v.value ?? v.rawUsd ?? v.leverage ?? 0);
+  return Number(pos?.leverageValue ?? v ?? 0);
+}
+
 async function book(coin){
   const b=await info({type:'l2Book',coin},`book ${coin}`),lv=Array.isArray(b?.levels)?b.levels:[];
   const bid=Number(lv?.[0]?.[0]?.px),ask=Number(lv?.[1]?.[0]?.px);
@@ -383,7 +391,6 @@ function plan(pos,m,atrv,now){
   const side=s>0?'LONG':'SHORT';
   if(!Number.isFinite(source)||source<=0)throw new Error('position: invalid entryPx');
   if(!Number.isFinite(m.mid)||m.mid<=0)throw new Error('BOOK_MID_INVALID');
-
   const dist=Math.abs(m.mid-source)/source*100;
   let sl=NaN,tp=NaN,rr=NaN,atrPct=NaN;
   const diagnostics=[];
@@ -394,20 +401,19 @@ function plan(pos,m,atrv,now){
       tp=side==='LONG'?m.mid+TP_ATR*atrv:m.mid-TP_ATR*atrv;
       const risk=Math.abs(m.mid-sl),reward=Math.abs(tp-m.mid);
       rr=risk>0?reward/risk:NaN;
-      if(Math.abs(sl-m.mid)<Math.max(atrv*0.05,m.mid*0.00005))diagnostics.push('SL_TOO_CLOSE');
-      if(Math.abs(tp-m.mid)<Math.max(atrv*0.05,m.mid*0.00005))diagnostics.push('TP_TOO_CLOSE');
+      if(sl<=0||tp<=0)diagnostics.push('SL_TP_NONPOSITIVE');
     }else diagnostics.push('ATR_SANITY_FAIL');
   }else diagnostics.push('ATR_UNAVAILABLE');
-
-  const age=Number(pos?.timestamp||pos?.entryTimestamp||0);
-  const ageH=age>0?Math.max(0,(now-age)/3600000):NaN;
-  // Copy eligibility is intentionally based on the trader's real entry distance,
-  // not a synthetic SL/TP. Source TP/SL is never required for copy discovery.
+  if(dist>MAX_ENTRY_DIST)diagnostics.push(`ENTRY_DISTANCE>${MAX_ENTRY_DIST}%`);
+  if(Number.isFinite(sl)&&Math.abs(sl-m.mid)<Math.max(atrv*0.05,m.mid*0.00005))diagnostics.push('SL_TOO_CLOSE');
+  if(Number.isFinite(tp)&&Math.abs(tp-m.mid)<Math.max(atrv*0.05,m.mid*0.00005))diagnostics.push('TP_TOO_CLOSE');
   return{
-    eligible:dist<=POSITION_DISTANCE_HARD_MAX,
-    reason:dist>POSITION_DISTANCE_HARD_MAX?`ENTRY_DISTANCE>${POSITION_DISTANCE_HARD_MAX}%`:'READY',
+    // REAL eligibility gate: current entry distance only. Diagnostic SL/TP/RR never blocks a real current position.
+    eligible:dist<=MAX_ENTRY_DIST,
+    reason:dist>MAX_ENTRY_DIST?`ENTRY_DISTANCE>${MAX_ENTRY_DIST}%`:'READY',
     side,coin:String(pos?.coin||''),sourceEntry:source,entry:m.mid,distancePct:dist,
-    sl,tp,rr,atr:atrv,atrPct,maxHoldHours:MAX_HOLD,positionAgeHours:ageH,diagnostics
+    sl,tp,rr,atr:atrv,atrPct,maxHoldHours:MAX_HOLD,positionAgeHours:(Number(pos?.timestamp||pos?.entryTimestamp||0)>0?Math.max(0,(now-Number(pos?.timestamp||pos?.entryTimestamp||0))/3600000):NaN),
+    diagnostics
   };
 }
 
@@ -473,26 +479,17 @@ async function runLimited(items, worker, concurrency){
 
 function opportunityScore(x){
   const m=x.metrics||{},p=x.plan||{};
-  let s=Number(x.qualityScore||0)*0.50;
-  const trades=Number(m.closedTrades||0);
-  s+=Math.min(12,Math.max(0,trades/40*12));
+  let s=Number(x.qualityScore||0)*0.42;
+  s+=Math.min(20,Math.max(0,Number(x.metrics?.closedTrades||0)/40*20));
   if(p){
-    const dist=Number(p.distancePct),age=Number(p.positionAgeHours);
-    if(Number.isFinite(dist)){
-      const dScore=dist<=MAX_ENTRY_DIST
-        ?12*(1-dist/Math.max(MAX_ENTRY_DIST,.01))
-        :Math.max(0,12-Math.min(12,(dist-MAX_ENTRY_DIST)/Math.max(MAX_ENTRY_DIST,.01)*6));
-      s+=dScore;
-    }
+    const dist=Number(p.distancePct); const rr=Number(p.rr); const age=Number(p.positionAgeHours);
+    if(Number.isFinite(dist))s+=Math.max(0,18-Math.min(18,dist/Math.max(MAX_ENTRY_DIST,.01)*18));
+    if(Number.isFinite(rr))s+=Math.min(15,Math.max(0,rr/MIN_RR*15));
     if(Number.isFinite(age))s+=Math.max(0,10-Math.min(10,age/12*10));
-    const lev=Number(x.position?.leverage?.value||x.position?.leverage||x.position?.leverageValue||0);
-    if(lev>0)s+=Math.min(6,Math.log10(lev+1)*4);
-    if(Number.isFinite(p.rr)&&p.rr>=MIN_RR)s+=8;
-    if(Array.isArray(p.diagnostics)&&p.diagnostics.length)s-=Math.min(4,p.diagnostics.length*.75);
-    if(p.marketSource==='POSITION_MARK_PX')s-=1;
+    if(p.positionValueUsd>0)s+=Math.min(5,Math.log10(Math.max(1,p.positionValueUsd))*1.5);
   }
-  if(m.maxLosingStreak>MAX_LOSING_STREAK)s-=8;
-  if(m.invalidLifecycle>0)s-=Math.min(8,m.invalidLifecycle*2);
+  if(m.maxLosingStreak>MAX_LOSING_STREAK)s-=10;
+  if(m.invalidLifecycle>0)s-=Math.min(10,m.invalidLifecycle*2);
   return Math.max(0,Math.min(100,s));
 }
 
@@ -504,27 +501,12 @@ async function enrichOne(x,now){
     for(const p of positions){
       const coin=String(p.coin||''); if(!coin)continue;
       try{
-        let marketPrice=Number(p?.markPx||p?.markPrice||0);
-        let bookData=null;
-        try{
-          bookData=await book(coin);
-          marketPrice=bookData.mid;
-        }catch(e){
-          if(!(marketPrice>0))throw e;
-          console.log(`[POSITION][BOOK_FALLBACK] ${short(x.address)} ${coin} markPx=${marketPrice}`);
-        }
-        let atrv=null;
-        try{atrv=await atr(coin,now)}catch(e){
-          console.log(`[POSITION][ATR_DIAGNOSTIC] ${short(x.address)} ${coin} ${category(e)} :: ${e.message}`);
-        }
+        const [bk,av]=await Promise.all([book(coin),atr(coin,now)]);
         const q={...x,position:p};
-        const pl=plan(p,{mid:marketPrice},atrv,now);
-        pl.positionValueUsd=Math.abs(Number(p.szi||0))*marketPrice;
-        pl.marketSource=bookData?'L2_BOOK':'POSITION_MARK_PX';
-        q.plan=pl;
-        q.positionAgeHours=pl.positionAgeHours;
-        q.copyabilityScore=Math.round(opportunityScore(q));
-        q.enrichmentStatus='COPY_READY';
+        const pl=plan(p,bk,av,now);
+        pl.positionValueUsd=Math.abs(Number(p.szi||0))*Number(bk.mid||0);
+        q.plan=pl;q.copyabilityScore=Math.round(opportunityScore(q));
+        q.enrichmentStatus=pl.eligible?'COPY_READY':'POSITION_BLOCKED';
         opportunities.push(q);
       }catch(e){
         console.log(`[POSITION][WARN] ${short(x.address)} ${coin} ${category(e)} :: ${e.message}`);
@@ -551,142 +533,84 @@ async function enrichBatch(pool,now){
 
 async function main(){
   const t0=Date.now();
-  console.log(`[HUNTER V5.16-COPY5][START] ${JSON.stringify({lookbackDays:LOOKBACK_DAYS,prefilter:PREFILTER_SIZE,maxCandidates:MAX_CANDIDATES,copy5:MIN_COPY5,entryMaxPct:POSITION_DISTANCE_HARD_MAX})}`);
+  console.log(`[HUNTER V5.17-CURRENT-POSITION-FIRST][START] ${JSON.stringify({maxCandidates:MAX_CANDIDATES,positionTarget:POSITION_DISCOVERY_TARGET,nearTarget:POSITION_NEAR_TARGET})}`);
   let d;
   try{d=await discover()}catch(e){
     console.error(`[DISCOVERY][ERROR] ${e.message}`);
-    await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.16-COPY5\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);
-    process.exitCode=1;return;
+    await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.17-CURRENT-POSITION-FIRST\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return;
   }
-
-  const start=Date.now()-LOOKBACK_DAYS*86400000,now=Date.now();
-  const errors=[];
+  const addresses=d.candidates.slice(0,Math.min(MAX_CANDIDATES,Math.max(POSITION_DISCOVERY_TARGET,POSITION_PROBE_BATCH)));
+  const now=Date.now(),startTime=now-LOOKBACK_DAYS*86400000,errors=[];
   let mids={};
-  try{mids=await allMids()}catch(e){
-    await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.16-COPY5\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ MARKET PRICE ERROR\n${e.message}`);
-    process.exitCode=1;return;
-  }
+  try{mids=await allMids()}catch(e){errors.push({cat:category(e),message:e.message});}
+  let positionHits=[];
+  if(Object.keys(mids).length){positionHits=await probeCurrentPositions(addresses,mids)}
 
-  // PHASE 1: broad current-position discovery BEFORE expensive fill reconstruction.
-  // This fixes the old architecture where PnL-heavy leaderboard ranking could eliminate
-  // almost everyone before we ever checked whether they were trading right now.
-  let probeLimit=Math.min(PREFILTER_SIZE,d.candidates.length);
-  let probeCursor=0;
-  const probes=[];
-  let closeCandidates=[];
-  const seenProbe=new Set();
-
-  while(probeCursor<Math.min(MAX_CANDIDATES,d.candidates.length) && closeCandidates.length<Math.max(MIN_COPY5,10)){
-    const tranche=d.candidates.slice(probeCursor,Math.min(probeCursor+POSITION_PROBE_TRANCHE,Math.min(MAX_CANDIDATES,d.candidates.length)));
-    const fresh=tranche.filter(a=>!seenProbe.has(a));
-    fresh.forEach(a=>seenProbe.add(a));
-    const r=await probeCurrentPositions(fresh,mids);
-    probes.push(...r);
-    closeCandidates=probes.flatMap(x=>x.positions.filter(p=>p.distancePct<=POSITION_DISTANCE_HARD_MAX).map(p=>({address:x.address,...p})));
-    probeCursor+=fresh.length;
-    console.log(`[POSITION DISCOVERY] probed=${probeCursor} currentPositions=${probes.reduce((n,x)=>n+x.positions.length,0)} within${POSITION_DISTANCE_HARD_MAX}%=${closeCandidates.length}`);
-    if(probeCursor>=probeLimit && closeCandidates.length<Math.max(MIN_COPY5,10))probeLimit=Math.min(MAX_CANDIDATES,d.candidates.length);
+  // Expand current-position discovery in tranches when the first tranche does not produce enough near-entry positions.
+  let cursor=addresses.length;
+  while(positionHits.filter(x=>x.distancePct<=MAX_ENTRY_DIST).length<POSITION_NEAR_TARGET && cursor<d.candidates.length){
+    const batch=d.candidates.slice(cursor,Math.min(cursor+POSITION_PROBE_BATCH,d.candidates.length));
+    console.log(`[POSITION-PROBE] expanding ${cursor+1}-${cursor+batch.length}/${d.candidates.length}`);
+    const more=await probeCurrentPositions(batch,mids);
+    positionHits.push(...more);cursor+=batch.length;
   }
-
-  // PHASE 2: rank current-position traders for statistical verification.
-  // Prefer positions closest to entry, but retain multiple symbols/accounts.
-  const byAddress=new Map();
-  for(const c of closeCandidates){
-    const prev=byAddress.get(c.address);
-    if(!prev||c.distancePct<prev.distancePct)byAddress.set(c.address,c);
+  positionHits.sort((a,b)=>a.distancePct-b.distancePct);
+  const near=positionHits.filter(x=>x.distancePct<=MAX_ENTRY_DIST);
+  const traderMap=new Map();
+  for(const h of near){
+    const prev=traderMap.get(h.address);if(!prev||h.distancePct<prev.distancePct)traderMap.set(h.address,h);
   }
-  const currentTraders=[...byAddress.values()].sort((a,b)=>a.distancePct-b.distancePct);
-  const statTarget=Math.max(STAT_SCAN_TARGET,Math.min(currentTraders.length,ENRICH_POOL_SIZE));
-  const statPool=currentTraders.slice(0,Math.max(statTarget,MIN_COPY5*8));
+  const currentTraders=[...traderMap.values()].sort((a,b)=>a.distancePct-b.distancePct);
+
+  // Historical verification happens ONLY after a real current position has been found.
   const scanned=[];
-
-  for(let i=0;i<statPool.length;i++){
-    const c=statPool[i];
+  for(let i=0;i<currentTraders.length;i++){
+    const h=currentTraders[i];
     try{
-      const f=await getFills(c.address,start,now);
-      const r=reconstruct(f.fills),m=metrics(f.fills,r),sg=safetyGate(m,f.truncated);
-      const x={address:c.address,metrics:m,safety:sg,truncated:f.truncated,qualityScore:Math.round(qualityScore(m)),softFlags:softFlags(m),probe:c};
+      const f=await getFills(h.address,startTime,now),r=reconstruct(f.fills),m=metrics(f.fills,r),sg=safetyGate(m,f.truncated);
+      const x={address:h.address,metrics:m,safety:sg,truncated:f.truncated,qualityScore:Math.round(qualityScore(m)),softFlags:softFlags(m),probe:h};
       scanned.push(x);
-      console.log(`[STAT] ${i+1}/${statPool.length} ${short(c.address)} ${c.coin} ${pct(c.distancePct,2)} trades=${m.closedTrades} WR=${fmt(m.winRate,1)} PNL=${fmt(m.pnl)} PF=${fmt(m.profitFactor)} Q=${x.qualityScore} ${sg.ok?'PASS':'BLOCK '+sg.reasons.join(',')}`);
-    }catch(e){errors.push({address:c.address,cat:category(e),message:String(e.message||e)});}
-    await sleep(BETWEEN);
+      console.log(`[VERIFY] ${i+1}/${currentTraders.length} ${short(h.address)} ${h.coin} ${h.distancePct.toFixed(2)}% trades=${m.closedTrades} Q=${x.qualityScore} ${sg.ok?'PASS':'BLOCK '+sg.reasons.join(',')}`);
+    }catch(e){errors.push({address:h.address,cat:category(e),message:String(e.message||e)});}
+    if(i+1<currentTraders.length)await sleep(BETWEEN);
   }
 
-  // Strong trader definition is deliberately multi-dimensional. A one-day 100% WR
-  // account with no activity history is not allowed to outrank an active trader merely
-  // because its raw PnL is large. Safety remains a data-integrity gate.
-  const strong=scanned.filter(x=>x.safety.ok && (x.metrics.closedTrades>=MIN_STRONG_TRADES || x.metrics.activeDays>=MIN_STRONG_ACTIVE_DAYS));
-
-  // PHASE 3: enrich all strong current positions. If the strongest trader has several
-  // positions, every position within the 0.5% copy window is evaluated independently.
+  // Strong = safety clean + meaningful trading history. Low activity is not allowed to pass solely on one lucky day.
+  const strong=scanned.filter(x=>x.safety.ok && (x.metrics.closedTrades>=12 || x.metrics.activeDays>=2));
   const enriched=[];
-  for(const x of strong.sort((a,b)=>{
-    const ad=a.probe?.distancePct??99,bd=b.probe?.distancePct??99;
-    return ad-bd||rankStat(a,b);
-  }).slice(0,Math.max(ENRICH_POOL_SIZE,MIN_COPY5*10))){
+  for(const x of strong){
+    const h=x.probe;
     try{
-      const positions=await position(x.address);
-      for(const p of positions){
-        const coin=String(p?.coin||'');
-        const entry=Number(p?.entryPx),mid=Number(mids?.[coin]);
-        if(!coin||!Number.isFinite(entry)||entry<=0||!Number.isFinite(mid)||mid<=0)continue;
-        const dist=Math.abs(mid-entry)/entry*100;
-        if(dist>POSITION_DISTANCE_HARD_MAX)continue;
-        let bk={mid,bid:mid,ask:mid};
-        try{bk=await book(coin)}catch{}
-        let av=NaN;try{av=await atr(coin,now)}catch{}
-        const pl=plan(p,bk,av,now);
-        const q={...x,position:p,plan:pl};
-        q.positionAgeHours=pl.positionAgeHours;
-        q.positionValueUsd=Math.abs(Number(p.szi||0))*Number(bk.mid||mid);
-        q.copyabilityScore=Math.round(opportunityScore(q));
-        q.enrichmentStatus='COPY_READY';
-        enriched.push(q);
-      }
+      const q={...x,position:h.position};
+      const bk={mid:h.mid,bid:h.mid,ask:h.mid};
+      let av=NaN;try{av=await atr(h.coin,now)}catch(e){console.log(`[ATR][WARN] ${short(x.address)} ${h.coin} ${category(e)} :: ${e.message}`)}
+      q.plan=plan(h.position,bk,av,now);
+      q.plan.positionValueUsd=Math.abs(Number(h.position?.szi||0))*h.mid;
+      q.copyabilityScore=Math.round(opportunityScore(q));
+      q.enrichmentStatus='COPY_READY';
+      enriched.push(q);
     }catch(e){errors.push({address:x.address,cat:category(e),message:String(e.message||e)});}
   }
-
-  // PHASE 4: choose five REAL current positions; then choose one best opportunity.
-  const finalists=enriched.sort((a,b)=>opportunityScore(b)-opportunityScore(a)).slice(0,MIN_COPY5);
-  const selected=AUTO_SELECT&&finalists.length?finalists[0]:null;
+  enriched.sort((a,b)=>(opportunityScore(b)-opportunityScore(a))||rankStat(a,b));
+  const finalists=enriched.slice(0,MIN_COPY5),selected=AUTO_SELECT?finalists[0]:null;
 
   const safetyBlocks={},softBlocks={};
   for(const x of scanned){for(const r of x.safety.reasons)safetyBlocks[r]=(safetyBlocks[r]||0)+1;for(const r of x.softFlags)softBlocks[r]=(softBlocks[r]||0)+1}
   const topSafety=Object.entries(safetyBlocks).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`${k}:${v}`).join(' | ')||'none';
   const topSoft=Object.entries(softBlocks).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`${k}:${v}`).join(' | ')||'none';
 
-  const lines=[
-    '🟣 HYPERLIQUID TRADER HUNTER V5.16-COPY5',
-    '📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',
-    `🔎 Leaderboard: ${d.discovered}`,
-    `⚡ Position discovery: ${probes.length}/${probeCursor}`,
-    `🎯 Positions within ${POSITION_DISTANCE_HARD_MAX}%: ${closeCandidates.length}`,
-    `📊 Statistical verification: ${scanned.length}/${statPool.length}`,
-    `🛡️ Strong traders: ${strong.length}`,
-    `🧠 Current-position deep scan: ${enriched.length}`,
-    `🏆 Copy candidates: ${finalists.length}/${MIN_COPY5}`,
-    `🟢 Auto-selected: ${selected?'1':'0'}`,
-    `⚠️ Errors: ${errors.length}`,
-    `⏱ Total: ${((Date.now()-t0)/1000).toFixed(1)}s`,
-    '','🧱 TOP SAFETY BLOCKS',topSafety,'📌 SOFT DIAGNOSTICS',topSoft,'','🏆 TOP COPY-TRADE CANDIDATES'
-  ];
-
-  if(!finalists.length)lines.push(`No strong trader with a REAL current position inside the ${POSITION_DISTANCE_HARD_MAX}% entry-distance window was found in this scan.`);
+  const lines=['🟣 HYPERLIQUID TRADER HUNTER V5.17-CURRENT-POSITION-FIRST','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`⚡ Position discovery: ${Math.min(cursor,d.candidates.length)}/${d.candidates.length}`,`📌 Open positions found: ${positionHits.length}`,`🎯 Positions within ${MAX_ENTRY_DIST}%: ${near.length}`,`📊 Statistical verification: ${scanned.length}/${currentTraders.length}`,`🛡️ Strong traders: ${strong.length}`,`🧠 Current-position deep scan: ${enriched.length}`,`🏆 Copy candidates: ${finalists.length}/${MIN_COPY5}`,`🟢 Auto-selected: ${selected?'1':'0'}`,`⚠️ Errors: ${errors.length}`,`⏱ Total: ${((Date.now()-t0)/1000).toFixed(1)}s`,'','🧱 TOP SAFETY BLOCKS',topSafety,'📌 SOFT DIAGNOSTICS',topSoft,'','🏆 TOP COPY-TRADE CANDIDATES'];
+  if(!finalists.length)lines.push(`No strong trader with a REAL current position inside the ${MAX_ENTRY_DIST}% entry-distance window was found in this scan.`);
   finalists.forEach((x,i)=>{
     const p=x.plan,m=x.metrics;
-    const lev=Number(x.position?.leverage?.value||x.position?.leverage?.rawUsd||x.position?.leverage||x.position?.leverageValue||0);
-    lines.push('',`#${i+1} ${x.address}`,`🟢 COPY READY | Opportunity=${Math.round(opportunityScore(x))}/100 | Quality=${x.qualityScore}/100`,`📌 ${p.coin} | ${p.side}`,`💵 Trader Entry=${fmt(p.sourceEntry)} | Current=${fmt(p.entry)} | Distance=${pct(p.distancePct,2)}`,`⚙️ Trader Leverage=${fmt(lev,2)}x | Size=${fmt(Math.abs(Number(x.position?.szi||0)),4)} | Age=${fmt(p.positionAgeHours)}h`,`🎯 Diagnostic SL=${fmt(p.sl)} | TP=${fmt(p.tp)} | RR=${fmt(p.rr)}${p.diagnostics?.length?' | '+p.diagnostics.join(','):''}`,`📈 7D trades=${m.closedTrades} | WR=${pct(m.winRate)} | PnL=${fmt(m.pnl)} | PF=${fmt(m.profitFactor)} | activeDays=${m.activeDays}`,`🧯 Streak=${m.maxLosingStreak} | liq=${m.liquidations} | lifecycleErr=${m.invalidLifecycle}`);
+    lines.push('',`#${i+1} ${x.address}`,`🟢 COPY READY | Opportunity=${Math.round(opportunityScore(x))}/100 | Quality=${x.qualityScore}/100`,`📌 ${p.coin} | ${p.side}`,`💵 Trader Entry=${fmt(p.sourceEntry)} | Current=${fmt(p.entry)} | Distance=${pct(p.distancePct,2)}`,`⚙️ Trader Leverage=${fmt(leverageValue(x.position),2)}x | Size=${fmt(Math.abs(Number(x.position?.szi||0)),4)} | Age=${fmt(p.positionAgeHours)}h`,`🎯 Diagnostic SL=${fmt(p.sl)} | TP=${fmt(p.tp)} | RR=${fmt(p.rr)} | ${p.diagnostics.length?p.diagnostics.join(','):'none'}`,`📈 7D trades=${m.closedTrades} | WR=${pct(m.winRate)} | PnL=${fmt(m.pnl)} | PF=${fmt(m.profitFactor)} | activeDays=${m.activeDays}`,`🧯 Streak=${m.maxLosingStreak} | liq=${m.liquidations} | lifecycleErr=${m.invalidLifecycle}`);
   });
-
   lines.push('','🚀 AUTO SELECTED COPY TRADE');
-  if(selected){
-    const p=selected.plan;
-    const lev=Number(selected.position?.leverage?.value||selected.position?.leverage?.rawUsd||selected.position?.leverage||selected.position?.leverageValue||0);
-    lines.push(`1️⃣ ${selected.address}`,`📌 ${p.coin} | ${p.side}`,`💵 Trader Entry=${fmt(p.sourceEntry)} | Current=${fmt(p.entry)} | Distance=${pct(p.distancePct,2)}`,`⚙️ Trader leverage=${fmt(lev,2)}x`,`🏆 Opportunity=${Math.round(opportunityScore(selected))}/100 | Quality=${selected.qualityScore}/100`);
-  }else lines.push(`None — no strong current position was within ${POSITION_DISTANCE_HARD_MAX}% of trader entry.`);
-  lines.push('','ℹ️ Architecture: current-position discovery → entry-distance filter → historical quality verification → position ranking → top five → one auto-selection.','ℹ️ The 0.5% entry-distance rule is a REAL copy eligibility gate, not a diagnostic.','ℹ️ Source TP/SL is never copied; diagnostic SL/TP may be unavailable.','ℹ️ NO ORDERS are created by this worker.',`🕐 ${new Date().toISOString()}`);
+  if(selected){const p=selected.plan;lines.push(`1️⃣ ${selected.address}`,`📌 ${p.coin} | ${p.side}`,`💵 Trader Entry=${fmt(p.sourceEntry)} | Current=${fmt(p.entry)} | Distance=${pct(p.distancePct,2)}`,`⚙️ Trader leverage=${fmt(leverageValue(selected.position),2)}x`,`🏆 Opportunity=${Math.round(opportunityScore(selected))}/100 | Quality=${selected.qualityScore}/100`)}else lines.push('None — no strong current position was within the entry-distance window.');
+  if(errors.length){lines.push('','🧪 SAMPLE ERRORS');errors.slice(0,10).forEach(e=>lines.push(`${e.address?short(e.address)+' → ':''}${e.cat} → ${String(e.message||'').slice(0,180)}`))}
+  lines.push('','ℹ️ Architecture: stratified leaderboard discovery → broad current-position probe → real entry-distance filter → historical quality verification → position ranking → top five → one auto-selection.','ℹ️ The entry-distance rule is a REAL copy eligibility gate.','ℹ️ Diagnostic SL/TP/RR never blocks a real current position; source TP/SL is never copied.','ℹ️ NO ORDERS are created by this worker.',`🕐 ${new Date().toISOString()}`);
+  console.log(`[HUNTER V5.17][DONE] leaderboard=${d.discovered} probed=${cursor} open=${positionHits.length} near=${near.length} verified=${scanned.length} strong=${strong.length} finalists=${finalists.length} selected=${selected?short(selected.address):'none'} errors=${errors.length}`);
   await telegram(lines.join('\n'));
-  console.log(`[HUNTER V5.16-COPY5][DONE] probed=${probes.length} close=${closeCandidates.length} stat=${scanned.length} strong=${strong.length} enriched=${enriched.length} copy5=${finalists.length} selected=${selected?short(selected.address):'none'}`);
 }
 
 main().catch(async e=>{console.error(`[HUNTER V5.15-COPY5][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.15-COPY5\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
