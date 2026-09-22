@@ -1,4 +1,4 @@
-// Hyperliquid Meme Specialist Scout V5.23 - READ ONLY
+// Hyperliquid Meme Specialist Scout V5.24 - READ ONLY
 // Professional ranking: statistical quality + current-position copyability.
 // NO ORDERS. NO PRIVATE KEYS.
 
@@ -61,7 +61,9 @@ const TG_LIMIT = 3800;
 // V5.22.1 reliability: shared cooldown prevents a burst of 429s from
 // immediately cascading across the remaining 500-wallet scout.
 let RATE_LIMIT_COOLDOWN_UNTIL = 0;
-const RATE_LIMIT_COOLDOWN_MS = integer('HYPERLIQUID_MEME_429_COOLDOWN_MS', 3500);
+const RATE_LIMIT_COOLDOWN_MS = integer('HYPERLIQUID_MEME_429_COOLDOWN_MS', 10000);
+const API_MIN_INTERVAL_MS = integer('HYPERLIQUID_MEME_API_MIN_INTERVAL_MS', 950);
+let API_NEXT_ALLOWED_AT = 0;
 
 // V5.22 MEME SPECIALIST SCOUT
 const MEME_MODE = String(process.env.HYPERLIQUID_MEME_MODE ?? 'scout').toLowerCase(); // scout | watch
@@ -80,8 +82,11 @@ const MEME_EARLY_THRESHOLD_20 = num('HYPERLIQUID_MEME_EARLY_20_PCT', 20);
 const MEME_SCOUT_CANDIDATES = integer('HYPERLIQUID_MEME_SCOUT_CANDIDATES', 500);
 const MEME_PREFILTER_TARGET = integer('HYPERLIQUID_MEME_PREFILTER_TARGET', 30);
 const MEME_PREFILTER_FILL_SAMPLE = integer('HYPERLIQUID_MEME_PREFILTER_FILL_SAMPLE', 250);
-const MEME_PREFILTER_RETRIES = integer('HYPERLIQUID_MEME_PREFILTER_RETRIES', 0);
-const MEME_PREFILTER_BETWEEN_MS = integer('HYPERLIQUID_MEME_PREFILTER_BETWEEN_MS', 180);
+const MEME_PREFILTER_RETRIES = integer('HYPERLIQUID_MEME_PREFILTER_RETRIES', 1);
+const MEME_PREFILTER_BETWEEN_MS = integer('HYPERLIQUID_MEME_PREFILTER_BETWEEN_MS', 950);
+const MEME_PREFILTER_SCAN_PER_CYCLE = integer('HYPERLIQUID_MEME_PREFILTER_SCAN_PER_CYCLE', 180);
+const MEME_COVERAGE_SLOTS = integer('HYPERLIQUID_MEME_COVERAGE_SLOTS', 3);
+const MEME_FULL_RETRIES = integer('HYPERLIQUID_MEME_FULL_RETRIES', 2);
 const MEME_FULL_BETWEEN_MS = integer('HYPERLIQUID_MEME_FULL_BETWEEN_MS', 300);
 const MEME_HISTORY_DAYS = integer('HYPERLIQUID_MEME_HISTORY_DAYS', 7);
 const MEME_CANDLE_CACHE = new Map();
@@ -133,8 +138,10 @@ function category(e){
 
 async function fetchJson(url, options={}, label='request', maxRetries=RETRIES){
   let last;
-  if(RATE_LIMIT_COOLDOWN_UNTIL>Date.now()) await sleep(RATE_LIMIT_COOLDOWN_UNTIL-Date.now());
   for(let attempt=0;attempt<=Math.max(0,maxRetries);attempt++){
+    const gate=Math.max(API_NEXT_ALLOWED_AT,RATE_LIMIT_COOLDOWN_UNTIL);
+    if(gate>Date.now()) await sleep(gate-Date.now());
+    API_NEXT_ALLOWED_AT=Date.now()+API_MIN_INTERVAL_MS;
     const c=new AbortController(),t=setTimeout(()=>c.abort(),TIMEOUT);
     try{
       const r=await fetch(url,{...options,signal:c.signal});
@@ -308,7 +315,7 @@ async function getFills(user,start,end){
   let cursor=start,pages=0;const map=new Map(),newest=0;
   while(pages<MAX_PAGES){
     pages++;
-    const b=await info({type:'userFillsByTime',user,startTime:cursor,endTime:end,aggregateByTime:false},`fills ${short(user)} page=${pages}`);
+    const b=await info({type:'userFillsByTime',user,startTime:cursor,endTime:end,aggregateByTime:false},`fills ${short(user)} page=${pages}`,MEME_FULL_RETRIES);
     if(!Array.isArray(b))throw new Error('fills: unexpected response');
     for(const f of b){if(f?.time)map.set(fillKey(f),f)}
     if(b.length===0||b.length<2000)break;
@@ -833,6 +840,25 @@ async function enrichBatch(pool,now){
   return out;
 }
 
+function selectRotatingMemeCohort(addresses){
+  const all=[...new Set(addresses.filter(addr).map(norm))];
+  const slots=Math.max(1,MEME_COVERAGE_SLOTS);
+  const size=Math.min(all.length,Math.max(1,MEME_PREFILTER_SCAN_PER_CYCLE));
+  if(all.length<=size)return {selected:all,slot:0,slots:1,coverage:all.length};
+  const slot=Math.floor(Date.now()/300000)%slots;
+  const buckets=Array.from({length:slots},()=>[]);
+  // Round-robin assignment preserves leaderboard diversity in every cycle.
+  all.forEach((a,i)=>buckets[i%slots].push(a));
+  let selected=buckets[slot].slice(0,size);
+  // If a custom size is smaller than the bucket, take evenly spaced entries.
+  if(selected.length>size){
+    const step=selected.length/size; const out=[];
+    for(let i=0;i<size;i++)out.push(selected[Math.floor(i*step)]);
+    selected=out;
+  }
+  return {selected,slot,slots,coverage:all.length};
+}
+
 async function main(){
   const t0=Date.now();
   const now=Date.now(), startTime=now-MEME_HISTORY_DAYS*86400000;
@@ -843,7 +869,10 @@ async function main(){
     console.error(`[DISCOVERY][ERROR] ${e.message}`);
     await telegram(`🟣 HYPERLIQUID MEME SPECIALIST SCOUT V5.22\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return;
   }
-  const sourceAddresses=MEME_MODE==='watch'&&MEME_WATCHLIST.length?MEME_WATCHLIST:d.candidates.slice(0,MEME_SCOUT_CANDIDATES);
+  const universeAddresses=MEME_MODE==='watch'&&MEME_WATCHLIST.length?MEME_WATCHLIST:d.candidates.slice(0,MEME_SCOUT_CANDIDATES);
+  const cohort=MEME_MODE==='watch'?{selected:universeAddresses,slot:0,slots:1,coverage:universeAddresses.length}:selectRotatingMemeCohort(universeAddresses);
+  const sourceAddresses=cohort.selected;
+  console.log(`[COHORT] cycle=${cohort.slot+1}/${cohort.slots} scanned=${sourceAddresses.length} coverage=${cohort.coverage}`);
   const scanned=[];
   const nearMisses=[];
   const funnel={prefilterScanned:0,prefilterSelected:0,historyOK:0,historyTruncated:0,closedTradesEnough:0,closedTradesLow:0,memeTradesPass:0,memeTradesFail:0,exposurePass:0,exposureFail:0,uniquePass:0,uniqueFail:0,specialists:0};
@@ -913,7 +942,7 @@ async function main(){
     }catch(e){errors.push({address:x.address,cat:category(e),message:String(e.message||e)})}
   }
 
-  const lines=['🟣 HYPERLIQUID MEME SPECIALIST SCOUT V5.23','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`🎯 Mode: ${MEME_MODE==='watch'?'FIXED WATCHLIST':'SCOUT'}`,`🧪 Universe scanned: ${sourceAddresses.length}`,`⚡ Fast prefilter: ${funnel.prefilterScanned} → ${funnel.prefilterSelected} full-history`, `🧬 Meme specialists found: ${scanned.length}`,`🏆 Top specialists: ${top.length}/${MEME_TOP_N}`,`⚡ History: ${MEME_HISTORY_DAYS}d | Early-move window: ${MEME_FORWARD_MIN}m | candle=${MEME_CANDLE_INTERVAL}`,`📌 Criteria: meme exposure>=${MEME_MIN_EXPOSURE}% | meme trades>=${MEME_MIN_TRADES} | unique memes>=${MEME_MIN_UNIQUE}`,'','🧪 MEME SPECIALIST FUNNEL',`Fast prefilter scanned: ${funnel.prefilterScanned}`,`Fast prefilter selected: ${funnel.prefilterSelected}`,`Prefilter errors/skips: ${prefilterErrors}`,`History usable: ${funnel.historyOK}`,`History truncated: ${funnel.historyTruncated}`,`Closed trades >=${MEME_MIN_TRADES}: ${funnel.closedTradesEnough}`,`Meme trades >=${MEME_MIN_TRADES}: ${funnel.memeTradesPass}`,`Meme exposure >=${MEME_MIN_EXPOSURE}%: ${funnel.exposurePass}`,`Unique memes >=${MEME_MIN_UNIQUE}: ${funnel.uniquePass}`,`FINAL SPECIALISTS: ${funnel.specialists}`,'','🏆 TOP 5 MEME SPECIALISTS'];
+  const lines=['🟣 HYPERLIQUID MEME SPECIALIST SCOUT V5.24','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`🎯 Mode: ${MEME_MODE==='watch'?'FIXED WATCHLIST':'SCOUT'}`,`🧪 Universe: ${universeAddresses.length} | This cycle: ${sourceAddresses.length}`,`⚡ Fast prefilter: ${funnel.prefilterScanned} → ${funnel.prefilterSelected} full-history | Coverage cycle ${cohort.slot+1}/${cohort.slots}`, `🧬 Meme specialists found: ${scanned.length}`,`🏆 Top specialists: ${top.length}/${MEME_TOP_N}`,`⚡ History: ${MEME_HISTORY_DAYS}d | Early-move window: ${MEME_FORWARD_MIN}m | candle=${MEME_CANDLE_INTERVAL}`,`📌 Criteria: meme exposure>=${MEME_MIN_EXPOSURE}% | meme trades>=${MEME_MIN_TRADES} | unique memes>=${MEME_MIN_UNIQUE}`,'','🧪 MEME SPECIALIST FUNNEL',`Fast prefilter scanned: ${funnel.prefilterScanned}`,`Fast prefilter selected: ${funnel.prefilterSelected}`,`Prefilter errors/skips: ${prefilterErrors}`,`History usable: ${funnel.historyOK}`,`History truncated: ${funnel.historyTruncated}`,`Closed trades >=${MEME_MIN_TRADES}: ${funnel.closedTradesEnough}`,`Meme trades >=${MEME_MIN_TRADES}: ${funnel.memeTradesPass}`,`Meme exposure >=${MEME_MIN_EXPOSURE}%: ${funnel.exposurePass}`,`Unique memes >=${MEME_MIN_UNIQUE}: ${funnel.uniquePass}`,`FINAL SPECIALISTS: ${funnel.specialists}`,'','🏆 TOP 5 MEME SPECIALISTS'];
   if(!top.length){
     lines.push('No trader met all meme-specialist criteria in this scan.');
     if(nearMisses.length){
@@ -930,8 +959,8 @@ async function main(){
   if(top.length)lines.push(`HYPERLIQUID_MEME_WATCHLIST=${top.map(x=>x.address).join(',')}`);else lines.push('HYPERLIQUID_MEME_WATCHLIST=');
   lines.push('','ℹ️ This score detects repeated historical early-move behavior; it does NOT establish advance knowledge of pumps/dumps.','ℹ️ Next monitoring cycle can run with HYPERLIQUID_MEME_MODE=watch and the five addresses above.','ℹ️ No orders are created by this worker.',`🕐 ${new Date().toISOString()}`);
   if(errors.length){lines.push('','🧪 SAMPLE ERRORS');errors.slice(0,8).forEach(e=>lines.push(`${short(e.address)} → ${e.cat} → ${String(e.message||'').slice(0,180)}`))}
-  console.log(`[MEME-SCOUT V5.23][DONE] discovered=${d.discovered} scanned=${sourceAddresses.length} specialists=${scanned.length} top=${top.length} errors=${errors.length} seconds=${((Date.now()-t0)/1000).toFixed(1)}`);
+  console.log(`[MEME-SCOUT V5.24][DONE] discovered=${d.discovered} scanned=${sourceAddresses.length} specialists=${scanned.length} top=${top.length} errors=${errors.length} seconds=${((Date.now()-t0)/1000).toFixed(1)}`);
   await telegram(lines.join('\n'));
 }
 
-main().catch(async e=>{console.error(`[MEME SCOUT V5.23][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER MEME SCOUT V5.23\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
+main().catch(async e=>{console.error(`[MEME SCOUT V5.24][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER MEME SCOUT V5.24\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
