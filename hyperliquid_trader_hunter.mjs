@@ -58,6 +58,11 @@ const SEEDS = csv('HYPERLIQUID_TRADERS');
 const MANUAL = csv('HYPERLIQUID_HUNTER_CANDIDATES');
 const TG_LIMIT = 3800;
 
+// V5.22.1 reliability: shared cooldown prevents a burst of 429s from
+// immediately cascading across the remaining 500-wallet scout.
+let RATE_LIMIT_COOLDOWN_UNTIL = 0;
+const RATE_LIMIT_COOLDOWN_MS = integer('HYPERLIQUID_MEME_429_COOLDOWN_MS', 3500);
+
 // V5.22 MEME SPECIALIST SCOUT
 const MEME_MODE = String(process.env.HYPERLIQUID_MEME_MODE ?? 'scout').toLowerCase(); // scout | watch
 const MEME_WATCHLIST = csv('HYPERLIQUID_MEME_WATCHLIST').filter(addr).map(norm);
@@ -123,6 +128,7 @@ function category(e){
 
 async function fetchJson(url, options={}, label='request'){
   let last;
+  if(RATE_LIMIT_COOLDOWN_UNTIL>Date.now()) await sleep(RATE_LIMIT_COOLDOWN_UNTIL-Date.now());
   for(let attempt=0;attempt<=RETRIES;attempt++){
     const c=new AbortController(),t=setTimeout(()=>c.abort(),TIMEOUT);
     try{
@@ -134,6 +140,7 @@ async function fetchJson(url, options={}, label='request'){
       }
       const body=(await r.text()).slice(0,240);
       const e=new Error(`${label}: HTTP ${r.status} ${body}`);e.status=r.status;
+      if(r.status===429) RATE_LIMIT_COOLDOWN_UNTIL=Math.max(RATE_LIMIT_COOLDOWN_UNTIL,Date.now()+RATE_LIMIT_COOLDOWN_MS);
       const ra=Number(r.headers.get('retry-after')||0); if(ra>0)e.retryAfterMs=ra*1000;
       throw e;
     }catch(e){
@@ -779,16 +786,40 @@ async function main(){
   }
   const sourceAddresses=MEME_MODE==='watch'&&MEME_WATCHLIST.length?MEME_WATCHLIST:d.candidates.slice(0,MEME_SCOUT_CANDIDATES);
   const scanned=[];
+  const nearMisses=[];
+  const funnel={historyOK:0,historyTruncated:0,closedTradesEnough:0,closedTradesLow:0,memeTradesPass:0,memeTradesFail:0,exposurePass:0,exposureFail:0,uniquePass:0,uniqueFail:0,specialists:0};
+  const pushNearMiss=(x)=>{
+    const p=x.meme||{};
+    const tradeDef=Math.max(0,MEME_MIN_TRADES-Number(p.memeTrades||0));
+    const exposureDef=Math.max(0,MEME_MIN_EXPOSURE-Number(p.exposurePct||0));
+    const uniqueDef=Math.max(0,MEME_MIN_UNIQUE-Number(p.uniqueCoins||0));
+    const distance=tradeDef*3+exposureDef+uniqueDef*8;
+    nearMisses.push({...x,nearMissDistance:distance});
+    nearMisses.sort((a,b)=>a.nearMissDistance-b.nearMissDistance || (b.meme?.specializationScore||0)-(a.meme?.specializationScore||0));
+    if(nearMisses.length>5)nearMisses.pop();
+  };
   for(let i=0;i<sourceAddresses.length;i++){
     const address=sourceAddresses[i];
     try{
       const f=await getFills(address,startTime,now);
       const r=reconstruct(f.fills),m=metrics(f.fills,r),sg=safetyGate(m,f.truncated);
-      if(!sg.ok||m.closedTrades<Math.max(1,MEME_MIN_TRADES))continue;
+      if(f.truncated)funnel.historyTruncated++; else funnel.historyOK++;
+      if(m.closedTrades>=Math.max(1,MEME_MIN_TRADES))funnel.closedTradesEnough++; else funnel.closedTradesLow++;
+
+      // Do not silently discard a wallet just because a legacy safety/quality
+      // flag fired. The scout's job is classification; safety status is shown
+      // separately, while the meme-specialist criteria remain explicit.
+      if(m.closedTrades<Math.max(1,Math.min(MEME_MIN_TRADES,3))){
+        continue;
+      }
       const x={address,metrics:m,safety:sg,truncated:f.truncated,historyFills:f.fills,qualityScore:Math.round(qualityScore(m))};
       const y=await analyzeMemeTrader(x,now);
-      if(y.memeEligible)scanned.push(y);
-      console.log(`[MEME] ${i+1}/${sourceAddresses.length} ${short(address)} meme=${y.meme?.memeTrades||0}/${m.closedTrades} exposure=${fmt(y.meme?.exposurePct,1)} unique=${y.meme?.uniqueCoins||0} spec=${y.meme?.specializationScore||0} early=${y.early?.score||0}`);
+      const p=y.meme||{};
+      if(Number(p.memeTrades||0)>=MEME_MIN_TRADES)funnel.memeTradesPass++; else funnel.memeTradesFail++;
+      if(Number(p.exposurePct||0)>=MEME_MIN_EXPOSURE)funnel.exposurePass++; else funnel.exposureFail++;
+      if(Number(p.uniqueCoins||0)>=MEME_MIN_UNIQUE)funnel.uniquePass++; else funnel.uniqueFail++;
+      if(y.memeEligible){scanned.push(y);funnel.specialists++;}else pushNearMiss(y);
+      console.log(`[MEME] ${i+1}/${sourceAddresses.length} ${short(address)} meme=${p.memeTrades||0}/${m.closedTrades} exposure=${fmt(p.exposurePct,1)} unique=${p.uniqueCoins||0} spec=${p.specializationScore||0} early=${y.early?.score||0}`);
     }catch(e){errors.push({address,cat:category(e),message:String(e.message||e)})}
     if(i+1<sourceAddresses.length)await sleep(BETWEEN);
   }
@@ -814,8 +845,14 @@ async function main(){
     }catch(e){errors.push({address:x.address,cat:category(e),message:String(e.message||e)})}
   }
 
-  const lines=['🟣 HYPERLIQUID MEME SPECIALIST SCOUT V5.22','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`🎯 Mode: ${MEME_MODE==='watch'?'FIXED WATCHLIST':'SCOUT'}`,`🧪 Universe scanned: ${sourceAddresses.length}`,`🧬 Meme specialists found: ${scanned.length}`,`🏆 Top specialists: ${top.length}/${MEME_TOP_N}`,`⚡ History: ${MEME_HISTORY_DAYS}d | Early-move window: ${MEME_FORWARD_MIN}m | candle=${MEME_CANDLE_INTERVAL}`,`📌 Criteria: meme exposure>=${MEME_MIN_EXPOSURE}% | meme trades>=${MEME_MIN_TRADES} | unique memes>=${MEME_MIN_UNIQUE}`,'','🏆 TOP 5 MEME SPECIALISTS'];
-  if(!top.length)lines.push('No trader met the meme-specialist criteria in this scan.');
+  const lines=['🟣 HYPERLIQUID MEME SPECIALIST SCOUT V5.22.1','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`🎯 Mode: ${MEME_MODE==='watch'?'FIXED WATCHLIST':'SCOUT'}`,`🧪 Universe scanned: ${sourceAddresses.length}`,`🧬 Meme specialists found: ${scanned.length}`,`🏆 Top specialists: ${top.length}/${MEME_TOP_N}`,`⚡ History: ${MEME_HISTORY_DAYS}d | Early-move window: ${MEME_FORWARD_MIN}m | candle=${MEME_CANDLE_INTERVAL}`,`📌 Criteria: meme exposure>=${MEME_MIN_EXPOSURE}% | meme trades>=${MEME_MIN_TRADES} | unique memes>=${MEME_MIN_UNIQUE}`,'','🧪 MEME SPECIALIST FUNNEL',`History usable: ${funnel.historyOK}`,`History truncated: ${funnel.historyTruncated}`,`Closed trades >=${MEME_MIN_TRADES}: ${funnel.closedTradesEnough}`,`Meme trades >=${MEME_MIN_TRADES}: ${funnel.memeTradesPass}`,`Meme exposure >=${MEME_MIN_EXPOSURE}%: ${funnel.exposurePass}`,`Unique memes >=${MEME_MIN_UNIQUE}: ${funnel.uniquePass}`,`FINAL SPECIALISTS: ${funnel.specialists}`,'','🏆 TOP 5 MEME SPECIALISTS'];
+  if(!top.length){
+    lines.push('No trader met all meme-specialist criteria in this scan.');
+    if(nearMisses.length){
+      lines.push('','🟡 TOP NEAR-MISSES');
+      nearMisses.forEach((x,i)=>{const p=x.meme||{};lines.push(`#${i+1} ${x.address}`,`🧬 exposure=${pct(p.exposurePct,1)} | memeTrades=${p.memeTrades||0}/${MEME_MIN_TRADES} | unique=${p.uniqueCoins||0}/${MEME_MIN_UNIQUE}`,`📌 missing: ${[Number(p.exposurePct||0)<MEME_MIN_EXPOSURE?'EXPOSURE':'',Number(p.memeTrades||0)<MEME_MIN_TRADES?'MEME_TRADES':'',Number(p.uniqueCoins||0)<MEME_MIN_UNIQUE?'UNIQUE_MEMES':''].filter(Boolean).join(', ')||'none'}`)});
+    }
+  }
   top.forEach((x,i)=>{
     const m=x.metrics,mp=x.meme,e=x.early,c=x.current;
     lines.push('',`#${i+1} ${x.address}`,`🧬 Meme exposure=${pct(mp.exposurePct,1)} | memeTrades=${mp.memeTrades}/${mp.totalTrades} | unique=${mp.uniqueCoins}`,`📈 Meme WR=${pct(mp.memeWinRate,1)} | PF=${mp.memeProfitFactor===Infinity?'∞':fmt(mp.memeProfitFactor,2)} | PnL=${fmt(mp.memePnl)}`,`🎯 Specialization=${mp.specializationScore}/100 | Early-move edge=${e.score}/100 | Repeatability=${e.repeatability}/100`,`🚀 Pump edge=${e.pump}/100 | Dump edge=${e.dump}/100 | hit +5%=${pct(e.hit5,0)} | +10%=${pct(e.hit10,0)} | +20%=${pct(e.hit20,0)}`,`🕐 Median lead to +5%=${fmt(e.medianLead5,1)}m | MFE median=${pct(e.mfeMedian,1)}`,`📊 Overall quality=${x.qualityScore}/100 | 7D trades=${m.closedTrades} | WR=${pct(m.winRate,1)}`);
@@ -829,4 +866,4 @@ async function main(){
   await telegram(lines.join('\n'));
 }
 
-main().catch(async e=>{console.error(`[MEME SCOUT V5.22][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER MEME SCOUT V5.22-LIFECYCLE-INTEGRITY-COPY-SAFE\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
+main().catch(async e=>{console.error(`[MEME SCOUT V5.22.1][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER MEME SCOUT V5.22.1-LIFECYCLE-INTEGRITY-COPY-SAFE\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
