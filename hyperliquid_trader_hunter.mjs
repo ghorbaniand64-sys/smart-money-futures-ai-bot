@@ -1,4 +1,4 @@
-// Hyperliquid Trader Hunter V5.21-LIFECYCLE-INTEGRITY-COPY-SAFE - READ ONLY
+// Hyperliquid Meme Specialist Scout V5.22 - READ ONLY
 // Professional ranking: statistical quality + current-position copyability.
 // NO ORDERS. NO PRIVATE KEYS.
 
@@ -57,6 +57,46 @@ const TG_CHAT = process.env.TELEGRAM_CHAT_ID || '';
 const SEEDS = csv('HYPERLIQUID_TRADERS');
 const MANUAL = csv('HYPERLIQUID_HUNTER_CANDIDATES');
 const TG_LIMIT = 3800;
+
+// V5.22 MEME SPECIALIST SCOUT
+const MEME_MODE = String(process.env.HYPERLIQUID_MEME_MODE ?? 'scout').toLowerCase(); // scout | watch
+const MEME_WATCHLIST = csv('HYPERLIQUID_MEME_WATCHLIST').filter(addr).map(norm);
+const MEME_TOP_N = integer('HYPERLIQUID_MEME_TOP_N', 5);
+const MEME_MIN_TRADES = integer('HYPERLIQUID_MEME_MIN_TRADES', 12);
+const MEME_MIN_EXPOSURE = num('HYPERLIQUID_MEME_MIN_EXPOSURE_PCT', 65);
+const MEME_MIN_UNIQUE = integer('HYPERLIQUID_MEME_MIN_UNIQUE_COINS', 3);
+const MEME_TRADE_SAMPLE = integer('HYPERLIQUID_MEME_TRADE_SAMPLE', 12);
+const MEME_COINS_PER_TRADER = integer('HYPERLIQUID_MEME_COINS_PER_TRADER', 6);
+const MEME_CANDLE_INTERVAL = process.env.HYPERLIQUID_MEME_CANDLE_INTERVAL || '15m';
+const MEME_FORWARD_MIN = integer('HYPERLIQUID_MEME_FORWARD_MINUTES', 60);
+const MEME_EARLY_THRESHOLD_5 = num('HYPERLIQUID_MEME_EARLY_5_PCT', 5);
+const MEME_EARLY_THRESHOLD_10 = num('HYPERLIQUID_MEME_EARLY_10_PCT', 10);
+const MEME_EARLY_THRESHOLD_20 = num('HYPERLIQUID_MEME_EARLY_20_PCT', 20);
+const MEME_SCOUT_CANDIDATES = integer('HYPERLIQUID_MEME_SCOUT_CANDIDATES', 500);
+const MEME_HISTORY_DAYS = integer('HYPERLIQUID_MEME_HISTORY_DAYS', 7);
+const MEME_CANDLE_CACHE = new Map();
+
+// Maintainable seed list. Users can extend it without changing code via
+// HYPERLIQUID_MEME_SYMBOLS=ABC,DEF,... . This is a trading-asset classifier,
+// not a claim that any trader has advance information.
+const BUILTIN_MEME_SYMBOLS = new Set([
+  'DOGE','SHIB','PEPE','BONK','WIF','FLOKI','BRETT','MOG','MEW','POPCAT','PNUT',
+  'GOAT','MOODENG','SPX','TURBO','BOME','DEGEN','TOSHI','NEIRO','NEIROETH','MEME',
+  'MYRO','SLERF','PONKE','MOTHER','MOG','FWOG','GIGA','MUMU','ACT','APU','BOB','ANDY',
+  'PENGU','CHILLGUY','TRUMP','MELANIA','FARTCOIN','PURR','CAT','CATDOG','MICHI','MANEKI',
+  'BRETT','LADYS','WOJAK','SAMO','BABYDOGE','BABYSHIB','KISHU','ELON','DEGEN','HIGHER',
+  'PORK','SUNDOG','GOONC','WEN','TOSHI','HAMMY','LOCKIN','MOGGER'
+]);
+const MEME_SYMBOLS = new Set([...BUILTIN_MEME_SYMBOLS,...csv('HYPERLIQUID_MEME_SYMBOLS').map(x=>x.toUpperCase())]);
+function isMemeCoin(coin){
+  const c=String(coin||'').toUpperCase().replace(/[-_]/g,'');
+  if(MEME_SYMBOLS.has(c))return true;
+  // Conservative heuristic for newly listed meme-style tickers. The curated
+  // list remains authoritative; heuristics are only used when explicitly enabled.
+  if(String(process.env.HYPERLIQUID_MEME_HEURISTIC||'false').toLowerCase()!=='true')return false;
+  return /DOGE|SHIB|PEPE|BONK|WIF|FLOKI|BRETT|MOG|POPCAT|PNUT|GOAT|TURBO|BOME|MEME|PONKE|SLERF|WOJAK|FART|CAT|INU|MOON/.test(c);
+}
+
 
 function num(k,d){const x=Number(process.env[k]);return Number.isFinite(x)?x:d}
 function integer(k,d){const x=parseInt(process.env[k]||'',10);return Number.isFinite(x)?x:d}
@@ -316,6 +356,96 @@ function reconstruct(fills){
   return{trades,liquidations,invalidLifecycle};
 }
 
+
+async function candles(coin,start,end){
+  const key=`${coin}|${MEME_CANDLE_INTERVAL}|${start}|${end}`;
+  if(MEME_CANDLE_CACHE.has(key))return MEME_CANDLE_CACHE.get(key);
+  const data=await info({type:'candleSnapshot',req:{coin,interval:MEME_CANDLE_INTERVAL,startTime:start,endTime:end}},`candles ${coin} ${MEME_CANDLE_INTERVAL}`);
+  const rows=(Array.isArray(data)?data:[]).map(x=>({
+    t:Number(x?.t??x?.T??0),o:Number(x?.o),h:Number(x?.h),l:Number(x?.l),c:Number(x?.c)
+  })).filter(x=>x.t>0&&[x.o,x.h,x.l,x.c].every(Number.isFinite)).sort((a,b)=>a.t-b.t);
+  MEME_CANDLE_CACHE.set(key,rows);
+  return rows;
+}
+function earlyMoveForTrade(t,rows){
+  const entry=Number(t.entryPx); if(!Number.isFinite(entry)||entry<=0)return null;
+  const end=t.openTime+MEME_FORWARD_MIN*60000;
+  const future=rows.filter(c=>c.t>=t.openTime && c.t<=end);
+  if(!future.length)return null;
+  const long=t.side==='long';
+  let mfe=-Infinity,mae=Infinity,first5=NaN,first10=NaN,first20=NaN;
+  for(const c of future){
+    const fav=(long?(c.h-entry)/entry*100:(entry-c.l)/entry*100);
+    const adverse=(long?(c.l-entry)/entry*100:(entry-c.h)/entry*100);
+    mfe=Math.max(mfe,fav); mae=Math.min(mae,adverse);
+    const mins=Math.max(0,(c.t-t.openTime)/60000);
+    if(!Number.isFinite(first5)&&fav>=MEME_EARLY_THRESHOLD_5)first5=mins;
+    if(!Number.isFinite(first10)&&fav>=MEME_EARLY_THRESHOLD_10)first10=mins;
+    if(!Number.isFinite(first20)&&fav>=MEME_EARLY_THRESHOLD_20)first20=mins;
+  }
+  return {mfe,mae,hit5:Number.isFinite(first5),hit10:Number.isFinite(first10),hit20:Number.isFinite(first20),lead5:first5,lead10:first10,lead20:first20};
+}
+function memeProfile(trades){
+  const meme=trades.filter(t=>isMemeCoin(t.coin));
+  const unique=new Set(meme.map(t=>t.coin)).size;
+  const wins=meme.filter(t=>t.pnl>0).length;
+  const losses=meme.filter(t=>t.pnl<0).length;
+  const gw=meme.filter(t=>t.pnl>0).reduce((a,t)=>a+t.pnl,0);
+  const gl=Math.abs(meme.filter(t=>t.pnl<0).reduce((a,t)=>a+t.pnl,0));
+  const pnl=meme.reduce((a,t)=>a+t.pnl,0);
+  const totalPnl=trades.reduce((a,t)=>a+t.pnl,0);
+  const exposure=trades.length?meme.length/trades.length*100:0;
+  const hold=meme.map(t=>t.holdHours).filter(Number.isFinite);
+  const holdMed=median(hold);
+  const wr=meme.length?wins/meme.length*100:0;
+  const pf=gl>0?gw/gl:(gw>0?Infinity:0);
+  // Specialization favors repeated meme participation, breadth, and positive
+  // meme performance without making WR/PF a hard gate.
+  const e=Math.min(100,exposure);
+  const u=Math.min(100,unique/10*100);
+  const p=pnl>0?Math.min(100,55+Math.log10(Math.max(1,pnl))*8):Math.max(0,45-Math.log10(Math.max(1,Math.abs(pnl)+1))*6);
+  const breadth=Math.min(100,unique>=MEME_MIN_UNIQUE?100:unique/Math.max(1,MEME_MIN_UNIQUE)*100);
+  const score=Math.round(Math.max(0,Math.min(100,.55*e+.20*u+.15*p+.10*breadth)));
+  return {memeTrades:meme.length,totalTrades:trades.length,exposurePct:exposure,uniqueCoins:unique,memeWinRate:wr,memeProfitFactor:pf,memePnl:pnl,totalPnl,medianHoldHours:holdMed,specializationScore:score,memeTradesList:meme};
+}
+function earlyScore(stats){
+  if(!stats.length)return {score:0,count:0,hit5:0,hit10:0,hit20:0,medianLead5:NaN,mfeMedian:NaN,pump:0,dump:0};
+  const pct=k=>stats.filter(x=>x[k]).length/stats.length*100;
+  const leads=stats.filter(x=>Number.isFinite(x.lead5)).map(x=>x.lead5);
+  const mfe=stats.map(x=>x.mfe).filter(Number.isFinite);
+  const hit5=pct('hit5'),hit10=pct('hit10'),hit20=pct('hit20');
+  const leadScore=leads.length?Math.max(0,100-Math.min(100,median(leads)/60*100)):0;
+  const mfeScore=Math.max(0,Math.min(100,(median(mfe)/Math.max(1,MEME_EARLY_THRESHOLD_10))*50));
+  const score=Math.round(Math.max(0,Math.min(100,.30*hit5+.25*hit10+.15*hit20+.20*leadScore+.10*mfeScore)));
+  const longs=stats.filter(x=>x.side==='long');
+  const shorts=stats.filter(x=>x.side==='short');
+  return {score,count:stats.length,hit5,hit10,hit20,medianLead5:median(leads),mfeMedian:median(mfe),pump:Math.round(longs.length?earlyScoreSimple(longs):0),dump:Math.round(shorts.length?earlyScoreSimple(shorts):0)};
+}
+function earlyScoreSimple(a){
+  if(!a.length)return 0;
+  const h5=a.filter(x=>x.hit5).length/a.length*100,h10=a.filter(x=>x.hit10).length/a.length*100;
+  return Math.round(.55*h5+.45*h10);
+}
+async function analyzeMemeTrader(x,now){
+  const p=memeProfile(x.historyFills?reconstruct(x.historyFills).trades:[]);
+  if(p.memeTrades<MEME_MIN_TRADES||p.exposurePct<MEME_MIN_EXPOSURE||p.uniqueCoins<MEME_MIN_UNIQUE)return {...x,meme:p,early:{score:0,count:0,pump:0,dump:0},memeEligible:false};
+  const recent=[...p.memeTradesList].sort((a,b)=>b.openTime-a.openTime).slice(0,MEME_TRADE_SAMPLE);
+  const byCoin=new Map();
+  for(const t of recent){const a=byCoin.get(t.coin)||[];a.push(t);byCoin.set(t.coin,a)}
+  const coins=[...byCoin.entries()].sort((a,b)=>b[1].length-a[1].length).slice(0,MEME_COINS_PER_TRADER);
+  const results=[];
+  for(const [coin,ts] of coins){
+    try{
+      const minT=Math.min(...ts.map(t=>t.openTime));
+      const rows=await candles(coin,minT-15*60000,now);
+      for(const t of ts){const z=earlyMoveForTrade(t,rows);if(z)results.push({...z,side:t.side,coin:t.coin,openTime:t.openTime})}
+    }catch(e){console.log(`[MEME-CANDLE][WARN] ${short(x.address)} ${coin} ${category(e)} :: ${e.message}`)}
+  }
+  const early=earlyScore(results);
+  const repeatability=Math.round(Math.min(100,results.length?Math.min(100,(new Set(results.map(x=>x.coin)).size/Math.max(1,p.uniqueCoins))*100):0));
+  const edge=Math.round(.60*early.score+.20*repeatability+.20*p.specializationScore);
+  return {...x,meme:p,early:{...early,repeatability,score:edge},memeEligible:true};
+}
 function metrics(fills,r){
   const ts=r.trades,w=ts.filter(t=>t.pnl>0),l=ts.filter(t=>t.pnl<0),holds=ts.map(t=>t.holdHours).filter(Number.isFinite);
   const gw=w.reduce((s,t)=>s+t.pnl,0),gl=Math.abs(l.reduce((s,t)=>s+t.pnl,0)),pnl=ts.reduce((s,t)=>s+t.pnl,0);
@@ -639,114 +769,64 @@ async function enrichBatch(pool,now){
 
 async function main(){
   const t0=Date.now();
-  const target=Math.max(1,Math.min(POSITION_DISCOVERY_TARGET,POSITION_PROBE_MAX));
-  const probeMax=Math.max(target,POSITION_PROBE_MAX);
-  console.log(`[HUNTER V5.21-LIFECYCLE-INTEGRITY-COPY-SAFE][START] ${JSON.stringify({legacyMaxCandidates:MAX_CANDIDATES,positionTarget:target,positionProbeMax:probeMax,cohortSize:POSITION_COHORT_SIZE,nearTarget:POSITION_NEAR_TARGET})}`);
+  const now=Date.now(), startTime=now-MEME_HISTORY_DAYS*86400000;
+  const errors=[];
+  console.log(`[MEME-SCOUT V5.22][START] mode=${MEME_MODE} watchlist=${MEME_WATCHLIST.length}`);
   let d;
   try{d=await discover()}catch(e){
     console.error(`[DISCOVERY][ERROR] ${e.message}`);
-    await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.21-LIFECYCLE-INTEGRITY-COPY-SAFE\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return;
+    await telegram(`🟣 HYPERLIQUID MEME SPECIALIST SCOUT V5.22\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return;
   }
-  const addresses=d.candidates.slice(0,Math.min(target,d.candidates.length));
-  const now=Date.now(),startTime=now-LOOKBACK_DAYS*86400000,errors=[];
-  console.log(`[POSITION-POOL] target=${target} max=${probeMax} candidates=${d.candidates.length} legacyMaxCandidates=${MAX_CANDIDATES}`);
-  let mids={};
-  try{mids=await allMids()}catch(e){errors.push({cat:category(e),message:e.message});}
-  let positionHits=[];
-  if(Object.keys(mids).length){positionHits=await probeCurrentPositions(addresses,mids)}
-
-  // Expand current-position discovery in tranches when the first tranche does not produce enough near-entry positions.
-  let cursor=addresses.length;
-  while(positionHits.filter(x=>x.distancePct<=MAX_ENTRY_DIST).length<POSITION_NEAR_TARGET && cursor<Math.min(d.candidates.length,probeMax)){
-    const batch=d.candidates.slice(cursor,Math.min(cursor+POSITION_PROBE_BATCH,d.candidates.length));
-    console.log(`[POSITION-PROBE] expanding ${cursor+1}-${cursor+batch.length}/${d.candidates.length}`);
-    const more=await probeCurrentPositions(batch,mids);
-    positionHits.push(...more);cursor+=batch.length;
-  }
-  positionHits.sort((a,b)=>a.distancePct-b.distancePct);
-  const near=positionHits.filter(x=>x.distancePct<=MAX_ENTRY_DIST);
-  const traderMap=new Map();
-  for(const h of near){
-    const prev=traderMap.get(h.address);if(!prev||h.distancePct<prev.distancePct)traderMap.set(h.address,h);
-  }
-  const currentTraders=[...traderMap.values()].sort((a,b)=>a.distancePct-b.distancePct);
-
-  // Historical verification happens ONLY after a real current position has been found.
-  // To avoid the 400+ second / HTTP-429 pattern, verify in bounded adaptive batches
-  // and cache the fills so timing/deep-scan never fetches the same history twice.
+  const sourceAddresses=MEME_MODE==='watch'&&MEME_WATCHLIST.length?MEME_WATCHLIST:d.candidates.slice(0,MEME_SCOUT_CANDIDATES);
   const scanned=[];
-  const verifyLimit=Math.min(currentTraders.length,Math.max(1,HISTORY_VERIFY_TARGET));
-  const verifyTrader=async(h,i)=>{
+  for(let i=0;i<sourceAddresses.length;i++){
+    const address=sourceAddresses[i];
     try{
-      const f=await getFills(h.address,startTime,now),r=reconstruct(f.fills),m=metrics(f.fills,r),sg=safetyGate(m,f.truncated);
-      const x={address:h.address,metrics:m,safety:sg,truncated:f.truncated,qualityScore:Math.round(qualityScore(m)),softFlags:softFlags(m),probe:h,historyFills:f.fills};
-      scanned.push(x);
-      console.log(`[VERIFY] ${i+1}/${currentTraders.length} ${short(h.address)} ${h.coin} ${h.distancePct.toFixed(2)}% trades=${m.closedTrades} Q=${x.qualityScore} ${sg.ok?'PASS':'BLOCK '+sg.reasons.join(',')}`);
-    }catch(e){errors.push({address:h.address,cat:category(e),message:String(e.message||e)});}
-  };
-  for(let i=0;i<verifyLimit;i++){
-    await verifyTrader(currentTraders[i],i);
-    if(i+1<verifyLimit)await sleep(BETWEEN);
+      const f=await getFills(address,startTime,now);
+      const r=reconstruct(f.fills),m=metrics(f.fills,r),sg=safetyGate(m,f.truncated);
+      if(!sg.ok||m.closedTrades<Math.max(1,MEME_MIN_TRADES))continue;
+      const x={address,metrics:m,safety:sg,truncated:f.truncated,historyFills:f.fills,qualityScore:Math.round(qualityScore(m))};
+      const y=await analyzeMemeTrader(x,now);
+      if(y.memeEligible)scanned.push(y);
+      console.log(`[MEME] ${i+1}/${sourceAddresses.length} ${short(address)} meme=${y.meme?.memeTrades||0}/${m.closedTrades} exposure=${fmt(y.meme?.exposurePct,1)} unique=${y.meme?.uniqueCoins||0} spec=${y.meme?.specializationScore||0} early=${y.early?.score||0}`);
+    }catch(e){errors.push({address,cat:category(e),message:String(e.message||e)})}
+    if(i+1<sourceAddresses.length)await sleep(BETWEEN);
   }
-  // If the first batch does not produce five strong traders, expand only as needed.
-  if(scanned.filter(x=>x.safety.ok && (x.metrics.closedTrades>=12 || x.metrics.activeDays>=2)).length<MIN_COPY5 && verifyLimit<currentTraders.length){
-    const extraLimit=Math.min(currentTraders.length,verifyLimit+Math.max(1,HISTORY_VERIFY_EXPAND));
-    for(let i=verifyLimit;i<extraLimit;i++){
-      await verifyTrader(currentTraders[i],i);
-      if(i+1<extraLimit)await sleep(BETWEEN);
-    }
-  }
+  scanned.sort((a,b)=>((b.early?.score||0)-(a.early?.score||0))||((b.meme?.specializationScore||0)-(a.meme?.specializationScore||0))||rankStat(a,b));
+  const top=scanned.slice(0,MEME_TOP_N);
 
-  // Strong = safety clean + meaningful trading history. Low activity is not allowed to pass solely on one lucky day.
-  const strong=scanned.filter(x=>x.safety.ok && (x.metrics.closedTrades>=MIN_COPY_CLOSED_TRADES || x.metrics.activeDays>=MIN_COPY_ACTIVE_DAYS));
-  const enriched=[];
-  for(const x of strong){
-    const h=x.probe;
+  // In watch mode, enrich only the fixed five. In scout mode, current positions
+  // are informational; the purpose of this run is to discover specialists, not copy.
+  const watched=[];
+  for(const x of top){
     try{
-      const q={...x,position:h.position};
-      const bk={mid:h.mid,bid:h.mid,ask:h.mid};
-      let av=NaN;try{av=await atr(h.coin,now)}catch(e){console.log(`[ATR][WARN] ${short(x.address)} ${h.coin} ${category(e)} :: ${e.message}`)}
-      q.plan=plan(h.position,bk,av,now);
-      q.plan.positionValueUsd=Math.abs(Number(h.position?.szi||0))*h.mid;
-      try{
-        const timing=positionTimingFromFills(x.historyFills||[],h.coin,q.plan.side,Number(h.position?.szi||0));
-        q.positionTiming=timing;
-        q.plan.openTime=timing.openTime;
-        q.plan.lastAddTime=timing.lastAddTime;
-        q.plan.positionAgeHours=ageHours(now,timing.openTime);
-        q.plan.openTimeLabel=isoUtc(timing.openTime);
-        q.plan.lastAddTimeLabel=isoUtc(timing.lastAddTime);
-        q.plan.ageLabel=Number.isFinite(q.plan.positionAgeHours)?`${q.plan.positionAgeHours.toFixed(1)}h`: 'n/a';
-      }catch(e){
-        q.positionTiming={openTime:NaN,lastAddTime:NaN,observedFrom:NaN,source:'fill_lookup_failed'};
-        console.log(`[TIMING][WARN] ${short(x.address)} ${h.coin} ${category(e)} :: ${e.message}`);
-      }
-      q.copyIntegrity=copyIntegrity(q);
-      q.copyabilityScore=Math.round(opportunityScore(q));
-      q.enrichmentStatus=q.copyIntegrity.ok && q.plan.eligible?'COPY_READY':'POSITION_BLOCKED';
-      if(q.copyIntegrity.ok && q.plan.eligible) enriched.push(q);
-    }catch(e){errors.push({address:x.address,cat:category(e),message:String(e.message||e)});}
+      const ps=await position(x.address);
+      const memePositions=ps.filter(p=>isMemeCoin(p.coin));
+      const pos=memePositions[0]||ps[0]||null;
+      x.position=pos;
+      if(pos){
+        const coin=String(pos.coin||'');
+        const mids=await allMids();
+        const mid=Number(mids[coin]);
+        x.current={coin,side:Number(pos.szi)>0?'LONG':'SHORT',entry:Number(pos.entryPx),mid,distancePct:(Number.isFinite(mid)&&Number(pos.entryPx)>0)?Math.abs(mid-Number(pos.entryPx))/Number(pos.entryPx)*100:NaN,isMeme:isMemeCoin(coin)};
+      }else x.current=null;
+      watched.push(x);
+    }catch(e){errors.push({address:x.address,cat:category(e),message:String(e.message||e)})}
   }
-  enriched.sort((a,b)=>(opportunityScore(b)-opportunityScore(a))||rankStat(a,b));
-  const finalists=enriched.slice(0,MIN_COPY5),selected=AUTO_SELECT?finalists[0]:null;
 
-  const safetyBlocks={},softBlocks={};
-  for(const x of scanned){for(const r of x.safety.reasons)safetyBlocks[r]=(safetyBlocks[r]||0)+1;for(const r of x.softFlags)softBlocks[r]=(softBlocks[r]||0)+1}
-  const topSafety=Object.entries(safetyBlocks).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`${k}:${v}`).join(' | ')||'none';
-  const topSoft=Object.entries(softBlocks).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`${k}:${v}`).join(' | ')||'none';
-
-  const lines=['🟣 HYPERLIQUID TRADER HUNTER V5.21-LIFECYCLE-INTEGRITY-COPY-SAFE','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`⚡ Position discovery: ${Math.min(cursor,d.candidates.length)}/${d.candidates.length}`,`📌 Open positions found: ${positionHits.length}`,`🎯 Positions within ${MAX_ENTRY_DIST}%: ${near.length}`,`📊 Statistical verification: ${scanned.length}/${currentTraders.length}`,`🛡️ Strong traders: ${strong.length}`,`🧠 Current-position deep scan: ${enriched.length}`,`🏆 Copy candidates: ${finalists.length}/${MIN_COPY5}`,`🟢 Auto-selected: ${selected?'1':'0'}`,`⚠️ Errors: ${errors.length}`,`⏱ Total: ${((Date.now()-t0)/1000).toFixed(1)}s`,`🛡️ Copy integrity gate: lifecycleErr<=${MAX_COPY_LIFECYCLE_ERRORS} | minTrades=${MIN_COPY_CLOSED_TRADES} OR activeDays=${MIN_COPY_ACTIVE_DAYS}`,'','🧱 TOP SAFETY BLOCKS',topSafety,'📌 SOFT DIAGNOSTICS',topSoft,'','🏆 TOP COPY-TRADE CANDIDATES'];
-  if(!finalists.length)lines.push(`No strong trader with a REAL current position inside the ${MAX_ENTRY_DIST}% entry-distance window was found in this scan.`);
-  finalists.forEach((x,i)=>{
-    const p=x.plan,m=x.metrics;
-    lines.push('',`#${i+1} ${x.address}`,`🟢 COPY READY | Opportunity=${Math.round(opportunityScore(x))}/100 | Quality=${x.qualityScore}/100`,`📌 ${p.coin} | ${p.side}`,`💵 Trader Entry=${fmt(p.sourceEntry)} | Current=${fmt(p.entry)} | Distance=${pct(p.distancePct,2)}`,`⚙️ Trader Leverage=${fmt(leverageValue(x.position),2)}x | Size=${fmt(Math.abs(Number(x.position?.szi||0)),4)}`,`🕐 Opened=${p.openTimeLabel||isoUtc(p.openTime)} | Age=${fmt(p.positionAgeHours,1)}h`,`➕ Last Add=${p.lastAddTimeLabel||isoUtc(p.lastAddTime)}`,`🎯 Diagnostic SL=${fmt(p.sl)} | TP=${fmt(p.tp)} | RR=${fmt(p.rr)} | ${p.diagnostics.length?p.diagnostics.join(','):'none'}`,`📈 7D trades=${m.closedTrades} | WR=${pct(m.winRate)} | PnL=${fmt(m.pnl)} | PF=${fmt(m.profitFactor)} | activeDays=${m.activeDays}`,`🧯 Streak=${m.maxLosingStreak} | liq=${m.liquidations} | lifecycleErr=${m.invalidLifecycle} | integrity=${x.copyIntegrity?.ok?'PASS':'BLOCK'}`);
+  const lines=['🟣 HYPERLIQUID MEME SPECIALIST SCOUT V5.22','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`🎯 Mode: ${MEME_MODE==='watch'?'FIXED WATCHLIST':'SCOUT'}`,`🧪 Universe scanned: ${sourceAddresses.length}`,`🧬 Meme specialists found: ${scanned.length}`,`🏆 Top specialists: ${top.length}/${MEME_TOP_N}`,`⚡ History: ${MEME_HISTORY_DAYS}d | Early-move window: ${MEME_FORWARD_MIN}m | candle=${MEME_CANDLE_INTERVAL}`,`📌 Criteria: meme exposure>=${MEME_MIN_EXPOSURE}% | meme trades>=${MEME_MIN_TRADES} | unique memes>=${MEME_MIN_UNIQUE}`,'','🏆 TOP 5 MEME SPECIALISTS'];
+  if(!top.length)lines.push('No trader met the meme-specialist criteria in this scan.');
+  top.forEach((x,i)=>{
+    const m=x.metrics,mp=x.meme,e=x.early,c=x.current;
+    lines.push('',`#${i+1} ${x.address}`,`🧬 Meme exposure=${pct(mp.exposurePct,1)} | memeTrades=${mp.memeTrades}/${mp.totalTrades} | unique=${mp.uniqueCoins}`,`📈 Meme WR=${pct(mp.memeWinRate,1)} | PF=${mp.memeProfitFactor===Infinity?'∞':fmt(mp.memeProfitFactor,2)} | PnL=${fmt(mp.memePnl)}`,`🎯 Specialization=${mp.specializationScore}/100 | Early-move edge=${e.score}/100 | Repeatability=${e.repeatability}/100`,`🚀 Pump edge=${e.pump}/100 | Dump edge=${e.dump}/100 | hit +5%=${pct(e.hit5,0)} | +10%=${pct(e.hit10,0)} | +20%=${pct(e.hit20,0)}`,`🕐 Median lead to +5%=${fmt(e.medianLead5,1)}m | MFE median=${pct(e.mfeMedian,1)}`,`📊 Overall quality=${x.qualityScore}/100 | 7D trades=${m.closedTrades} | WR=${pct(m.winRate,1)}`);
+    if(c)lines.push(`📍 Current: ${c.coin} | ${c.side} | meme=${c.isMeme?'YES':'NO'} | entry=${fmt(c.entry)} | now=${fmt(c.mid)} | dist=${pct(c.distancePct,2)}`);else lines.push('📍 Current position: NONE');
   });
-  lines.push('','🚀 AUTO SELECTED COPY TRADE');
-  if(selected){const p=selected.plan;lines.push(`1️⃣ ${selected.address}`,`📌 ${p.coin} | ${p.side}`,`💵 Trader Entry=${fmt(p.sourceEntry)} | Current=${fmt(p.entry)} | Distance=${pct(p.distancePct,2)}`,`⚙️ Trader leverage=${fmt(leverageValue(selected.position),2)}x`,`🕐 Opened=${selected.plan.openTimeLabel||isoUtc(selected.plan.openTime)} | Age=${fmt(selected.plan.positionAgeHours,1)}h`,`➕ Last Add=${selected.plan.lastAddTimeLabel||isoUtc(selected.plan.lastAddTime)}`,`🏆 Opportunity=${Math.round(opportunityScore(selected))}/100 | Quality=${selected.qualityScore}/100`)}else lines.push('None — no strong current position was within the entry-distance window.');
-  if(errors.length){lines.push('','🧪 SAMPLE ERRORS');errors.slice(0,10).forEach(e=>lines.push(`${e.address?short(e.address)+' → ':''}${e.cat} → ${String(e.message||'').slice(0,180)}`))}
-  lines.push('','ℹ️ Architecture: stratified leaderboard discovery → broad current-position probe → real entry-distance filter → historical quality verification → lifecycle-integrity gate → position ranking → top five → one auto-selection.','ℹ️ The entry-distance rule is a REAL copy eligibility gate.' ,'ℹ️ Copy eligibility requires lifecycleErr=0, untruncated history, sufficient history, and no excessive liquidations.','ℹ️ Diagnostic SL/TP/RR never blocks a real current position; source TP/SL is never copied.','ℹ️ History verification is adaptive and cached; the same trader history is never fetched twice in one cycle.','ℹ️ NO ORDERS are created by this worker.','ℹ️ Opened/Last Add are derived from Hyperliquid userFills; if the position predates the lookback, Opened is the oldest observed fill.',`🕐 ${new Date().toISOString()}`);
-  console.log(`[HUNTER V5.21][DONE] leaderboard=${d.discovered} probed=${cursor} open=${positionHits.length} near=${near.length} verified=${scanned.length} strong=${strong.length} finalists=${finalists.length} selected=${selected?short(selected.address):'none'} errors=${errors.length}`);
+  lines.push('','📌 WATCHLIST EXPORT');
+  if(top.length)lines.push(`HYPERLIQUID_MEME_WATCHLIST=${top.map(x=>x.address).join(',')}`);else lines.push('HYPERLIQUID_MEME_WATCHLIST=');
+  lines.push('','ℹ️ This score detects repeated historical early-move behavior; it does NOT establish advance knowledge of pumps/dumps.','ℹ️ Next monitoring cycle can run with HYPERLIQUID_MEME_MODE=watch and the five addresses above.','ℹ️ No orders are created by this worker.',`🕐 ${new Date().toISOString()}`);
+  if(errors.length){lines.push('','🧪 SAMPLE ERRORS');errors.slice(0,8).forEach(e=>lines.push(`${short(e.address)} → ${e.cat} → ${String(e.message||'').slice(0,180)}`))}
+  console.log(`[MEME-SCOUT V5.22][DONE] discovered=${d.discovered} scanned=${sourceAddresses.length} specialists=${scanned.length} top=${top.length} errors=${errors.length} seconds=${((Date.now()-t0)/1000).toFixed(1)}`);
   await telegram(lines.join('\n'));
 }
 
-main().catch(async e=>{console.error(`[HUNTER V5.21][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.21-LIFECYCLE-INTEGRITY-COPY-SAFE\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
+main().catch(async e=>{console.error(`[MEME SCOUT V5.22][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER MEME SCOUT V5.22-LIFECYCLE-INTEGRITY-COPY-SAFE\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
