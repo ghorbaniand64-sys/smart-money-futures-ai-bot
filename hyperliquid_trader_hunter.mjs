@@ -1,4 +1,4 @@
-// Hyperliquid Trader Hunter V5.20-CURRENT-POSITION-TIMING-RATE-LIMIT-SAFE - READ ONLY
+// Hyperliquid Trader Hunter V5.21-LIFECYCLE-INTEGRITY-COPY-SAFE - READ ONLY
 // Professional ranking: statistical quality + current-position copyability.
 // NO ORDERS. NO PRIVATE KEYS.
 
@@ -35,6 +35,9 @@ const MAX_AVG_HOLD = num('HYPERLIQUID_HUNTER_MAX_AVG_HOLD_HOURS', 12);
 const MIN_ACTIVE_DAYS = integer('HYPERLIQUID_HUNTER_MIN_ACTIVE_DAYS', 4);
 const MAX_LOSING_STREAK = integer('HYPERLIQUID_HUNTER_MAX_LOSING_STREAK', 8);
 const MAX_LIQ = integer('HYPERLIQUID_HUNTER_MAX_LIQUIDATIONS', 1);
+const MAX_COPY_LIFECYCLE_ERRORS = integer('HYPERLIQUID_HUNTER_MAX_COPY_LIFECYCLE_ERRORS', 0);
+const MIN_COPY_CLOSED_TRADES = integer('HYPERLIQUID_HUNTER_MIN_COPY_CLOSED_TRADES', 12);
+const MIN_COPY_ACTIVE_DAYS = integer('HYPERLIQUID_HUNTER_MIN_COPY_ACTIVE_DAYS', 2);
 
 const MIN_RR = num('HYPERLIQUID_HUNTER_MIN_SETUP_RR', 1.5);
 const MAX_ENTRY_DIST = num('HYPERLIQUID_HUNTER_MAX_ENTRY_DISTANCE_PCT', 0.5);
@@ -569,6 +572,17 @@ async function runLimited(items, worker, concurrency){
   return{out,errors};
 }
 
+function copyIntegrity(x){
+  const m=x?.metrics||{};
+  const reasons=[];
+  if(!Number.isFinite(Number(m.closedTrades)) || Number(m.closedTrades)<MIN_COPY_CLOSED_TRADES) reasons.push(`TRADES<${MIN_COPY_CLOSED_TRADES}`);
+  if(!Number.isFinite(Number(m.activeDays)) || Number(m.activeDays)<MIN_COPY_ACTIVE_DAYS) reasons.push(`ACTIVE_DAYS<${MIN_COPY_ACTIVE_DAYS}`);
+  if(Number(m.invalidLifecycle||0)>MAX_COPY_LIFECYCLE_ERRORS) reasons.push(`LIFECYCLE_ERR>${MAX_COPY_LIFECYCLE_ERRORS}`);
+  if(x?.truncated) reasons.push('HISTORY_TRUNCATED');
+  if(Number(m.liquidations||0)>Math.max(MAX_LIQ,1)) reasons.push(`LIQUIDATIONS>${Math.max(MAX_LIQ,1)}`);
+  return {ok:reasons.length===0,reasons};
+}
+
 function opportunityScore(x){
   const m=x.metrics||{},p=x.plan||{};
   let s=Number(x.qualityScore||0)*0.42;
@@ -627,11 +641,11 @@ async function main(){
   const t0=Date.now();
   const target=Math.max(1,Math.min(POSITION_DISCOVERY_TARGET,POSITION_PROBE_MAX));
   const probeMax=Math.max(target,POSITION_PROBE_MAX);
-  console.log(`[HUNTER V5.20-CURRENT-POSITION-TIMING-RATE-LIMIT-SAFE][START] ${JSON.stringify({legacyMaxCandidates:MAX_CANDIDATES,positionTarget:target,positionProbeMax:probeMax,cohortSize:POSITION_COHORT_SIZE,nearTarget:POSITION_NEAR_TARGET})}`);
+  console.log(`[HUNTER V5.21-LIFECYCLE-INTEGRITY-COPY-SAFE][START] ${JSON.stringify({legacyMaxCandidates:MAX_CANDIDATES,positionTarget:target,positionProbeMax:probeMax,cohortSize:POSITION_COHORT_SIZE,nearTarget:POSITION_NEAR_TARGET})}`);
   let d;
   try{d=await discover()}catch(e){
     console.error(`[DISCOVERY][ERROR] ${e.message}`);
-    await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.20-CURRENT-POSITION-TIMING-RATE-LIMIT-SAFE\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return;
+    await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.21-LIFECYCLE-INTEGRITY-COPY-SAFE\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return;
   }
   const addresses=d.candidates.slice(0,Math.min(target,d.candidates.length));
   const now=Date.now(),startTime=now-LOOKBACK_DAYS*86400000,errors=[];
@@ -684,7 +698,7 @@ async function main(){
   }
 
   // Strong = safety clean + meaningful trading history. Low activity is not allowed to pass solely on one lucky day.
-  const strong=scanned.filter(x=>x.safety.ok && (x.metrics.closedTrades>=12 || x.metrics.activeDays>=2));
+  const strong=scanned.filter(x=>x.safety.ok && (x.metrics.closedTrades>=MIN_COPY_CLOSED_TRADES || x.metrics.activeDays>=MIN_COPY_ACTIVE_DAYS));
   const enriched=[];
   for(const x of strong){
     const h=x.probe;
@@ -707,9 +721,10 @@ async function main(){
         q.positionTiming={openTime:NaN,lastAddTime:NaN,observedFrom:NaN,source:'fill_lookup_failed'};
         console.log(`[TIMING][WARN] ${short(x.address)} ${h.coin} ${category(e)} :: ${e.message}`);
       }
+      q.copyIntegrity=copyIntegrity(q);
       q.copyabilityScore=Math.round(opportunityScore(q));
-      q.enrichmentStatus='COPY_READY';
-      enriched.push(q);
+      q.enrichmentStatus=q.copyIntegrity.ok && q.plan.eligible?'COPY_READY':'POSITION_BLOCKED';
+      if(q.copyIntegrity.ok && q.plan.eligible) enriched.push(q);
     }catch(e){errors.push({address:x.address,cat:category(e),message:String(e.message||e)});}
   }
   enriched.sort((a,b)=>(opportunityScore(b)-opportunityScore(a))||rankStat(a,b));
@@ -720,18 +735,18 @@ async function main(){
   const topSafety=Object.entries(safetyBlocks).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`${k}:${v}`).join(' | ')||'none';
   const topSoft=Object.entries(softBlocks).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`${k}:${v}`).join(' | ')||'none';
 
-  const lines=['🟣 HYPERLIQUID TRADER HUNTER V5.18-STRATIFIED-CURRENT-POSITION-FIRST','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`⚡ Position discovery: ${Math.min(cursor,d.candidates.length)}/${d.candidates.length}`,`📌 Open positions found: ${positionHits.length}`,`🎯 Positions within ${MAX_ENTRY_DIST}%: ${near.length}`,`📊 Statistical verification: ${scanned.length}/${currentTraders.length}`,`🛡️ Strong traders: ${strong.length}`,`🧠 Current-position deep scan: ${enriched.length}`,`🏆 Copy candidates: ${finalists.length}/${MIN_COPY5}`,`🟢 Auto-selected: ${selected?'1':'0'}`,`⚠️ Errors: ${errors.length}`,`⏱ Total: ${((Date.now()-t0)/1000).toFixed(1)}s`,'','🧱 TOP SAFETY BLOCKS',topSafety,'📌 SOFT DIAGNOSTICS',topSoft,'','🏆 TOP COPY-TRADE CANDIDATES'];
+  const lines=['🟣 HYPERLIQUID TRADER HUNTER V5.21-LIFECYCLE-INTEGRITY-COPY-SAFE','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`⚡ Position discovery: ${Math.min(cursor,d.candidates.length)}/${d.candidates.length}`,`📌 Open positions found: ${positionHits.length}`,`🎯 Positions within ${MAX_ENTRY_DIST}%: ${near.length}`,`📊 Statistical verification: ${scanned.length}/${currentTraders.length}`,`🛡️ Strong traders: ${strong.length}`,`🧠 Current-position deep scan: ${enriched.length}`,`🏆 Copy candidates: ${finalists.length}/${MIN_COPY5}`,`🟢 Auto-selected: ${selected?'1':'0'}`,`⚠️ Errors: ${errors.length}`,`⏱ Total: ${((Date.now()-t0)/1000).toFixed(1)}s`,`🛡️ Copy integrity gate: lifecycleErr<=${MAX_COPY_LIFECYCLE_ERRORS} | minTrades=${MIN_COPY_CLOSED_TRADES} OR activeDays=${MIN_COPY_ACTIVE_DAYS}`,'','🧱 TOP SAFETY BLOCKS',topSafety,'📌 SOFT DIAGNOSTICS',topSoft,'','🏆 TOP COPY-TRADE CANDIDATES'];
   if(!finalists.length)lines.push(`No strong trader with a REAL current position inside the ${MAX_ENTRY_DIST}% entry-distance window was found in this scan.`);
   finalists.forEach((x,i)=>{
     const p=x.plan,m=x.metrics;
-    lines.push('',`#${i+1} ${x.address}`,`🟢 COPY READY | Opportunity=${Math.round(opportunityScore(x))}/100 | Quality=${x.qualityScore}/100`,`📌 ${p.coin} | ${p.side}`,`💵 Trader Entry=${fmt(p.sourceEntry)} | Current=${fmt(p.entry)} | Distance=${pct(p.distancePct,2)}`,`⚙️ Trader Leverage=${fmt(leverageValue(x.position),2)}x | Size=${fmt(Math.abs(Number(x.position?.szi||0)),4)}`,`🕐 Opened=${p.openTimeLabel||isoUtc(p.openTime)} | Age=${fmt(p.positionAgeHours,1)}h`,`➕ Last Add=${p.lastAddTimeLabel||isoUtc(p.lastAddTime)}`,`🎯 Diagnostic SL=${fmt(p.sl)} | TP=${fmt(p.tp)} | RR=${fmt(p.rr)} | ${p.diagnostics.length?p.diagnostics.join(','):'none'}`,`📈 7D trades=${m.closedTrades} | WR=${pct(m.winRate)} | PnL=${fmt(m.pnl)} | PF=${fmt(m.profitFactor)} | activeDays=${m.activeDays}`,`🧯 Streak=${m.maxLosingStreak} | liq=${m.liquidations} | lifecycleErr=${m.invalidLifecycle}`);
+    lines.push('',`#${i+1} ${x.address}`,`🟢 COPY READY | Opportunity=${Math.round(opportunityScore(x))}/100 | Quality=${x.qualityScore}/100`,`📌 ${p.coin} | ${p.side}`,`💵 Trader Entry=${fmt(p.sourceEntry)} | Current=${fmt(p.entry)} | Distance=${pct(p.distancePct,2)}`,`⚙️ Trader Leverage=${fmt(leverageValue(x.position),2)}x | Size=${fmt(Math.abs(Number(x.position?.szi||0)),4)}`,`🕐 Opened=${p.openTimeLabel||isoUtc(p.openTime)} | Age=${fmt(p.positionAgeHours,1)}h`,`➕ Last Add=${p.lastAddTimeLabel||isoUtc(p.lastAddTime)}`,`🎯 Diagnostic SL=${fmt(p.sl)} | TP=${fmt(p.tp)} | RR=${fmt(p.rr)} | ${p.diagnostics.length?p.diagnostics.join(','):'none'}`,`📈 7D trades=${m.closedTrades} | WR=${pct(m.winRate)} | PnL=${fmt(m.pnl)} | PF=${fmt(m.profitFactor)} | activeDays=${m.activeDays}`,`🧯 Streak=${m.maxLosingStreak} | liq=${m.liquidations} | lifecycleErr=${m.invalidLifecycle} | integrity=${x.copyIntegrity?.ok?'PASS':'BLOCK'}`);
   });
   lines.push('','🚀 AUTO SELECTED COPY TRADE');
   if(selected){const p=selected.plan;lines.push(`1️⃣ ${selected.address}`,`📌 ${p.coin} | ${p.side}`,`💵 Trader Entry=${fmt(p.sourceEntry)} | Current=${fmt(p.entry)} | Distance=${pct(p.distancePct,2)}`,`⚙️ Trader leverage=${fmt(leverageValue(selected.position),2)}x`,`🕐 Opened=${selected.plan.openTimeLabel||isoUtc(selected.plan.openTime)} | Age=${fmt(selected.plan.positionAgeHours,1)}h`,`➕ Last Add=${selected.plan.lastAddTimeLabel||isoUtc(selected.plan.lastAddTime)}`,`🏆 Opportunity=${Math.round(opportunityScore(selected))}/100 | Quality=${selected.qualityScore}/100`)}else lines.push('None — no strong current position was within the entry-distance window.');
   if(errors.length){lines.push('','🧪 SAMPLE ERRORS');errors.slice(0,10).forEach(e=>lines.push(`${e.address?short(e.address)+' → ':''}${e.cat} → ${String(e.message||'').slice(0,180)}`))}
-  lines.push('','ℹ️ Architecture: stratified leaderboard discovery → broad current-position probe → real entry-distance filter → historical quality verification → position ranking → top five → one auto-selection.','ℹ️ The entry-distance rule is a REAL copy eligibility gate.','ℹ️ Diagnostic SL/TP/RR never blocks a real current position; source TP/SL is never copied.','ℹ️ History verification is adaptive and cached; the same trader history is never fetched twice in one cycle.','ℹ️ NO ORDERS are created by this worker.','ℹ️ Opened/Last Add are derived from Hyperliquid userFills; if the position predates the lookback, Opened is the oldest observed fill.',`🕐 ${new Date().toISOString()}`);
-  console.log(`[HUNTER V5.20][DONE] leaderboard=${d.discovered} probed=${cursor} open=${positionHits.length} near=${near.length} verified=${scanned.length} strong=${strong.length} finalists=${finalists.length} selected=${selected?short(selected.address):'none'} errors=${errors.length}`);
+  lines.push('','ℹ️ Architecture: stratified leaderboard discovery → broad current-position probe → real entry-distance filter → historical quality verification → lifecycle-integrity gate → position ranking → top five → one auto-selection.','ℹ️ The entry-distance rule is a REAL copy eligibility gate.' ,'ℹ️ Copy eligibility requires lifecycleErr=0, untruncated history, sufficient history, and no excessive liquidations.','ℹ️ Diagnostic SL/TP/RR never blocks a real current position; source TP/SL is never copied.','ℹ️ History verification is adaptive and cached; the same trader history is never fetched twice in one cycle.','ℹ️ NO ORDERS are created by this worker.','ℹ️ Opened/Last Add are derived from Hyperliquid userFills; if the position predates the lookback, Opened is the oldest observed fill.',`🕐 ${new Date().toISOString()}`);
+  console.log(`[HUNTER V5.21][DONE] leaderboard=${d.discovered} probed=${cursor} open=${positionHits.length} near=${near.length} verified=${scanned.length} strong=${strong.length} finalists=${finalists.length} selected=${selected?short(selected.address):'none'} errors=${errors.length}`);
   await telegram(lines.join('\n'));
 }
 
-main().catch(async e=>{console.error(`[HUNTER V5.19][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.20-CURRENT-POSITION-TIMING-RATE-LIMIT-SAFE\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
+main().catch(async e=>{console.error(`[HUNTER V5.21][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER HUNTER V5.21-LIFECYCLE-INTEGRITY-COPY-SAFE\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
