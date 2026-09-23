@@ -105,46 +105,78 @@ const BUILTIN_MEME_SYMBOLS = new Set([
   'MYRO','SLERF','PONKE','MOTHER','MOG','FWOG','GIGA','MUMU','ACT','APU','BOB','ANDY',
   'PENGU','CHILLGUY','TRUMP','MELANIA','FARTCOIN','PURR','CAT','CATDOG','MICHI','MANEKI',
   'BRETT','LADYS','WOJAK','SAMO','BABYDOGE','BABYSHIB','KISHU','ELON','DEGEN','HIGHER',
-  'PORK','SUNDOG','GOONC','WEN','TOSHI','HAMMY','LOCKIN','MOGGER'
+  'PORK','SUNDOG','GOONC','WEN','TOSHI','HAMMY','LOCKIN','MOGGER',
+  'KPEPE'
 ]);
 const MEME_SYMBOLS = new Set([...BUILTIN_MEME_SYMBOLS,...csv('HYPERLIQUID_MEME_SYMBOLS').map(x=>x.toUpperCase())]);
-function isMemeCoin(coin){
-  const c=String(coin||'').toUpperCase().replace(/[-_]/g,'');
-  if(MEME_SYMBOLS.has(c))return true;
-  // Conservative heuristic for newly listed meme-style tickers. The curated
-  // list remains authoritative; heuristics are only used when explicitly enabled.
-  if(String(process.env.HYPERLIQUID_MEME_HEURISTIC||'false').toLowerCase()!=='true')return false;
-  return /DOGE|SHIB|PEPE|BONK|WIF|FLOKI|BRETT|MOG|POPCAT|PNUT|GOAT|TURBO|BOME|MEME|PONKE|SLERF|WOJAK|FART|CAT|INU|MOON/.test(c);
+
+// V5.28 classifier: canonicalize market wrappers before classification. This
+// fixes cases such as PURR/USDC being treated as a different unknown asset.
+function normalizeMemeSymbol(coin){
+  let c=String(coin||'').trim().toUpperCase();
+  if(!c)return '';
+  c=c.replace(/\s+/g,'');
+  // Spot/fill quote wrappers are safe to remove only for USDC pairs.
+  c=c.replace(/(?:\/|-|:)USDC$/,'');
+  if(c==='KPEPE')return 'KPEPE';
+  return c;
 }
 
+// Explicit exclusions prevent common protocol/DeFi/equity assets from being
+// promoted to meme status merely because their tickers look meme-like.
+const NON_MEME_CLASSIFICATIONS = new Map([
+  ['HYPE','PROTOCOL_TOKEN: Hyperliquid native asset'],
+  ['ETHFI','DEFI_TOKEN: Ether.fi governance token'],
+  ['ZRO','PROTOCOL_TOKEN: LayerZero token'],
+  ['MINA','L1_TOKEN: Mina Protocol native asset'],
+  ['MON','L1_TOKEN: Monad native asset'],
+  ['CHIP','RWA_TOKEN: USD.AI governance token'],
+  ['PURRDAT','EQUITY: Hyperliquid Strategies HIP-3 equity perpetual'],
+  ['XYZ:PURRDAT','EQUITY: Hyperliquid Strategies HIP-3 equity perpetual']
+]);
+const PROBABLE_MEME_SYMBOLS = new Set(csv('HYPERLIQUID_MEME_PROBABLE_SYMBOLS').map(normalizeMemeSymbol));
 
+function memeClassification(coin){
+  const c=normalizeMemeSymbol(coin);
+  if(!c)return {class:'UNKNOWN',canonical:c,reason:'EMPTY_SYMBOL'};
+  if(MEME_SYMBOLS.has(c))return {class:'CONFIRMED',canonical:c,reason:'CURATED_MEME_SET'};
+  if(PROBABLE_MEME_SYMBOLS.has(c))return {class:'PROBABLE',canonical:c,reason:'MANUAL_PROBABLE_LIST'};
+  if(NON_MEME_CLASSIFICATIONS.has(c))return {class:'NON_MEME',canonical:c,reason:NON_MEME_CLASSIFICATIONS.get(c)};
+  if(String(process.env.HYPERLIQUID_MEME_HEURISTIC||'false').toLowerCase()==='true' && /DOGE|SHIB|PEPE|BONK|WIF|FLOKI|BRETT|MOG|POPCAT|PNUT|GOAT|TURBO|BOME|MEME|PONKE|SLERF|WOJAK|FART|CAT|INU|MOON/.test(c))return {class:'PROBABLE',canonical:c,reason:'HEURISTIC_MATCH'};
+  return {class:'UNKNOWN',canonical:c,reason:'NO_VERIFIED_CLASSIFICATION'};
+}
+function isMemeCoin(coin){return memeClassification(coin).class==='CONFIRMED'}
 
-// V5.27 classifier audit: this never changes specialist eligibility. It only
-// shows which observed symbols were not covered by the authoritative meme set,
-// so the list can be expanded deliberately instead of loosening the gate.
+// V5.28 classifier audit is canonical-symbol based and never loosens
+// specialist eligibility. Probable/unknown assets remain non-meme for gates.
 function memeClassifierAudit(trades){
   const observed=new Map();
   for(const t of (Array.isArray(trades)?trades:[])){
-    const c=String(t?.coin||'').toUpperCase();
+    const c=normalizeMemeSymbol(t?.coin);
     if(!c)continue;
     observed.set(c,(observed.get(c)||0)+1);
   }
   const observedSymbols=[...observed.keys()].sort();
-  const classified=observedSymbols.filter(c=>isMemeCoin(c));
-  const unclassified=observedSymbols.filter(c=>!isMemeCoin(c));
-  const topUnclassified=unclassified.map(c=>({coin:c,trades:observed.get(c)||0}))
-    .sort((a,b)=>b.trades-a.trades||a.coin.localeCompare(b.coin)).slice(0,10);
-  const topClassified=classified.map(c=>({coin:c,trades:observed.get(c)||0}))
-    .sort((a,b)=>b.trades-a.trades||a.coin.localeCompare(b.coin)).slice(0,10);
+  const classified=observedSymbols.filter(c=>memeClassification(c).class==='CONFIRMED');
+  const probable=observedSymbols.filter(c=>memeClassification(c).class==='PROBABLE');
+  const excluded=observedSymbols.filter(c=>memeClassification(c).class==='NON_MEME');
+  const unclassified=observedSymbols.filter(c=>memeClassification(c).class==='UNKNOWN');
+  const make=(arr)=>arr.map(c=>({coin:c,trades:observed.get(c)||0,class:memeClassification(c).class,reason:memeClassification(c).reason})).sort((a,b)=>b.trades-a.trades||a.coin.localeCompare(b.coin));
   return {
     knownMemeSymbols:MEME_SYMBOLS.size,
     observedSymbols:observedSymbols.length,
     classifiedSymbols:classified.length,
+    probableSymbols:probable.length,
+    nonMemeSymbols:excluded.length,
     unclassifiedSymbols:unclassified.length,
     classifiedTradeCount:classified.reduce((n,c)=>n+(observed.get(c)||0),0),
+    probableTradeCount:probable.reduce((n,c)=>n+(observed.get(c)||0),0),
+    nonMemeTradeCount:excluded.reduce((n,c)=>n+(observed.get(c)||0),0),
     unclassifiedTradeCount:unclassified.reduce((n,c)=>n+(observed.get(c)||0),0),
-    topUnclassified,
-    topClassified
+    topUnclassified:make(unclassified).slice(0,10),
+    topProbable:make(probable).slice(0,10),
+    topClassified:make(classified).slice(0,10),
+    topNonMeme:make(excluded).slice(0,10)
   };
 }
 
@@ -496,7 +528,7 @@ function earlyMoveForTrade(t,rows){
 }
 function memeProfile(trades){
   const meme=trades.filter(t=>isMemeCoin(t.coin));
-  const unique=new Set(meme.map(t=>t.coin)).size;
+  const unique=new Set(meme.map(t=>normalizeMemeSymbol(t.coin))).size;
   const wins=meme.filter(t=>t.pnl>0).length;
   const losses=meme.filter(t=>t.pnl<0).length;
   const gw=meme.filter(t=>t.pnl>0).reduce((a,t)=>a+t.pnl,0);
@@ -516,7 +548,7 @@ function memeProfile(trades){
   const breadth=Math.min(100,unique>=MEME_MIN_UNIQUE?100:unique/Math.max(1,MEME_MIN_UNIQUE)*100);
   const score=Math.round(Math.max(0,Math.min(100,.55*e+.20*u+.15*p+.10*breadth)));
   const coinCounts=new Map();
-  for(const t of meme){const c=String(t.coin||'').toUpperCase();coinCounts.set(c,(coinCounts.get(c)||0)+1)}
+  for(const t of meme){const c=normalizeMemeSymbol(t.coin);if(c)coinCounts.set(c,(coinCounts.get(c)||0)+1)}
   const dominant=[...coinCounts.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))[0]||['n/a',0];
   return {memeTrades:meme.length,totalTrades:trades.length,exposurePct:exposure,uniqueCoins:unique,memeWinRate:wr,memeProfitFactor:pf,memePnl:pnl,totalPnl,medianHoldHours:holdMed,specializationScore:score,dominantMeme:dominant[0],dominantMemeTrades:dominant[1],memeTradesList:meme};
 }
@@ -955,7 +987,7 @@ async function main(){
       const y=await analyzeMemeTrader(x,now);
       const reconstructedTrades=reconstruct(f.fills).trades;
       for(const t of reconstructedTrades){
-        const c=String(t?.coin||'').toUpperCase();
+        const c=normalizeMemeSymbol(t?.coin);
         if(c)classifierObserved.set(c,(classifierObserved.get(c)||0)+1);
       }
       const p=y.meme||{};
@@ -996,24 +1028,12 @@ async function main(){
     }catch(e){errors.push({address:x.address,cat:category(e),message:String(e.message||e)})}
   }
 
-  const auditSymbols=[...classifierObserved.entries()].map(([coin,trades])=>({coin,trades}));
-  const auditClassified=auditSymbols.filter(x=>isMemeCoin(x.coin));
-  const auditUnclassified=auditSymbols.filter(x=>!isMemeCoin(x.coin)).sort((a,b)=>b.trades-a.trades||a.coin.localeCompare(b.coin));
-  const classifierAudit={
-    knownMemeSymbols:MEME_SYMBOLS.size,
-    observedSymbols:auditSymbols.length,
-    classifiedSymbols:auditClassified.length,
-    unclassifiedSymbols:auditUnclassified.length,
-    classifiedTradeCount:auditClassified.reduce((n,x)=>n+x.trades,0),
-    unclassifiedTradeCount:auditUnclassified.reduce((n,x)=>n+x.trades,0),
-    topUnclassified:auditUnclassified.slice(0,10),
-    topClassified:auditClassified.sort((a,b)=>b.trades-a.trades||a.coin.localeCompare(b.coin)).slice(0,10)
-  };
-  const lines=['🟣 HYPERLIQUID MEME SPECIALIST SCOUT V5.27','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`🎯 Mode: ${MEME_MODE==='watch'?'FIXED WATCHLIST':'SCOUT'}`,`🧪 Universe: ${universeAddresses.length} | This cycle: ${sourceAddresses.length}`,`⚡ Fast prefilter: ${funnel.prefilterScanned} → ${funnel.prefilterSelected} full-history | Coverage cycle ${cohort.slot+1}/${cohort.slots}`, `🧬 Meme specialists found: ${scanned.length}`,`🏆 Top specialists: ${top.length}/${MEME_TOP_N}`,`⚡ History: ${MEME_HISTORY_DAYS}d | Early-move window: ${MEME_FORWARD_MIN}m | candle=${MEME_CANDLE_INTERVAL}`,`📌 Criteria: meme exposure>=${MEME_MIN_EXPOSURE}% | meme trades>=${MEME_MIN_TRADES} | unique memes>=${MEME_MIN_UNIQUE}`,'','🧪 MEME SPECIALIST FUNNEL',`Fast prefilter scanned: ${funnel.prefilterScanned}`,`Fast prefilter selected: ${funnel.prefilterSelected}`,`Prefilter errors/skips: ${prefilterErrors}`,`History usable: ${funnel.historyOK}`,`History truncated: ${funnel.historyTruncated}`,`Closed trades >=${MEME_MIN_TRADES}: ${funnel.closedTradesEnough}`,`Meme trades >=${MEME_MIN_TRADES}: ${funnel.memeTradesPass}`,`Meme exposure >=${MEME_MIN_EXPOSURE}%: ${funnel.exposurePass}`,`Unique memes >=${MEME_MIN_UNIQUE}: ${funnel.uniquePass}`,`FINAL SPECIALISTS: ${funnel.specialists}`,'','🧬 MEME CLASSIFIER AUDIT',`Known meme symbols: ${classifierAudit.knownMemeSymbols}`,`Observed symbols: ${classifierAudit.observedSymbols}`,`Classified meme symbols: ${classifierAudit.classifiedSymbols}`,`Unclassified symbols: ${classifierAudit.unclassifiedSymbols}`,`Classified trades: ${classifierAudit.classifiedTradeCount}`,`Unclassified trades: ${classifierAudit.unclassifiedTradeCount}`];
-  if(classifierAudit.topUnclassified.length){
-    lines.push('Top unclassified symbols:');
-    classifierAudit.topUnclassified.slice(0,8).forEach((x,i)=>lines.push(`#${i+1} ${x.coin} — ${x.trades} trades`));
-  }else lines.push('Top unclassified symbols: none');
+  const classifierAudit=memeClassifierAudit([...classifierObserved.entries()].flatMap(([coin,trades])=>Array.from({length:trades},()=>({coin}))));
+  const lines=['🟣 HYPERLIQUID MEME SPECIALIST SCOUT V5.28','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`🎯 Mode: ${MEME_MODE==='watch'?'FIXED WATCHLIST':'SCOUT'}`,`🧪 Universe: ${universeAddresses.length} | This cycle: ${sourceAddresses.length}`,`⚡ Fast prefilter: ${funnel.prefilterScanned} → ${funnel.prefilterSelected} full-history | Coverage cycle ${cohort.slot+1}/${cohort.slots}`, `🧬 Meme specialists found: ${scanned.length}`,`🏆 Top specialists: ${top.length}/${MEME_TOP_N}`,`⚡ History: ${MEME_HISTORY_DAYS}d | Early-move window: ${MEME_FORWARD_MIN}m | candle=${MEME_CANDLE_INTERVAL}`,`📌 Criteria: meme exposure>=${MEME_MIN_EXPOSURE}% | meme trades>=${MEME_MIN_TRADES} | unique memes>=${MEME_MIN_UNIQUE}`,'','🧪 MEME SPECIALIST FUNNEL',`Fast prefilter scanned: ${funnel.prefilterScanned}`,`Fast prefilter selected: ${funnel.prefilterSelected}`,`Prefilter errors/skips: ${prefilterErrors}`,`History usable: ${funnel.historyOK}`,`History truncated: ${funnel.historyTruncated}`,`Closed trades >=${MEME_MIN_TRADES}: ${funnel.closedTradesEnough}`,`Meme trades >=${MEME_MIN_TRADES}: ${funnel.memeTradesPass}`,`Meme exposure >=${MEME_MIN_EXPOSURE}%: ${funnel.exposurePass}`,`Unique memes >=${MEME_MIN_UNIQUE}: ${funnel.uniquePass}`,`FINAL SPECIALISTS: ${funnel.specialists}`,'','🧬 MEME CLASSIFIER AUDIT',`Known meme symbols: ${classifierAudit.knownMemeSymbols}`,`Observed symbols: ${classifierAudit.observedSymbols}`,`Confirmed meme symbols: ${classifierAudit.classifiedSymbols}`,`Probable meme symbols: ${classifierAudit.probableSymbols}`,`Explicit non-meme symbols: ${classifierAudit.nonMemeSymbols}`,`Unknown symbols: ${classifierAudit.unclassifiedSymbols}`,`Confirmed meme trades: ${classifierAudit.classifiedTradeCount}`,`Probable meme trades: ${classifierAudit.probableTradeCount}`,`Explicit non-meme trades: ${classifierAudit.nonMemeTradeCount}`,`Unknown trades: ${classifierAudit.unclassifiedTradeCount}`];
+  if(classifierAudit.topClassified.length){lines.push('Confirmed:');classifierAudit.topClassified.slice(0,8).forEach((x,i)=>lines.push(`#${i+1} ${x.coin} — ${x.trades} trades`));}
+  if(classifierAudit.topProbable.length){lines.push('Probable (diagnostic only):');classifierAudit.topProbable.slice(0,8).forEach((x,i)=>lines.push(`#${i+1} ${x.coin} — ${x.trades} trades | ${x.reason}`));}
+  if(classifierAudit.topUnclassified.length){lines.push('Top unknown symbols:');classifierAudit.topUnclassified.slice(0,8).forEach((x,i)=>lines.push(`#${i+1} ${x.coin} — ${x.trades} trades`));}else lines.push('Top unknown symbols: none');
+  if(classifierAudit.topNonMeme.length){lines.push('Explicit non-meme:');classifierAudit.topNonMeme.slice(0,6).forEach((x,i)=>lines.push(`#${i+1} ${x.coin} — ${x.trades} trades | ${x.reason}`));}
   lines.push('','🏆 TOP 5 MEME SPECIALISTS');
   if(!top.length){lines.push('No trader met all meme-specialist criteria in this scan.');}
   lines.push('',`🟠 MEME-HEAVY DISCOVERY (${heavyTop.length})`,`Criteria: exposure>=${MEME_HEAVY_MIN_EXPOSURE}% | meme trades>=${MEME_HEAVY_MIN_TRADES} | unique memes>=${MEME_HEAVY_MIN_UNIQUE}`);
@@ -1028,10 +1048,10 @@ async function main(){
   });
   lines.push('','📌 WATCHLIST EXPORT');
   if(top.length)lines.push(`HYPERLIQUID_MEME_WATCHLIST=${top.map(x=>x.address).join(',')}`);else lines.push('HYPERLIQUID_MEME_WATCHLIST=');
-  lines.push('','ℹ️ This score detects repeated historical early-move behavior; it does NOT establish advance knowledge of pumps/dumps.','ℹ️ Next monitoring cycle can run with HYPERLIQUID_MEME_MODE=watch and the five addresses above.','ℹ️ Classifier audit is diagnostic only; unclassified symbols are NOT treated as memes automatically.','ℹ️ Specialist eligibility remains strict: confirmed meme symbols + exposure + trade count + unique-meme breadth.','ℹ️ No orders are created by this worker.',`🕐 ${new Date().toISOString()}`);
+  lines.push('','ℹ️ This score detects repeated historical early-move behavior; it does NOT establish advance knowledge of pumps/dumps.','ℹ️ Next monitoring cycle can run with HYPERLIQUID_MEME_MODE=watch and the five addresses above.','ℹ️ V5.28 canonicalizes quote-wrapped symbols (e.g. PURR/USDC → PURR). Probable/unknown symbols never count toward specialist eligibility.','ℹ️ Specialist eligibility remains strict: confirmed meme symbols + exposure + trade count + unique-meme breadth.','ℹ️ No orders are created by this worker.',`🕐 ${new Date().toISOString()}`);
   if(errors.length){lines.push('','🧪 SAMPLE ERRORS');errors.slice(0,8).forEach(e=>lines.push(`${short(e.address)} → ${e.cat} → ${String(e.message||'').slice(0,180)}`))}
   console.log(`[MEME-SCOUT V5.27][DONE] discovered=${d.discovered} scanned=${sourceAddresses.length} specialists=${scanned.length} top=${top.length} errors=${errors.length} seconds=${((Date.now()-t0)/1000).toFixed(1)}`);
   await telegram(lines.join('\n'));
 }
 
-main().catch(async e=>{console.error(`[MEME SCOUT V5.26][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER MEME SCOUT V5.26\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
+main().catch(async e=>{console.error(`[MEME SCOUT V5.28][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER MEME SCOUT V5.28\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
