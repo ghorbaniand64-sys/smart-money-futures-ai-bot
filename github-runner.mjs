@@ -1,34 +1,34 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import crypto from "node:crypto";
-import worker, { BOT_VERSION, BOT_BUILD } from "./worker_core.mjs";
+#!/usr/bin/env node
+/**
+ * Hyperliquid Listing Hunter GitHub Actions runner.
+ * Starts the long-running worker for a bounded window, then exits cleanly so
+ * the workflow can persist state back to the repository.
+ */
+import { spawn } from 'node:child_process';
 
-const WORKER_PATH = path.join(process.cwd(), "worker_core.mjs");
-async function sha256(file) {
-  return crypto.createHash("sha256").update(await fs.readFile(file)).digest("hex");
-}
+const RUN_MS = Math.max(60_000, Number(process.env.LISTING_RUN_MS || 210_000));
+const child = spawn(process.execPath, ['hyperliquid_listing_hunter.mjs'], {
+  stdio: 'inherit',
+  env: process.env,
+});
 
-async function main() {
-  const artifact = await fs.readFile(WORKER_PATH, "utf8");
-  const workerSha256 = await sha256(WORKER_PATH);
-  const forbidden = [
-    "PURE_1H_ONLY_TIMEFRAME",
-    "GLOBAL_MARKET_DIRECTION_NOT_CONFIRMED",
-    "BTC_ETH_SOL_DIRECTION_DISAGREEMENT",
-    "D1_H4_CONTEXT_NOT_ALIGNED"
-  ];
-  for (const token of forbidden) {
-    if (artifact.includes(token)) throw new Error(`STALE_HARD_GATE:${token}`);
-  }
-  console.log("[GITHUB][WORKER_ARTIFACT]", {
-    bytes: artifact.length, sha256: workerSha256,
-    version: BOT_VERSION, build: BOT_BUILD,
-    h1DirectionAuthority: true, macroSoftOnly: true
-  });
-  await worker.scheduled(
-    { cron:"* * * * *", scheduledTime:Date.now() },
-    {...process.env, EXECUTION_ENABLED:String(process.env.EXECUTION_ENABLED || "true")},
-    { waitUntil(p){ return Promise.resolve(p); } }
-  );
-}
-main().catch(e => { console.error("[GITHUB][FATAL]", e?.stack || e); process.exit(1); });
+let stopping = false;
+const stop = () => {
+  if (stopping) return;
+  stopping = true;
+  try { child.kill('SIGTERM'); } catch {}
+  setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 5000).unref();
+};
+
+const timer = setTimeout(stop, RUN_MS);
+timer.unref();
+
+child.on('exit', (code, signal) => {
+  clearTimeout(timer);
+  if (stopping) process.exit(0);
+  if (signal) process.exit(1);
+  process.exit(code ?? 1);
+});
+child.on('error', () => process.exit(1));
+process.on('SIGINT', () => { stop(); });
+process.on('SIGTERM', () => { stop(); });

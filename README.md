@@ -1,34 +1,37 @@
-# Hyperliquid Trader Hunter V5.15
+# Hyperliquid Listing Hunter V0.1 — GitHub Actions Setup
 
 READ-ONLY / NO ORDERS.
 
-Pipeline:
-Leaderboard -> fast prefilter -> statistical qualification -> 100 qualified -> deep scan -> 5 finalists -> 1 auto-selected.
+## Files
 
-Key changes:
-- Version is consistently V5.15.
-- No artificial delay between traders.
-- Concurrent screening with configurable concurrency.
-- Deep enrichment is restricted to qualified traders.
-- Qualification gates are explicit hard gates.
-- Hyperliquid explicit Open/Close direction is preferred during lifecycle reconstruction.
-- No fake SL/TP/RR values are produced on invalid position data.
-- Pipeline timing is reported to Telegram.
+- `hyperliquid_listing_hunter.mjs` — worker
+- `github-runner.mjs` — bounded runner for GitHub Actions
+- `.github/workflows/hyperliquid-listing-hunter.yml` — scheduled workflow
+- `state/hyperliquid_listing_state.json` — persisted state (created on first run)
 
-Defaults:
-- qualified target: 100
-- leaderboard prefilter: 500
-- screen concurrency: 10
-- deep concurrency: 6
-- lookback: 7 days
-- finalists: 5
+## Required GitHub Secrets
 
-Environment overrides:
-HYPERLIQUID_HUNTER_QUALIFIED_TARGET
-HYPERLIQUID_HUNTER_SCREEN_PREFILTER
-HYPERLIQUID_HUNTER_SCREEN_CONCURRENCY
-HYPERLIQUID_HUNTER_DEEP_CONCURRENCY
-HYPERLIQUID_HUNTER_LOOKBACK_DAYS
-HYPERLIQUID_HUNTER_FINALISTS
+Add these repository secrets:
 
-The worker remains READ-ONLY. No orders or private keys are used.
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+
+No Hyperliquid private key, wallet key, API key, or trading credential is required. The worker is read-only and uses public Hyperliquid REST/WebSocket endpoints.
+
+## What it monitors
+
+- Native Hyperliquid perpetual markets
+- Native Hyperliquid spot markets
+- HIP-3 perpetual markets
+- Newly observed markets
+- First observed perpetual trade through the Hyperliquid WebSocket trade stream
+
+## Important timing note
+
+`firstSeenAt` means the first time THIS monitor observed a market. It is not claimed to be the historical listing time if the monitor was offline.
+
+`firstTradeObservedAt` means the first trade received by this monitor after subscription. V0.1 does not claim advance knowledge of future listings.
+
+## Schedule
+
+Runs every 5 minutes. Each invocation keeps the worker alive for about 3.5 minutes, persists state, and exits so the next scheduled run can continue from the saved state.
