@@ -5,41 +5,30 @@ Read-only meme specialist scout. No orders and no private keys.
 ## Exact worker filename
 `hyperliquid_trader_hunter.mjs`
 
-## V5.33 tiers
-The strict specialist gate is unchanged:
+## V5.33 change
+The strict specialist gate is preserved:
 - confirmed meme exposure >= 65%
 - confirmed meme trades >= 12
 - confirmed unique memes >= 3
-- complete history required when `HYPERLIQUID_MEME_REQUIRE_COMPLETE_HISTORY=true`
+- complete history required
 
-A separate **Meme Focus** research tier is used to surface broader meme-focused traders without redefining strict specialists:
-- exposure >= 10%
-- meme trades >= 100
-- unique confirmed memes >= 3
-- dominant meme share <= 85%
+A separate **Meme Focus Candidate** tier was added so the system does not become empty when no trader meets the strict specialist definition:
+- exposure >= 20%
+- meme trades >= 12
+- unique confirmed memes >= 2
 
-A separate **Research Near-Miss** tier identifies complete-history traders that are closer to the strict specialist gate:
-- complete history
-- exposure >= 15%
-- meme trades >= 100
-- unique confirmed memes >= 3
-- must still fail the strict specialist gate
+Focus candidates receive early-move analysis and a separate focus score. They do not count as strict specialists and do not weaken the strict gate.
 
-Research Near-Miss candidates also receive the historical early-move analysis. This is historical behavior analysis only; it does not establish advance knowledge of pumps or dumps.
-
-Unknown and probable symbols never count as confirmed memes for specialist/focus/near-miss eligibility.
-
-## Prefilter
-The fast prefilter remains capped at 30 full-history wallets. V5.33 adds Focus-oriented stratification using recent confirmed meme exposure, meme count, breadth, and concentration so broader research candidates have a route into the 30-wallet deep scan.
+If no strict specialist exists, the watchlist export falls back to the top focus candidates so the next `watch` cycle can monitor useful research candidates.
 
 ## GitHub
 Workflow: `.github/workflows/hyperliquid-trader-hunter.yml`
 Environment: `production`
-Required secrets:
+Required environment secrets:
 - `TELEGRAM_TOKEN`
 - `TELEGRAM_CHAT_ID`
 
-Optional variables include:
+Optional repository/environment variables:
 - `HYPERLIQUID_TRADERS`
 - `HYPERLIQUID_MEME_SYMBOLS`
 - `HYPERLIQUID_MEME_PROBABLE_SYMBOLS`
