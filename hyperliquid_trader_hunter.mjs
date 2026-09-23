@@ -468,6 +468,10 @@ function memeProfile(trades){
   const pnl=meme.reduce((a,t)=>a+t.pnl,0);
   const totalPnl=trades.reduce((a,t)=>a+t.pnl,0);
   const exposure=trades.length?meme.length/trades.length*100:0;
+  const totalHold=trades.reduce((a,t)=>a+(Number.isFinite(t.holdHours)?Math.max(0,t.holdHours):0),0);
+  const memeHold=meme.reduce((a,t)=>a+(Number.isFinite(t.holdHours)?Math.max(0,t.holdHours):0),0);
+  const timeExposure=totalHold>0?memeHold/totalHold*100:0;
+  const memeCoins=[...new Set(meme.map(t=>String(t.coin||'')))].filter(Boolean);
   const hold=meme.map(t=>t.holdHours).filter(Number.isFinite);
   const holdMed=median(hold);
   const wr=meme.length?wins/meme.length*100:0;
@@ -479,7 +483,7 @@ function memeProfile(trades){
   const p=pnl>0?Math.min(100,55+Math.log10(Math.max(1,pnl))*8):Math.max(0,45-Math.log10(Math.max(1,Math.abs(pnl)+1))*6);
   const breadth=Math.min(100,unique>=MEME_MIN_UNIQUE?100:unique/Math.max(1,MEME_MIN_UNIQUE)*100);
   const score=Math.round(Math.max(0,Math.min(100,.55*e+.20*u+.15*p+.10*breadth)));
-  return {memeTrades:meme.length,totalTrades:trades.length,exposurePct:exposure,uniqueCoins:unique,memeWinRate:wr,memeProfitFactor:pf,memePnl:pnl,totalPnl,medianHoldHours:holdMed,specializationScore:score,memeTradesList:meme};
+  return {memeTrades:meme.length,totalTrades:trades.length,nonMemeTrades:Math.max(0,trades.length-meme.length),exposurePct:exposure,timeExposurePct:timeExposure,uniqueCoins:unique,memeCoins,memeWinRate:wr,memeProfitFactor:pf,memePnl:pnl,totalPnl,medianHoldHours:holdMed,specializationScore:score,memeTradesList:meme};
 }
 function earlyScore(stats){
   if(!stats.length)return {score:0,count:0,hit5:0,hit10:0,hit20:0,medianLead5:NaN,mfeMedian:NaN,pump:0,dump:0};
@@ -498,6 +502,19 @@ function earlyScoreSimple(a){
   if(!a.length)return 0;
   const h5=a.filter(x=>x.hit5).length/a.length*100,h10=a.filter(x=>x.hit10).length/a.length*100;
   return Math.round(.55*h5+.45*h10);
+}
+function memeAudit(p){
+  return {
+    exposureDefinition:'closed-trade-count share',
+    exposureFormula:'meme closed trades / all reconstructed closed trades * 100',
+    totalTrades:Number(p.totalTrades||0),
+    memeTrades:Number(p.memeTrades||0),
+    nonMemeTrades:Number(p.nonMemeTrades||0),
+    exposurePct:Number(p.exposurePct||0),
+    timeExposurePct:Number(p.timeExposurePct||0),
+    uniqueCoins:Number(p.uniqueCoins||0),
+    classifiedMemeCoins:Array.isArray(p.memeCoins)?p.memeCoins:[]
+  };
 }
 async function analyzeMemeTrader(x,now){
   const p=memeProfile(x.historyFills?reconstruct(x.historyFills).trades:[]);
@@ -863,11 +880,11 @@ async function main(){
   const t0=Date.now();
   const now=Date.now(), startTime=now-MEME_HISTORY_DAYS*86400000;
   const errors=[];
-  console.log(`[MEME-SCOUT V5.22][START] mode=${MEME_MODE} watchlist=${MEME_WATCHLIST.length}`);
+  console.log(`[MEME-SCOUT V5.25][START] mode=${MEME_MODE} watchlist=${MEME_WATCHLIST.length}`);
   let d;
   try{d=await discover()}catch(e){
     console.error(`[DISCOVERY][ERROR] ${e.message}`);
-    await telegram(`🟣 HYPERLIQUID MEME SPECIALIST SCOUT V5.22\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return;
+    await telegram(`🟣 HYPERLIQUID MEME SPECIALIST SCOUT V5.25\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return;
   }
   const universeAddresses=MEME_MODE==='watch'&&MEME_WATCHLIST.length?MEME_WATCHLIST:d.candidates.slice(0,MEME_SCOUT_CANDIDATES);
   const cohort=MEME_MODE==='watch'?{selected:universeAddresses,slot:0,slots:1,coverage:universeAddresses.length}:selectRotatingMemeCohort(universeAddresses);
@@ -943,11 +960,12 @@ async function main(){
   }
 
   const lines=['🟣 HYPERLIQUID MEME SPECIALIST SCOUT V5.24','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`🎯 Mode: ${MEME_MODE==='watch'?'FIXED WATCHLIST':'SCOUT'}`,`🧪 Universe: ${universeAddresses.length} | This cycle: ${sourceAddresses.length}`,`⚡ Fast prefilter: ${funnel.prefilterScanned} → ${funnel.prefilterSelected} full-history | Coverage cycle ${cohort.slot+1}/${cohort.slots}`, `🧬 Meme specialists found: ${scanned.length}`,`🏆 Top specialists: ${top.length}/${MEME_TOP_N}`,`⚡ History: ${MEME_HISTORY_DAYS}d | Early-move window: ${MEME_FORWARD_MIN}m | candle=${MEME_CANDLE_INTERVAL}`,`📌 Criteria: meme exposure>=${MEME_MIN_EXPOSURE}% | meme trades>=${MEME_MIN_TRADES} | unique memes>=${MEME_MIN_UNIQUE}`,'','🧪 MEME SPECIALIST FUNNEL',`Fast prefilter scanned: ${funnel.prefilterScanned}`,`Fast prefilter selected: ${funnel.prefilterSelected}`,`Prefilter errors/skips: ${prefilterErrors}`,`History usable: ${funnel.historyOK}`,`History truncated: ${funnel.historyTruncated}`,`Closed trades >=${MEME_MIN_TRADES}: ${funnel.closedTradesEnough}`,`Meme trades >=${MEME_MIN_TRADES}: ${funnel.memeTradesPass}`,`Meme exposure >=${MEME_MIN_EXPOSURE}%: ${funnel.exposurePass}`,`Unique memes >=${MEME_MIN_UNIQUE}: ${funnel.uniquePass}`,`FINAL SPECIALISTS: ${funnel.specialists}`,'','🏆 TOP 5 MEME SPECIALISTS'];
+  lines.push('', '🔬 MEME METRIC AUDIT', 'Exposure = meme closed-trades ÷ all reconstructed closed-trades × 100', 'Unique memes = distinct classified meme symbols among reconstructed closed trades', '⚠️ Prefilter exposure is based on recent raw fills; final exposure is based on reconstructed closed trades', '🕒 Time exposure is diagnostic only; it is NOT an eligibility gate');
   if(!top.length){
     lines.push('No trader met all meme-specialist criteria in this scan.');
     if(nearMisses.length){
       lines.push('','🟡 TOP NEAR-MISSES');
-      nearMisses.forEach((x,i)=>{const p=x.meme||{};lines.push(`#${i+1} ${x.address}`,`🧬 exposure=${pct(p.exposurePct,1)} | memeTrades=${p.memeTrades||0}/${MEME_MIN_TRADES} | unique=${p.uniqueCoins||0}/${MEME_MIN_UNIQUE}`,`📌 missing: ${[Number(p.exposurePct||0)<MEME_MIN_EXPOSURE?'EXPOSURE':'',Number(p.memeTrades||0)<MEME_MIN_TRADES?'MEME_TRADES':'',Number(p.uniqueCoins||0)<MEME_MIN_UNIQUE?'UNIQUE_MEMES':''].filter(Boolean).join(', ')||'none'}`)});
+      nearMisses.forEach((x,i)=>{const p=x.meme||{};lines.push(`#${i+1} ${x.address}`,`🧬 exposure=${pct(p.exposurePct,1)} | memeTrades=${p.memeTrades||0}/${MEME_MIN_TRADES} | unique=${p.uniqueCoins||0}/${MEME_MIN_UNIQUE}`,`🔎 audit: ${p.memeTrades||0} meme / ${p.totalTrades||0} total | non-meme=${p.nonMemeTrades||0} | timeExposure=${pct(p.timeExposurePct,1)}`,`📌 missing: ${[Number(p.exposurePct||0)<MEME_MIN_EXPOSURE?'EXPOSURE':'',Number(p.memeTrades||0)<MEME_MIN_TRADES?'MEME_TRADES':'',Number(p.uniqueCoins||0)<MEME_MIN_UNIQUE?'UNIQUE_MEMES':''].filter(Boolean).join(', ')||'none'}`)});
     }
   }
   top.forEach((x,i)=>{
