@@ -1,40 +1,34 @@
-# Hyperliquid Listing Hunter V0.3
+# Hyperliquid Trader Hunter V5.31
 
-READ-ONLY research monitor. No private keys and no orders.
+Read-only meme specialist scout. No orders and no private keys.
 
-## What V0.3 does
+## Exact worker filename
+`hyperliquid_trader_hunter.mjs`
 
-- Discovers native Perps, native Spot and HIP-3 Perp markets.
-- Detects markets that are newly observed by this monitor.
-- Arms a small number of fresh Perp markets for real-time trade observation.
-- Reports the first trade observed after the detector subscribes.
-- Measures early behavior at T+5s, T+15s, T+30s and T+60s.
-- Reports first price, current price, percentage move, cumulative size and trade count.
-- Keeps the Telegram startup test so deployment/Secrets can be verified immediately.
-- Uses the `production` GitHub Environment and existing `TELEGRAM_TOKEN` / `TELEGRAM_CHAT_ID` secrets.
+## V5.31 change
+The strict specialist gate is preserved:
+- confirmed meme exposure >= 65%
+- confirmed meme trades >= 12
+- confirmed unique memes >= 3
+- complete history required
 
-## Important timing limitation
+A separate **Meme Focus Candidate** tier was added so the system does not become empty when no trader meets the strict specialist definition:
+- exposure >= 20%
+- meme trades >= 12
+- unique confirmed memes >= 2
 
-"First trade" means first trade observed after this monitor discovers the market and subscribes. It is not guaranteed to be the historical first trade if the monitor was offline or discovered the market late.
+Focus candidates receive early-move analysis and a separate focus score. They do not count as strict specialists and do not weaken the strict gate.
 
-GitHub Actions cron is not a real-time daemon. For sub-second or very low-latency listing capture, a continuously running service is preferable.
+If no strict specialist exists, the watchlist export falls back to the top focus candidates so the next `watch` cycle can monitor useful research candidates.
 
-## Files
-
-- `hyperliquid_listing_hunter.mjs` — worker
-- `github-runner.mjs` — bounded GitHub Actions runner
-- `.github/workflows/hyperliquid-listing-hunter.yml` — workflow
-- `state/hyperliquid_listing_state.json` — persisted state
-
-## Required GitHub Environment
-
-Environment name:
-
-`production`
-
-Environment secrets:
-
+## GitHub
+Workflow: `.github/workflows/hyperliquid-trader-hunter.yml`
+Environment: `production`
+Required environment secrets:
 - `TELEGRAM_TOKEN`
 - `TELEGRAM_CHAT_ID`
 
-The workflow passes them to the worker as `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
+Optional repository/environment variables:
+- `HYPERLIQUID_TRADERS`
+- `HYPERLIQUID_MEME_SYMBOLS`
+- `HYPERLIQUID_MEME_PROBABLE_SYMBOLS`
