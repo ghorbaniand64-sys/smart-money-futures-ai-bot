@@ -1,16 +1,16 @@
 name: Hyperliquid Listing Hunter
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
-  workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
   group: hyperliquid-listing-hunter
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   NODE_VERSION: '22'
@@ -19,39 +19,65 @@ env:
   HYPERLIQUID_LISTING_POLL_MS: '15000'
   HYPERLIQUID_LISTING_STATE: './state/hyperliquid_listing_state.json'
   HYPERLIQUID_LISTING_REPORT_EVERY_CYCLE: 'false'
-  LISTING_RUN_MS: '210000'
+  LISTING_RUN_MS: '180000'
 
 jobs:
   monitor:
+    name: Listing Hunter Monitor
     runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 5
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
 
       - name: Verify files
         run: |
+          set -e
           test -f hyperliquid_listing_hunter.mjs
           test -f github-runner.mjs
           node --check hyperliquid_listing_hunter.mjs
           node --check github-runner.mjs
           mkdir -p state
 
+      - name: Verify production Telegram secrets
+        env:
+          TELEGRAM_TOKEN_CHECK: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID_CHECK: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -e
+          token_ok=false
+          chat_ok=false
+          if [ -n "$TELEGRAM_TOKEN_CHECK" ]; then token_ok=true; fi
+          if [ -n "$TELEGRAM_CHAT_ID_CHECK" ]; then chat_ok=true; fi
+          echo "production TELEGRAM_TOKEN: $token_ok"
+          echo "production TELEGRAM_CHAT_ID: $chat_ok"
+          if [ "$token_ok" != true ] || [ "$chat_ok" != true ]; then
+            echo "ERROR: production Environment secrets TELEGRAM_TOKEN and/or TELEGRAM_CHAT_ID are not available to this workflow."
+            exit 1
+          fi
+
       - name: Run Listing Hunter
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: node github-runner.mjs
+        run: |
+          set -e
+          node github-runner.mjs
 
       - name: Persist listing state
+        if: ${{ success() }}
         run: |
+          set -e
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add state/hyperliquid_listing_state.json
