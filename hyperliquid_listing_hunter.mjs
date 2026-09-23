@@ -120,8 +120,22 @@ class TradeWatcher {
 }
 
 async function telegram(text) {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
-  try { await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:TELEGRAM_CHAT_ID,text,disable_web_page_preview:true})}); } catch {}
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    console.error(`TELEGRAM_NOT_CONFIGURED token=${TELEGRAM_BOT_TOKEN ? 'present' : 'missing'} chat_id=${TELEGRAM_CHAT_ID ? 'present' : 'missing'}`);
+    return false;
+  }
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method:'POST', headers:{'content-type':'application/json'},
+      body:JSON.stringify({chat_id:TELEGRAM_CHAT_ID,text,disable_web_page_preview:true})
+    });
+    const body = await res.text();
+    if (!res.ok) { console.error(`TELEGRAM_SEND_FAILED HTTP_${res.status} ${body.slice(0,500)}`); return false; }
+    let json=null; try { json=JSON.parse(body); } catch {}
+    if (!json?.ok) { console.error(`TELEGRAM_SEND_FAILED ${body.slice(0,500)}`); return false; }
+    console.log('TELEGRAM_SEND_OK');
+    return true;
+  } catch (e) { console.error(`TELEGRAM_SEND_ERROR ${e?.message || e}`); return false; }
 }
 
 function formatNew(rows) {
@@ -147,7 +161,8 @@ async function main() {
   const state=await loadState();
   const watcher=new TradeWatcher();
   process.on('SIGINT',()=>watcher.close()); process.on('SIGTERM',()=>watcher.close());
-  console.log(`🟣 HYPERLIQUID LISTING HUNTER V0.1 | READ-ONLY | poll=${POLL_MS}ms`);
+  console.log(`🟣 HYPERLIQUID LISTING HUNTER V0.2 | READ-ONLY | poll=${POLL_MS}ms`);
+  await telegram(`🟣 HYPERLIQUID LISTING HUNTER ONLINE\nREAD-ONLY | NO ORDERS\nPoll: ${POLL_MS}ms\nTime: ${iso()}`);
   while(true) {
     const cycleAt=now();
     try {
@@ -163,11 +178,13 @@ async function main() {
         if(m.type==='PERP' && !m.isDelisted) watcher.add(m.coin);
       }
       const trades=watcher.drain();
+      const firstTradeRows=[];
       for(const t of trades) {
         const key=`PERP:${t.coin}`;
         if(state.markets[key] && !state.markets[key].firstTradeObservedAt) {
           state.markets[key].firstTradeObservedAt=t.ts;
           state.markets[key].firstTrade={ts:t.ts,px:t.px,sz:t.sz,side:t.side,hash:t.hash,tid:t.tid};
+          firstTradeRows.push(t);
         }
       }
       state.cycles=(state.cycles||0)+1; state.lastCycleAt=cycleAt; state.hip3=hip3;
@@ -177,8 +194,8 @@ async function main() {
       } else if(REPORT_EVERY_CYCLE) {
         const msg=`🟣 LISTING HUNTER | cycle=${state.cycles}\nMarkets=${markets.size} | HIP-3=${hip3.length}\n🕐 ${iso()}`;
         console.log(msg); await telegram(msg);
-      } else console.log(`cycle=${state.cycles} markets=${markets.size} hip3=${hip3.length} new=${newRows.length} firstTrades=${trades.length}`);
-      if(trades.length) { const msg=formatTrades(trades); console.log(msg); if(newRows.length) await telegram(msg); }
+      } else console.log(`cycle=${state.cycles} markets=${markets.size} hip3=${hip3.length} new=${newRows.length} firstTrades=${firstTradeRows.length} rawTrades=${trades.length}`);
+      if(firstTradeRows.length) { const msg=formatTrades(firstTradeRows); console.log(msg); await telegram(msg); }
     } catch(e) { console.error(`LISTING_HUNTER_ERROR ${e?.stack || e}`); }
     await sleep(POLL_MS);
   }

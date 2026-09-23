@@ -1,41 +1,23 @@
-# Hyperliquid Listing Hunter V0.1 — Production GitHub Setup
+# Hyperliquid Listing Hunter V0.2 — Production
 
-This package is a separate read-only monitor from the existing Hyperliquid Trader Hunter.
+Read-only Hyperliquid market/listing monitor for GitHub Actions.
 
-## Required files
+## Required Environment Secrets
 
-- `hyperliquid_listing_hunter.mjs` — Listing Hunter worker
-- `github-runner.mjs` — bounded GitHub Actions runner
-- `.github/workflows/hyperliquid-listing-hunter.yml` — GitHub Actions workflow
-- `state/` — persistent listing state
-
-## GitHub Environment
-
-The workflow uses the GitHub Environment named `production`:
-
-```yaml
-environment: production
-```
-
-It expects these Environment Secrets under `production`:
+GitHub → Settings → Environments → `production`:
 
 - `TELEGRAM_TOKEN`
 - `TELEGRAM_CHAT_ID`
 
 The workflow maps `TELEGRAM_TOKEN` to the worker's `TELEGRAM_BOT_TOKEN` variable.
 
-## Workflow
+## Important V0.2 fixes
 
-- Schedule: every 5 minutes
-- Manual run: enabled with `workflow_dispatch`
-- Node.js: 22
-- Worker runtime: about 3.5 minutes
-- Read-only: no trading orders or private Hyperliquid credentials
+- Sends an ONLINE Telegram test when the worker starts.
+- Logs explicit Telegram configuration/send errors instead of silently swallowing them.
+- Sends first-trade alerts even when there is no new market in the same cycle.
+- Only reports the first observed trade per market; raw repeated trade messages are no longer treated as separate first trades.
 
-## Important
-
-The `WORKFLOW` folder is not used in this production package. The actual GitHub workflow is placed at:
+## GitHub path
 
 `.github/workflows/hyperliquid-listing-hunter.yml`
-
-When uploading to GitHub, preserve the `.github/workflows/` path exactly.
