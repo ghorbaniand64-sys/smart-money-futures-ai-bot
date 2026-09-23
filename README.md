@@ -1,37 +1,41 @@
-# Hyperliquid Listing Hunter V0.1 — GitHub Actions Setup
+# Hyperliquid Listing Hunter V0.1 — Production GitHub Setup
 
-READ-ONLY / NO ORDERS.
+This package is a separate read-only monitor from the existing Hyperliquid Trader Hunter.
 
-## Files
+## Required files
 
-- `hyperliquid_listing_hunter.mjs` — worker
-- `github-runner.mjs` — bounded runner for GitHub Actions
-- `.github/workflows/hyperliquid-listing-hunter.yml` — scheduled workflow
-- `state/hyperliquid_listing_state.json` — persisted state (created on first run)
+- `hyperliquid_listing_hunter.mjs` — Listing Hunter worker
+- `github-runner.mjs` — bounded GitHub Actions runner
+- `.github/workflows/hyperliquid-listing-hunter.yml` — GitHub Actions workflow
+- `state/` — persistent listing state
 
-## Required GitHub Secrets
+## GitHub Environment
 
-Add these repository secrets:
+The workflow uses the GitHub Environment named `production`:
 
-- `TELEGRAM_BOT_TOKEN`
+```yaml
+environment: production
+```
+
+It expects these Environment Secrets under `production`:
+
+- `TELEGRAM_TOKEN`
 - `TELEGRAM_CHAT_ID`
 
-No Hyperliquid private key, wallet key, API key, or trading credential is required. The worker is read-only and uses public Hyperliquid REST/WebSocket endpoints.
+The workflow maps `TELEGRAM_TOKEN` to the worker's `TELEGRAM_BOT_TOKEN` variable.
 
-## What it monitors
+## Workflow
 
-- Native Hyperliquid perpetual markets
-- Native Hyperliquid spot markets
-- HIP-3 perpetual markets
-- Newly observed markets
-- First observed perpetual trade through the Hyperliquid WebSocket trade stream
+- Schedule: every 5 minutes
+- Manual run: enabled with `workflow_dispatch`
+- Node.js: 22
+- Worker runtime: about 3.5 minutes
+- Read-only: no trading orders or private Hyperliquid credentials
 
-## Important timing note
+## Important
 
-`firstSeenAt` means the first time THIS monitor observed a market. It is not claimed to be the historical listing time if the monitor was offline.
+The `WORKFLOW` folder is not used in this production package. The actual GitHub workflow is placed at:
 
-`firstTradeObservedAt` means the first trade received by this monitor after subscription. V0.1 does not claim advance knowledge of future listings.
+`.github/workflows/hyperliquid-listing-hunter.yml`
 
-## Schedule
-
-Runs every 5 minutes. Each invocation keeps the worker alive for about 3.5 minutes, persists state, and exits so the next scheduled run can continue from the saved state.
+When uploading to GitHub, preserve the `.github/workflows/` path exactly.
