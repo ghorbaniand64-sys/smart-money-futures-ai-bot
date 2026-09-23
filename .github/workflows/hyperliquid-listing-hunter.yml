@@ -1,0 +1,63 @@
+name: Hyperliquid Listing Hunter
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hyperliquid-listing-hunter
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  HYPERLIQUID_API_URL: 'https://api.hyperliquid.xyz/info'
+  HYPERLIQUID_WS_URL: 'wss://api.hyperliquid.xyz/ws'
+  HYPERLIQUID_LISTING_POLL_MS: '15000'
+  HYPERLIQUID_LISTING_STATE: './state/hyperliquid_listing_state.json'
+  HYPERLIQUID_LISTING_REPORT_EVERY_CYCLE: 'false'
+  LISTING_RUN_MS: '210000'
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Verify files
+        run: |
+          test -f hyperliquid_listing_hunter.mjs
+          test -f github-runner.mjs
+          node --check hyperliquid_listing_hunter.mjs
+          node --check github-runner.mjs
+          mkdir -p state
+
+      - name: Run Listing Hunter
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node github-runner.mjs
+
+      - name: Persist listing state
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add state/hyperliquid_listing_state.json
+          if git diff --cached --quiet; then
+            echo 'No state changes.'
+            exit 0
+          fi
+          git commit -m 'chore: update hyperliquid listing hunter state'
+          git push
