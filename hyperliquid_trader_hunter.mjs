@@ -117,6 +117,8 @@ const MEME_EARLY_THRESHOLD_10 = num('HYPERLIQUID_MEME_EARLY_10_PCT', 10);
 const MEME_EARLY_THRESHOLD_20 = num('HYPERLIQUID_MEME_EARLY_20_PCT', 20);
 const MEME_TIMING_CONFIDENCE_FULL = integer('HYPERLIQUID_MEME_TIMING_CONFIDENCE_FULL', 60);
 const MEME_TIMING_MIN_SAMPLE = integer('HYPERLIQUID_MEME_TIMING_MIN_SAMPLE', 12);
+const MEME_CANDLE_LOOKBACK_MIN = integer('HYPERLIQUID_MEME_CANDLE_LOOKBACK_MINUTES', 30);
+const MEME_CANDLE_FORWARD_BUFFER_MIN = integer('HYPERLIQUID_MEME_CANDLE_FORWARD_BUFFER_MINUTES', 30);
 const MEME_SCOUT_CANDIDATES = integer('HYPERLIQUID_MEME_SCOUT_CANDIDATES', 500);
 const MEME_PREFILTER_TARGET = integer('HYPERLIQUID_MEME_PREFILTER_TARGET', 30);
 const MEME_PREFILTER_FILL_SAMPLE = integer('HYPERLIQUID_MEME_PREFILTER_FILL_SAMPLE', 250);
@@ -575,6 +577,7 @@ function reconstruct(fills){
 }
 
 
+function candleMs(){ return MEME_CANDLE_INTERVAL==='1m'?60000:MEME_CANDLE_INTERVAL==='5m'?300000:MEME_CANDLE_INTERVAL==='15m'?900000:MEME_CANDLE_INTERVAL==='30m'?1800000:MEME_CANDLE_INTERVAL==='1h'?3600000:900000; }
 async function candles(coin,start,end){
   const key=`${coin}|${MEME_CANDLE_INTERVAL}|${start}|${end}`;
   if(MEME_CANDLE_CACHE.has(key))return MEME_CANDLE_CACHE.get(key);
@@ -588,8 +591,11 @@ async function candles(coin,start,end){
 function earlyMoveForTrade(t,rows){
   const entry=Number(t.entryPx), exit=Number(t.exitPx);
   if(!Number.isFinite(entry)||entry<=0||!Number.isFinite(exit)||exit<=0)return null;
+  const interval=candleMs();
+  const entryBucket=Math.floor(t.openTime/interval)*interval;
   const forwardEnd=t.openTime+MEME_FORWARD_MIN*60000;
-  const future=rows.filter(c=>c.t>=t.openTime && c.t<=forwardEnd);
+  const future=rows.filter(c=>c.t>=entryBucket && c.t<=forwardEnd);
+
   if(!future.length)return null;
   const long=t.side==='long';
   let mfe=-Infinity,mae=Infinity,first1=NaN,first2=NaN,first5=NaN,first10=NaN,first20=NaN;
@@ -604,7 +610,7 @@ function earlyMoveForTrade(t,rows){
     if(!Number.isFinite(first10)&&fav>=MEME_EARLY_THRESHOLD_10)first10=mins;
     if(!Number.isFinite(first20)&&fav>=MEME_EARLY_THRESHOLD_20)first20=mins;
   }
-  const life=rows.filter(c=>c.t>=t.openTime && c.t<=t.closeTime);
+  const life=rows.filter(c=>c.t>=entryBucket && c.t<=t.closeTime);
   let lifeMfe=-Infinity,lifeMae=Infinity;
   for(const c of life){
     const fav=(long?(c.h-entry)/entry*100:(entry-c.h)/entry*100);
@@ -614,7 +620,8 @@ function earlyMoveForTrade(t,rows){
   const realized=long?(exit-entry)/entry*100:(entry-exit)/entry*100;
   const capture=lifeMfe>0?Math.max(0,Math.min(200,realized/lifeMfe*100)):NaN;
   const postEnd=t.closeTime+MEME_FORWARD_MIN*60000;
-  const post=rows.filter(c=>c.t>=t.closeTime && c.t<=postEnd);
+  const exitBucket=Math.floor(t.closeTime/interval)*interval;
+  const post=rows.filter(c=>c.t>=exitBucket && c.t<=postEnd);
   let postExitMfe=-Infinity;
   for(const c of post){
     const fav=(long?(c.h-exit)/exit*100:(exit-c.l)/exit*100);
@@ -663,8 +670,11 @@ function memeProfile(trades){
   const recent=chronological.slice(-lastN), recentPnl=recent.reduce((a,t)=>a+Number(t.pnl||0),0);
   let streak=0,maxLosingStreak=0; for(const t of chronological){if(t.pnl<0){streak++;maxLosingStreak=Math.max(maxLosingStreak,streak)}else streak=0}
   const topPnl=[...coinPnl.values()].sort((a,b)=>Math.abs(b)-Math.abs(a));
-  const topCoinPnlShare=pnl!==0&&topPnl.length?Math.abs(topPnl[0]/pnl)*100:0;
-  return {memeTrades:meme.length,totalTrades:trades.length,exposurePct:exposure,uniqueCoins:unique,memeWinRate:wr,memeProfitFactor:pf,memePnl:pnl,totalPnl,grossProfit:gw,grossLossAbs:gl,medianTradePnl,avgTradePnl,avgWin,avgLoss,maxDrawdown,returnToDrawdown:pnl>0&&maxDrawdown<0?pnl/Math.abs(maxDrawdown):pnl>0?Infinity:0,recentQuarterPnl:recentPnl,recentQuarterTrades:recent.length,maxLosingStreak,topCoinPnlShare,medianHoldHours:holdMed,specializationScore:score,dominantMeme:dominant[0],dominantMemeTrades:dominant[1],dominantPct,memeTradesList:meme,memeCoins,unknownCounts:Object.fromEntries(unknownCounts)};
+  const grossAbs=gw+gl;
+  const topCoinAbs=topPnl.length?Math.abs(topPnl[0]):0;
+  const topCoinPnlShare=grossAbs>0?Math.min(100,topCoinAbs/grossAbs*100):0;
+  const topCoinNetShare=pnl!==0&&topPnl.length?Math.abs(topPnl[0]/pnl)*100:0;
+  return {memeTrades:meme.length,totalTrades:trades.length,exposurePct:exposure,uniqueCoins:unique,memeWinRate:wr,memeProfitFactor:pf,memePnl:pnl,totalPnl,grossProfit:gw,grossLossAbs:gl,medianTradePnl,avgTradePnl,avgWin,avgLoss,maxDrawdown,returnToDrawdown:pnl>0&&maxDrawdown<0?pnl/Math.abs(maxDrawdown):pnl>0?Infinity:0,recentQuarterPnl:recentPnl,recentQuarterTrades:recent.length,maxLosingStreak,topCoinPnlShare,topCoinNetShare,grossAbs,medianHoldHours:holdMed,specializationScore:score,dominantMeme:dominant[0],dominantMemeTrades:dominant[1],dominantPct,memeTradesList:meme,memeCoins,unknownCounts:Object.fromEntries(unknownCounts)};
 }
 function earlyScore(stats){
   if(!stats.length)return {score:0,count:0,hit1:0,hit2:0,hit5:0,hit10:0,hit20:0,medianLead1:NaN,medianLead2:NaN,medianLead5:NaN,mfeMedian:NaN,maeMedian:NaN,pump:0,dump:0,profitableRate:0,medianRealizedPct:NaN,medianPnl:NaN,avgPnl:NaN,grossProfit:0,grossLossAbs:0,profitFactor:0,medianExitCapturePct:NaN,medianPostExitMfePct:NaN,exitTimingScore:0,entryTimingScore:0,timingConfidence:0,entryQualityScore:0,exitQualityScore:0};
@@ -678,10 +688,12 @@ function earlyScore(stats){
   const grossLossAbs=Math.abs(stats.filter(x=>Number(x.pnl)<0).reduce((a,x)=>a+Number(x.pnl),0));
   const hit1=pct('hit1'),hit2=pct('hit2'),hit5=pct('hit5'),hit10=pct('hit10'),hit20=pct('hit20');
   const speed=leads1.length?Math.max(0,100-Math.min(100,median(leads1)/60*100)):0;
-  const mfeScore=Math.max(0,Math.min(100,(median(mfe)/Math.max(1,MEME_EARLY_THRESHOLD_5))*35));
+  const mfeMed=median(mfe);
+  const mfeCoverage=Number.isFinite(mfeMed)?Math.min(100,(Math.max(0,mfeMed)/Math.max(1,MEME_EARLY_THRESHOLD_2))*100):0;
+  const adaptiveHit=Math.max(hit1,hit2,hit5);
   const adversePenalty=Math.max(0,Math.min(100,Math.abs(Math.min(0,median(mae)))*12));
-  const entryTimingScore=Math.round(Math.max(0,Math.min(100,.30*hit1+.25*hit2+.20*hit5+.10*hit10+.05*hit20+.10*speed)));
-  const entryQualityScore=Math.round(Math.max(0,Math.min(100,.55*entryTimingScore+.25*mfeScore+.20*(100-adversePenalty))));
+  const entryTimingScore=Math.round(Math.max(0,Math.min(100,.35*hit1+.25*hit2+.10*hit5+.10*hit10+.05*hit20+.10*speed+.05*mfeCoverage)));
+  const entryQualityScore=Math.round(Math.max(0,Math.min(100,.60*entryTimingScore+.20*mfeCoverage+.20*(100-adversePenalty))));
   const exitTimingScore=capture.length?Math.round(Math.max(0,Math.min(100,.65*Math.min(100,Math.max(0,median(capture)))+.20*Math.max(0,100-Math.min(100,Math.max(0,median(post))/10*100))+.15*Math.max(0,Math.min(100,pct('profitable')))))):0;
   const exitQualityScore=exitTimingScore;
   const profitRate=pct('profitable');
@@ -720,9 +732,12 @@ async function analyzeMemeTrader(x,now){
   for(const [coin,ts] of coins){
     audit.eligibleTrades+=ts.length;
     try{
+      const interval=candleMs();
       const minT=Math.min(...ts.map(t=>t.openTime));
-      const maxT=Math.max(...ts.map(t=>t.closeTime||t.openTime))+MEME_FORWARD_MIN*60000;
-      const rows=await candles(coin,Math.max(0,minT-15*60000),Math.min(now,maxT));
+      const maxT=Math.max(...ts.map(t=>t.closeTime||t.openTime))+MEME_FORWARD_MIN*60000+MEME_CANDLE_FORWARD_BUFFER_MIN*60000;
+      const alignedStart=Math.max(0,Math.floor(minT/interval)*interval-MEME_CANDLE_LOOKBACK_MIN*60000);
+      const alignedEnd=Math.min(now,maxT);
+      const rows=await candles(coin,alignedStart,alignedEnd);
       if(!rows.length){audit.noCandleData+=ts.length;audit.errors.push(`${coin}:NO_CANDLE_DATA`);continue}
       audit.coinSuccesses++;
       for(const t of ts){
@@ -1108,13 +1123,20 @@ function selectRotatingMemeCohort(addresses){
 function behaviorScore(x){
   const p=x.meme||{},e=x.early||{};
   const pf=Number(p.memeProfitFactor), wr=Number(p.memeWinRate), avg=Number(p.avgTradePnl), med=Number(p.medianTradePnl);
-  const profitScore=Math.max(0,Math.min(100,.35*Math.min(100,wr)+.35*(pf===Infinity?100:Math.min(100,Math.max(0,pf/3*100)))+.15*(avg>0?Math.min(100,50+avg/(Math.abs(p.avgLoss||avg||1))*25):0)+.15*(med>0?100:0)));
-  const consistency=Math.max(0,Math.min(100,.45*(p.recentQuarterPnl>0?100:0)+.30*(p.maxLosingStreak<=3?100:Math.max(0,100-(p.maxLosingStreak-3)*12))+.25*(p.memePnl>0?100:0)));
+  const pfScore=pf===Infinity?100:Math.min(100,Math.max(0,pf/3*100));
+  const avgEdge=Number.isFinite(avg)&&Number.isFinite(p.avgLoss)&&p.avgLoss>0?Math.min(100,Math.max(0,50+(avg/p.avgLoss)*50)):avg>0?65:0;
+  const profitScore=Math.max(0,Math.min(100,.35*Math.min(100,wr)+.35*pfScore+.15*avgEdge+.15*(med>0?100:0)));
+  const streakScore=p.maxLosingStreak<=3?100:Math.max(0,100-(p.maxLosingStreak-3)*8);
+  const ddScore=Number(p.maxDrawdown)<0&&p.memePnl>0?Math.min(100,Math.max(0,Number(p.memePnl)/Math.abs(Number(p.maxDrawdown))*20)):p.memePnl>0?80:0;
+  const recentScore=p.recentQuarterPnl>0?100:p.memePnl>0?55:0;
+  const consistency=Math.max(0,Math.min(100,.35*recentScore+.30*streakScore+.20*ddScore+.15*(p.memePnl>0?100:0)));
   const timingAvailable=Number(e.count||0)>=MEME_TIMING_MIN_SAMPLE;
-  const timing=timingAvailable?Math.max(0,Math.min(100,.55*(e.entryQualityScore||0)+.45*(e.exitQualityScore||0))):0;
+  const timingRaw=Math.max(0,Math.min(100,.55*(e.entryQualityScore||0)+.45*(e.exitQualityScore||0)));
   const confidence=Math.min(1,Math.max(0,Number(e.count||0)/Math.max(1,MEME_TIMING_CONFIDENCE_FULL)));
-  const base=.50*profitScore+.20*consistency+.30*timing;
-  return Math.round(Math.max(0,Math.min(100,timingAvailable?base:base*(.70+.30*confidence))));
+  const timingWeight=timingAvailable?.30:Math.min(.12,.30*confidence);
+  const base=(.50*profitScore)+(.20*consistency)+(timingWeight*timingRaw);
+  const remainder=1-.50-.20-timingWeight;
+  return Math.round(Math.max(0,Math.min(100,base+remainder*profitScore)));
 }
 
 function tierOf(x){
@@ -1146,7 +1168,7 @@ function timingText(x){
 function compactTelegramReport({d,scanned,top,focusTop,concentratedTop,multiResearchTop,researchTop,singleTop,nearMisses}){
   const pool=[...top,...focusTop,...concentratedTop,...multiResearchTop,...researchTop,...singleTop,...nearMisses];
   const rows=[...new Map(pool.map(x=>[x.address,x])).values()].slice(0,5);
-  const header=['🟣 HYPERLIQUID MEME HUNTER V5.43','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🎯 Candidates: ${rows.length} | Strict: ${top.length}`];
+  const header=['🟣 HYPERLIQUID MEME HUNTER V5.44','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🎯 Candidates: ${rows.length} | Strict: ${top.length}`];
   if(!rows.length){header.push('','⚪ No behavioral Meme candidate with sufficient confirmed Meme trade history.');return header.join('\n')}
   rows.forEach((x,i)=>{
     const p=x.meme||{},e=x.early||{};
@@ -1155,7 +1177,7 @@ function compactTelegramReport({d,scanned,top,focusTop,concentratedTop,multiRese
     const totalPnl=Number.isFinite(Number(p.totalPnl))?p.totalPnl:NaN;
     const avg=Number.isFinite(Number(p.avgTradePnl))?p.avgTradePnl:NaN;
     const med=Number.isFinite(Number(p.medianTradePnl))?p.medianTradePnl:NaN;
-    header.push('',`#${i+1} ${x.address}`,`🏷️ ${tierOf(x)}`,`💰 Meme ${money(auditPnl)} | Total ${money(totalPnl)}`,`📊 ${p.memeTrades||0} trades | WR ${pct(p.memeWinRate,0)} | PF ${p.memeProfitFactor===Infinity?'∞':fmt(p.memeProfitFactor,2)} | Avg ${money(avg)} | Med ${money(med)}`,`🧠 Behavior ${x.behavioralScore||0}/100 | EntryQ ${e.entryQualityScore||0} | ExitQ ${e.exitQualityScore||0} | Conf ${e.timingConfidence||0}%`,`📉 DD ${money(p.maxDrawdown)} | R/DD ${p.returnToDrawdown===Infinity?'∞':fmt(p.returnToDrawdown,2)} | Max loss streak ${p.maxLosingStreak||0} | Top-coin PnL ${pct(p.topCoinPnlShare,0)}`,`🪙 ${coins}`,timingText(x));
+    header.push('',`#${i+1} ${x.address}`,`🏷️ ${tierOf(x)}`,`💰 Meme ${money(auditPnl)} | Total ${money(totalPnl)}`,`📊 ${p.memeTrades||0} trades | WR ${pct(p.memeWinRate,0)} | PF ${p.memeProfitFactor===Infinity?'∞':fmt(p.memeProfitFactor,2)} | Avg ${money(avg)} | Med ${money(med)}`,`🧠 Behavior ${x.behavioralScore||0}/100 | EntryQ ${e.entryQualityScore||0} | ExitQ ${e.exitQualityScore||0} | Conf ${e.timingConfidence||0}%`,`📉 DD ${money(p.maxDrawdown)} | R/DD ${p.returnToDrawdown===Infinity?'∞':fmt(p.returnToDrawdown,2)} | Loss streak ${p.maxLosingStreak||0} | Top-coin gross ${pct(p.topCoinPnlShare,0)}`,`🪙 ${coins}`,timingText(x));
   });
   header.push('','ℹ️ PnL = realized closed trades. Timing = historical execution only.');
   return header.join('\n');
@@ -1165,7 +1187,7 @@ async function main(){
   const t0=Date.now();
   const now=Date.now(), startTime=now-MEME_HISTORY_DAYS*86400000;
   const errors=[];
-  console.log(`[MEME-SCOUT V5.31][START] mode=${MEME_MODE} watchlist=${MEME_WATCHLIST.length}`);
+  console.log(`[MEME-SCOUT V5.44][START] mode=${MEME_MODE} watchlist=${MEME_WATCHLIST.length}`);
   let d;
   try{d=await discover()}catch(e){
     console.error(`[DISCOVERY][ERROR] ${e.message}`);
