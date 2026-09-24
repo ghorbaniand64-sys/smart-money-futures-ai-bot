@@ -1,29 +1,24 @@
-# Hyperliquid Trader Hunter V5.51
+# Hyperliquid Meme Hunter V5.53
 
 READ-ONLY / NO ORDERS.
 
-## V5.51 focus
-V5.51 separates **sample/evidence strength** from ProfitCopy, TimingCopy and RiskCopy.
+## V5.53 objective
+This is the final research/audit layer before connecting a separate live execution engine.
 
-### Key rules
-- Strict Meme Specialist eligibility is unchanged.
-- Timing/Behavior audit still runs on incomplete history.
-- `FULL-COPY-CANDIDATE` requires:
-  - positive realized Meme PnL
-  - PF >= configured minimum
-  - positive median Meme trade PnL
-  - minimum full-copy sample (default 60 Meme trades)
-  - timing sample/coverage requirements
-  - concentration/risk/robustness requirements
-  - ProfitCopy, TimingCopy and RiskCopy minimums
-  - Evidence Strength minimum
-  - complete history by default
-- `FULL-COPY-PROVISIONAL` can appear only when the score/evidence requirements are met but history is incomplete.
-- `PROFIT-COPYABLE` requires a full sample (default 60), positive realized Meme PnL, and sufficient Profit/Risk dimensions.
-- A positive result with fewer than 30 Meme trades is explicitly `PROFIT-INSUFFICIENT-SAMPLE` rather than being promoted as copyable.
-- `Evidence Strength` is an audit-strength indicator, **not statistical confidence**.
-- Unknown and Probable symbols never count toward confirmed Meme eligibility.
-- No orders are created by this worker.
+### Added
+- Economic Edge: separates economically meaningful, repeatable Meme profitability from raw WR/PF or dollar PnL alone.
+- Execution Readiness Gate: requires strict multi-Meme specialist eligibility, complete history, adequate sample, Economic Edge, independent Profit/Timing/Risk Copy dimensions, evidence strength, and concentration control.
+- Explicit LiveReady PASS/BLOCK and exact block reasons.
+- Read-only Execution Handoff section in Telegram. It never submits an order.
 
-Worker filename must remain exactly:
-`hyperliquid_trader_hunter.mjs`
+### Preserved
+- Lifecycle-aware prefilter and anti-false-negative exploration lane.
+- 7-day reconstructed closed-trade authority.
+- Timing audit on 5m candles without fabricated entry-candle look-ahead.
+- Separate Data / Profit / Timing / Risk Evidence.
+- Unknown/Probable symbols never count toward confirmed Meme specialist gates.
+- Strict Specialist gate remains: confirmed Meme trades >=12, exposure >=65%, unique Meme coins >=3, complete history.
+- Full-Copy requires adequate sample and complete history by default.
+
+## Live execution boundary
+V5.53 remains READ-ONLY. `LiveReady=YES` means the research engine has produced a candidate that satisfies the pre-execution contract. A separate execution engine must still perform fresh current-position/market checks, risk sizing, SL/TP/RR validation, idempotency, and order submission safeguards before any live order.
