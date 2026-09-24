@@ -1,11 +1,11 @@
-# Hyperliquid Trader Hunter V5.34
+# Hyperliquid Trader Hunter V5.35
 
 Read-only meme specialist scout. No orders and no private keys.
 
 ## Exact worker filename
 `hyperliquid_trader_hunter.mjs`
 
-## V5.34 change
+## V5.35 change
 The strict specialist gate is preserved:
 - confirmed meme exposure >= 65%
 - confirmed meme trades >= 12
@@ -34,4 +34,4 @@ Optional repository/environment variables:
 - `HYPERLIQUID_MEME_PROBABLE_SYMBOLS`
 
 
-V5.34 classifier coverage expansion: adds explicit non-meme classifications for FIL, NEAR, XRP, UNI, and XYZ:ZHIPU. These symbols never count toward meme eligibility; the change only reduces UNKNOWN coverage and improves auditability.
+V5.35 classifier coverage expansion: adds explicit non-meme classifications for FIL, NEAR, XRP, UNI, and XYZ:ZHIPU. These symbols never count toward meme eligibility; the change only reduces UNKNOWN coverage and improves auditability.
