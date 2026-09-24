@@ -1,37 +1,24 @@
-# Hyperliquid Trader Hunter V5.35
+# Hyperliquid Trader Hunter V5.38
 
-Read-only meme specialist scout. No orders and no private keys.
+READ-ONLY / NO ORDERS.
 
-## Exact worker filename
-`hyperliquid_trader_hunter.mjs`
+## Worker
+- Required filename: `hyperliquid_trader_hunter.mjs`
 
-## V5.35 change
-The strict specialist gate is preserved:
-- confirmed meme exposure >= 65%
-- confirmed meme trades >= 12
-- confirmed unique memes >= 3
-- complete history required
-
-A separate **Meme Focus Candidate** tier was added so the system does not become empty when no trader meets the strict specialist definition:
-- exposure >= 20%
-- meme trades >= 12
-- unique confirmed memes >= 2
-
-Focus candidates receive early-move analysis and a separate focus score. They do not count as strict specialists and do not weaken the strict gate.
-
-If no strict specialist exists, the watchlist export falls back to the top focus candidates so the next `watch` cycle can monitor useful research candidates.
-
-## GitHub
-Workflow: `.github/workflows/hyperliquid-trader-hunter.yml`
-Environment: `production`
-Required environment secrets:
-- `TELEGRAM_TOKEN`
-- `TELEGRAM_CHAT_ID`
-
-Optional repository/environment variables:
-- `HYPERLIQUID_TRADERS`
-- `HYPERLIQUID_MEME_SYMBOLS`
-- `HYPERLIQUID_MEME_PROBABLE_SYMBOLS`
+## V5.38 changes
+- Keeps the V5.36 strict specialist gate unchanged: confirmed meme symbols + exposure >= 65% + meme trades >= 12 + unique memes >= 3, with complete-history requirements preserved.
+- Makes Near-Miss strict shortfalls explicit, including the actual value and threshold (for example `EXPOSURE 18.4% < 65%`).
+- Removes ambiguous `memeTrades=242/12` formatting; reports actual meme-trade count with its minimum separately.
+- Fixes duplicated percent formatting in Unknown Impact output (`22.6%%` -> `22.6%`).
+- Keeps Unknown/Probable symbols diagnostic only; they are never promoted to confirmed memes by simulation.
+- Keeps Focus and Research as separate diagnostic tiers and does not redefine Strict Specialists.
+- No order execution is added.
 
 
-V5.35 classifier coverage expansion: adds explicit non-meme classifications for FIL, NEAR, XRP, UNI, and XYZ:ZHIPU. These symbols never count toward meme eligibility; the change only reduces UNKNOWN coverage and improves auditability.
+## V5.38 diagnostic changes
+- Keeps strict specialist gate unchanged: exposure >=65%, meme trades >=12, unique memes >=3, complete history.
+- Adds explicit strict-gate deficit wording in TOP NEAR-MISSES.
+- Adds STRICT EXPOSURE GAP diagnostic buckets: 0–10pp, 10–25pp, 25–40pp, 40pp+.
+- Fixes percentage formatting in research output.
+- Keeps Unknown/Probable diagnostic-only behavior and Focus/Research tiers unchanged.
+- READ-ONLY / NO ORDERS.
