@@ -188,4 +188,11 @@ async function run(){
   await writeJson(STATE_PATH,{at:Date.now(),mode:'LIVE',plan:p,result});
 }
 
-run().catch(async e=>{ console.error(`[EXECUTION][BLOCK] ${e.stack||e}`); try{await writeJson(STATE_PATH,{at:Date.now(),mode:'BLOCKED',reason:String(e.message||e)});}catch{} process.exitCode=1; });
+run().catch(async e=>{
+  const reason=String(e.message||e);
+  console.error(`[EXECUTION][BLOCK] ${e.stack||e}`);
+  try{await writeJson(STATE_PATH,{at:Date.now(),mode:'BLOCKED',reason});}catch{}
+  // A missing LiveReady candidate is an expected safety-gate outcome, not a workflow failure.
+  // Keep real integration/API/code errors as non-zero exits.
+  process.exitCode=reason==='NO_LIVEREADY_CANDIDATE'?0:1;
+});
