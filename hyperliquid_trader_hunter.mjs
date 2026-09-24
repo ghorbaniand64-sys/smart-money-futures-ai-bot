@@ -1,6 +1,8 @@
+import fs from 'node:fs/promises';
+
 // Hyperliquid Meme Specialist Scout V5.53 - READ ONLY
 // Professional ranking: statistical quality + current-position copyability.
-// NO ORDERS. NO PRIVATE KEYS.
+// NO ORDERS. NO PRIVATE KEYS. Writes a short-lived execution handoff only when LiveReady passes.
 
 const API_URL = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL || 'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';
@@ -57,6 +59,8 @@ const TG_CHAT = process.env.TELEGRAM_CHAT_ID || '';
 const SEEDS = csv('HYPERLIQUID_TRADERS');
 const MANUAL = csv('HYPERLIQUID_HUNTER_CANDIDATES');
 const TG_LIMIT = 3800;
+const EXECUTION_HANDOFF_PATH = process.env.HYPERLIQUID_EXECUTION_HANDOFF_PATH || 'state/meme_execution_handoff.json';
+const EXECUTION_HANDOFF_TTL_MS = integer('HYPERLIQUID_EXECUTION_HANDOFF_TTL_MS', 90000);
 
 // V5.22.1 reliability: shared cooldown prevents a burst of 429s from
 // immediately cascading across the remaining 500-wallet scout.
@@ -1433,6 +1437,42 @@ function timingText(x){
   const diag=[a.candleErrors?`errors ${a.candleErrors}`:'',a.noCandleData?`noData ${a.noCandleData}`:'',a.invalidTrades?`invalid ${a.invalidTrades}`:''].filter(Boolean).join(' | ');
   return `⏱ Timing pending | ${reason} | ${valid}${diag?` | ${diag}`:''}`;
 }
+
+async function writeExecutionHandoff(rows){
+  const now=Date.now();
+  const candidates=rows.filter(x=>x?.executionReady).slice(0,5).map(x=>({
+    address:x.address,
+    executionReady:Boolean(x.executionReady),
+    executionReadinessScore:Number(x.executionReadinessScore||0),
+    economicEdgeScore:Number(x.economicEdgeScore||0),
+    profitCopyScore:Number(x.profitCopyScore||0),
+    timingCopyScore:Number(x.timingCopyScore||0),
+    riskCopyScore:Number(x.riskCopyScore||0),
+    evidenceStrength:Number(x.evidenceStrength||0),
+    historyIncomplete:Boolean(x.historyIncomplete),
+    memeTrades:Number(x.meme?.memeTrades||0),
+    position:x.current?{
+      coin:String(x.current.coin||''),
+      side:String(x.current.side||''),
+      entry:Number(x.current.entry||0),
+      mid:Number(x.current.mid||0),
+      distancePct:Number(x.current.distancePct),
+      isMeme:Boolean(x.current.isMeme)
+    }:null
+  }));
+  await fs.mkdir('state',{recursive:true});
+  const payload={
+    version:'V5.53-HANDOFF-V1',
+    createdAt:now,
+    expiresAt:now+EXECUTION_HANDOFF_TTL_MS,
+    readOnlySource:true,
+    noOrdersByScout:true,
+    candidates
+  };
+  await fs.writeFile(EXECUTION_HANDOFF_PATH,JSON.stringify(payload,null,2)+'\n');
+  console.log(`[EXECUTION-HANDOFF] candidates=${candidates.length} path=${EXECUTION_HANDOFF_PATH}`);
+}
+
 function compactTelegramReport({d,scanned,top,focusTop,concentratedTop,multiResearchTop,researchTop,singleTop,nearMisses}){
   const pool=[...top,...focusTop,...concentratedTop,...multiResearchTop,...researchTop,...singleTop,...nearMisses];
   const rows=[...new Map(pool.map(x=>[x.address,x])).values()].slice(0,5);
@@ -1573,6 +1613,8 @@ async function main(){
       watched.push(x);
     }catch(e){errors.push({address:x.address,cat:category(e),message:String(e.message||e)})}
   }
+
+  await writeExecutionHandoff(top);
 
   const classifierAudit=memeClassifierAudit([...classifierObserved.entries()].flatMap(([coin,trades])=>Array.from({length:trades},()=>({coin}))));
   const unknownImpact=unknownImpactSimulation(classifierAudit);
