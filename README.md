@@ -1,10 +1,10 @@
-# Hyperliquid Meme Specialist Scout V5.42
+# Hyperliquid Meme Specialist Scout V5.45
 
 READ-ONLY / NO ORDERS.
 
 Worker filename (required): `hyperliquid_trader_hunter.mjs`
 
-## V5.42
+## V5.45
 - Preserves Strict Multi-Meme Specialist eligibility from prior versions.
 - Keeps Focus, Concentrated, Multi-Meme Research, and Near-Miss tiers separate from Strict.
 - Realized closed-trade Meme PnL, WR, PF, gross profit/loss, average and median Meme trade PnL remain part of the audit.
