@@ -1,10 +1,10 @@
-Hyperliquid Meme Hunter V8.1
+Hyperliquid Meme Hunter V8.2
 READ-ONLY / NO ORDERS
 
 Exact worker filename:
 hyperliquid_trader_hunter.mjs
 
-V8.1 changes:
+V8.2 changes:
 - Keeps all Full-Copy / execution gates hard; promotion never relaxes them.
 - Persists promotion records correctly into state/meme_hunter_memory.json.
 - Adds explicit NEXT actions to the Telegram Promotion Track, derived from actual block reasons.
@@ -20,3 +20,11 @@ NEXT: TRADES≥30 + TIMING≥65
 NEXT: REPEAT_CYCLES≥2
 
 No live order is created by the hunter.
+
+V8.2 REPORT FIXES
+-----------------
+- Promotion Track contains only evidence-backed traders. Zero-evidence observations are excluded.
+- No artificial first-cycle score for zero evidence.
+- Promotion blockers never display as 'none'; pending repeatability is explicit.
+- NEXT thresholds are aligned with the actual execution gate (TRADES uses FULL-COPY minimum; concentration uses execution maximum).
+- Promotion memory never relaxes the strict Full-Copy / execution gates.
