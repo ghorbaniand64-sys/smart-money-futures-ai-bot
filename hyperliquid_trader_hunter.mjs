@@ -1,4 +1,4 @@
-// Hyperliquid Meme Trader Hunter V6.1 FINAL - DISCOVERY + EVIDENCE + MEMORY - READ ONLY
+// Hyperliquid Meme Trader Hunter V6.0 - DISCOVERY + EVIDENCE - READ ONLY
 // Discovery-first architecture: broad recall + independent economic/behavior/risk evidence + current-position copyability.
 // NO ORDERS. NO PRIVATE KEYS.
 
@@ -310,8 +310,8 @@ function memeClassifierAudit(trades){
 }
 
 
-import fs from 'node:fs';
-import path from 'node:path';
+const fs = require('fs');
+const path = require('path');
 function readMemory(){
   try{
     if(!fs.existsSync(MEME_MEMORY_PATH)) return {version:1,updatedAt:0,addresses:{}};
@@ -1649,7 +1649,7 @@ function timingText(x){
   const diag=[a.candleErrors?`errors ${a.candleErrors}`:'',a.noCandleData?`noData ${a.noCandleData}`:'',a.invalidTrades?`invalid ${a.invalidTrades}`:''].filter(Boolean).join(' | ');
   return `⏱ Timing pending | ${reason} | ${valid}${diag?` | ${diag}`:''}`;
 }
-function compactTelegramReport({d,scanned,top,focusTop,concentratedTop,multiResearchTop,researchTop,singleTop,nearMisses}){
+function compactTelegramReport({d,scanned,top,focusTop,concentratedTop,multiResearchTop,researchTop,singleTop,nearMisses,memory}){
   const pool=[...top,...focusTop,...concentratedTop,...multiResearchTop,...researchTop,...singleTop,...nearMisses];
   const rows=[...new Map(pool.map(x=>[x.address,x])).values()].slice(0,5);
   const header=['🟣 HYPERLIQUID MEME HUNTER V6.1','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🎯 Candidates: ${rows.length} | Strict: ${top.length}`];
@@ -1848,7 +1848,7 @@ async function main(){
   lines.push('','🧠 Candidate Memory: SAMPLE_BUILDING/PROMOTION_READY/EXECUTION_CANDIDATE tracks persist across cycles; DEMOTED candidates are cooled down and not recalled automatically.','ℹ️ V6.1 validates realized Meme PnL/WR/PF, trade-level economic stability, bootstrap lower-mean stability, trade-PnL concentration, entry timing, exit capture and post-exit continuation.' ,'ℹ️ Early/exit behavior describes repeated historical execution; it does NOT establish advance knowledge of future pumps/dumps.','ℹ️ Watchlist contains the top five available research candidates; Copyability is shown separately from Meme specialization.','ℹ️ V6 keeps Strict Multi-Meme Specialist separate from Concentrated Meme behavior; neither research tier redefines strict eligibility.','ℹ️ Probable/unknown symbols never count toward specialist eligibility.','ℹ️ No orders are created by this worker.',`🕐 ${new Date().toISOString()}`);
   if(errors.length){lines.push('','🧪 SAMPLE ERRORS');errors.slice(0,8).forEach(e=>lines.push(`${short(e.address)} → ${e.cat} → ${String(e.message||'').slice(0,180)}`))}
   console.log(`[MEME-HUNTER V6.1][DONE] discovered=${d.discovered} scanned=${sourceAddresses.length} specialists=${scanned.length} top=${top.length} errors=${errors.length} seconds=${((Date.now()-t0)/1000).toFixed(1)}`);
-  await telegram(compactTelegramReport({d,scanned,top,focusTop,concentratedTop,multiResearchTop,researchTop,singleTop,nearMisses}));
+  await telegram(compactTelegramReport({d,scanned,top,focusTop,concentratedTop,multiResearchTop,researchTop,singleTop,nearMisses,memory:updatedMemory}));
 }
 
-main().catch(async e=>{console.error(`[MEME HUNTER V6.0][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER MEME HUNTER V6.0\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
+main().catch(async e=>{console.error(`[MEME-HUNTER V6.1][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID TRADER MEME HUNTER V6.1\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
