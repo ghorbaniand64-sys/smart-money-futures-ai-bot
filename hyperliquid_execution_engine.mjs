@@ -1,5 +1,5 @@
-// Hyperliquid Meme Hunter Execution Engine V1
-// Consumes V5.53 READ-ONLY handoff. Default: DRY RUN / NO ORDERS.
+// Hyperliquid Meme Hunter Execution Engine V6.1
+// Consumes V6.1 READ-ONLY handoff. Default: DRY RUN / NO ORDERS.
 // Live orders require BOTH EXECUTION_ENABLED=true and EXECUTION_DRY_RUN=false.
 
 import fs from 'node:fs/promises';
@@ -40,7 +40,15 @@ function sideFromSize(szi){ return Number(szi)>0?'LONG':'SHORT'; }
 function fmt(x,d=4){ return Number.isFinite(Number(x))?Number(x).toFixed(d):'n/a'; }
 function pct(x,d=2){ return Number.isFinite(Number(x))?`${Number(x).toFixed(d)}%`:'n/a'; }
 
-async function readJson(path){ return JSON.parse(await fs.readFile(path,'utf8')); }
+async function readJson(path){
+  try {
+    return JSON.parse(await fs.readFile(path,'utf8'));
+  } catch (e) {
+    if (e?.code === 'ENOENT') throw new Error('NO_EXECUTION_HANDOFF');
+    if (e instanceof SyntaxError) throw new Error('HANDOFF_INVALID_JSON');
+    throw e;
+  }
+}
 async function writeJson(path,obj){ await fs.mkdir(new URL('.',`file://${process.cwd()}/${path}`).pathname,{recursive:true}).catch(()=>{}); await fs.writeFile(path,JSON.stringify(obj,null,2)+'\n'); }
 
 async function info(payload){
@@ -194,5 +202,5 @@ run().catch(async e=>{
   try{await writeJson(STATE_PATH,{at:Date.now(),mode:'BLOCKED',reason});}catch{}
   // A missing LiveReady candidate is an expected safety-gate outcome, not a workflow failure.
   // Keep real integration/API/code errors as non-zero exits.
-  process.exitCode=reason==='NO_LIVEREADY_CANDIDATE'?0:1;
+  process.exitCode=(reason==='NO_LIVEREADY_CANDIDATE'||reason==='NO_EXECUTION_HANDOFF')?0:1;
 });

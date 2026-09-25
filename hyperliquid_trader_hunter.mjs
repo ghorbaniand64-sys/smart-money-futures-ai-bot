@@ -1,4 +1,4 @@
-// Hyperliquid Meme Trader Hunter V6.1 - DISCOVERY + EVIDENCE - READ ONLY
+// Hyperliquid Meme Trader Hunter V6.1 - DISCOVERY + EVIDENCE + MEMORY - READ ONLY
 // Discovery-first architecture: broad recall + independent economic/behavior/risk evidence + current-position copyability.
 // NO ORDERS. NO PRIVATE KEYS.
 
@@ -78,8 +78,8 @@ const MEME_HEAVY_MIN_UNIQUE = integer('HYPERLIQUID_MEME_HEAVY_MIN_UNIQUE_COINS',
 const MEME_SINGLE_MIN_EXPOSURE = num('HYPERLIQUID_MEME_SINGLE_MIN_EXPOSURE_PCT', 20);
 const MEME_SINGLE_MIN_TRADES = integer('HYPERLIQUID_MEME_SINGLE_MIN_TRADES', MEME_MIN_TRADES);
 
-// V6.0: separate concentrated Meme behavior from diversified Meme specialization.
-// V6.0 also validates realized PnL, entry timing, exit timing, and post-exit continuation.
+// V6.1: separate concentrated Meme behavior from diversified Meme specialization.
+// V6.1 also validates realized PnL, entry timing, exit timing, and post-exit continuation.
 // These diagnostics never redefine the strict specialist gate.
 // These tiers never redefine the strict specialist gate.
 const MEME_CONCENTRATED_MIN_EXPOSURE = num('HYPERLIQUID_MEME_CONCENTRATED_MIN_EXPOSURE_PCT', 80);
@@ -108,6 +108,8 @@ const MEME_FOCUS_TOP_N = integer('HYPERLIQUID_MEME_FOCUS_TOP_N', 5);
 const MEME_TRADE_SAMPLE = integer('HYPERLIQUID_MEME_TRADE_SAMPLE', 60);
 const MEME_TIMING_SAMPLE_MAX = integer('HYPERLIQUID_MEME_TIMING_SAMPLE_MAX', 60);
 const MEME_MEMORY_PATH = process.env.HYPERLIQUID_MEME_MEMORY_PATH || 'state/meme_hunter_memory.json';
+const EXECUTION_HANDOFF_PATH = process.env.HYPERLIQUID_EXECUTION_HANDOFF_PATH || 'state/meme_execution_handoff.json';
+const EXECUTION_HANDOFF_TTL_MS = integer('EXECUTION_HANDOFF_TTL_MS', 90000);
 const MEME_MEMORY_MAX_ADDRESSES = integer('HYPERLIQUID_MEME_MEMORY_MAX_ADDRESSES', 250);
 const MEME_MEMORY_RECALL_SLOTS = integer('HYPERLIQUID_MEME_MEMORY_RECALL_SLOTS', 25);
 const MEME_MEMORY_RETENTION_DAYS = integer('HYPERLIQUID_MEME_MEMORY_RETENTION_DAYS', 30);
@@ -142,7 +144,7 @@ const MEME_PROFIT_COPY_MIN = num('HYPERLIQUID_MEME_PROFIT_COPY_MIN_SCORE', 65);
 const MEME_TIMING_COPY_MIN = num('HYPERLIQUID_MEME_TIMING_COPY_MIN_SCORE', 60);
 const MEME_RISK_COPY_MIN = num('HYPERLIQUID_MEME_RISK_COPY_MIN_SCORE', 60);
 const MEME_FULL_COPY_MIN = num('HYPERLIQUID_MEME_FULL_COPY_MIN_SCORE', 65);
-// V6.0: economic edge is a separate pre-execution safety layer. It is not a
+// V6.1: economic edge is a separate pre-execution safety layer. It is not a
 // ranking boost only: live execution readiness requires positive, repeatable
 // economic results plus independent profit/timing/risk evidence.
 const MEME_ECONOMIC_EDGE_MIN = num('HYPERLIQUID_MEME_ECONOMIC_EDGE_MIN_SCORE', 70);
@@ -152,13 +154,13 @@ const MEME_EXECUTION_MIN_PROFIT_COPY = num('HYPERLIQUID_MEME_EXECUTION_MIN_PROFI
 const MEME_EXECUTION_MIN_TIMING_COPY = num('HYPERLIQUID_MEME_EXECUTION_MIN_TIMING_COPY', 65);
 const MEME_EXECUTION_MIN_RISK_COPY = num('HYPERLIQUID_MEME_EXECUTION_MIN_RISK_COPY', 65);
 const MEME_EXECUTION_MIN_EVIDENCE = num('HYPERLIQUID_MEME_EXECUTION_MIN_EVIDENCE', 70);
-// V6.0: separate evidence/sample adequacy from behavioral scores. A strong score
+// V6.1: separate evidence/sample adequacy from behavioral scores. A strong score
 // on a tiny or incomplete sample must never be presented as equivalent to a
 // sufficiently observed, repeatable history.
 const MEME_PROVISIONAL_SAMPLE = integer('HYPERLIQUID_MEME_PROVISIONAL_SAMPLE', 30);
 const MEME_FULL_COPY_MIN_SAMPLE = integer('HYPERLIQUID_MEME_FULL_COPY_MIN_SAMPLE', 60);
 const MEME_EVIDENCE_MIN = num('HYPERLIQUID_MEME_EVIDENCE_MIN_SCORE', 60);
-// V6.0: sample size, statistical evidence, and economic evidence are separate.
+// V6.1: sample size, statistical evidence, and economic evidence are separate.
 const MEME_EVIDENCE_STRONG_MIN = num('HYPERLIQUID_MEME_EVIDENCE_STRONG_MIN_SCORE', 80);
 const MEME_EVIDENCE_MODERATE_MIN = num('HYPERLIQUID_MEME_EVIDENCE_MODERATE_MIN_SCORE', 60);
 const MEME_ECONOMIC_STRONG_MIN = num('HYPERLIQUID_MEME_ECONOMIC_STRONG_MIN_SCORE', 75);
@@ -407,6 +409,48 @@ function writeMemory(memory){
     fs.writeFileSync(tmp,JSON.stringify(memory,null,2));
     fs.renameSync(tmp,MEME_MEMORY_PATH);
   }catch(e){console.log(`[MEMORY][WARN] write failed: ${e.message}`)}
+}
+function writeExecutionHandoff(rows, now){
+  const ready=(Array.isArray(rows)?rows:[])
+    .filter(x=>x?.executionReady && addr(x.address) && x?.position?.coin && x?.current?.coin)
+    .slice(0,5)
+    .map(x=>({
+      address:norm(x.address),
+      executionReady:true,
+      executionReadinessScore:Number(x.executionReadinessScore||0),
+      economicEdgeScore:Number(x.economicEdgeScore||0),
+      profitCopyScore:Number(x.profitCopyScore||0),
+      timingCopyScore:Number(x.timingCopyScore||0),
+      riskCopyScore:Number(x.riskCopyScore||0),
+      evidenceStrength:Number(x.evidenceStrength||0),
+      memePnl:Number(x?.meme?.memePnl||0),
+      memeTrades:Number(x?.meme?.memeTrades||0),
+      position:{
+        coin:String(x.position.coin),
+        side:Number(x.position.szi)>0?'LONG':'SHORT',
+        entry:Number(x.position.entryPx),
+        mid:Number(x.current.mid),
+        distancePct:Number(x.current.distancePct),
+        isMeme:Boolean(x.current.isMeme)
+      }
+    }));
+  const payload={
+    version:'V6.1',
+    createdAt:Number(now||Date.now()),
+    expiresAt:Number(now||Date.now())+EXECUTION_HANDOFF_TTL_MS,
+    mode:ready.length?'READY':'BLOCKED',
+    reason:ready.length?null:'NO_LIVEREADY_CANDIDATE',
+    candidates:ready
+  };
+  try{
+    fs.mkdirSync(path.dirname(EXECUTION_HANDOFF_PATH),{recursive:true});
+    const tmp=`${EXECUTION_HANDOFF_PATH}.tmp`;
+    fs.writeFileSync(tmp,JSON.stringify(payload,null,2));
+    fs.renameSync(tmp,EXECUTION_HANDOFF_PATH);
+    console.log(`[HANDOFF] ${payload.mode} candidates=${ready.length} path=${EXECUTION_HANDOFF_PATH}`);
+  }catch(e){
+    console.log(`[HANDOFF][WARN] write failed: ${e.message}`);
+  }
 }
 function memoryNeedsPersist(previous, updated, now){
   if(!previous || !previous.updatedAt) return true;
@@ -1128,7 +1172,7 @@ function finalCopyability(p, early, robustness, executionEdgeScore, profitQualit
   const n=Number(p.memeTrades||0), positive=p.memePnl>0, pf=Number(p.memeProfitFactor);
   const timingCoverage=Number(early.auditCoverage||0), timingN=Number(early.count||0);
   const concentration=Number(p.topCoinPnlShare||0), temporal=Number(robustness.temporalStability||0);
-  // V6.0: 60 trades is the minimum full-copy sample, not a 100/100 score.
+  // V6.1: 60 trades is the minimum full-copy sample, not a 100/100 score.
   // Sample adequacy is deliberately saturating slowly and is capped below 100
   // until a substantially larger sample is observed.
   const sampleAdequacy=Math.round(Math.min(100, 25 + 75*(1-Math.exp(-n/150))));
@@ -1167,11 +1211,11 @@ async function analyzeMemeTrader(x,now){
   const p=memeProfile(x.historyFills?reconstruct(x.historyFills).trades:[]);
   const incomplete=Boolean(x.historyIncomplete||x.truncated);
   const zeroEarly={score:0,count:0,hit5:0,hit10:0,hit20:0,medianLead5:NaN,mfeMedian:NaN,maeMedian:NaN,pump:0,dump:0,repeatability:0,profitableRate:0,medianRealizedPct:NaN,medianPnl:NaN,avgPnl:NaN,grossProfit:0,grossLossAbs:0,profitFactor:0,medianExitCapturePct:NaN,medianPostExitMfePct:NaN,exitTimingScore:0,entryTimingScore:0};
-  // V6.0: NEVER short-circuit analysis because history is incomplete.
+  // V6.1: NEVER short-circuit analysis because history is incomplete.
   // Completeness only gates specialist/research eligibility; recent execution
   // behavior must still be audited from whatever valid closed Meme trades exist.
   const dominantPct=p.memeTrades>0?(Number(p.dominantMemeTrades||0)/p.memeTrades*100):0;
-  // V6.0: history completeness is an eligibility gate, NOT an analysis gate.
+  // V6.1: history completeness is an eligibility gate, NOT an analysis gate.
   // We must still run the execution/timing audit on recent valid Meme trades even
   // when the 7d fill history is truncated. This keeps data quality separate from
   // behavioral quality and prevents false Behavior=0 results.
@@ -1186,7 +1230,7 @@ async function analyzeMemeTrader(x,now){
   const researchEligible=dataQualityGate&&researchCriteria;
   const concentratedEligible=dataQualityGate&&concentratedCriteria;
   const multiResearchEligible=dataQualityGate&&multiResearchCriteria;
-  // V6.0: performance/execution audit remains independent from tier eligibility.
+  // V6.1: performance/execution audit remains independent from tier eligibility.
   const auditEligible=p.memeTrades>=MEME_AUDIT_MIN_TRADES;
   if(!auditEligible)return {...x,meme:p,early:zeroEarly,behavioralScore:behaviorScore({...x,meme:p,early:zeroEarly}),executionAudit:{requestedTrades:0,eligibleTrades:0,candleTrades:0,candleErrors:0,noCandleData:0,invalidTrades:0,coinAttempts:0,coinSuccesses:0,errors:[],status:'INSUFFICIENT_MEME_TRADES'},memeEligible:false,focusEligible:false,researchEligible:false,concentratedEligible:false,multiResearchEligible:false,dataQualityGate};
   const recent=[...p.memeTradesList].sort((a,b)=>b.openTime-a.openTime).slice(0,MEME_TRADE_SAMPLE);
@@ -1805,6 +1849,7 @@ async function main(){
   const memSummary=memorySummary(updatedMemory);
   funnel.memoryTracked=memSummary.total;
   console.log(`[MEMORY] recall=${memoryRecall.length} tracked=${memSummary.total} stages=${JSON.stringify(memSummary.counts)}`);
+  writeExecutionHandoff(watched,now);
 
   const classifierAudit=memeClassifierAudit([...classifierObserved.entries()].flatMap(([coin,trades])=>Array.from({length:trades},()=>({coin}))));
   const unknownImpact=unknownImpactSimulation(classifierAudit);
