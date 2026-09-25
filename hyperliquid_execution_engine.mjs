@@ -202,5 +202,5 @@ run().catch(async e=>{
   try{await writeJson(STATE_PATH,{at:Date.now(),mode:'BLOCKED',reason});}catch{}
   // A missing LiveReady candidate is an expected safety-gate outcome, not a workflow failure.
   // Keep real integration/API/code errors as non-zero exits.
-  process.exitCode=(reason==='NO_LIVEREADY_CANDIDATE'||reason==='NO_EXECUTION_HANDOFF')?0:1;
+  process.exitCode=(reason==='NO_LIVEREADY_CANDIDATE'||reason==='NO_EXECUTION_HANDOFF'||reason==='HANDOFF_EXPIRED')?0:1;
 });
