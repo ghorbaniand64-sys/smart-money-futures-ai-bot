@@ -1,4 +1,4 @@
-// Hyperliquid Meme Trader Hunter V6.0 - DISCOVERY + EVIDENCE - READ ONLY
+// Hyperliquid Meme Trader Hunter V6.1 - DISCOVERY + EVIDENCE - READ ONLY
 // Discovery-first architecture: broad recall + independent economic/behavior/risk evidence + current-position copyability.
 // NO ORDERS. NO PRIVATE KEYS.
 
@@ -310,8 +310,8 @@ function memeClassifierAudit(trades){
 }
 
 
-const fs = require('fs');
-const path = require('path');
+import fs from 'node:fs';
+import path from 'node:path';
 function readMemory(){
   try{
     if(!fs.existsSync(MEME_MEMORY_PATH)) return {version:1,updatedAt:0,addresses:{}};
