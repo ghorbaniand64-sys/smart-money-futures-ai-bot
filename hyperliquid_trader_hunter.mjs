@@ -1,8 +1,12 @@
+import fs from 'node:fs/promises';
 // Hyperliquid Meme Trader Hunter V6.0 - DISCOVERY + EVIDENCE - READ ONLY
 // Discovery-first architecture: broad recall + independent economic/behavior/risk evidence + current-position copyability.
 // NO ORDERS. NO PRIVATE KEYS.
 
 const API_URL = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
+const EXECUTION_HANDOFF_PATH = process.env.HYPERLIQUID_EXECUTION_HANDOFF_PATH || 'state/meme_execution_handoff.json';
+const EXECUTION_HANDOFF_TTL_MS = integer('HYPERLIQUID_EXECUTION_HANDOFF_TTL_MS', 600000);
+
 const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL || 'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';
 const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED ?? 'true').toLowerCase() === 'true';
 
@@ -1521,6 +1525,29 @@ function timingText(x){
   const diag=[a.candleErrors?`errors ${a.candleErrors}`:'',a.noCandleData?`noData ${a.noCandleData}`:'',a.invalidTrades?`invalid ${a.invalidTrades}`:''].filter(Boolean).join(' | ');
   return `⏱ Timing pending | ${reason} | ${valid}${diag?` | ${diag}`:''}`;
 }
+async function writeExecutionHandoff(candidates,status='READY'){
+  const now=Date.now();
+  const payload={
+    schemaVersion:'meme-execution-handoff-v1',
+    hunterVersion:'V6.1',
+    status,
+    createdAt:now,
+    expiresAt:now+EXECUTION_HANDOFF_TTL_MS,
+    ttlMs:EXECUTION_HANDOFF_TTL_MS,
+    candidates:Array.isArray(candidates)?candidates:[]
+  };
+  await fs.mkdir('state',{recursive:true});
+  const tmp=`${EXECUTION_HANDOFF_PATH}.tmp`;
+  await fs.writeFile(tmp,JSON.stringify(payload,null,2)+'\n','utf8');
+  await fs.rename(tmp,EXECUTION_HANDOFF_PATH);
+  console.log(`[HANDOFF] ${status} candidates=${payload.candidates.length} ttlMs=${EXECUTION_HANDOFF_TTL_MS} path=${EXECUTION_HANDOFF_PATH}`);
+  return payload;
+}
+
+async function invalidateExecutionHandoff(status='RUNNING'){
+  return writeExecutionHandoff([],status);
+}
+
 function compactTelegramReport({d,scanned,top,focusTop,concentratedTop,multiResearchTop,researchTop,singleTop,nearMisses}){
   const pool=[...top,...focusTop,...concentratedTop,...multiResearchTop,...researchTop,...singleTop,...nearMisses];
   const rows=[...new Map(pool.map(x=>[x.address,x])).values()].slice(0,5);
@@ -1552,6 +1579,7 @@ function compactTelegramReport({d,scanned,top,focusTop,concentratedTop,multiRese
 
 async function main(){
   const t0=Date.now();
+  await invalidateExecutionHandoff('RUNNING');
   const now=Date.now(), startTime=now-MEME_HISTORY_DAYS*86400000;
   const errors=[];
   console.log(`[MEME-HUNTER V6.0][START] mode=${MEME_MODE} watchlist=${MEME_WATCHLIST.length}`);
@@ -1715,7 +1743,26 @@ async function main(){
   if(exportRows.length){lines.push(`Exported: ${exportRows.length}/5`);exportRows.forEach((x,i)=>{const p=x.meme||{};const tier=x.memeEligible?'STRICT':x.focusEligible?'FOCUS':x.multiResearchEligible?'MULTI-RESEARCH':x.concentratedEligible?'CONCENTRATED':x.researchEligible?'RESEARCH':'NEAR-MISS';lines.push(`#${i+1} ${x.address} | tier=${tier} | exposure=${pct(p.exposurePct,1)} | memeTrades=${p.memeTrades||0} | unique=${p.uniqueCoins||0} | dominant=${p.dominantMeme||'n/a'} ${pct(p.dominantPct,1)}`);});lines.push(`HYPERLIQUID_MEME_WATCHLIST=${exportRows.map(x=>x.address).join(',')}`);}else lines.push('Exported: 0/5','HYPERLIQUID_MEME_WATCHLIST=');
   lines.push('','ℹ️ V6 validates realized Meme PnL/WR/PF, trade-level economic stability, bootstrap lower-mean stability, trade-PnL concentration, entry timing, exit capture and post-exit continuation.' ,'ℹ️ Early/exit behavior describes repeated historical execution; it does NOT establish advance knowledge of future pumps/dumps.','ℹ️ Watchlist contains the top five available research candidates; Copyability is shown separately from Meme specialization.','ℹ️ V6 keeps Strict Multi-Meme Specialist separate from Concentrated Meme behavior; neither research tier redefines strict eligibility.','ℹ️ Probable/unknown symbols never count toward specialist eligibility.','ℹ️ No orders are created by this worker.',`🕐 ${new Date().toISOString()}`);
   if(errors.length){lines.push('','🧪 SAMPLE ERRORS');errors.slice(0,8).forEach(e=>lines.push(`${short(e.address)} → ${e.cat} → ${String(e.message||'').slice(0,180)}`))}
-  console.log(`[MEME-HUNTER V6.0][DONE] discovered=${d.discovered} scanned=${sourceAddresses.length} specialists=${scanned.length} top=${top.length} errors=${errors.length} seconds=${((Date.now()-t0)/1000).toFixed(1)}`);
+  const handoffCandidates=top
+    .filter(x=>x?.executionReady===true && x?.copyClassification==='FULL-COPY-CANDIDATE' && x?.current?.coin && x?.current?.side && Number(x?.current?.entry)>0)
+    .slice(0,5)
+    .map(x=>({
+      address:String(x.address).toLowerCase(),
+      executionReady:true,
+      copyClassification:x.copyClassification,
+      executionReadinessScore:Number(x.executionReadinessScore||0),
+      economicEdgeScore:Number(x.economicEdgeScore||0),
+      position:{
+        coin:String(x.current.coin),
+        side:String(x.current.side).toUpperCase(),
+        entry:Number(x.current.entry),
+        mid:Number(x.current.mid),
+        distancePct:Number(x.current.distancePct),
+        isMeme:Boolean(x.current.isMeme)
+      }
+    }));
+  await writeExecutionHandoff(handoffCandidates,handoffCandidates.length?'READY':'BLOCKED');
+  console.log(`[MEME-HUNTER V6.1][DONE] discovered=${d.discovered} scanned=${sourceAddresses.length} specialists=${scanned.length} top=${top.length} handoff=${handoffCandidates.length} errors=${errors.length} seconds=${((Date.now()-t0)/1000).toFixed(1)}`);
   await telegram(compactTelegramReport({d,scanned,top,focusTop,concentratedTop,multiResearchTop,researchTop,singleTop,nearMisses}));
 }
 

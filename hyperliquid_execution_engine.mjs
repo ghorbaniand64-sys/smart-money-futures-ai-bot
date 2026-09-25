@@ -131,7 +131,10 @@ function planPrices(side,entry,atrValue){
 async function buildCandidate(handoff){
   if(!handoff || !Array.isArray(handoff.candidates))throw new Error('HANDOFF_INVALID');
   const now=Date.now();
-  if(!Number.isFinite(num(handoff.createdAt)) || now-num(handoff.createdAt)>MAX_HANDOFF_AGE_MS)throw new Error('HANDOFF_EXPIRED');
+  const createdAt=num(handoff.createdAt);
+  const ttl=Number.isFinite(num(handoff.ttlMs))&&num(handoff.ttlMs)>0?num(handoff.ttlMs):MAX_HANDOFF_AGE_MS;
+  if(!Number.isFinite(createdAt) || createdAt>now || now-createdAt>Math.min(ttl,MAX_HANDOFF_AGE_MS))throw new Error('HANDOFF_EXPIRED');
+  if(handoff.expiresAt!=null && Number.isFinite(num(handoff.expiresAt)) && now>num(handoff.expiresAt))throw new Error('HANDOFF_EXPIRED');
   const ready=handoff.candidates.filter(x=>x?.executionReady && validAddr(x.address));
   if(REQUIRE_HANDOFF_READY && !ready.length)throw new Error('NO_LIVEREADY_CANDIDATE');
   const src=ready[0];
@@ -202,5 +205,5 @@ run().catch(async e=>{
   try{await writeJson(STATE_PATH,{at:Date.now(),mode:'BLOCKED',reason});}catch{}
   // A missing LiveReady candidate is an expected safety-gate outcome, not a workflow failure.
   // Keep real integration/API/code errors as non-zero exits.
-  process.exitCode=(reason==='NO_LIVEREADY_CANDIDATE'||reason==='NO_EXECUTION_HANDOFF')?0:1;
+  process.exitCode=(reason==='NO_LIVEREADY_CANDIDATE'||reason==='NO_EXECUTION_HANDOFF'||reason==='HANDOFF_EXPIRED')?0:1;
 });
