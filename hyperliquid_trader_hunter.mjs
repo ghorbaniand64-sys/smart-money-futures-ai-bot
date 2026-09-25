@@ -43,7 +43,7 @@ const MIN_COPY_ACTIVE_DAYS = integer('HYPERLIQUID_HUNTER_MIN_COPY_ACTIVE_DAYS', 
 // This prevents a strong trader with a narrower Meme footprint from disappearing before
 // the current position is even inspected. Existing execution is untouched downstream.
 const V7_LIVE_ENRICH_POOL = integer('HYPERLIQUID_HUNTER_V7_LIVE_ENRICH_POOL', 30);
-const V7_COPY_TOP_N = integer('HYPERLIQUID_HUNTER_V7_COPY_TOP_N', MEME_TOP_N);
+const V7_COPY_TOP_N = integer('HYPERLIQUID_HUNTER_V7_COPY_TOP_N', 5);
 const V7_MAX_POSITION_AGE_HOURS = num('HYPERLIQUID_HUNTER_V7_MAX_POSITION_AGE_HOURS', 12);
 const V7_MIN_COPY_SCORE = num('HYPERLIQUID_HUNTER_V7_MIN_COPY_SCORE', 65);
 const V7_MIN_TIMING_SCORE = num('HYPERLIQUID_HUNTER_V7_MIN_TIMING_SCORE', 55);
