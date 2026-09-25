@@ -1,4 +1,6 @@
-// Hyperliquid Meme Hunter Execution Engine V8
+// Hyperliquid Meme Hunter Execution Engine V8-EXECUTION
+// Agent-wallet integration + revalidation + attached TP/SL protection.
+// Default remains DRY RUN / NO ORDERS.
 // Consumes V6.1 READ-ONLY handoff. Default: DRY RUN / NO ORDERS.
 // Live orders require BOTH EXECUTION_ENABLED=true and EXECUTION_DRY_RUN=false.
 
@@ -11,12 +13,15 @@ const INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/inf
 const HANDOFF_PATH = process.env.HYPERLIQUID_EXECUTION_HANDOFF_PATH || 'state/meme_execution_handoff.json';
 const EXECUTION_ENABLED = String(process.env.EXECUTION_ENABLED ?? 'false').toLowerCase() === 'true';
 const DRY_RUN = String(process.env.EXECUTION_DRY_RUN ?? 'true').toLowerCase() !== 'false';
-const ACCOUNT = String(process.env.HYPERLIQUID_ACCOUNT_ADDRESS || '').trim().toLowerCase();
-const AGENT_KEY = String(process.env.HYPERLIQUID_AGENT_PRIVATE_KEY || '').trim();
+const ACCOUNT = String(process.env.HL_MAIN_ACCOUNT_ADDRESS || process.env.HYPERLIQUID_ACCOUNT_ADDRESS || '').trim().toLowerCase();
+const AGENT_ADDRESS = String(process.env.HL_API_WALLET_ADDRESS || '').trim().toLowerCase();
+const AGENT_KEY = String(process.env.HL_API_WALLET_PRIVATE_KEY || process.env.HYPERLIQUID_AGENT_PRIVATE_KEY || '').trim();
 const MAX_HANDOFF_AGE_MS = Number(process.env.EXECUTION_HANDOFF_TTL_MS || 600000);
 const MAX_SOURCE_ENTRY_DISTANCE_PCT = Number(process.env.EXECUTION_MAX_SOURCE_ENTRY_DISTANCE_PCT || 0.5);
 const MAX_REVALIDATION_MOVE_PCT = Number(process.env.EXECUTION_MAX_REVALIDATION_MOVE_PCT || 0.35);
 const SLIPPAGE_BPS = Number(process.env.EXECUTION_SLIPPAGE_BPS || 50);
+const PROTECTION_VERIFY_TIMEOUT_MS = Number(process.env.EXECUTION_PROTECTION_VERIFY_TIMEOUT_MS || 15000);
+const PROTECTION_VERIFY_POLL_MS = Number(process.env.EXECUTION_PROTECTION_VERIFY_POLL_MS || 1000);
 const TARGET_NOTIONAL_USD = Number(process.env.EXECUTION_TARGET_NOTIONAL_USD || 10);
 const MAX_NOTIONAL_USD = Number(process.env.EXECUTION_MAX_NOTIONAL_USD || 25);
 const MAX_ACCOUNT_ALLOCATION_PCT = Number(process.env.EXECUTION_MAX_ACCOUNT_ALLOCATION_PCT || 1);
@@ -39,6 +44,7 @@ function clamp(x,a,b){ return Math.max(a,Math.min(b,x)); }
 function sideFromSize(szi){ return Number(szi)>0?'LONG':'SHORT'; }
 function fmt(x,d=4){ return Number.isFinite(Number(x))?Number(x).toFixed(d):'n/a'; }
 function pct(x,d=2){ return Number.isFinite(Number(x))?`${Number(x).toFixed(d)}%`:'n/a'; }
+function agentAddressFromKey(){ try{return privateKeyToAccount(AGENT_KEY).address.toLowerCase();}catch{return '';} }
 
 async function readJson(path){
   try {
@@ -185,15 +191,49 @@ async function run(){
     await writeJson(STATE_PATH,{at:Date.now(),mode:'DRY_RUN',plan:p});
     return;
   }
-  if(!AGENT_KEY)throw new Error('HYPERLIQUID_AGENT_PRIVATE_KEY_MISSING');
+  if(!AGENT_KEY)throw new Error('HL_API_WALLET_PRIVATE_KEY_MISSING');
+  if(!validAddr(ACCOUNT))throw new Error('HL_MAIN_ACCOUNT_ADDRESS_INVALID_OR_MISSING');
+  if(!validAddr(AGENT_ADDRESS))throw new Error('HL_API_WALLET_ADDRESS_INVALID_OR_MISSING');
+  const derivedAgent=agentAddressFromKey();
+  if(!derivedAgent || derivedAgent!==AGENT_ADDRESS)throw new Error('HL_API_WALLET_KEY_ADDRESS_MISMATCH');
   const transport=new hl.HttpTransport({isTestnet:!MAINNET,timeout:30000});
   const wallet=privateKeyToAccount(AGENT_KEY);
   const exchange=new hl.ExchangeClient({wallet,transport,signatureChainId:()=> '0xa4b1'});
-  const px=formatPrice(p.market.mid,p.asset.szDecimals);
+  const entryPx= p.side==='LONG' ? p.market.ask : p.market.bid;
+  const slip=SLIPPAGE_BPS/10000;
+  const executionPx=p.side==='LONG' ? entryPx*(1+slip) : entryPx*(1-slip);
+  const px=formatPrice(executionPx,p.asset.szDecimals);
   const size=formatSize(p.size,p.asset.szDecimals);
-  const result=await exchange.order({orders:[{a:p.asset.assetIndex,b:p.side==='LONG',p:px,s:size,r:false,t:{limit:{tif:'Ioc'}},c:p.cloid}],grouping:'na',expiresAfter:Date.now()+30000});
-  log(`ORDER RESPONSE ${JSON.stringify(result)}`);
-  await writeJson(STATE_PATH,{at:Date.now(),mode:'LIVE',plan:p,result});
+  const tpPx=formatPrice(p.tp,p.asset.szDecimals);
+  const slPx=formatPrice(p.sl,p.asset.szDecimals);
+  const closeBuy=p.side!=='LONG';
+  const orders=[
+    {a:p.asset.assetIndex,b:p.side==='LONG',p:px,s:size,r:false,t:{limit:{tif:'Ioc'}},c:p.cloid},
+    {a:p.asset.assetIndex,b:closeBuy,p:tpPx,s:size,r:true,t:{trigger:{isMarket:true,triggerPx:tpPx,tpsl:'tp'}}},
+    {a:p.asset.assetIndex,b:closeBuy,p:slPx,s:size,r:true,t:{trigger:{isMarket:true,triggerPx:slPx,tpsl:'sl'}}}
+  ];
+  const result=await exchange.order({orders,grouping:'normalTpsl',expiresAfter:Date.now()+30000});
+  log(`ORDER+PROTECTION RESPONSE ${JSON.stringify(result)}`);
+  const statuses=result?.response?.data?.statuses||[];
+  const entryStatus=statuses[0];
+  if(entryStatus?.error)throw new Error(`ENTRY_ORDER_ERROR:${entryStatus.error}`);
+  const filledSz=entryStatus?.filled?.totalSz ? Number(entryStatus.filled.totalSz) : 0;
+  if(!(filledSz>0))throw new Error('ENTRY_NOT_FILLED');
+  const deadline=Date.now()+PROTECTION_VERIFY_TIMEOUT_MS;
+  let verified=null;
+  while(Date.now()<=deadline){
+    const oo=await openOrders();
+    const protection=(Array.isArray(oo)?oo:[]).filter(o=>String(o?.coin||'')===p.coin && Boolean(o?.reduceOnly));
+    const hasTp=protection.some(o=>String(o?.triggerPx||'')===tpPx || String(o?.orderType||'').toLowerCase().includes('take'));
+    const hasSl=protection.some(o=>String(o?.triggerPx||'')===slPx || String(o?.orderType||'').toLowerCase().includes('stop'));
+    if(hasTp&&hasSl){verified={tp:true,sl:true,count:protection.length};break;}
+    await sleep(PROTECTION_VERIFY_POLL_MS);
+  }
+  if(!verified){
+    const cs=await currentPosition(ACCOUNT,p.coin);
+    throw new Error(cs?'PROTECTION_VERIFY_FAILED_POSITION_OPEN':'PROTECTION_VERIFY_FAILED');
+  }
+  await writeJson(STATE_PATH,{at:Date.now(),mode:'LIVE_PROTECTED',plan:p,result,protectionVerified:verified});
 }
 
 run().catch(async e=>{
@@ -202,5 +242,5 @@ run().catch(async e=>{
   try{await writeJson(STATE_PATH,{at:Date.now(),mode:'BLOCKED',reason});}catch{}
   // A missing LiveReady candidate is an expected safety-gate outcome, not a workflow failure.
   // Keep real integration/API/code errors as non-zero exits.
-  process.exitCode=(reason==='NO_LIVEREADY_CANDIDATE'||reason==='NO_EXECUTION_HANDOFF'||reason==='HANDOFF_EXPIRED')?0:1;
+  process.exitCode=(reason==='NO_LIVEREADY_CANDIDATE'||reason==='NO_EXECUTION_HANDOFF')?0:1;
 });
