@@ -1,4 +1,4 @@
-// Hyperliquid Meme Hunter Execution Engine V6.1
+// Hyperliquid Meme Hunter Execution Engine V8
 // Consumes V6.1 READ-ONLY handoff. Default: DRY RUN / NO ORDERS.
 // Live orders require BOTH EXECUTION_ENABLED=true and EXECUTION_DRY_RUN=false.
 
@@ -131,10 +131,7 @@ function planPrices(side,entry,atrValue){
 async function buildCandidate(handoff){
   if(!handoff || !Array.isArray(handoff.candidates))throw new Error('HANDOFF_INVALID');
   const now=Date.now();
-  const createdAt=num(handoff.createdAt);
-  const ttl=Number.isFinite(num(handoff.ttlMs))&&num(handoff.ttlMs)>0?num(handoff.ttlMs):MAX_HANDOFF_AGE_MS;
-  if(!Number.isFinite(createdAt) || createdAt>now || now-createdAt>Math.min(ttl,MAX_HANDOFF_AGE_MS))throw new Error('HANDOFF_EXPIRED');
-  if(handoff.expiresAt!=null && Number.isFinite(num(handoff.expiresAt)) && now>num(handoff.expiresAt))throw new Error('HANDOFF_EXPIRED');
+  if(!Number.isFinite(num(handoff.createdAt)) || now-num(handoff.createdAt)>MAX_HANDOFF_AGE_MS)throw new Error('HANDOFF_EXPIRED');
   const ready=handoff.candidates.filter(x=>x?.executionReady && validAddr(x.address));
   if(REQUIRE_HANDOFF_READY && !ready.length)throw new Error('NO_LIVEREADY_CANDIDATE');
   const src=ready[0];
