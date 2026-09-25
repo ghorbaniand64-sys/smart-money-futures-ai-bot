@@ -1,32 +1,20 @@
-HYPERLIQUID MEME HUNTER V8
+Hyperliquid Meme Hunter V8 - FIXED
 
-Purpose:
-- Read-only Meme trader discovery and promotion tracking.
-- No orders are created by the Hunter.
-- Full-Copy and execution gates remain strict.
+Worker filename: hyperliquid_trader_hunter.mjs
 
-V8 upgrades:
-1. Persistent cycle-to-cycle promotion memory:
-   state/meme_hunter_memory.json
-2. Promotion Track separates repeated high-quality research candidates from final Copy candidates.
-3. Promotion score uses economic edge, ProfitCopy, TimingCopy, RiskCopy, evidence, readiness and repeated-cycle stability.
-4. Promotion memory never relaxes any Full-Copy gate.
-5. Fresh execution handoff:
-   state/meme_execution_handoff.json
-   TTL default 600000 ms (10 minutes).
-6. Old handoff is invalidated at Hunter cycle start.
-7. Only executionReady=true AND FULL-COPY-CANDIDATE traders are eligible for handoff.
-8. Telegram now separates FINAL COPY CANDIDATES from PROMOTION TRACK / RESEARCH.
-9. Execution Engine V8 treats missing/expired/no-ready handoffs as safe blocks (exit 0), while real execution errors remain nonzero.
-
-Required worker filename:
-hyperliquid_trader_hunter.mjs
-
-Execution Engine filename:
-hyperliquid_execution_engine.mjs
-
-Default live execution remains unchanged: no live order unless the external execution flags explicitly enable it and all execution safety checks pass.
+FIX:
+- Restored the V8 execution-handoff writer that was referenced by main() but missing from the previous ZIP.
+- Restored V8 promotion-memory loader/updater and atomic JSON writer.
+- Handoff path: state/meme_execution_handoff.json
+- Promotion memory: state/meme_hunter_memory.json
+- Handoff TTL: 600000 ms (10 minutes)
+- Old handoff is invalidated at cycle start.
+- Only executionReady=true + FULL-COPY-CANDIDATE can enter handoff.
+- Research/Promotion tracking never relaxes hard copy gates.
+- Execution engine treats NO_EXECUTION_HANDOFF, HANDOFF_EXPIRED and NO_LIVEREADY_CANDIDATE as safe blocks.
+- READ-ONLY: no orders are created by the Hunter.
 
 Validation:
-- node --check passed for both JavaScript files.
-- Full runtime was not claimed because the build environment does not contain @nktkas/hyperliquid.
+- node --check hyperliquid_trader_hunter.mjs: PASS
+- node --check hyperliquid_execution_engine.mjs: PASS
+- Full API runtime was not executed in this build environment because @nktkas/hyperliquid is not installed here.

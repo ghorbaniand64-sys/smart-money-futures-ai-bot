@@ -1456,6 +1456,112 @@ function compactTelegramReport({d,scanned,top,promotionTop,cycle}){
   return header.join('\n');
 }
 
+
+async function writeJsonAtomic(path,obj){
+  const dir=path.includes('/')?path.slice(0,path.lastIndexOf('/')):'.';
+  await fs.mkdir(dir,{recursive:true});
+  const tmp=`${path}.tmp-${process.pid}`;
+  await fs.writeFile(tmp,JSON.stringify(obj,null,2)+'\n','utf8');
+  await fs.rename(tmp,path);
+}
+
+async function writeExecutionHandoff(candidates,status='READY'){
+  const now=Date.now();
+  const payload={
+    schemaVersion:'meme-execution-handoff-v2',
+    hunterVersion:V8_VERSION,
+    status,
+    createdAt:now,
+    expiresAt:now+EXECUTION_HANDOFF_TTL_MS,
+    ttlMs:EXECUTION_HANDOFF_TTL_MS,
+    candidates:Array.isArray(candidates)?candidates:[]
+  };
+  await writeJsonAtomic(EXECUTION_HANDOFF_PATH,payload);
+  console.log(`[HANDOFF] ${status} candidates=${payload.candidates.length} ttlMs=${EXECUTION_HANDOFF_TTL_MS} path=${EXECUTION_HANDOFF_PATH}`);
+  return payload;
+}
+
+async function loadPromotionMemory(){
+  try{
+    const raw=JSON.parse(await fs.readFile(PROMOTION_MEMORY_PATH,'utf8'));
+    if(!raw || typeof raw!=='object')throw new Error('INVALID_MEMORY');
+    raw.version=raw.version||'V8';
+    raw.cycles=Number(raw.cycles||0);
+    raw.updatedAt=Number(raw.updatedAt||0);
+    raw.traders=raw.traders&&typeof raw.traders==='object'?raw.traders:{};
+    return raw;
+  }catch(e){
+    if(e?.code!=='ENOENT')console.log(`[PROMOTION][WARN] memory reset: ${String(e.message||e)}`);
+    return {version:'V8',createdAt:Date.now(),updatedAt:0,cycles:0,traders:{}};
+  }
+}
+
+function updatePromotionRecord(memory,x,cycle){
+  if(!x?.address)return null;
+  const address=String(x.address).toLowerCase();
+  const p=x.meme||{};
+  const rec=memory.traders[address]||{address,firstSeenCycle:cycle,cycles:0,history:[]};
+  const snap={
+    cycle,
+    at:Date.now(),
+    classification:x.copyClassification||'BLOCKED',
+    economicEdge:Number(x.economicEdgeScore||0),
+    profitCopy:Number(x.profitCopyScore||0),
+    timingCopy:Number(x.timingCopyScore||0),
+    riskCopy:Number(x.riskCopyScore||0),
+    readiness:Number(x.executionReadinessScore||0),
+    evidence:Number(x.evidenceStrength||0),
+    memePnl:Number(p.memePnl||0),
+    pf:Number(p.memeProfitFactor||0),
+    trades:Number(p.memeTrades||0),
+    concentration:Number(p.topCoinPnlShare||0),
+    historyComplete:!Boolean(x.historyIncomplete||x.truncated),
+    blockReasons:Array.isArray(x.executionBlockReasons)?x.executionBlockReasons.slice(0,8):[]
+  };
+  rec.cycles=Number(rec.cycles||0)+1;
+  rec.lastSeenAt=snap.at;
+  rec.last=snap;
+  rec.history=Array.isArray(rec.history)?rec.history:[];
+  rec.history.push(snap);
+  if(rec.history.length>12)rec.history=rec.history.slice(-12);
+  const h=rec.history;
+  const avg=k=>h.length?h.reduce((a,z)=>a+Number(z[k]||0),0)/h.length:0;
+  const latest=snap;
+  const repeat=Math.min(100,h.length/Math.max(1,PROMOTION_MIN_CYCLES)*100);
+  const stability=k=>{
+    if(h.length<2)return 0;
+    const vals=h.slice(-Math.min(h.length,5)).map(z=>Number(z[k]||0));
+    const mean=vals.reduce((a,b)=>a+b,0)/vals.length;
+    if(mean<=0)return 0;
+    const mad=vals.reduce((a,b)=>a+Math.abs(b-mean),0)/vals.length;
+    return Math.max(0,Math.min(100,100-(mad/Math.max(1,mean))*100));
+  };
+  const promotionScore=Math.round(Math.max(0,Math.min(100,
+    .30*latest.economicEdge+.18*latest.profitCopy+.15*latest.timingCopy+.15*latest.riskCopy+.12*latest.readiness+.10*repeat
+  )));
+  rec.promotionScore=promotionScore;
+  rec.economicEdge=Math.round(latest.economicEdge);
+  rec.profitCopy=Math.round(latest.profitCopy);
+  rec.timingCopy=Math.round(latest.timingCopy);
+  rec.riskCopy=Math.round(latest.riskCopy);
+  rec.readiness=Math.round(latest.readiness);
+  rec.evidence=Math.round(latest.evidence);
+  rec.avgEconomicEdge=Math.round(avg('economicEdge'));
+  rec.avgTimingCopy=Math.round(avg('timingCopy'));
+  rec.avgRiskCopy=Math.round(avg('riskCopy'));
+  rec.stability=Math.round((stability('economicEdge')+stability('timingCopy')+stability('riskCopy'))/3);
+  rec.promotable=rec.cycles>=PROMOTION_MIN_CYCLES && latest.economicEdge>=MEME_ECONOMIC_EDGE_MIN && latest.profitCopy>=MEME_EXECUTION_MIN_PROFIT_COPY && latest.timingCopy>=MEME_EXECUTION_MIN_TIMING_COPY && latest.riskCopy>=MEME_EXECUTION_MIN_RISK_COPY;
+  rec.blockReasons=latest.blockReasons;
+  return rec;
+}
+
+function promotionLabel(r){
+  if(!r)return 'UNTRACKED';
+  if(r.promotable)return 'PROMOTION-READY';
+  if(Number(r.cycles||0)>=PROMOTION_MIN_CYCLES)return 'WATCH';
+  return 'NEW';
+}
+
 async function main(){
   const t0=Date.now();
   await writeExecutionHandoff([], 'RUNNING');
@@ -1465,7 +1571,7 @@ async function main(){
   const cycle=promotionMemory.cycles;
   const now=Date.now(), startTime=now-MEME_HISTORY_DAYS*86400000;
   const errors=[];
-  console.log(`[MEME-SCOUT V5.53][START] mode=${MEME_MODE} watchlist=${MEME_WATCHLIST.length}`);
+  console.log(`[MEME-HUNTER V8][START] mode=${MEME_MODE} watchlist=${MEME_WATCHLIST.length}`);
   let d;
   try{d=await discover()}catch(e){
     console.error(`[DISCOVERY][ERROR] ${e.message}`);
@@ -1587,7 +1693,7 @@ async function main(){
   const topUnknownForTrader=(classifierAudit.topUnclassified||[]).slice(0,MEME_UNKNOWN_AUDIT_TOP_N);
   const focusImpact=focusTop.map(x=>({...x,unknownImpact:traderUnknownImpact(x,topUnknownForTrader)}));
   const nearImpact=nearMisses.map(x=>({...x,unknownImpact:traderUnknownImpact(x,topUnknownForTrader)}));
-  const lines=['🟣 HYPERLIQUID MEME HUNTER V5.53','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`🎯 Mode: ${MEME_MODE==='watch'?'FIXED WATCHLIST':'SCOUT'}`,`🧪 Universe: ${universeAddresses.length} | This cycle: ${sourceAddresses.length}`,`⚡ Fast prefilter: ${funnel.prefilterScanned} → ${funnel.prefilterSelected} full-history | Coverage cycle ${cohort.slot+1}/${cohort.slots}`, `🧬 Strict meme specialists found: ${scanned.length}`,`🏆 Strict specialists: ${top.length}/${MEME_TOP_N}`,`🟠 Meme-focus candidates: ${focusTop.length}`,`🎯 Focus criteria: exposure>=${MEME_FOCUS_MIN_EXPOSURE}% | meme trades>=${MEME_FOCUS_MIN_TRADES} | unique memes>=${MEME_FOCUS_MIN_UNIQUE} | dominant<=${MEME_FOCUS_MAX_DOMINANT}%`,`⚡ History: ${MEME_HISTORY_DAYS}d | Early-move window: ${MEME_FORWARD_MIN}m | candle=${MEME_CANDLE_INTERVAL}`,`📌 STRICT criteria: exposure>=${MEME_MIN_EXPOSURE}% | meme trades>=${MEME_MIN_TRADES} | unique memes>=${MEME_MIN_UNIQUE}`
+  const lines=['🟣 HYPERLIQUID MEME HUNTER V8','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`🎯 Mode: ${MEME_MODE==='watch'?'FIXED WATCHLIST':'SCOUT'}`,`🧪 Universe: ${universeAddresses.length} | This cycle: ${sourceAddresses.length}`,`⚡ Fast prefilter: ${funnel.prefilterScanned} → ${funnel.prefilterSelected} full-history | Coverage cycle ${cohort.slot+1}/${cohort.slots}`, `🧬 Strict meme specialists found: ${scanned.length}`,`🏆 Strict specialists: ${top.length}/${MEME_TOP_N}`,`🟠 Meme-focus candidates: ${focusTop.length}`,`🎯 Focus criteria: exposure>=${MEME_FOCUS_MIN_EXPOSURE}% | meme trades>=${MEME_FOCUS_MIN_TRADES} | unique memes>=${MEME_FOCUS_MIN_UNIQUE} | dominant<=${MEME_FOCUS_MAX_DOMINANT}%`,`⚡ History: ${MEME_HISTORY_DAYS}d | Early-move window: ${MEME_FORWARD_MIN}m | candle=${MEME_CANDLE_INTERVAL}`,`📌 STRICT criteria: exposure>=${MEME_MIN_EXPOSURE}% | meme trades>=${MEME_MIN_TRADES} | unique memes>=${MEME_MIN_UNIQUE}`
   ,`🔴 Concentrated Meme: exposure>=${MEME_CONCENTRATED_MIN_EXPOSURE}% | meme trades>=${MEME_CONCENTRATED_MIN_TRADES} | dominant>=${MEME_CONCENTRATED_MIN_DOMINANT}% | unique>=${MEME_CONCENTRATED_MIN_UNIQUE}`
   ,`🟡 Multi-Meme Research: exposure>=${MEME_MULTI_RESEARCH_MIN_EXPOSURE}% | meme trades>=${MEME_MULTI_RESEARCH_MIN_TRADES} | unique>=${MEME_MULTI_RESEARCH_MIN_UNIQUE}`,'','🧪 MEME SPECIALIST FUNNEL',`Fast prefilter scanned: ${funnel.prefilterScanned}`,`Fast prefilter selected: ${funnel.prefilterSelected}`,`Prefilter model: CLOSED LIFECYCLE proxy first | raw fills secondary | exploration=${MEME_PREFILTER_EXPLORATION_SLOTS}`,`Prefilter errors/skips: ${prefilterErrors}`,`History usable: ${funnel.historyOK}`,`History truncated: ${funnel.historyTruncated}`,`History complete: ${funnel.historyOK} | completeness=${pct(funnel.historyOK/Math.max(1,funnel.historyOK+funnel.historyTruncated)*100,0)}`,`429-affected histories: ${funnel.history429}`,`Other incomplete histories: ${funnel.historyOtherIncomplete}`,`Closed trades >=${MEME_MIN_TRADES}: ${funnel.closedTradesEnough}`,`Meme trades >=${MEME_MIN_TRADES}: ${funnel.memeTradesPass}`,`Meme exposure >=${MEME_MIN_EXPOSURE}%: ${funnel.exposurePass}`,`Unique memes >=${MEME_MIN_UNIQUE}: ${funnel.uniquePass}`,`FINAL SPECIALISTS: ${funnel.specialists}`,'','🧬 MEME CLASSIFIER COVERAGE',`Known meme symbols: ${classifierAudit.knownMemeSymbols}`,`Observed symbols: ${classifierAudit.observedSymbols}`,`Confirmed meme symbols: ${classifierAudit.classifiedSymbols}`,`Probable meme symbols: ${classifierAudit.probableSymbols}`,`Explicit non-meme symbols: ${classifierAudit.nonMemeSymbols}`,`Unknown symbols: ${classifierAudit.unclassifiedSymbols}`,`Confirmed meme trades: ${classifierAudit.classifiedTradeCount}`,`Probable meme trades: ${classifierAudit.probableTradeCount}`,`Explicit non-meme trades: ${classifierAudit.nonMemeTradeCount}`,`Unknown trades: ${classifierAudit.unclassifiedTradeCount}`,`Classifier classified trade coverage: ${classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount}/${classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount+classifierAudit.unclassifiedTradeCount} (${pct((classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount)/Math.max(1,classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount+classifierAudit.unclassifiedTradeCount)*100,1)})`];
   if(classifierAudit.topClassified.length){lines.push('Confirmed:');classifierAudit.topClassified.slice(0,8).forEach((x,i)=>lines.push(`#${i+1} ${x.coin} — ${x.trades} trades`));}
