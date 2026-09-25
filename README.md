@@ -1,4 +1,4 @@
-# Hyperliquid Meme Trader Hunter V6.0
+# Hyperliquid Meme Trader Hunter V6.1.0
 
 READ-ONLY / NO ORDERS.
 
@@ -61,3 +61,22 @@ V6 should expose:
 - exact LiveReady block reasons
 
 A `Strict: 0` result is no longer treated as sufficient evidence that no good trader exists. The report must show the discovery funnel and research candidates so false negatives can be diagnosed.
+
+
+## V6.1 — Persistent Candidate Memory / Promotion Engine
+
+This version completes the final research architecture layer without changing the strict Meme Specialist thresholds. It persists a bounded candidate memory at `state/meme_hunter_memory.json` and recalls high-value addresses across rotating discovery cycles.
+
+### Memory stages
+- `OBSERVED`: seen with Meme activity but not enough evidence for tracking.
+- `TRACKED`: positive/evidential candidate worth retaining.
+- `SAMPLE_BUILDING`: positive economics with enough evidence to deliberately grow the sample.
+- `PROMOTION_READY`: strong economic + profit + timing + risk evidence, complete history, and concentration within the promotion ceiling.
+- `EXECUTION_CANDIDATE`: the existing LiveReady gate passed. This does not place an order.
+- `DEMOTED`: repeated weak economic/risk evidence; automatically cooled down from recall.
+
+Memory is a recall mechanism, not a replacement for the current-cycle gates. Every recalled address is re-audited from fresh Hyperliquid data. It cannot bypass history completeness, Meme classification, concentration, timing, risk, economic, or LiveReady gates.
+
+Persistence is intentionally bounded: at most 250 addresses and 30 days. GitHub Actions persists the state file only on the hourly persistence window or a material promotion/demotion stage change, avoiding a commit every five minutes.
+
+The worker remains READ-ONLY and contains no private keys or order submission.
