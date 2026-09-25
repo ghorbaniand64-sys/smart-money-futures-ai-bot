@@ -109,7 +109,7 @@ const MEME_TRADE_SAMPLE = integer('HYPERLIQUID_MEME_TRADE_SAMPLE', 60);
 const MEME_TIMING_SAMPLE_MAX = integer('HYPERLIQUID_MEME_TIMING_SAMPLE_MAX', 60);
 const MEME_MEMORY_PATH = process.env.HYPERLIQUID_MEME_MEMORY_PATH || 'state/meme_hunter_memory.json';
 const EXECUTION_HANDOFF_PATH = process.env.HYPERLIQUID_EXECUTION_HANDOFF_PATH || 'state/meme_execution_handoff.json';
-const EXECUTION_HANDOFF_TTL_MS = integer('EXECUTION_HANDOFF_TTL_MS', 90000);
+const EXECUTION_HANDOFF_TTL_MS = integer('EXECUTION_HANDOFF_TTL_MS', 600000);
 const MEME_MEMORY_MAX_ADDRESSES = integer('HYPERLIQUID_MEME_MEMORY_MAX_ADDRESSES', 250);
 const MEME_MEMORY_RECALL_SLOTS = integer('HYPERLIQUID_MEME_MEMORY_RECALL_SLOTS', 25);
 const MEME_MEMORY_RETENTION_DAYS = integer('HYPERLIQUID_MEME_MEMORY_RETENTION_DAYS', 30);
@@ -179,6 +179,22 @@ const MEME_PREFILTER_BETWEEN_MS = integer('HYPERLIQUID_MEME_PREFILTER_BETWEEN_MS
 const MEME_PREFILTER_SCAN_PER_CYCLE = integer('HYPERLIQUID_MEME_PREFILTER_SCAN_PER_CYCLE', 180);
 const MEME_PREFILTER_EXPLORATION_SLOTS = integer('HYPERLIQUID_MEME_PREFILTER_EXPLORATION_SLOTS', 6);
 const MEME_PREFILTER_BLIND_SLOTS = integer('HYPERLIQUID_MEME_PREFILTER_BLIND_SLOTS', 5);
+// V6.1 FINAL-QUALITY GATE: only economically credible Meme traders enter the
+// expensive candle/timing deep scan. Discovery/research lanes are kept out of
+// the execution-candidate pipeline; a trader must already show realized Meme
+// profitability, sufficient sample, positive per-trade economics and stable
+// concentration before timing/exit analysis is worth spending API calls on.
+const MEME_PREFILTER_MIN_CLOSED_TRADES = integer('HYPERLIQUID_MEME_PREFILTER_MIN_CLOSED_TRADES', 30);
+const MEME_PREFILTER_MIN_EXPOSURE = num('HYPERLIQUID_MEME_PREFILTER_MIN_EXPOSURE_PCT', 65);
+const MEME_PREFILTER_MIN_UNIQUE = integer('HYPERLIQUID_MEME_PREFILTER_MIN_UNIQUE_COINS', 3);
+const MEME_PREFILTER_MIN_PNL = num('HYPERLIQUID_MEME_PREFILTER_MIN_PNL', 0);
+const MEME_PREFILTER_MIN_PF = num('HYPERLIQUID_MEME_PREFILTER_MIN_PF', 1.30);
+const MEME_PREFILTER_MIN_AVG_PNL = num('HYPERLIQUID_MEME_PREFILTER_MIN_AVG_PNL', 0);
+const MEME_PREFILTER_MIN_MEDIAN_PNL = num('HYPERLIQUID_MEME_PREFILTER_MIN_MEDIAN_PNL', 0);
+const MEME_PREFILTER_MIN_BOOTSTRAP_LOWER_MEAN = num('HYPERLIQUID_MEME_PREFILTER_MIN_BOOTSTRAP_LOWER_MEAN', 0);
+const MEME_PREFILTER_MAX_TRADE_CONCENTRATION = num('HYPERLIQUID_MEME_PREFILTER_MAX_TRADE_CONCENTRATION_PCT', 85);
+const MEME_PREFILTER_MIN_ECONOMIC_SCORE = num('HYPERLIQUID_MEME_PREFILTER_MIN_ECONOMIC_SCORE', 60);
+const MEME_PREFILTER_MIN_SAMPLE_SCORE = num('HYPERLIQUID_MEME_PREFILTER_MIN_SAMPLE_SCORE', 50);
 const MEME_PREFILTER_ECONOMIC_WEIGHT = num('HYPERLIQUID_MEME_PREFILTER_ECONOMIC_WEIGHT', 0.25);
 const MEME_PREFILTER_ACTIVITY_WEIGHT = num('HYPERLIQUID_MEME_PREFILTER_ACTIVITY_WEIGHT', 0.20);
 const MEME_PREFILTER_EXPOSURE_WEIGHT = num('HYPERLIQUID_MEME_PREFILTER_EXPOSURE_WEIGHT', 0.15);
@@ -644,9 +660,24 @@ function recentMemeProfile(fills){
   )));
   return {memeTrades:closedMeme.length,totalTrades:closedTotal,exposurePct:closedExposure,uniqueCoins:closedUnique,score,
     economicScore:econ.score,economicPnl:econ.pnl,economicPf:econ.pf,economicMean:econ.mean,economicMedian:econ.median,
-    bootstrapScore:econ.bootstrap,tradeConcentrationScore:econ.tradeConcentration,
+    economicAvg:econ.mean,economicMedianPnl:econ.median,economicWr:econ.wr,
+    bootstrapScore:econ.bootstrap,bootstrapLowerMean:econ.bootstrapLowerMean,tradeConcentrationScore:econ.tradeConcentration,
     rawMemeTrades:rawMeme.length,rawTotalTrades:rawTotal,rawExposurePct:rawExposure,rawUniqueCoins:rawUnique,
     closedMemeTrades:closedMeme.length,recentClosedTrades:closedTotal};
+}
+function prefilterHardEligible(profile){
+  const p=profile||{};
+  return Number(p.memeTrades||0)>=MEME_PREFILTER_MIN_CLOSED_TRADES &&
+    Number(p.exposurePct||0)>=MEME_PREFILTER_MIN_EXPOSURE &&
+    Number(p.uniqueCoins||0)>=MEME_PREFILTER_MIN_UNIQUE &&
+    Number(p.economicPnl||0)>MEME_PREFILTER_MIN_PNL &&
+    Number(p.economicPf||0)>=MEME_PREFILTER_MIN_PF &&
+    Number(p.economicMean||0)>MEME_PREFILTER_MIN_AVG_PNL &&
+    Number(p.economicMedianPnl||0)>MEME_PREFILTER_MIN_MEDIAN_PNL &&
+    Number(p.bootstrapLowerMean||0)>MEME_PREFILTER_MIN_BOOTSTRAP_LOWER_MEAN &&
+    Number(p.tradeConcentrationScore||0)>=100-MEME_PREFILTER_MAX_TRADE_CONCENTRATION &&
+    Number(p.economicScore||0)>=MEME_PREFILTER_MIN_ECONOMIC_SCORE &&
+    Number(p.score||0)>=MEME_PREFILTER_MIN_SAMPLE_SCORE;
 }
 async function getRecentFills(user){
   const b=await info({type:'userFills',user,aggregateByTime:false},`recent fills ${short(user)}`,MEME_PREFILTER_RETRIES);
@@ -678,25 +709,21 @@ async function fastMemePrefilter(addresses){
   const byClosedCount=[...sorted].sort((a,b)=>b.profile.memeTrades-a.profile.memeTrades||b.profile.economicScore-a.profile.economicScore);
   const byBreadth=[...sorted].sort((a,b)=>b.profile.uniqueCoins-a.profile.uniqueCoins||b.profile.economicScore-a.profile.economicScore);
   const byRawExposure=[...sorted].sort((a,b)=>b.profile.rawExposurePct-a.profile.rawExposurePct||b.profile.rawMemeTrades-a.profile.rawMemeTrades);
-  const target=Math.max(8,Math.min(MEME_PREFILTER_TARGET,sorted.length));
-  const out=[]; const seen=new Set();
-  const add=(list,n)=>{for(const x of list){if(out.length>=target||n<=0)break;if(seen.has(x.address))continue;seen.add(x.address);out.push(x);n--}};
-  // V6 discovery mix: economic edge is a first-class lane, not an afterthought.
-  add(byEconomic,Math.ceil(target*.25));
-  add(byScore,Math.ceil(target*.20));
-  add(byClosedExposure,Math.ceil(target*.15));
-  add(byClosedCount,Math.ceil(target*.10));
-  add(byBreadth,Math.ceil(target*.10));
-  add(byRawExposure,Math.ceil(target*.05));
-  const exploration=sorted.filter(x=>x.profile.memeTrades===0 || x.profile.exposurePct<5)
-    .sort((a,b)=>b.profile.rawMemeTrades-a.profile.rawMemeTrades||b.profile.economicScore-a.profile.economicScore||a.address.localeCompare(b.address));
-  add(exploration,Math.min(MEME_PREFILTER_EXPLORATION_SLOTS,target-out.length));
-  // Blind recall lane: deterministic evenly spaced addresses from the whole screened set.
-  const blind=[]; const step=Math.max(1,Math.floor(sorted.length/Math.max(1,MEME_PREFILTER_BLIND_SLOTS)));
-  for(let i=Math.floor(step/2);i<sorted.length&&blind.length<MEME_PREFILTER_BLIND_SLOTS;i+=step)blind.push(sorted[i]);
-  add(blind,MEME_PREFILTER_BLIND_SLOTS);
-  add(byScore,target);
-  return {rows,selected:out.slice(0,target),errors};
+  // HARD ECONOMIC PREFILTER: no exploration/blind/research fallback is allowed
+  // into the deep timing scan. Those lanes can be useful for diagnostics, but
+  // they are exactly what previously allowed negative/weak Meme traders into the
+  // five-candidate report. Deep scan is reserved for economically credible traders.
+  const qualified=sorted.filter(x=>prefilterHardEligible(x.profile));
+  const byQualified=[...qualified].sort((a,b)=>
+    b.profile.economicScore-a.profile.economicScore ||
+    b.profile.economicPnl-a.profile.economicPnl ||
+    b.profile.economicPf-a.profile.economicPf ||
+    b.profile.memeTrades-a.profile.memeTrades ||
+    b.profile.exposurePct-a.profile.exposurePct
+  );
+  const target=Math.min(MEME_PREFILTER_TARGET,qualified.length);
+  const out=byQualified.slice(0,target);
+  return {rows,selected:out,errors,qualifiedCount:qualified.length,qualifiedRows:byQualified};
 }
 async function getFills(user,start,end){
   let cursor=start,pages=0;const map=new Map();
@@ -940,7 +967,7 @@ function economicProxyFromClosed(closed){
   const pfScore=pf===Infinity?100:Math.min(100,Math.max(0,pf/2*100));
   const meanScore=mean>0?100:0, medScore=med>0?100:0, pnlScore=pnl>0?100:0;
   const score=Math.round(Math.max(0,Math.min(100,.25*pfScore+.20*meanScore+.15*medScore+.15*pnlScore+.15*boot.score+.10*conc.score)));
-  return {score,pnl,pf,mean,median:med,wr,tradeConcentration:conc.score,bootstrap:boot.score};
+  return {score,pnl,pf,mean,median:med,wr,tradeConcentration:conc.score,tradeConcentrationGrossShare:conc.top10GrossShare,bootstrap:boot.score,bootstrapLowerMean:boot.lowerMean,bootstrapLowerPositiveRate:boot.lowerPositiveRate};
 }
 function memeProfile(trades){
   const meme=trades.filter(t=>isMemeCoin(t.coin));
@@ -1694,8 +1721,9 @@ function timingText(x){
   return `⏱ Timing pending | ${reason} | ${valid}${diag?` | ${diag}`:''}`;
 }
 function compactTelegramReport({d,scanned,top,focusTop,concentratedTop,multiResearchTop,researchTop,singleTop,nearMisses,memory}){
-  const pool=[...top,...focusTop,...concentratedTop,...multiResearchTop,...researchTop,...singleTop,...nearMisses];
-  const rows=[...new Map(pool.map(x=>[x.address,x])).values()].slice(0,5);
+  // Telegram FINAL 5 is strictly the post-deep-scan qualified set. Never mix
+  // research/focus/near-miss lanes into the execution-candidate report.
+  const rows=top.slice(0,MEME_TOP_N);
   const header=['🟣 HYPERLIQUID MEME HUNTER V6.1','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🎯 Candidates: ${rows.length} | Strict: ${top.length}`];
   if(!rows.length){header.push('','⚪ No behavioral Meme candidate with sufficient confirmed Meme trade history.');return header.join('\n')}
   rows.forEach((x,i)=>{
@@ -1768,11 +1796,11 @@ async function main(){
     funnel.prefilterScanned=sourceAddresses.length;
     funnel.prefilterSelected=pf.selected.length;
     prefilterErrors=pf.errors;
-    funnel.prefilterEconomicLane=pf.rows.filter(x=>Number(x.profile?.economicScore||0)>=60).length;
+    funnel.prefilterEconomicLane=pf.qualifiedCount||0;
     funnel.prefilterZeroMeme=pf.rows.filter(x=>Number(x.profile?.memeTrades||0)===0).length;
-    funnel.prefilterBlindLane=Math.min(MEME_PREFILTER_BLIND_SLOTS,pf.selected.length);
-    fullHistoryAddresses=[...new Set([...pf.selected.map(x=>x.address),...memoryRecall])].slice(0,MEME_PREFILTER_TARGET+MEME_MEMORY_RECALL_SLOTS);
-    console.log(`[PREFILTER][DONE] ${sourceAddresses.length} -> ${fullHistoryAddresses.length} selected errors=${pf.errors} | selection=closed-lifecycle-first+exploration`);
+    funnel.prefilterBlindLane=0;
+    fullHistoryAddresses=pf.selected.map(x=>x.address);
+    console.log(`[PREFILTER][DONE] ${sourceAddresses.length} -> ${fullHistoryAddresses.length} HARD-QUALIFIED errors=${pf.errors} | economic+specialist gate before deep scan`);
   }else{
     funnel.prefilterScanned=sourceAddresses.length;
     funnel.prefilterSelected=sourceAddresses.length;
@@ -1814,8 +1842,18 @@ async function main(){
     }catch(e){errors.push({address,cat:category(e),message:String(e.message||e)})}
     if(i+1<fullHistoryAddresses.length)await sleep(MEME_FULL_BETWEEN_MS);
   }
-  scanned.sort((a,b)=>(b.copyabilityScore||0)-(a.copyabilityScore||0)||(b.profitQualityScore||0)-(a.profitQualityScore||0)||(b.executionEdgeScore||0)-(a.executionEdgeScore||0)||((b.meme?.memePnl||0)-(a.meme?.memePnl||0))||rankStat(a,b));
-  const top=scanned.slice(0,MEME_TOP_N);
+  // FINAL 5 = only traders that survived the economic hard gate AND the deep
+  // timing/exit/risk/evidence gates. Research/Focus/Near-Miss candidates are
+  // never mixed into the execution-candidate list.
+  const finalEligible=scanned.filter(x=>x.executionReady && x.copyClassification==='FULL-COPY-CANDIDATE');
+  finalEligible.sort((a,b)=>
+    (b.executionReadinessScore||0)-(a.executionReadinessScore||0) ||
+    (b.economicEdgeScore||0)-(a.economicEdgeScore||0) ||
+    (b.timingCopyScore||0)-(a.timingCopyScore||0) ||
+    (b.profitCopyScore||0)-(a.profitCopyScore||0) ||
+    (b.meme?.memePnl||0)-(a.meme?.memePnl||0) || rankStat(a,b)
+  );
+  const top=finalEligible.slice(0,MEME_TOP_N);
   const heavyTop=[...new Map(memeHeavy.map(x=>[x.address,x])).values()].sort((a,b)=>(b.meme?.exposurePct||0)-(a.meme?.exposurePct||0)||(b.meme?.memeTrades||0)-(a.meme?.memeTrades||0)||(b.meme?.uniqueCoins||0)-(a.meme?.uniqueCoins||0)).slice(0,MEME_TOP_N);
   const singleTop=[...new Map(singleMemeHeavy.map(x=>[x.address,x])).values()].sort((a,b)=>(b.meme?.exposurePct||0)-(a.meme?.exposurePct||0)||(b.meme?.memeTrades||0)-(a.meme?.memeTrades||0)).slice(0,MEME_TOP_N);
   const focusTop=[...new Map(memeFocus.map(x=>[x.address,x])).values()].sort((a,b)=>(b.behavioralScore||0)-(a.behavioralScore||0)||(b.memeFocusScore||0)-(a.memeFocusScore||0)||(b.meme?.exposurePct||0)-(a.meme?.exposurePct||0)||(b.meme?.memeTrades||0)-(a.meme?.memeTrades||0)).slice(0,MEME_FOCUS_TOP_N);
@@ -1887,8 +1925,7 @@ async function main(){
     if(c)lines.push(`📍 Current: ${c.coin} | ${c.side} | meme=${c.isMeme?'YES':'NO'} | entry=${fmt(c.entry)} | now=${fmt(c.mid)} | dist=${pct(c.distancePct,2)}`);else lines.push('📍 Current position: NONE');
   });
   lines.push('','📌 WATCHLIST EXPORT — TOP 5 BEHAVIORAL CANDIDATES');
-  const watchPool=[...top,...focusTop,...multiResearchTop,...concentratedTop,...researchTop,...singleTop,...nearMisses];
-  const exportRows=[...new Map(watchPool.map(x=>[x.address,x])).values()].slice(0,5);
+  const exportRows=top.slice(0,MEME_TOP_N);
   if(exportRows.length){lines.push(`Exported: ${exportRows.length}/5`);exportRows.forEach((x,i)=>{const p=x.meme||{};const tier=x.memeEligible?'STRICT':x.focusEligible?'FOCUS':x.multiResearchEligible?'MULTI-RESEARCH':x.concentratedEligible?'CONCENTRATED':x.researchEligible?'RESEARCH':'NEAR-MISS';lines.push(`#${i+1} ${x.address} | tier=${tier} | exposure=${pct(p.exposurePct,1)} | memeTrades=${p.memeTrades||0} | unique=${p.uniqueCoins||0} | dominant=${p.dominantMeme||'n/a'} ${pct(p.dominantPct,1)}`);});lines.push(`HYPERLIQUID_MEME_WATCHLIST=${exportRows.map(x=>x.address).join(',')}`);}else lines.push('Exported: 0/5','HYPERLIQUID_MEME_WATCHLIST=');
   lines.push('','🧠 Candidate Memory: SAMPLE_BUILDING/PROMOTION_READY/EXECUTION_CANDIDATE tracks persist across cycles; DEMOTED candidates are cooled down and not recalled automatically.','ℹ️ V6.1 validates realized Meme PnL/WR/PF, trade-level economic stability, bootstrap lower-mean stability, trade-PnL concentration, entry timing, exit capture and post-exit continuation.' ,'ℹ️ Early/exit behavior describes repeated historical execution; it does NOT establish advance knowledge of future pumps/dumps.','ℹ️ Watchlist contains the top five available research candidates; Copyability is shown separately from Meme specialization.','ℹ️ V6 keeps Strict Multi-Meme Specialist separate from Concentrated Meme behavior; neither research tier redefines strict eligibility.','ℹ️ Probable/unknown symbols never count toward specialist eligibility.','ℹ️ No orders are created by this worker.',`🕐 ${new Date().toISOString()}`);
   if(errors.length){lines.push('','🧪 SAMPLE ERRORS');errors.slice(0,8).forEach(e=>lines.push(`${short(e.address)} → ${e.cat} → ${String(e.message||'').slice(0,180)}`))}
