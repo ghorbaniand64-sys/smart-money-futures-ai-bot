@@ -1,4 +1,4 @@
-// Hyperliquid Meme Hunter Execution Engine V8
+// Hyperliquid Meme Hunter Execution Engine V6.1
 // Consumes V6.1 READ-ONLY handoff. Default: DRY RUN / NO ORDERS.
 // Live orders require BOTH EXECUTION_ENABLED=true and EXECUTION_DRY_RUN=false.
 
@@ -13,7 +13,7 @@ const EXECUTION_ENABLED = String(process.env.EXECUTION_ENABLED ?? 'false').toLow
 const DRY_RUN = String(process.env.EXECUTION_DRY_RUN ?? 'true').toLowerCase() !== 'false';
 const ACCOUNT = String(process.env.HYPERLIQUID_ACCOUNT_ADDRESS || '').trim().toLowerCase();
 const AGENT_KEY = String(process.env.HYPERLIQUID_AGENT_PRIVATE_KEY || '').trim();
-const MAX_HANDOFF_AGE_MS = Number(process.env.EXECUTION_HANDOFF_TTL_MS || 600000);
+const MAX_HANDOFF_AGE_MS = Number(process.env.EXECUTION_HANDOFF_TTL_MS || 90000);
 const MAX_SOURCE_ENTRY_DISTANCE_PCT = Number(process.env.EXECUTION_MAX_SOURCE_ENTRY_DISTANCE_PCT || 0.5);
 const MAX_REVALIDATION_MOVE_PCT = Number(process.env.EXECUTION_MAX_REVALIDATION_MOVE_PCT || 0.35);
 const SLIPPAGE_BPS = Number(process.env.EXECUTION_SLIPPAGE_BPS || 50);
@@ -202,5 +202,5 @@ run().catch(async e=>{
   try{await writeJson(STATE_PATH,{at:Date.now(),mode:'BLOCKED',reason});}catch{}
   // A missing LiveReady candidate is an expected safety-gate outcome, not a workflow failure.
   // Keep real integration/API/code errors as non-zero exits.
-  process.exitCode=(reason==='NO_LIVEREADY_CANDIDATE'||reason==='NO_EXECUTION_HANDOFF'||reason==='HANDOFF_EXPIRED')?0:1;
+  process.exitCode=(reason==='NO_LIVEREADY_CANDIDATE'||reason==='NO_EXECUTION_HANDOFF')?0:1;
 });

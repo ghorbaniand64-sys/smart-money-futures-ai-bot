@@ -9,7 +9,7 @@ const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL || 'https://s
 const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED ?? 'true').toLowerCase() === 'true';
 
 // V8 persistent promotion / execution bridge. Research memory never weakens hard gates.
-const V8_VERSION='V8.4.1';
+const V8_VERSION='V8.4.2';
 const PROMOTION_MEMORY_PATH=process.env.HYPERLIQUID_MEME_PROMOTION_MEMORY_PATH||'state/meme_hunter_memory.json';
 const EXECUTION_HANDOFF_PATH=process.env.HYPERLIQUID_EXECUTION_HANDOFF_PATH||'state/meme_execution_handoff.json';
 const EXECUTION_HANDOFF_TTL_MS=integer('HYPERLIQUID_EXECUTION_HANDOFF_TTL_MS',600000);
@@ -1483,7 +1483,7 @@ function compactTelegramReport({d,scanned,top,promotionTop,observationCount,cycl
   top.slice(0,5).forEach((x,i)=>{const p=x.meme||{},e=x.early||{};header.push('',`#${i+1} ${x.address}`,`🏷️ ${tierOf(x)} | ${x.historyIncomplete?'⚠️ HISTORY INCOMPLETE':'✅ HISTORY COMPLETE'}`,`💰 Meme ${money(p.memePnl)} | PF ${p.memeProfitFactor===Infinity?'∞':fmt(p.memeProfitFactor,2)} | ${p.memeTrades||0} trades | WR ${pct(p.memeWinRate,0)}`,`🎯 Econ ${x.economicEdgeScore??'n/a'} | ProfitCopy ${x.profitCopyScore??'n/a'} | Timing ${x.timingCopyScore??'n/a'} | Risk ${x.riskCopyScore??'n/a'}`,`🛡️ Ready ${x.executionReadinessScore??'n/a'} ${x.executionReady?'🟢 YES':'🔴 NO'} | Class ${x.copyClassification||'BLOCKED'}`,`🛑 Block: ${(x.executionBlockReasons||[]).slice(0,4).join(', ')||'none'}`,`📉 DD ${money(p.maxDrawdown)} | R/DD ${p.returnToDrawdown===Infinity?'∞':fmt(p.returnToDrawdown,2)} | Concentration ${pct(p.topCoinPnlShare,0)}`,`🚀 Timing +1/+2/+5 ${pct(e.hit1,0)}/${pct(e.hit2,0)}/${pct(e.hit5,0)} | EntryQ ${e.entryQualityScore||0} | ExitQ ${e.exitQualityScore||0}`)});
   header.push('','⭐ PROMOTION TRACK');
   if(promotionTop.length){promotionTop.slice(0,5).forEach((x,i)=>{const r=x.promotionRecord||{};header.push(`#${i+1} ${x.address} | ${promotionLabel(r)} | score ${r.promotionScore||0} | cycles ${r.cycles||0}`,`   Econ ${r.economicEdge||0} | Profit ${r.profitCopy||0} | Timing ${r.timingCopy||0} | Risk ${r.riskCopy||0} | Ready ${r.readiness||0}`,promotionEvidenceLine(x,r),`   ${promotionGateLine(r)}`,`   NEXT: ${r.nextSteps||promotionNextSteps(r)} | Δ ${r.delta||promotionDelta(r)}`)});}else header.push('No promotion-track trader yet.');
-  header.push('','🟢 EXECUTION HANDOFF (READ-ONLY)',top.filter(x=>x.executionReady).length?'A fresh handoff was written only for FULL-COPY-CANDIDATE traders.':'No trader passed the complete live-execution gate in this cycle.','ℹ️ Promotion memory tracks repeated evidence across cycles; it never relaxes Full-Copy or execution gates.','ℹ️ PnL = realized closed Meme trades. Timing = historical execution behavior, not prediction.','ℹ️ V8.2 remains READ-ONLY. No order is created by this worker.');
+  header.push('','🟢 EXECUTION HANDOFF (READ-ONLY)',top.filter(x=>x.executionReady).length?'A fresh handoff was written only for FULL-COPY-CANDIDATE traders.':'No trader passed the complete live-execution gate in this cycle.','ℹ️ Promotion memory tracks repeated evidence across cycles; it never relaxes Full-Copy or execution gates.','ℹ️ PnL = realized closed Meme trades. Timing = historical execution behavior, not prediction.',`ℹ️ ${V8_VERSION} remains READ-ONLY. No order is created by this worker.`);
   return header.join('\n');
 }
 
@@ -1632,6 +1632,7 @@ async function main(){
   console.log(`[COHORT] cycle=${cohort.slot+1}/${cohort.slots} scanned=${sourceAddresses.length} coverage=${cohort.coverage}`);
   const scanned=[];
   const nearMisses=[];
+  const analyzedCandidates=[];
   const memeHeavy=[];
   const singleMemeHeavy=[];
   const memeResearch=[];
@@ -1677,6 +1678,7 @@ async function main(){
       if(m.closedTrades<Math.max(1,Math.min(MEME_MIN_TRADES,3))) continue;
       const x={address,metrics:m,safety:sg,truncated:f.truncated,historyIncomplete:f.truncated,historyIncompleteReason:f.incompleteReason||null,history429:f.rateLimitAffected,historyPages:f.pages,historyFills:f.fills,qualityScore:Math.round(qualityScore(m))};
       const y=await analyzeMemeTrader(x,now);
+      analyzedCandidates.push(y);
       const reconstructedTrades=reconstruct(f.fills).trades;
       for(const t of reconstructedTrades){
         const c=normalizeMemeSymbol(t?.coin);
@@ -1702,10 +1704,11 @@ async function main(){
   }
   scanned.sort((a,b)=>(b.copyabilityScore||0)-(a.copyabilityScore||0)||(b.profitQualityScore||0)-(a.profitQualityScore||0)||(b.executionEdgeScore||0)-(a.executionEdgeScore||0)||((b.meme?.memePnl||0)-(a.meme?.memePnl||0))||rankStat(a,b));
   const top=scanned.slice(0,MEME_TOP_N);
-  const allResearch=[...new Map([...scanned,...memeFocus,...memeResearch,...concentratedMeme,...multiMemeResearch,...singleMemeHeavy,...nearMisses].map(x=>[x.address,x])).values()];
-  // V8.2: Promotion Track is evidence-backed only. Zero-evidence/zero-signal
-  // observations stay out of the promotion ranking and never receive an
-  // artificial score or a misleading "Block: none" line.
+  const allResearch=[...new Map(analyzedCandidates.map(x=>[x.address,x])).values()];
+  // V8.4.2: Promotion is built from ALL analyzed traders, not only the five
+  // near-misses or tiered subsets. Strict specialists are excluded to avoid
+  // duplicate display; evidence-backed non-strict traders remain promotable
+  // research candidates. Zero-evidence observations stay excluded.
   const promotionResearch=allResearch.filter(x=>!x.memeEligible).filter(promotionEvidenceBacked);
   const promotionRecords=[];
   for(const x of promotionResearch){ const rec=updatePromotionRecord(promotionMemory,x,cycle); if(rec)promotionRecords.push({...x,promotionRecord:rec,promotionLabel:promotionLabel(rec)}); }
