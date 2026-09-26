@@ -1,30 +1,17 @@
-Hyperliquid Meme Hunter V8.2
-READ-ONLY / NO ORDERS
+HYPERLIQUID MEME HUNTER V8.3
 
-Exact worker filename:
+READ-ONLY specialist hunter. No orders are created by the worker.
+
+Required worker filename:
 hyperliquid_trader_hunter.mjs
 
-V8.2 changes:
-- Keeps all Full-Copy / execution gates hard; promotion never relaxes them.
-- Persists promotion records correctly into state/meme_hunter_memory.json.
-- Adds explicit NEXT actions to the Telegram Promotion Track, derived from actual block reasons.
-- Adds cycle-to-cycle score delta so repeated evidence is visible (baseline/stable or Econ/Timing/Risk/Ready changes).
-- Keeps promotion labels NEW -> WATCH -> PROMOTION-READY based on repeated evidence and hard criteria.
-- Fresh execution handoff remains TTL 600000 ms and only receives execution-ready candidates.
-- RUNNING/empty handoff is written at cycle start so stale handoffs cannot be consumed.
-- Execution engine remains read-only by default / dry-run protected.
+V8.3 changes from V8.2:
+- Keeps strict Full-Copy and execution gates unchanged.
+- Promotion Track remains evidence-backed only; zero-evidence observations are excluded.
+- Promotion entries now expose MemeTrades, unique Meme count, dominant/top-coin concentration, realized Meme PnL and PF.
+- Promotion Gate line makes the current blockers explicit without replacing the hard execution gate.
+- Execution handoff now carries a diagnostic copyPlan (entry/SL/TP/RR/ATR) for FULL-COPY-CANDIDATE entries.
+- Execution Engine must still revalidate live price, distance, sizing and protective levels before any order.
+- Handoff remains READ-ONLY and expires according to EXECUTION_HANDOFF_TTL_MS (worker default 10 minutes).
 
-Examples of NEXT output:
-NEXT: COMPLETE_HISTORY + CONCENTRATION≤85%
-NEXT: TRADES≥30 + TIMING≥65
-NEXT: REPEAT_CYCLES≥2
-
-No live order is created by the hunter.
-
-V8.2 REPORT FIXES
------------------
-- Promotion Track contains only evidence-backed traders. Zero-evidence observations are excluded.
-- No artificial first-cycle score for zero evidence.
-- Promotion blockers never display as 'none'; pending repeatability is explicit.
-- NEXT thresholds are aligned with the actual execution gate (TRADES uses FULL-COPY minimum; concentration uses execution maximum).
-- Promotion memory never relaxes the strict Full-Copy / execution gates.
+Do not send private keys or seed phrases to the hunter worker.
