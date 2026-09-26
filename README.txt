@@ -22,3 +22,10 @@ Validation performed before delivery:
 - ZIP integrity test
 
 This worker remains read-only. It does not create orders.
+
+V8.5.11 CHANGE
+- Priority Deep History now runs before the expensive full-cycle scan.
+- A configurable DEEP_HISTORY_RESERVE_MS (default 120000ms) protects verification time.
+- Priority promotion-memory candidates are prefetched once and the same fills are reused by the analyzer.
+- Promotion candidates are not made eligible by lowering any economic, timing, risk, evidence, or sample gate.
+- Single-token specialists remain valid; concentration remains a soft factor.
