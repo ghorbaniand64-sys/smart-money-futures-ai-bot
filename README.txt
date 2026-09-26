@@ -1,9 +1,9 @@
-HYPERLIQUID MEME HUNTER V8.5.14
+HYPERLIQUID MEME HUNTER V8.5.15
 READ-ONLY | NO ORDERS
 
 Worker filename (required): hyperliquid_trader_hunter.mjs
 
-V8.5.14 fixes the V8.5.8 history/promotion bottleneck without lowering Full-Copy gates.
+V8.5.15 fixes the V8.5.8 history/promotion bottleneck without lowering Full-Copy gates.
 
 Key changes:
 - Deep History is an independent verification lane; it does not require repeat promotion cycles.
@@ -23,7 +23,7 @@ Validation performed before delivery:
 
 This worker remains read-only. It does not create orders.
 
-V8.5.14 CHANGE
+V8.5.15 CHANGE
 - Priority Deep History now runs before the expensive full-cycle scan.
 - A configurable DEEP_HISTORY_RESERVE_MS (default 120000ms) protects verification time.
 - Priority promotion-memory candidates are prefetched once and the same fills are reused by the analyzer.
@@ -31,7 +31,7 @@ V8.5.14 CHANGE
 - Single-token specialists remain valid; concentration remains a soft factor.
 
 
-V8.5.14 audit/fixes:
+V8.5.15 audit/fixes:
 - Separates normal-scan budget reservation from external SAFE STOP state. The normal scan may stop early to reserve time for Deep History without disabling the Deep-History lane.
 - Post-scan Deep History is executed from the reserved budget and can verify strong incomplete candidates discovered in the same cycle.
 - Deep History selection can use strong evidence/sample even when incomplete history temporarily prevents the strict specialist flag.
@@ -41,14 +41,17 @@ V8.5.14 audit/fixes:
 - READ-ONLY / NO ORDERS.
 
 
-V8.5.14 audit fixes:
+V8.5.15 audit fixes:
 - Preserves Priority Deep targets through prefilter selection.
 - Broadens post-scan Deep-History eligibility to evidence-backed truncated samples without relaxing Full-Copy or execution gates.
 - Adds explicit Deep-History eligibility diagnostics so attempted=0 is distinguishable from no eligible target.
 - Read-only / no orders.
 
 
-V8.5.14 notes:
+V8.5.15 notes:
 - FINAL COPY candidates are derived from the complete analyzed set after Deep History, closing an intermediate-array handoff gap.
 - Specialist block diagnostics are explicit for multi-meme and single-token paths.
 - Execution engine is PAPER-FIRST in this build: PAPER_EXECUTION_ONLY=true by default. Paper sizing can model 50% account allocation with fixed 10x leverage, but no live order is sent.
+
+
+V8.5.15: adds explicit Strict Specialist Execution diagnostics and Deep-History eligibility counters so FINAL COPY=0 is never opaque. READ-ONLY / PAPER EXECUTION ONLY.
