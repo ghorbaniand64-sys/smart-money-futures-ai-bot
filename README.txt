@@ -1,12 +1,12 @@
-HYPERLIQUID MEME HUNTER V8.4.2
+HYPERLIQUID MEME HUNTER V8.5
 READ-ONLY | NO ORDERS
 
 Worker: hyperliquid_trader_hunter.mjs
 
-Fixes:
-- Promotion Track uses all analyzed traders, not only near-miss/tier subsets.
-- Strict specialists are excluded from Promotion Track to avoid duplicate display.
-- Zero-evidence observations remain excluded.
-- NEXT remains derived from actual blocker reasons.
-- Version is centralized in V8_VERSION and used by Telegram footer.
-- Full-Copy / Execution gates are unchanged.
+V8.5 fixes Promotion/Research candidate loss by sourcing promotion from the
+complete analyzed set plus the retained near-miss safety pool. Strict specialists
+are excluded from the Promotion display to avoid duplicates, but execution gates
+are unchanged. The compact report exposes promotion diagnostics (analyzed,
+source, evidence-backed, strict-excluded) so a zero list is diagnosable.
+
+Run syntax checks before deployment. No live order is created by the hunter.
