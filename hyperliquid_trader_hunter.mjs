@@ -9,7 +9,7 @@ const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL || 'https://s
 const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED ?? 'true').toLowerCase() === 'true';
 
 // V8 persistent promotion / execution bridge. Research memory never weakens hard gates.
-const V8_VERSION='V8.5.2';
+const V8_VERSION='V8.5.3';
 const PROMOTION_MEMORY_PATH=process.env.HYPERLIQUID_MEME_PROMOTION_MEMORY_PATH||'state/meme_hunter_memory.json';
 const EXECUTION_HANDOFF_PATH=process.env.HYPERLIQUID_EXECUTION_HANDOFF_PATH||'state/meme_execution_handoff.json';
 const EXECUTION_HANDOFF_TTL_MS=integer('HYPERLIQUID_EXECUTION_HANDOFF_TTL_MS',600000);
@@ -175,6 +175,10 @@ const MEME_PREFILTER_RETRIES = integer('HYPERLIQUID_MEME_PREFILTER_RETRIES', 1);
 const MEME_PREFILTER_BETWEEN_MS = integer('HYPERLIQUID_MEME_PREFILTER_BETWEEN_MS', 950);
 const MEME_PREFILTER_SCAN_PER_CYCLE = integer('HYPERLIQUID_MEME_PREFILTER_SCAN_PER_CYCLE', 180);
 const MEME_PREFILTER_EXPLORATION_SLOTS = integer('HYPERLIQUID_MEME_PREFILTER_EXPLORATION_SLOTS', 5);
+// V8.5.3: protect raw Meme evidence before closed-lifecycle reconstruction.
+// Open/recent Meme activity can look like 0 closed trades in the 250-fill proxy.
+const MEME_PREFILTER_RAW_RECALL_SLOTS = integer('HYPERLIQUID_MEME_PREFILTER_RAW_RECALL_SLOTS', 6);
+const MEME_PREFILTER_RAW_BREADTH_SLOTS = integer('HYPERLIQUID_MEME_PREFILTER_RAW_BREADTH_SLOTS', 4);
 const MEME_PREFILTER_CLOSED_WEIGHT = num('HYPERLIQUID_MEME_PREFILTER_CLOSED_WEIGHT', 0.45);
 const MEME_PREFILTER_RAW_WEIGHT = num('HYPERLIQUID_MEME_PREFILTER_RAW_WEIGHT', 0.10);
 const MEME_COVERAGE_SLOTS = integer('HYPERLIQUID_MEME_COVERAGE_SLOTS', 3);
@@ -502,18 +506,22 @@ async function fastMemePrefilter(addresses){
   const byClosedCount=[...sorted].sort((a,b)=>b.profile.memeTrades-a.profile.memeTrades||b.profile.exposurePct-a.profile.exposurePct);
   const byBreadth=[...sorted].sort((a,b)=>b.profile.uniqueCoins-a.profile.uniqueCoins||b.profile.memeTrades-a.profile.memeTrades);
   const byRawExposure=[...sorted].sort((a,b)=>b.profile.rawExposurePct-a.profile.rawExposurePct||b.profile.rawMemeTrades-a.profile.rawMemeTrades);
+  const byRawCount=[...sorted].sort((a,b)=>b.profile.rawMemeTrades-a.profile.rawMemeTrades||b.profile.rawExposurePct-a.profile.rawExposurePct||b.profile.rawUniqueCoins-a.profile.rawUniqueCoins);
+  const byRawBreadth=[...sorted].sort((a,b)=>b.profile.rawUniqueCoins-a.profile.rawUniqueCoins||b.profile.rawMemeTrades-a.profile.rawMemeTrades||b.profile.rawExposurePct-a.profile.rawExposurePct);
   const target=Math.max(5,Math.min(MEME_PREFILTER_TARGET,sorted.length));
   const out=[]; const seen=new Set();
   const add=(list,n)=>{for(const x of list){if(out.length>=target||n<=0)break;if(seen.has(x.address))continue;seen.add(x.address);out.push(x);n--}};
-  // Exploit the closed-lifecycle proxy first, then retain a small raw-fill lane.
-  add(byScore,Math.ceil(target*.40));
-  add(byClosedExposure,Math.ceil(target*.20));
-  add(byClosedCount,Math.ceil(target*.15));
+  // V8.5.3 recall model: closed economics still leads, but raw Meme activity
+  // gets protected slots so active/open Meme traders cannot disappear simply
+  // because the 250-fill proxy has few reconstructable closed lifecycles.
+  add(byScore,Math.ceil(target*.30));
+  add(byClosedExposure,Math.ceil(target*.15));
+  add(byClosedCount,Math.ceil(target*.10));
   add(byBreadth,Math.ceil(target*.10));
   add(byRawExposure,Math.ceil(target*.05));
-  // V5.53 exploration lane: protect against false negatives when a real Meme
-  // specialist has little/no recently closed Meme activity. Deterministic order
-  // keeps runs reproducible; full history decides the actual classification.
+  add(byRawCount,MEME_PREFILTER_RAW_RECALL_SLOTS);
+  add(byRawBreadth,MEME_PREFILTER_RAW_BREADTH_SLOTS);
+  // Exploration lane remains separate from the raw-evidence lane.
   const exploration=sorted.filter(x=>x.profile.memeTrades===0 || x.profile.exposurePct<5)
     .sort((a,b)=>b.profile.rawMemeTrades-a.profile.rawMemeTrades||b.profile.rawTotalTrades-a.profile.rawTotalTrades||a.address.localeCompare(b.address));
   add(exploration,Math.min(MEME_PREFILTER_EXPLORATION_SLOTS,target-out.length));
@@ -1473,7 +1481,11 @@ function promotionEvidenceBacked(x){
   // Keep a candidate when there is concrete Meme activity, timing evidence,
   // realized Meme PnL, or a computed evidence dimension. Never promote a
   // zero-evidence observation and never relax execution gates.
-  return memeTrades>=MEME_MIN_TRADES || timingSamples>=MEME_TIMING_MIN_SAMPLE || pnl!==0 || metricsEvidence;
+  // V8.5.3: tiny PnL-only observations (e.g. 2-4 Meme trades) are not
+  // promotion evidence. They create zero-information Promotion rows and can
+  // crowd out traders with meaningful Meme history. Keep the research lane
+  // evidence-backed, without changing any strict specialist/copy gates.
+  return memeTrades>=MEME_AUDIT_MIN_TRADES || timingSamples>=MEME_TIMING_MIN_SAMPLE || (metricsEvidence && Number(x.evidenceStrength||0)>=MEME_EVIDENCE_MIN);
 }
 
 function promotionDelta(r){
@@ -1494,7 +1506,7 @@ function compactTelegramReport({d,scanned,top,promotionTop,observationCount,cycl
   top.slice(0,5).forEach((x,i)=>{const p=x.meme||{},e=x.early||{};header.push('',`#${i+1} ${x.address}`,`🏷️ ${tierOf(x)} | ${x.historyIncomplete?'⚠️ HISTORY INCOMPLETE':'✅ HISTORY COMPLETE'}`,`💰 Meme ${money(p.memePnl)} | PF ${p.memeProfitFactor===Infinity?'∞':fmt(p.memeProfitFactor,2)} | ${p.memeTrades||0} trades | WR ${pct(p.memeWinRate,0)}`,`🎯 Econ ${x.economicEdgeScore??'n/a'} | ProfitCopy ${x.profitCopyScore??'n/a'} | Timing ${x.timingCopyScore??'n/a'} | Risk ${x.riskCopyScore??'n/a'}`,`🛡️ Ready ${x.executionReadinessScore??'n/a'} ${x.executionReady?'🟢 YES':'🔴 NO'} | Class ${x.copyClassification||'BLOCKED'}`,`🛑 Block: ${(x.executionBlockReasons||[]).slice(0,4).join(', ')||'none'}`,`📉 DD ${money(p.maxDrawdown)} | R/DD ${p.returnToDrawdown===Infinity?'∞':fmt(p.returnToDrawdown,2)} | Concentration ${pct(p.topCoinPnlShare,0)}`,`🚀 Timing +1/+2/+5 ${pct(e.hit1,0)}/${pct(e.hit2,0)}/${pct(e.hit5,0)} | EntryQ ${e.entryQualityScore||0} | ExitQ ${e.exitQualityScore||0}`)});
   header.push('','⭐ PROMOTION TRACK');
   if(promotionTop.length){promotionTop.slice(0,5).forEach((x,i)=>{const r=x.promotionRecord||{};header.push(`#${i+1} ${x.address} | ${promotionLabel(r)} | score ${r.promotionScore||0} | cycles ${r.cycles||0}`,`   Econ ${r.economicEdge||0} | Profit ${r.profitCopy||0} | Timing ${r.timingCopy||0} | Risk ${r.riskCopy||0} | Ready ${r.readiness||0}`,promotionEvidenceLine(x,r),`   ${promotionGateLine(r)}`,`   NEXT: ${r.nextSteps||promotionNextSteps(r)} | Δ ${r.delta||promotionDelta(r)}`)});}else header.push('No promotion-track trader yet.');
-  header.push('','🟢 EXECUTION HANDOFF (READ-ONLY)',top.filter(x=>x.executionReady).length?'A fresh handoff was written only for FULL-COPY-CANDIDATE traders.':'No trader passed the complete live-execution gate in this cycle.','ℹ️ Promotion memory tracks repeated evidence across cycles; it never relaxes Full-Copy or execution gates.','ℹ️ PnL = realized closed Meme trades. Timing = historical execution behavior, not prediction.',`ℹ️ ${V8_VERSION}: strict gates unchanged; recall/funnel diagnostics improved. READ-ONLY. No order is created by this worker.`);
+  header.push('','🟢 EXECUTION HANDOFF (READ-ONLY)',top.filter(x=>x.executionReady).length?'A fresh handoff was written only for FULL-COPY-CANDIDATE traders.':'No trader passed the complete live-execution gate in this cycle.','ℹ️ Promotion memory tracks repeated evidence across cycles; it never relaxes Full-Copy or execution gates.','ℹ️ PnL = realized closed Meme trades. Timing = historical execution behavior, not prediction.',`ℹ️ ${V8_VERSION}: strict gates unchanged; raw Meme recall protected before deep scan; tiny observations excluded from Promotion Track. READ-ONLY. No order is created by this worker.`);
   return header.join('\n');
 }
 
@@ -1788,7 +1800,7 @@ async function main(){
   const nearImpact=nearMisses.map(x=>({...x,unknownImpact:traderUnknownImpact(x,topUnknownForTrader)}));
   const lines=[`🟣 HYPERLIQUID MEME HUNTER ${V8_VERSION}`,'📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`🎯 Mode: ${MEME_MODE==='watch'?'FIXED WATCHLIST':'SCOUT'}`,`🧪 Universe: ${universeAddresses.length} | This cycle: ${sourceAddresses.length}`,`⚡ Fast prefilter: ${funnel.prefilterScanned} → ${funnel.prefilterSelected} full-history | Coverage cycle ${cohort.slot+1}/${cohort.slots}`, `🧬 Strict meme specialists found: ${scanned.length}`,`🏆 Strict specialists: ${top.length}/${MEME_TOP_N}`,`🟠 Meme-focus candidates: ${focusTop.length}`,`🎯 Focus criteria: exposure>=${MEME_FOCUS_MIN_EXPOSURE}% | meme trades>=${MEME_FOCUS_MIN_TRADES} | unique memes>=${MEME_FOCUS_MIN_UNIQUE} | dominant<=${MEME_FOCUS_MAX_DOMINANT}%`,`⚡ History: ${MEME_HISTORY_DAYS}d | Early-move window: ${MEME_FORWARD_MIN}m | candle=${MEME_CANDLE_INTERVAL}`,`📌 STRICT criteria: exposure>=${MEME_MIN_EXPOSURE}% | meme trades>=${MEME_MIN_TRADES} | unique memes>=${MEME_MIN_UNIQUE}`
   ,`🔴 Concentrated Meme: exposure>=${MEME_CONCENTRATED_MIN_EXPOSURE}% | meme trades>=${MEME_CONCENTRATED_MIN_TRADES} | dominant>=${MEME_CONCENTRATED_MIN_DOMINANT}% | unique>=${MEME_CONCENTRATED_MIN_UNIQUE}`
-  ,`🟡 Multi-Meme Research: exposure>=${MEME_MULTI_RESEARCH_MIN_EXPOSURE}% | meme trades>=${MEME_MULTI_RESEARCH_MIN_TRADES} | unique>=${MEME_MULTI_RESEARCH_MIN_UNIQUE}`,'','🧪 MEME SPECIALIST FUNNEL',`Fast prefilter scanned: ${funnel.prefilterScanned}`,`Fast prefilter selected: ${funnel.prefilterSelected}`,`Prefilter model: CLOSED LIFECYCLE proxy first | raw fills secondary | exploration=${MEME_PREFILTER_EXPLORATION_SLOTS}`,`Prefilter errors/skips: ${prefilterErrors}`,`History usable: ${funnel.historyOK}`,`History truncated: ${funnel.historyTruncated}`,`History complete: ${funnel.historyOK} | completeness=${pct(funnel.historyOK/Math.max(1,funnel.historyOK+funnel.historyTruncated)*100,0)}`,`429-affected histories: ${funnel.history429}`,`Other incomplete histories: ${funnel.historyOtherIncomplete}`,`Closed trades >=${MEME_MIN_TRADES}: ${funnel.closedTradesEnough}`,`Closed trades <${MEME_MIN_TRADES}: ${funnel.closedTradesLow}`,`Analysis eligible (closed>=1): ${funnel.analysisEligible}`,`Analysis skipped (no closed trades): ${funnel.analysisSkippedLowHistory}`,`Meme trades >=${MEME_MIN_TRADES}: ${funnel.memeTradesPass}`,`Meme exposure >=${MEME_MIN_EXPOSURE}%: ${funnel.exposurePass}`,`Unique memes >=${MEME_MIN_UNIQUE}: ${funnel.uniquePass}`,`FINAL SPECIALISTS: ${funnel.specialists}`,'','🧬 MEME CLASSIFIER COVERAGE',`Known meme symbols: ${classifierAudit.knownMemeSymbols}`,`Observed symbols: ${classifierAudit.observedSymbols}`,`Confirmed meme symbols: ${classifierAudit.classifiedSymbols}`,`Probable meme symbols: ${classifierAudit.probableSymbols}`,`Explicit non-meme symbols: ${classifierAudit.nonMemeSymbols}`,`Unknown symbols: ${classifierAudit.unclassifiedSymbols}`,`Confirmed meme trades: ${classifierAudit.classifiedTradeCount}`,`Probable meme trades: ${classifierAudit.probableTradeCount}`,`Explicit non-meme trades: ${classifierAudit.nonMemeTradeCount}`,`Unknown trades: ${classifierAudit.unclassifiedTradeCount}`,`Classifier classified trade coverage: ${classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount}/${classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount+classifierAudit.unclassifiedTradeCount} (${pct((classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount)/Math.max(1,classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount+classifierAudit.unclassifiedTradeCount)*100,1)})`];
+  ,`🟡 Multi-Meme Research: exposure>=${MEME_MULTI_RESEARCH_MIN_EXPOSURE}% | meme trades>=${MEME_MULTI_RESEARCH_MIN_TRADES} | unique>=${MEME_MULTI_RESEARCH_MIN_UNIQUE}`,'','🧪 MEME SPECIALIST FUNNEL',`Fast prefilter scanned: ${funnel.prefilterScanned}`,`Fast prefilter selected: ${funnel.prefilterSelected}`,`Prefilter model: CLOSED ECONOMICS + RAW MEME RECALL | rawRecall=${MEME_PREFILTER_RAW_RECALL_SLOTS} | rawBreadth=${MEME_PREFILTER_RAW_BREADTH_SLOTS} | exploration=${MEME_PREFILTER_EXPLORATION_SLOTS}`,`Prefilter errors/skips: ${prefilterErrors}`,`History usable: ${funnel.historyOK}`,`History truncated: ${funnel.historyTruncated}`,`History complete: ${funnel.historyOK} | completeness=${pct(funnel.historyOK/Math.max(1,funnel.historyOK+funnel.historyTruncated)*100,0)}`,`429-affected histories: ${funnel.history429}`,`Other incomplete histories: ${funnel.historyOtherIncomplete}`,`Closed trades >=${MEME_MIN_TRADES}: ${funnel.closedTradesEnough}`,`Closed trades <${MEME_MIN_TRADES}: ${funnel.closedTradesLow}`,`Analysis eligible (closed>=1): ${funnel.analysisEligible}`,`Analysis skipped (no closed trades): ${funnel.analysisSkippedLowHistory}`,`Meme trades >=${MEME_MIN_TRADES}: ${funnel.memeTradesPass}`,`Meme exposure >=${MEME_MIN_EXPOSURE}%: ${funnel.exposurePass}`,`Unique memes >=${MEME_MIN_UNIQUE}: ${funnel.uniquePass}`,`FINAL SPECIALISTS: ${funnel.specialists}`,'','🧬 MEME CLASSIFIER COVERAGE',`Known meme symbols: ${classifierAudit.knownMemeSymbols}`,`Observed symbols: ${classifierAudit.observedSymbols}`,`Confirmed meme symbols: ${classifierAudit.classifiedSymbols}`,`Probable meme symbols: ${classifierAudit.probableSymbols}`,`Explicit non-meme symbols: ${classifierAudit.nonMemeSymbols}`,`Unknown symbols: ${classifierAudit.unclassifiedSymbols}`,`Confirmed meme trades: ${classifierAudit.classifiedTradeCount}`,`Probable meme trades: ${classifierAudit.probableTradeCount}`,`Explicit non-meme trades: ${classifierAudit.nonMemeTradeCount}`,`Unknown trades: ${classifierAudit.unclassifiedTradeCount}`,`Classifier classified trade coverage: ${classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount}/${classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount+classifierAudit.unclassifiedTradeCount} (${pct((classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount)/Math.max(1,classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount+classifierAudit.unclassifiedTradeCount)*100,1)})`];
   if(classifierAudit.topClassified.length){lines.push('Confirmed:');classifierAudit.topClassified.slice(0,8).forEach((x,i)=>lines.push(`#${i+1} ${x.coin} — ${x.trades} trades`));}
   if(classifierAudit.topProbable.length){lines.push('Probable (diagnostic only):');classifierAudit.topProbable.slice(0,8).forEach((x,i)=>lines.push(`#${i+1} ${x.coin} — ${x.trades} trades | ${x.reason}`));}
   if(classifierAudit.topUnclassified.length){lines.push('Top unknown symbols:');classifierAudit.topUnclassified.slice(0,MEME_UNKNOWN_AUDIT_TOP_N).forEach((x,i)=>lines.push(`#${i+1} ${x.coin} — ${x.trades} trades`));}else lines.push('Top unknown symbols: none');
