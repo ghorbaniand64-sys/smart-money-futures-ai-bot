@@ -1,9 +1,9 @@
-Hyperliquid Meme Hunter V8.5.7
+Hyperliquid Meme Hunter V8.5.8
 READ-ONLY / NO ORDERS
 
 Base: V8.5.6
 
-V8.5.7 changes:
+V8.5.8 changes:
 - Preserves the Single-Token Specialist path: unique=1 is valid when Meme trades >= 60 and Meme exposure >= 50%.
 - Concentration remains a soft risk factor; it is not a hard Full-Copy or Execution-Readiness blocker.
 - Adds bounded Deep History Verification for incomplete specialist candidates before final ranking.
