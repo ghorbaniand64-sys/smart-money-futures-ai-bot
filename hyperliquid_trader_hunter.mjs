@@ -9,7 +9,7 @@ const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL || 'https://s
 const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED ?? 'true').toLowerCase() === 'true';
 
 // V8 persistent promotion / execution bridge. Research memory never weakens hard gates.
-const V8_VERSION='V8.5.9';
+const V8_VERSION='V8.5.10';
 const OPPORTUNITY_POOL_MAX=integer('HYPERLIQUID_MEME_OPPORTUNITY_POOL_MAX',12);
 const RUN_BUDGET_MS=integer('HYPERLIQUID_MEME_RUN_BUDGET_MS',480000);
 const RUN_MIN_REMAINING_MS=integer('HYPERLIQUID_MEME_RUN_MIN_REMAINING_MS',45000);
@@ -76,6 +76,7 @@ const MAX_PAGES = integer('HYPERLIQUID_HUNTER_MAX_FILL_PAGES', 8);
 // timing, risk, evidence, or sample gates.
 const DEEP_HISTORY_MAX_PAGES = integer('HYPERLIQUID_MEME_DEEP_HISTORY_MAX_PAGES', 24);
 const DEEP_HISTORY_TARGET = integer('HYPERLIQUID_MEME_DEEP_HISTORY_TARGET', 4);
+const PRIORITY_DEEP_TARGET = integer('HYPERLIQUID_MEME_PRIORITY_DEEP_TARGET', 2);
 const DEEP_HISTORY_MIN_CLOSED = integer('HYPERLIQUID_MEME_DEEP_HISTORY_MIN_CLOSED', 60);
 const TIMEOUT = integer('HYPERLIQUID_HUNTER_REQUEST_TIMEOUT_MS', 30000);
 
@@ -1881,14 +1882,31 @@ async function main(){
     }
     if(i+1<fullHistoryAddresses.length)await sleep(MEME_FULL_BETWEEN_MS);
   }
-  // V8.5.9: Deep History is an independent verification lane.
-  // It must not depend on promotion-cycle count and must record its own result.
+  // V8.5.10: Deep History is an independent verification lane.
+  // It must not depend on promotion-cycle count OR on the trader being selected
+  // into the current cohort. Promotion-memory candidates with strong latest
+  // evidence are eligible for a priority deep fetch even when they were not
+  // part of this cycle's analyzedCandidates.
   if(!RUN_INTERRUPTED && !runBudgetExpired(t0)){
-    const deepTargets=analyzedCandidates
+    const analyzedDeepTargets=analyzedCandidates
       .filter(x=>x.historyIncomplete && (x.singleSpecialistCriteria||x.multiSpecialistCriteria))
-      .sort((a,b)=>(b.economicEdgeScore||0)-(a.economicEdgeScore||0)||(b.copyabilityScore||0)-(a.copyabilityScore||0)||(b.meme?.memePnl||0)-(a.meme?.memePnl||0))
+      .sort((a,b)=>(b.economicEdgeScore||0)-(a.economicEdgeScore||0)||(b.copyabilityScore||0)-(a.copyabilityScore||0)||(b.meme?.memePnl||0)-(a.meme?.memePnl||0));
+    const analyzedSet=new Set(analyzedDeepTargets.map(x=>String(x.address).toLowerCase()));
+    const promotionDeepTargets=Object.values(promotionMemory.traders||{})
+      .filter(r=>{
+        const last=r?.last||{};
+        const addr=String(r?.address||'').toLowerCase();
+        const historyBlocked=Array.isArray(last.blockReasons)&&last.blockReasons.includes('HISTORY_UNVERIFIED');
+        const strong=Number(last.economicEdge||0)>=MEME_ECONOMIC_EDGE_MIN && Number(last.profitCopy||0)>=MEME_PROFIT_COPY_MIN && Number(last.timingCopy||0)>=MEME_TIMING_COPY_MIN && Number(last.riskCopy||0)>=MEME_RISK_COPY_MIN && Number(last.trades||0)>=MEME_SINGLE_SPECIALIST_MIN_TRADES;
+        return addr && !analyzedSet.has(addr) && historyBlocked && strong;
+      })
+      .sort((a,b)=>(Number(b.last?.economicEdge||0)-Number(a.last?.economicEdge||0))||(Number(b.last?.profitCopy||0)-Number(a.last?.profitCopy||0))||(Number(b.last?.trades||0)-Number(a.last?.trades||0)))
+      .slice(0,PRIORITY_DEEP_TARGET)
+      .map(r=>({address:String(r.address).toLowerCase(),promotionRecord:r}));
+    const deepTargets=[...analyzedDeepTargets.slice(0,DEEP_HISTORY_TARGET),...promotionDeepTargets]
+      .filter((x,i,a)=>a.findIndex(y=>String(y.address).toLowerCase()===String(x.address).toLowerCase())===i)
       .slice(0,DEEP_HISTORY_TARGET);
-    if(deepTargets.length)console.log(`[DEEP-HISTORY] verifying ${deepTargets.length} specialist candidate(s), maxPages=${DEEP_HISTORY_MAX_PAGES}`);
+    if(deepTargets.length)console.log(`[DEEP-HISTORY] verifying ${deepTargets.length} candidate(s), maxPages=${DEEP_HISTORY_MAX_PAGES} | current=${analyzedDeepTargets.length} priority-memory=${promotionDeepTargets.length}`);
     for(const target of deepTargets){
       if(RUN_INTERRUPTED || runBudgetExpired(t0))break;
       deepHistoryStats.attempted++;
@@ -1897,7 +1915,7 @@ async function main(){
         const dr=reconstruct(df.fills),dm=metrics(df.fills,dr);
         const verifiedPartial=Boolean(df.truncated && !df.rateLimitAffected && !df.networkAffected && dm.closedTrades>=DEEP_HISTORY_MIN_CLOSED);
         const verification=df.truncated?(verifiedPartial?'VERIFIED_PARTIAL':'UNVERIFIED_PARTIAL'):'COMPLETE';
-        const dx={...target,metrics:dm,safety:safetyGate(dm,df.truncated),truncated:df.truncated,historyIncomplete:df.truncated,historyIncompleteReason:df.incompleteReason||null,history429:df.rateLimitAffected,historyPages:df.pages,historyFills:df.fills,historyVerification:verification};
+        const dx={...target,metrics:dm,safety:safetyGate(dm,df.truncated),truncated:df.truncated,historyIncomplete:df.truncated,historyIncompleteReason:df.incompleteReason||null,history429:df.rateLimitAffected,historyPages:df.pages,historyFills:df.fills,historyVerification:verification,qualityScore:Number(target.qualityScore||0)};
         const dy=await analyzeMemeTrader(dx,now);
         const idx=analyzedCandidates.findIndex(x=>x.address===target.address);
         if(idx>=0)analyzedCandidates[idx]=dy;

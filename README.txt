@@ -1,9 +1,9 @@
-HYPERLIQUID MEME HUNTER V8.5.9
+HYPERLIQUID MEME HUNTER V8.5.10
 READ-ONLY | NO ORDERS
 
 Worker filename (required): hyperliquid_trader_hunter.mjs
 
-V8.5.9 fixes the V8.5.8 history/promotion bottleneck without lowering Full-Copy gates.
+V8.5.10 fixes the V8.5.8 history/promotion bottleneck without lowering Full-Copy gates.
 
 Key changes:
 - Deep History is an independent verification lane; it does not require repeat promotion cycles.
