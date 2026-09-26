@@ -9,7 +9,7 @@ const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL || 'https://s
 const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED ?? 'true').toLowerCase() === 'true';
 
 // V8 persistent promotion / execution bridge. Research memory never weakens hard gates.
-const V8_VERSION='V8.5.12';
+const V8_VERSION='V8.5.13';
 const OPPORTUNITY_POOL_MAX=integer('HYPERLIQUID_MEME_OPPORTUNITY_POOL_MAX',12);
 const RUN_BUDGET_MS=integer('HYPERLIQUID_MEME_RUN_BUDGET_MS',480000);
 const RUN_MIN_REMAINING_MS=integer('HYPERLIQUID_MEME_RUN_MIN_REMAINING_MS',45000);
@@ -1101,10 +1101,19 @@ function stratifiedTimingSample(trades, target){
 function deepHistoryCandidate(x){
   if(!x?.historyIncomplete)return false;
   const p=x.meme||{};
+  const memeTrades=Number(p.memeTrades||0);
+  const pnl=Number(p.memePnl||0);
+  const pf=Number(p.memeProfitFactor);
   const specialist=Boolean(x.singleSpecialistCriteria||x.multiSpecialistCriteria);
   const strongEvidence=Number(x.economicEdgeScore||0)>=MEME_ECONOMIC_EDGE_MIN && Number(x.profitCopyScore||0)>=MEME_PROFIT_COPY_MIN && Number(x.timingCopyScore||0)>=MEME_TIMING_COPY_MIN && Number(x.riskCopyScore||0)>=MEME_RISK_COPY_MIN;
-  const sufficientSample=Number(p.memeTrades||0)>=MEME_FULL_COPY_MIN_SAMPLE;
-  return specialist || (strongEvidence && sufficientSample);
+  const sufficientSample=memeTrades>=MEME_FULL_COPY_MIN_SAMPLE;
+  // V8.5.13: deep verification is a data-quality operation, so a candidate
+  // with a meaningful Meme sample and non-negative economics may be verified
+  // even when one behavioral score is currently below the strict gate. This
+  // does NOT relax Full-Copy or execution eligibility; it only prevents a
+  // truncated history from hiding a potentially recoverable candidate.
+  const evidenceBackedSample=sufficientSample && (pnl>0 || pf>=MEME_COPY_MIN_PF || Number(x.economicEdgeScore||0)>=60);
+  return specialist || (strongEvidence && sufficientSample) || evidenceBackedSample;
 }
 
 async function analyzeMemeTrader(x,now){
@@ -1915,8 +1924,8 @@ async function main(){
     const protectedSelected=protectedOpportunityAddresses.filter(a=>sourceAddresses.includes(a));
     const nonProtected=selectedBase.filter(a=>!protectedSet.has(a));
     const reserve=Math.min(protectedSelected.length,OPPORTUNITY_RESERVED_SLOTS);
-    fullHistoryAddresses=[...new Set([...protectedSelected.slice(0,reserve),...nonProtected.slice(0,Math.max(0,MEME_PREFILTER_TARGET-reserve))])];
-    console.log(`[PREFILTER][DONE] ${sourceAddresses.length} -> ${fullHistoryAddresses.length} selected errors=${pf.errors} | selection=closed-lifecycle-first+raw-recall+opportunity-reserve`);
+    fullHistoryAddresses=[...new Set([...priorityDeepAddresses,...protectedSelected.slice(0,reserve),...nonProtected.slice(0,Math.max(0,MEME_PREFILTER_TARGET-reserve))])];
+    console.log(`[PREFILTER][DONE] ${sourceAddresses.length} -> ${fullHistoryAddresses.length} selected errors=${pf.errors} | selection=priority-deep+closed-lifecycle-first+raw-recall+opportunity-reserve`);
   }else{
     funnel.prefilterScanned=sourceAddresses.length;
     funnel.prefilterSelected=sourceAddresses.length;
@@ -1984,11 +1993,12 @@ async function main(){
   // specialist candidates that were not part of the priority prefetch.
   if(!RUN_INTERRUPTED && !deepHistoryBudgetExpired(t0)){
     const prefetchSet=new Set(priorityDeepPrefetch.keys());
-    const analyzedDeepTargets=analyzedCandidates
-      .filter(x=>deepHistoryCandidate(x) && !prefetchSet.has(String(x.address).toLowerCase()))
-      .sort((a,b)=>(b.economicEdgeScore||0)-(a.economicEdgeScore||0)||(b.copyabilityScore||0)-(a.copyabilityScore||0)||(b.meme?.memePnl||0)-(a.meme?.memePnl||0))
+    const incompleteAnalyzed=analyzedCandidates.filter(x=>x.historyIncomplete && !prefetchSet.has(String(x.address).toLowerCase()));
+    const eligibleAnalyzed=incompleteAnalyzed.filter(deepHistoryCandidate);
+    const analyzedDeepTargets=eligibleAnalyzed
+      .sort((a,b)=>(b.economicEdgeScore||0)-(a.economicEdgeScore||0)||(b.profitCopyScore||0)-(a.profitCopyScore||0)||(b.meme?.memePnl||0)-(a.meme?.memePnl||0)||(b.meme?.memeTrades||0)-(a.meme?.memeTrades||0))
       .slice(0,DEEP_HISTORY_POSTSCAN_TARGET);
-    if(analyzedDeepTargets.length)console.log(`[DEEP-HISTORY] post-scan verification ${analyzedDeepTargets.length} newly discovered candidate(s), maxPages=${DEEP_HISTORY_MAX_PAGES}`);
+    console.log(`[DEEP-HISTORY] post-scan eligibility: analyzed=${analyzedCandidates.length} incomplete=${incompleteAnalyzed.length} eligible=${eligibleAnalyzed.length} targets=${analyzedDeepTargets.length} remaining=${Math.max(0,RUN_BUDGET_MS-(Date.now()-t0))}ms`);
     for(const target of analyzedDeepTargets){
       if(RUN_INTERRUPTED || deepHistoryBudgetExpired(t0))break;
       deepHistoryStats.attempted++;
