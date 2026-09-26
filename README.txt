@@ -1,16 +1,19 @@
-Hyperliquid Meme Hunter V8.5.6
+Hyperliquid Meme Hunter V8.5.7
 READ-ONLY / NO ORDERS
 
-Base: V8.5.5
+Base: V8.5.6
 
-V8.5.6 changes:
-- Single-Token Specialist path added: a trader can qualify with unique=1 when Meme trades >= 60 and Meme exposure >= 50%.
-- Multi-Meme Specialist path remains unchanged: Meme trades >= 12, exposure >= 65%, unique Meme coins >= 3.
-- Concentration is no longer a hard Full-Copy or Execution-Readiness blocker. It remains a soft risk/robustness factor.
-- Full-Copy safety gates remain strict: positive realized Meme economics, PF, sample depth, timing coverage, robustness, ProfitCopy, TimingCopy, RiskCopy, evidence, and complete history.
-- Execution handoff now additionally requires the live position to be a Meme position, current entry distance <= configured max, and a finite SL/TP/RR plan with RR >= configured minimum.
-- Specialist type is recorded as SINGLE-TOKEN or MULTI-MEME for downstream execution/reporting.
-- Opportunity Pool, runtime budget, checkpoints, safe-stop behavior, and handoff TTL from V8.5.5 are preserved.
+V8.5.7 changes:
+- Preserves the Single-Token Specialist path: unique=1 is valid when Meme trades >= 60 and Meme exposure >= 50%.
+- Concentration remains a soft risk factor; it is not a hard Full-Copy or Execution-Readiness blocker.
+- Adds bounded Deep History Verification for incomplete specialist candidates before final ranking.
+- Deep verification can inspect up to 24 fill pages by default, for up to 6 specialist candidates per cycle.
+- A truncated history can become VERIFIED-PARTIAL only when there is no rate-limit/network interruption and at least 60 reconstructed closed trades are available.
+- VERIFIED-PARTIAL is accepted by the data-quality layer only when all independent economic, ProfitCopy, TimingCopy, RiskCopy, evidence, sample, robustness, and readiness gates pass.
+- Promotion/Research remains separate from Copy-Ready; promotion memory never relaxes Copy gates.
+- Reporting distinguishes COMPLETE, VERIFIED-PARTIAL, and UNVERIFIED history.
+- Execution handoff remains READ-ONLY and still requires a current Meme position, entry-distance limit, valid SL/TP/RR plan, and configured minimum RR.
+- Opportunity Pool, runtime budget, checkpoints, safe-stop behavior, and handoff TTL are preserved.
 
 Required worker filename:
 hyperliquid_trader_hunter.mjs
