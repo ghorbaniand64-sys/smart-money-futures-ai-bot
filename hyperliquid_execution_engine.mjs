@@ -1,4 +1,4 @@
-// Hyperliquid Meme Hunter Execution Engine V6.1
+// Hyperliquid Meme Hunter Execution Engine V6.2 — PAPER-FIRST SAFETY MODE
 // Consumes V6.1 READ-ONLY handoff. Default: DRY RUN / NO ORDERS.
 // Live orders require BOTH EXECUTION_ENABLED=true and EXECUTION_DRY_RUN=false.
 
@@ -10,7 +10,11 @@ import { privateKeyToAccount } from 'viem/accounts';
 const INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const HANDOFF_PATH = process.env.HYPERLIQUID_EXECUTION_HANDOFF_PATH || 'state/meme_execution_handoff.json';
 const EXECUTION_ENABLED = String(process.env.EXECUTION_ENABLED ?? 'false').toLowerCase() === 'true';
-const DRY_RUN = String(process.env.EXECUTION_DRY_RUN ?? 'true').toLowerCase() !== 'false';
+const REQUESTED_DRY_RUN = String(process.env.EXECUTION_DRY_RUN ?? 'true').toLowerCase() !== 'false';
+// Safety: this build is paper-only. EXECUTION_ENABLED may be true for pipeline testing,
+// but no live order path is permitted by this worker build.
+const PAPER_EXECUTION_ONLY = String(process.env.PAPER_EXECUTION_ONLY ?? 'true').toLowerCase() !== 'false';
+const DRY_RUN = PAPER_EXECUTION_ONLY ? true : REQUESTED_DRY_RUN;
 const ACCOUNT = String(process.env.HYPERLIQUID_ACCOUNT_ADDRESS || '').trim().toLowerCase();
 const AGENT_KEY = String(process.env.HYPERLIQUID_AGENT_PRIVATE_KEY || '').trim();
 const MAX_HANDOFF_AGE_MS = Number(process.env.EXECUTION_HANDOFF_TTL_MS || 90000);
@@ -21,6 +25,8 @@ const TARGET_NOTIONAL_USD = Number(process.env.EXECUTION_TARGET_NOTIONAL_USD || 
 const MAX_NOTIONAL_USD = Number(process.env.EXECUTION_MAX_NOTIONAL_USD || 25);
 const MAX_ACCOUNT_ALLOCATION_PCT = Number(process.env.EXECUTION_MAX_ACCOUNT_ALLOCATION_PCT || 1);
 const MAX_LEVERAGE = Number(process.env.EXECUTION_MAX_LEVERAGE || 3);
+const PAPER_LEVERAGE = Number(process.env.PAPER_LEVERAGE || 10);
+const PAPER_ACCOUNT_ALLOCATION_PCT = Number(process.env.PAPER_ACCOUNT_ALLOCATION_PCT || 50);
 const MIN_RR = Number(process.env.EXECUTION_MIN_RR || 1.5);
 const SL_ATR = Number(process.env.EXECUTION_SL_ATR_MULT || 1.2);
 const TP_ATR = Number(process.env.EXECUTION_TP_ATR_MULT || 2.0);
@@ -179,7 +185,16 @@ async function run(){
   log(`start enabled=${EXECUTION_ENABLED} dryRun=${DRY_RUN} mainnet=${MAINNET}`);
   const handoff=await readJson(HANDOFF_PATH);
   const p=await buildCandidate(handoff);
-  log(`PLAN ${p.coin} ${p.side} trader=${p.trader} entry=${fmt(p.market.mid)} notional=$${fmt(p.notional,2)} size=${fmt(p.size,8)} SL=${fmt(p.sl)} TP=${fmt(p.tp)} RR=${fmt(p.rr,2)} cloid=${p.cloid}`);
+  if(PAPER_EXECUTION_ONLY){
+    const paperNotional=p.accountValue*(PAPER_ACCOUNT_ALLOCATION_PCT/100)*PAPER_LEVERAGE;
+    p.paper={accountAllocationPct:PAPER_ACCOUNT_ALLOCATION_PCT,leverage:PAPER_LEVERAGE,margin:p.accountValue*(PAPER_ACCOUNT_ALLOCATION_PCT/100),notional:paperNotional,simulatedSize:paperNotional/p.market.mid};
+  }
+  log(`PLAN ${p.coin} ${p.side} trader=${p.trader} entry=${fmt(p.market.mid)} notional=$${fmt(PAPER_EXECUTION_ONLY?p.paper.notional:p.notional,2)} size=${fmt(PAPER_EXECUTION_ONLY?p.paper.simulatedSize:p.size,8)} SL=${fmt(p.sl)} TP=${fmt(p.tp)} RR=${fmt(p.rr,2)} cloid=${p.cloid}`);
+  if(PAPER_EXECUTION_ONLY){
+    log(`PAPER EXECUTION: allocation=${PAPER_ACCOUNT_ALLOCATION_PCT}% | leverage=${PAPER_LEVERAGE}x | margin=$${fmt(p.paper.margin,2)} | notional=$${fmt(p.paper.notional,2)} | ORDER SENT: NO`);
+    await writeJson(STATE_PATH,{at:Date.now(),mode:'PAPER',plan:p});
+    return;
+  }
   if(!EXECUTION_ENABLED || DRY_RUN){
     log('FINAL EXECUTION: DRY-RUN | ORDER SENT: NO');
     await writeJson(STATE_PATH,{at:Date.now(),mode:'DRY_RUN',plan:p});
