@@ -1,4 +1,4 @@
-Hyperliquid Meme Hunter V8.5.3
+Hyperliquid Meme Hunter V8.5.4
 READ-ONLY / NO ORDERS
 
 Changes from V8.5.2:

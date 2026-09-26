@@ -9,7 +9,12 @@ const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL || 'https://s
 const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED ?? 'true').toLowerCase() === 'true';
 
 // V8 persistent promotion / execution bridge. Research memory never weakens hard gates.
-const V8_VERSION='V8.5.3';
+const V8_VERSION='V8.5.4';
+const OPPORTUNITY_POOL_MAX=integer('HYPERLIQUID_MEME_OPPORTUNITY_POOL_MAX',12);
+const OPPORTUNITY_RESERVED_SLOTS=integer('HYPERLIQUID_MEME_OPPORTUNITY_RESERVED_SLOTS',8);
+const OPPORTUNITY_MIN_RAW_TRADES=integer('HYPERLIQUID_MEME_OPPORTUNITY_MIN_RAW_TRADES',50);
+const OPPORTUNITY_MIN_RAW_UNIQUE=integer('HYPERLIQUID_MEME_OPPORTUNITY_MIN_RAW_UNIQUE',2);
+const OPPORTUNITY_MIN_RAW_EXPOSURE=num('HYPERLIQUID_MEME_OPPORTUNITY_MIN_RAW_EXPOSURE_PCT',15);
 const PROMOTION_MEMORY_PATH=process.env.HYPERLIQUID_MEME_PROMOTION_MEMORY_PATH||'state/meme_hunter_memory.json';
 const EXECUTION_HANDOFF_PATH=process.env.HYPERLIQUID_EXECUTION_HANDOFF_PATH||'state/meme_execution_handoff.json';
 const EXECUTION_HANDOFF_TTL_MS=integer('HYPERLIQUID_EXECUTION_HANDOFF_TTL_MS',600000);
@@ -482,6 +487,78 @@ async function getRecentFills(user){
   if(!Array.isArray(b))throw new Error('recent fills: unexpected response');
   return b;
 }
+function opportunityScoreFromProfile(p){
+  if(!p)return 0;
+  const rawCount=Math.min(100,Number(p.rawMemeTrades||0)/Math.max(1,OPPORTUNITY_MIN_RAW_TRADES)*100);
+  const rawBreadth=Math.min(100,Number(p.rawUniqueCoins||0)/Math.max(1,OPPORTUNITY_MIN_RAW_UNIQUE)*100);
+  const rawExposure=Math.min(100,Number(p.rawExposurePct||0)/Math.max(1,OPPORTUNITY_MIN_RAW_EXPOSURE)*100);
+  const closed=Math.min(100,Number(p.memeTrades||0)/Math.max(1,MEME_MIN_TRADES)*100);
+  const closedBreadth=Math.min(100,Number(p.uniqueCoins||0)/Math.max(1,MEME_MIN_UNIQUE)*100);
+  return Math.round(Math.max(0,Math.min(100,.35*rawCount+.25*rawBreadth+.20*rawExposure+.12*closed+.08*closedBreadth)));
+}
+function opportunityEligibleProfile(p){
+  if(!p)return false;
+  return Number(p.rawMemeTrades||0)>=OPPORTUNITY_MIN_RAW_TRADES ||
+    Number(p.rawUniqueCoins||0)>=OPPORTUNITY_MIN_RAW_UNIQUE ||
+    Number(p.rawExposurePct||0)>=OPPORTUNITY_MIN_RAW_EXPOSURE ||
+    Number(p.memeTrades||0)>=MEME_AUDIT_MIN_TRADES;
+}
+function mergeOpportunityPool(memory, rows, analyzed, cycle){
+  const map=new Map();
+  for(const r of Array.isArray(memory.opportunityPool)?memory.opportunityPool:[]){
+    if(r?.address)map.set(String(r.address).toLowerCase(),r);
+  }
+  for(const row of Array.isArray(rows)?rows:[]){
+    const p=row?.profile;
+    if(!row?.address || !opportunityEligibleProfile(p))continue;
+    const address=String(row.address).toLowerCase();
+    const prev=map.get(address)||{address,firstSeenCycle:cycle,cyclesSeen:0};
+    prev.lastSeenCycle=cycle;
+    prev.cyclesSeen=Number(prev.cyclesSeen||0)+1;
+    prev.rawMemeTrades=Number(p.rawMemeTrades||0);
+    prev.rawUniqueCoins=Number(p.rawUniqueCoins||0);
+    prev.rawExposurePct=Number(p.rawExposurePct||0);
+    prev.closedMemeTrades=Number(p.memeTrades||0);
+    prev.closedUniqueCoins=Number(p.uniqueCoins||0);
+    prev.closedExposurePct=Number(p.exposurePct||0);
+    prev.prefilterScore=Number(p.score||0);
+    prev.opportunityScore=opportunityScoreFromProfile(p);
+    prev.reason=prev.rawUniqueCoins>=OPPORTUNITY_MIN_RAW_UNIQUE?'RAW_BREADTH':prev.rawMemeTrades>=OPPORTUNITY_MIN_RAW_TRADES?'RAW_MEME_ACTIVITY':prev.rawExposurePct>=OPPORTUNITY_MIN_RAW_EXPOSURE?'RAW_MEME_EXPOSURE':'CLOSED_MEME_ACTIVITY';
+    prev.updatedAt=Date.now();
+    map.set(address,prev);
+  }
+  for(const x of Array.isArray(analyzed)?analyzed:[]){
+    const p=x?.meme||{};
+    if(!x?.address)continue;
+    if(Number(p.memeTrades||0)<MEME_AUDIT_MIN_TRADES && Number(p.uniqueCoins||0)<MEME_MIN_UNIQUE && Number(p.exposurePct||0)<MEME_RESEARCH_MIN_EXPOSURE)continue;
+    const address=String(x.address).toLowerCase();
+    const prev=map.get(address)||{address,firstSeenCycle:cycle,cyclesSeen:0};
+    prev.lastSeenCycle=cycle;
+    prev.cyclesSeen=Number(prev.cyclesSeen||0)+1;
+    prev.analyzed=true;
+    prev.memeTrades=Number(p.memeTrades||0);
+    prev.uniqueCoins=Number(p.uniqueCoins||0);
+    prev.exposurePct=Number(p.exposurePct||0);
+    prev.memePnl=Number(p.memePnl||0);
+    prev.concentration=Number(p.topCoinPnlShare||0);
+    prev.economicEdge=Number(x.economicEdgeScore||0);
+    prev.profitCopy=Number(x.profitCopyScore||0);
+    prev.timingCopy=Number(x.timingCopyScore||0);
+    prev.riskCopy=Number(x.riskCopyScore||0);
+    prev.readiness=Number(x.executionReadinessScore||0);
+    prev.opportunityScore=Math.max(Number(prev.opportunityScore||0),Math.round(.30*Math.min(100,Number(p.memeTrades||0)/Math.max(1,MEME_MIN_TRADES)*100)+.20*Math.min(100,Number(p.uniqueCoins||0)/Math.max(1,MEME_MIN_UNIQUE)*100)+.15*Math.min(100,Number(p.exposurePct||0)/Math.max(1,MEME_MIN_EXPOSURE)*100)+.20*Number(x.economicEdgeScore||0)+.15*Number(x.timingCopyScore||0)));
+    prev.reason=Number(p.uniqueCoins||0)>=MEME_MIN_UNIQUE?'ANALYZED_MULTI_MEME':prev.reason||'ANALYZED_MEME';
+    prev.updatedAt=Date.now();
+    map.set(address,prev);
+  }
+  const pool=[...map.values()].filter(r=>Number(r.opportunityScore||0)>0).sort((a,b)=>Number(b.opportunityScore||0)-Number(a.opportunityScore||0)||Number(b.cyclesSeen||0)-Number(a.cyclesSeen||0));
+  memory.opportunityPool=pool.slice(0,OPPORTUNITY_POOL_MAX);
+  return memory.opportunityPool;
+}
+function opportunityAddresses(memory){
+  return (Array.isArray(memory?.opportunityPool)?memory.opportunityPool:[]).slice().sort((a,b)=>Number(b.opportunityScore||0)-Number(a.opportunityScore||0)).slice(0,OPPORTUNITY_RESERVED_SLOTS).map(x=>String(x.address||'').toLowerCase()).filter(Boolean);
+}
+
 async function fastMemePrefilter(addresses){
   const rows=[]; let errors=0;
   for(let i=0;i<addresses.length;i++){
@@ -1500,13 +1577,13 @@ function promotionDelta(r){
   return parts.length?parts.slice(0,3).join(' | '):'stable';
 }
 function compactTelegramReport({d,scanned,top,promotionTop,observationCount,cycle,scanStats}){
-  const header=[`🟣 HYPERLIQUID MEME HUNTER ${V8_VERSION}`,'📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔁 Promotion cycle: ${cycle}`,`🔎 Processed: ${scanStats?.processed||0} | Errors: ${scanStats?.errors||0} | History OK: ${scanStats?.historyOK||0} | Truncated: ${scanStats?.historyTruncated||0}`,`🎯 FINAL COPY CANDIDATES: ${top.filter(x=>x.executionReady).length} | Strict specialists: ${scanned.length}`,`🔬 Promotion / Research tracked: ${promotionTop.length} | Observation excluded: ${observationCount}`,`🧪 Promotion diagnostic: analyzed ${scanStats?.analyzed||0} | source ${scanStats?.promotionSource||0} | evidence ${scanStats?.promotionEvidence||0} | strict excluded ${scanStats?.strictExcluded||0}`,
+  const header=[`🟣 HYPERLIQUID MEME HUNTER ${V8_VERSION}`,'📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔁 Promotion cycle: ${cycle}`,`🔎 Processed: ${scanStats?.processed||0} | Errors: ${scanStats?.errors||0} | History OK: ${scanStats?.historyOK||0} | Truncated: ${scanStats?.historyTruncated||0}`,`🎯 FINAL COPY CANDIDATES: ${top.filter(x=>x.executionReady).length} | Strict specialists: ${scanned.length}`,`🔬 Promotion / Research tracked: ${promotionTop.length} | Observation excluded: ${observationCount}`,`🧠 Opportunity Pool: ${opportunityPool?.length||0} | Reserved next cycle: ${Math.min(OPPORTUNITY_RESERVED_SLOTS,opportunityPool?.length||0)}`,`🧪 Promotion diagnostic: analyzed ${scanStats?.analyzed||0} | source ${scanStats?.promotionSource||0} | evidence ${scanStats?.promotionEvidence||0} | strict excluded ${scanStats?.strictExcluded||0}`,
     `📚 Analysis funnel: eligible ${scanStats?.analysisEligible||0} | skipped low-history ${scanStats?.analysisSkippedLowHistory||0} | closed<${scanStats?.analysisClosedThreshold||MEME_MIN_TRADES}: ${scanStats?.closedTradesLow||0}`,`🧯 Analysis errors: ${scanStats?.analysisErrors||0}${scanStats?.analysisErrorTop?` | ${scanStats.analysisErrorTop}`:''}`];
   if(!top.length)header.push('','⚪ No trader passed the complete Meme specialist gate in this cycle.');
   top.slice(0,5).forEach((x,i)=>{const p=x.meme||{},e=x.early||{};header.push('',`#${i+1} ${x.address}`,`🏷️ ${tierOf(x)} | ${x.historyIncomplete?'⚠️ HISTORY INCOMPLETE':'✅ HISTORY COMPLETE'}`,`💰 Meme ${money(p.memePnl)} | PF ${p.memeProfitFactor===Infinity?'∞':fmt(p.memeProfitFactor,2)} | ${p.memeTrades||0} trades | WR ${pct(p.memeWinRate,0)}`,`🎯 Econ ${x.economicEdgeScore??'n/a'} | ProfitCopy ${x.profitCopyScore??'n/a'} | Timing ${x.timingCopyScore??'n/a'} | Risk ${x.riskCopyScore??'n/a'}`,`🛡️ Ready ${x.executionReadinessScore??'n/a'} ${x.executionReady?'🟢 YES':'🔴 NO'} | Class ${x.copyClassification||'BLOCKED'}`,`🛑 Block: ${(x.executionBlockReasons||[]).slice(0,4).join(', ')||'none'}`,`📉 DD ${money(p.maxDrawdown)} | R/DD ${p.returnToDrawdown===Infinity?'∞':fmt(p.returnToDrawdown,2)} | Concentration ${pct(p.topCoinPnlShare,0)}`,`🚀 Timing +1/+2/+5 ${pct(e.hit1,0)}/${pct(e.hit2,0)}/${pct(e.hit5,0)} | EntryQ ${e.entryQualityScore||0} | ExitQ ${e.exitQualityScore||0}`)});
   header.push('','⭐ PROMOTION TRACK');
   if(promotionTop.length){promotionTop.slice(0,5).forEach((x,i)=>{const r=x.promotionRecord||{};header.push(`#${i+1} ${x.address} | ${promotionLabel(r)} | score ${r.promotionScore||0} | cycles ${r.cycles||0}`,`   Econ ${r.economicEdge||0} | Profit ${r.profitCopy||0} | Timing ${r.timingCopy||0} | Risk ${r.riskCopy||0} | Ready ${r.readiness||0}`,promotionEvidenceLine(x,r),`   ${promotionGateLine(r)}`,`   NEXT: ${r.nextSteps||promotionNextSteps(r)} | Δ ${r.delta||promotionDelta(r)}`)});}else header.push('No promotion-track trader yet.');
-  header.push('','🟢 EXECUTION HANDOFF (READ-ONLY)',top.filter(x=>x.executionReady).length?'A fresh handoff was written only for FULL-COPY-CANDIDATE traders.':'No trader passed the complete live-execution gate in this cycle.','ℹ️ Promotion memory tracks repeated evidence across cycles; it never relaxes Full-Copy or execution gates.','ℹ️ PnL = realized closed Meme trades. Timing = historical execution behavior, not prediction.',`ℹ️ ${V8_VERSION}: strict gates unchanged; raw Meme recall protected before deep scan; tiny observations excluded from Promotion Track. READ-ONLY. No order is created by this worker.`);
+  header.push('','🟢 EXECUTION HANDOFF (READ-ONLY)',top.filter(x=>x.executionReady).length?'A fresh handoff was written only for FULL-COPY-CANDIDATE traders.':'No trader passed the complete live-execution gate in this cycle.','ℹ️ Promotion memory tracks repeated evidence across cycles; it never relaxes Full-Copy or execution gates.','ℹ️ PnL = realized closed Meme trades. Timing = historical execution behavior, not prediction.',`ℹ️ ${V8_VERSION}: strict gates unchanged; Opportunity Pool preserves high-value Meme evidence across cycles; tiny observations excluded from Promotion Track. READ-ONLY. No order is created by this worker.`);
   return header.join('\n');
 }
 
@@ -1651,7 +1728,9 @@ async function main(){
   }
   const universeAddresses=MEME_MODE==='watch'&&MEME_WATCHLIST.length?MEME_WATCHLIST:d.candidates.slice(0,MEME_SCOUT_CANDIDATES);
   const cohort=MEME_MODE==='watch'?{selected:universeAddresses,slot:0,slots:1,coverage:universeAddresses.length}:selectRotatingMemeCohort(universeAddresses);
-  const sourceAddresses=cohort.selected;
+  const protectedOpportunityAddresses=MEME_MODE==='watch'?[]:opportunityAddresses(promotionMemory);
+  const sourceAddresses=MEME_MODE==='watch'?cohort.selected:[...new Set([...protectedOpportunityAddresses,...cohort.selected])];
+  if(protectedOpportunityAddresses.length)console.log(`[OPPORTUNITY] protected=${protectedOpportunityAddresses.length} pool=${promotionMemory.opportunityPool?.length||0} addresses=${protectedOpportunityAddresses.map(short).join(',')}`);
   console.log(`[COHORT] cycle=${cohort.slot+1}/${cohort.slots} scanned=${sourceAddresses.length} coverage=${cohort.coverage}`);
   const scanned=[];
   const nearMisses=[];
@@ -1676,14 +1755,20 @@ async function main(){
   };
 
   let fullHistoryAddresses=sourceAddresses;
+  let pf={rows:[],selected:[],errors:0};
   let prefilterErrors=0;
   if(MEME_MODE!=='watch' && sourceAddresses.length>MEME_PREFILTER_TARGET){
     const pf=await fastMemePrefilter(sourceAddresses);
     funnel.prefilterScanned=sourceAddresses.length;
     funnel.prefilterSelected=pf.selected.length;
     prefilterErrors=pf.errors;
-    fullHistoryAddresses=pf.selected.map(x=>x.address);
-    console.log(`[PREFILTER][DONE] ${sourceAddresses.length} -> ${fullHistoryAddresses.length} selected errors=${pf.errors} | selection=closed-lifecycle-first+exploration`);
+    const selectedBase=pf.selected.map(x=>x.address);
+    const protectedSet=new Set(protectedOpportunityAddresses);
+    const protectedSelected=protectedOpportunityAddresses.filter(a=>sourceAddresses.includes(a));
+    const nonProtected=selectedBase.filter(a=>!protectedSet.has(a));
+    const reserve=Math.min(protectedSelected.length,OPPORTUNITY_RESERVED_SLOTS);
+    fullHistoryAddresses=[...new Set([...protectedSelected.slice(0,reserve),...nonProtected.slice(0,Math.max(0,MEME_PREFILTER_TARGET-reserve))])];
+    console.log(`[PREFILTER][DONE] ${sourceAddresses.length} -> ${fullHistoryAddresses.length} selected errors=${pf.errors} | selection=closed-lifecycle-first+raw-recall+opportunity-reserve`);
   }else{
     funnel.prefilterScanned=sourceAddresses.length;
     funnel.prefilterSelected=sourceAddresses.length;
@@ -1752,6 +1837,7 @@ async function main(){
   for(const x of promotionResearch){ const rec=updatePromotionRecord(promotionMemory,x,cycle); if(rec)promotionRecords.push({...x,promotionRecord:rec,promotionLabel:promotionLabel(rec)}); }
   const promotionTop=promotionRecords.sort((a,b)=>(b.promotionRecord?.promotionScore||0)-(a.promotionRecord?.promotionScore||0)||(b.economicEdgeScore||0)-(a.economicEdgeScore||0)||(b.meme?.memePnl||0)-(a.meme?.memePnl||0)).slice(0,PROMOTION_POOL);
   const promotionDiag={source:promotionSource.length,nonStrict:promotionSource.filter(x=>!x.memeEligible).length,evidenceBacked:promotionResearch.length,records:promotionRecords.length,strictExcluded:promotionSource.filter(x=>x.memeEligible).length};
+  const opportunityPool=mergeOpportunityPool(promotionMemory, pf?.rows||[], allResearch, cycle);
   const analysisErrorTop=Object.entries(funnel.analysisErrorCategories||{}).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([k,v])=>`${k}:${v}`).join(', ');
   await writeJsonAtomic(PROMOTION_MEMORY_PATH,promotionMemory);
   const heavyTop=[...new Map(memeHeavy.map(x=>[x.address,x])).values()].sort((a,b)=>(b.meme?.exposurePct||0)-(a.meme?.exposurePct||0)||(b.meme?.memeTrades||0)-(a.meme?.memeTrades||0)||(b.meme?.uniqueCoins||0)-(a.meme?.uniqueCoins||0)).slice(0,MEME_TOP_N);
