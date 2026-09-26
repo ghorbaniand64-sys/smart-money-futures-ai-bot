@@ -9,7 +9,7 @@ const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL || 'https://s
 const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED ?? 'true').toLowerCase() === 'true';
 
 // V8 persistent promotion / execution bridge. Research memory never weakens hard gates.
-const V8_VERSION='V8.1';
+const V8_VERSION='V8.2';
 const PROMOTION_MEMORY_PATH=process.env.HYPERLIQUID_MEME_PROMOTION_MEMORY_PATH||'state/meme_hunter_memory.json';
 const EXECUTION_HANDOFF_PATH=process.env.HYPERLIQUID_EXECUTION_HANDOFF_PATH||'state/meme_execution_handoff.json';
 const EXECUTION_HANDOFF_TTL_MS=integer('HYPERLIQUID_EXECUTION_HANDOFF_TTL_MS',600000);
@@ -1477,8 +1477,8 @@ function promotionDelta(r){
   }
   return parts.length?parts.slice(0,3).join(' | '):'stable';
 }
-function compactTelegramReport({d,scanned,top,promotionTop,cycle}){
-  const header=['🟣 HYPERLIQUID MEME HUNTER V8.2','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔁 Promotion cycle: ${cycle}`,`🎯 FINAL COPY CANDIDATES: ${top.filter(x=>x.executionReady).length} | Strict specialists: ${scanned.length}`,`🔬 Promotion / Research tracked: ${promotionTop.length} | Observation excluded: ${Math.max(0,allResearch.length-promotionResearch.length)}`];
+function compactTelegramReport({d,scanned,top,promotionTop,observationCount,cycle}){
+  const header=['🟣 HYPERLIQUID MEME HUNTER V8.2','📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔁 Promotion cycle: ${cycle}`,`🎯 FINAL COPY CANDIDATES: ${top.filter(x=>x.executionReady).length} | Strict specialists: ${scanned.length}`,`🔬 Promotion / Research tracked: ${promotionTop.length} | Observation excluded: ${observationCount}`];
   if(!top.length)header.push('','⚪ No trader passed the complete Meme specialist gate in this cycle.');
   top.slice(0,5).forEach((x,i)=>{const p=x.meme||{},e=x.early||{};header.push('',`#${i+1} ${x.address}`,`🏷️ ${tierOf(x)} | ${x.historyIncomplete?'⚠️ HISTORY INCOMPLETE':'✅ HISTORY COMPLETE'}`,`💰 Meme ${money(p.memePnl)} | PF ${p.memeProfitFactor===Infinity?'∞':fmt(p.memeProfitFactor,2)} | ${p.memeTrades||0} trades | WR ${pct(p.memeWinRate,0)}`,`🎯 Econ ${x.economicEdgeScore??'n/a'} | ProfitCopy ${x.profitCopyScore??'n/a'} | Timing ${x.timingCopyScore??'n/a'} | Risk ${x.riskCopyScore??'n/a'}`,`🛡️ Ready ${x.executionReadinessScore??'n/a'} ${x.executionReady?'🟢 YES':'🔴 NO'} | Class ${x.copyClassification||'BLOCKED'}`,`🛑 Block: ${(x.executionBlockReasons||[]).slice(0,4).join(', ')||'none'}`,`📉 DD ${money(p.maxDrawdown)} | R/DD ${p.returnToDrawdown===Infinity?'∞':fmt(p.returnToDrawdown,2)} | Concentration ${pct(p.topCoinPnlShare,0)}`,`🚀 Timing +1/+2/+5 ${pct(e.hit1,0)}/${pct(e.hit2,0)}/${pct(e.hit5,0)} | EntryQ ${e.entryQualityScore||0} | ExitQ ${e.exitQualityScore||0}`)});
   header.push('','⭐ PROMOTION TRACK');
@@ -1606,7 +1606,7 @@ async function main(){
   const cycle=promotionMemory.cycles;
   const now=Date.now(), startTime=now-MEME_HISTORY_DAYS*86400000;
   const errors=[];
-  console.log(`[MEME-HUNTER V8.1][START] mode=${MEME_MODE} watchlist=${MEME_WATCHLIST.length}`);
+  console.log(`[MEME-HUNTER V8.2][START] mode=${MEME_MODE} watchlist=${MEME_WATCHLIST.length}`);
   let d;
   try{d=await discover()}catch(e){
     console.error(`[DISCOVERY][ERROR] ${e.message}`);
@@ -1768,8 +1768,8 @@ async function main(){
   if(exportRows.length){lines.push(`Exported: ${exportRows.length}/5`);exportRows.forEach((x,i)=>{const p=x.meme||{};const tier=x.memeEligible?'STRICT':x.focusEligible?'FOCUS':x.multiResearchEligible?'MULTI-RESEARCH':x.concentratedEligible?'CONCENTRATED':x.researchEligible?'RESEARCH':'NEAR-MISS';lines.push(`#${i+1} ${x.address} | tier=${tier} | exposure=${pct(p.exposurePct,1)} | memeTrades=${p.memeTrades||0} | unique=${p.uniqueCoins||0} | dominant=${p.dominantMeme||'n/a'} ${pct(p.dominantPct,1)}`);});lines.push(`HYPERLIQUID_MEME_WATCHLIST=${exportRows.map(x=>x.address).join(',')}`);}else lines.push('Exported: 0/5','HYPERLIQUID_MEME_WATCHLIST=');
   lines.push('','ℹ️ V5.53 validates realized Meme PnL/WR/PF plus entry timing, exit capture and post-exit continuation on the sampled recent Meme trades.' ,'ℹ️ Early/exit behavior describes repeated historical execution; it does NOT establish advance knowledge of future pumps/dumps.','ℹ️ Watchlist contains the top five available research candidates; Copyability is shown separately from Meme specialization.','ℹ️ V5.53 keeps Strict Multi-Meme Specialist separate from Concentrated Meme behavior; neither research tier redefines strict eligibility.','ℹ️ Probable/unknown symbols never count toward specialist eligibility.','ℹ️ No orders are created by this worker.',`🕐 ${new Date().toISOString()}`);
   if(errors.length){lines.push('','🧪 SAMPLE ERRORS');errors.slice(0,8).forEach(e=>lines.push(`${short(e.address)} → ${e.cat} → ${String(e.message||'').slice(0,180)}`))}
-  console.log(`[MEME-HUNTER V8.1][DONE] discovered=${d.discovered} scanned=${sourceAddresses.length} specialists=${scanned.length} top=${top.length} errors=${errors.length} seconds=${((Date.now()-t0)/1000).toFixed(1)}`);
-  await telegram(compactTelegramReport({d,scanned,top,promotionTop,cycle}));
+  console.log(`[MEME-HUNTER V8.2][DONE] discovered=${d.discovered} scanned=${sourceAddresses.length} specialists=${scanned.length} top=${top.length} errors=${errors.length} seconds=${((Date.now()-t0)/1000).toFixed(1)}`);
+  await telegram(compactTelegramReport({d,scanned,top,promotionTop,observationCount:Math.max(0,allResearch.length-promotionResearch.length),cycle}));
 }
 
-main().catch(async e=>{console.error(`[MEME-HUNTER V8.1][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID MEME HUNTER V8\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
+main().catch(async e=>{console.error(`[MEME-HUNTER V8.2][FATAL] ${e.stack||e}`);await telegram(`🟣 HYPERLIQUID MEME HUNTER V8\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n💥 FATAL ERROR\n${String(e.message||e).slice(0,1000)}`);process.exitCode=1});
