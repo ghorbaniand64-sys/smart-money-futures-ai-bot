@@ -366,9 +366,14 @@ async function placeProtection(exchange,p){
 
   log(`PROTECTION PLAN ${p.coin} ${p.side} actualEntry=${fmt(actualEntry)} size=${fmt(actualSize,8)} SL=${fmt(pp.sl)} TP=${fmt(pp.tp)} RR=${fmt(pp.rr,2)}`);
 
+  // These protection orders are being attached AFTER the entry has already
+  // filled. Hyperliquid's normalTpsl grouping requires a non-trigger parent
+  // order in the same batch; sending trigger-only orders under normalTpsl
+  // causes: "Main order cannot be trigger order."
+  // Use standalone grouping for the already-open position instead.
   const result=await exchange.order({
     orders,
-    grouping:'normalTpsl'
+    grouping:'na'
   },{expiresAfter:Date.now()+30000});
 
   log(`PROTECTION RESPONSE ${JSON.stringify(result)}`);
