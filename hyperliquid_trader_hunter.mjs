@@ -9,7 +9,7 @@ const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL || 'https://s
 const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED ?? 'true').toLowerCase() === 'true';
 
 // V8 persistent promotion / execution bridge. Research memory never weakens hard gates.
-const V8_VERSION='V8.5.15';
+const V8_VERSION='V8.5.16';
 const OPPORTUNITY_POOL_MAX=integer('HYPERLIQUID_MEME_OPPORTUNITY_POOL_MAX',12);
 const RUN_BUDGET_MS=integer('HYPERLIQUID_MEME_RUN_BUDGET_MS',480000);
 const RUN_MIN_REMAINING_MS=integer('HYPERLIQUID_MEME_RUN_MIN_REMAINING_MS',45000);
@@ -81,6 +81,8 @@ const DEEP_HISTORY_MIN_CLOSED = integer('HYPERLIQUID_MEME_DEEP_HISTORY_MIN_CLOSE
 const DEEP_HISTORY_RESERVE_MS = integer('HYPERLIQUID_MEME_DEEP_HISTORY_RESERVE_MS', 120000);
 const DEEP_HISTORY_PRIORITY_TARGET = integer('HYPERLIQUID_MEME_DEEP_HISTORY_PRIORITY_TARGET', 2);
 const DEEP_HISTORY_POSTSCAN_TARGET = integer('HYPERLIQUID_MEME_DEEP_HISTORY_POSTSCAN_TARGET', 2);
+const DEEP_HISTORY_RECOVERY_RETRIES = integer('HYPERLIQUID_MEME_DEEP_HISTORY_RECOVERY_RETRIES', 2);
+const DEEP_HISTORY_RECOVERY_MIN_REMAINING_MS = integer('HYPERLIQUID_MEME_DEEP_HISTORY_RECOVERY_MIN_REMAINING_MS', 45000);
 const TIMEOUT = integer('HYPERLIQUID_HUNTER_REQUEST_TIMEOUT_MS', 30000);
 
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
@@ -1839,6 +1841,36 @@ function deepHistoryBudgetExpired(t0){
   return elapsed>=RUN_BUDGET_MS || (RUN_BUDGET_MS-elapsed)<=RUN_MIN_REMAINING_MS;
 }
 
+function deepHistoryRemainingMs(t0){
+  return Math.max(0,RUN_BUDGET_MS-(Date.now()-t0));
+}
+
+async function deepHistoryFetchWithRecovery(address,startTime,now,t0){
+  let last=null;
+  const attempts=1+Math.max(0,DEEP_HISTORY_RECOVERY_RETRIES);
+  for(let attempt=1;attempt<=attempts;attempt++){
+    if(deepHistoryRemainingMs(t0)<DEEP_HISTORY_RECOVERY_MIN_REMAINING_MS)break;
+    try{
+      const df=await getFills(address,startTime,now,DEEP_HISTORY_MAX_PAGES);
+      last={df,attempt};
+      if(!df.truncated || !df.rateLimitAffected)return last;
+      if(attempt<attempts){
+        const wait=Math.min(8000,1000*Math.pow(2,attempt-1));
+        console.log(`[DEEP-HISTORY][RECOVERY] ${short(address)} attempt=${attempt} status=UNVERIFIED reason=${df.incompleteReason||'HTTP_429'} retryIn=${wait}ms remaining=${deepHistoryRemainingMs(t0)}ms`);
+        await sleep(wait);
+      }
+    }catch(e){
+      last={error:e,attempt};
+      if(attempt<attempts){
+        const wait=Math.min(8000,1000*Math.pow(2,attempt-1));
+        console.log(`[DEEP-HISTORY][RECOVERY] ${short(address)} attempt=${attempt} error=${category(e)} retryIn=${wait}ms remaining=${deepHistoryRemainingMs(t0)}ms`);
+        await sleep(wait);
+      } else throw e;
+    }
+  }
+  return last;
+}
+
 async function persistOpportunityCheckpoint(state){
   if(!state?.promotionMemory)return;
   try{
@@ -1919,19 +1951,25 @@ async function main(){
   deepHistoryStats.eligible += priorityDeepAddresses.length;
   if(priorityDeepAddresses.length)console.log(`[DEEP-HISTORY][PRIORITY] reserving ${DEEP_HISTORY_RESERVE_MS}ms | targets=${priorityDeepAddresses.map(short).join(',')}`);
   for(const address of priorityDeepAddresses){
-    if(RUN_INTERRUPTED || runBudgetExpired(t0))break;
+    if(RUN_INTERRUPTED || deepHistoryBudgetExpired(t0))break;
     deepHistoryStats.attempted++;
     try{
-      const df=await getFills(address,startTime,now,DEEP_HISTORY_MAX_PAGES);
+      const result=await deepHistoryFetchWithRecovery(address,startTime,now,t0);
+      if(!result?.df){
+        deepHistoryStats.errors++;
+        deepHistoryStats.targets.push({address,status:'ERROR',pages:0,closed:0,error:result?.error?category(result.error):'RECOVERY_BUDGET',prefetched:true});
+        continue;
+      }
+      const df=result.df;
       priorityDeepPrefetch.set(address,df);
       const rr=reconstruct(df.fills),mm=metrics(df.fills,rr);
       const verifiedPartial=Boolean(df.truncated && !df.rateLimitAffected && !df.networkAffected && mm.closedTrades>=DEEP_HISTORY_MIN_CLOSED);
       const verification=df.truncated?(verifiedPartial?'VERIFIED_PARTIAL':'UNVERIFIED_PARTIAL'):'COMPLETE';
-      deepHistoryStats.targets.push({address,status:verification,pages:df.pages,closed:mm.closedTrades,prefetched:true});
+      deepHistoryStats.targets.push({address,status:verification,pages:df.pages,closed:mm.closedTrades,prefetched:true,recoveryAttempt:result.attempt});
       if(verification==='VERIFIED_PARTIAL')deepHistoryStats.verifiedPartial++;
       else if(verification==='COMPLETE')deepHistoryStats.complete++;
       else deepHistoryStats.unverified++;
-      console.log(`[DEEP-HISTORY][PRIORITY] ${short(address)} pages=${df.pages} closed=${mm.closedTrades} status=${verification} prefetched=YES`);
+      console.log(`[DEEP-HISTORY][PRIORITY] ${short(address)} pages=${df.pages} closed=${mm.closedTrades} status=${verification} attempt=${result.attempt} prefetched=YES remaining=${deepHistoryRemainingMs(t0)}ms`);
     }catch(e){
       deepHistoryStats.errors++;
       deepHistoryStats.targets.push({address,status:'ERROR',pages:0,closed:0,error:category(e),prefetched:true});
@@ -2036,7 +2074,9 @@ async function main(){
       if(RUN_INTERRUPTED || deepHistoryBudgetExpired(t0))break;
       deepHistoryStats.attempted++;
       try{
-        const df=await getFills(target.address,startTime,now,DEEP_HISTORY_MAX_PAGES);
+        const recovered=await deepHistoryFetchWithRecovery(target.address,startTime,now,t0);
+        if(!recovered?.df)throw (recovered?.error || new Error('deep history recovery budget exhausted'));
+        const df=recovered.df;
         const dr=reconstruct(df.fills),dm=metrics(df.fills,dr);
         const verifiedPartial=Boolean(df.truncated && !df.rateLimitAffected && !df.networkAffected && dm.closedTrades>=DEEP_HISTORY_MIN_CLOSED);
         const verification=df.truncated?(verifiedPartial?'VERIFIED_PARTIAL':'UNVERIFIED_PARTIAL'):'COMPLETE';
