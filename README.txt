@@ -1,4 +1,4 @@
-Hyperliquid Meme Hunter V8.6.8 — FIXED-3 ENTRY DIAGNOSTICS
+Hyperliquid Meme Hunter V8.6.9 — FIXED-3 SAFE LIVE EXECUTION
 
 Fixed traders (rotation OFF):
 1) 0x64b766b07362405a9cc19c2226490f3015929da9
@@ -12,7 +12,12 @@ Key fixes:
 - Genuine lifecycle/data-integrity failures remain hard execution blocks.
 - Final fixed-copy candidates come from the same analyzed registry used by Deep History.
 - Best current entry remains subject to current-position distance, RR, ATR/volatility and execution-readiness gates.
-- No live order is created by the hunter itself; execution is handed off only when all hard execution gates pass.
+- Hunter remains READ-ONLY; execution is a separate engine.
+- Execution Engine V8.6.9 is LIVE-capable but SAFE by default: EXECUTION_ENABLED=false and EXECUTION_DRY_RUN=true unless explicitly changed.
+- PAPER_EXECUTION_ONLY=true is an emergency paper-only kill switch.
+- Before live entry, the engine revalidates handoff age, source distance, direction, account balance, max 2 positions, duplicate orders, isolated leverage, and 50% margin cap.
+- After a fill, both SL and TP must be accepted and have order IDs, and the position must be confirmed. Any protection/confirmation failure triggers emergency close.
+- Self-test: EXECUTION_SELF_TEST=true node hyperliquid_execution_engine.mjs. This submits no network order.
 
 V8.6.8 changes:
 - Fixed-3 Entry Selection now displays trader entry/current price with adaptive precision.

@@ -1,5 +1,5 @@
-// Hyperliquid Meme Hunter Execution Engine V8.6.2 — LIVE FIXED-3
-// Consumes the Fixed-3 Best-Entry handoff. LIVE is enabled by default for the configured test account.
+// Hyperliquid Meme Hunter Execution Engine V8.6.9 — FIXED-3 SAFE LIVE
+// Consumes the Fixed-3 Best-Entry handoff. Live orders are explicit opt-in only.
 // Safety limits: max 2 simultaneous positions, 50% account margin per position, isolated 10x leverage.
 
 import fs from 'node:fs/promises';
@@ -9,12 +9,12 @@ import { privateKeyToAccount } from 'viem/accounts';
 
 const INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const HANDOFF_PATH = process.env.HYPERLIQUID_EXECUTION_HANDOFF_PATH || 'state/meme_execution_handoff.json';
-const EXECUTION_ENABLED = String(process.env.EXECUTION_ENABLED ?? 'true').toLowerCase() === 'true';
-const REQUESTED_DRY_RUN = String(process.env.EXECUTION_DRY_RUN ?? 'false').toLowerCase() !== 'false';
-// Safety: this build is paper-only. EXECUTION_ENABLED may be true for pipeline testing,
-// but no live order path is permitted by this worker build.
-const PAPER_EXECUTION_ONLY = String(process.env.PAPER_EXECUTION_ONLY ?? 'false').toLowerCase() !== 'false';
-const DRY_RUN = PAPER_EXECUTION_ONLY ? true : REQUESTED_DRY_RUN;
+const EXECUTION_ENABLED = String(process.env.EXECUTION_ENABLED ?? 'false').toLowerCase() === 'true';
+const REQUESTED_DRY_RUN = String(process.env.EXECUTION_DRY_RUN ?? 'true').toLowerCase() !== 'false';
+// Live execution is opt-in only. PAPER_EXECUTION_ONLY is an explicit emergency
+// kill-switch; it must never be silently enabled by a missing environment variable.
+const PAPER_EXECUTION_ONLY = String(process.env.PAPER_EXECUTION_ONLY ?? 'false').toLowerCase() === 'true';
+const DRY_RUN = PAPER_EXECUTION_ONLY || REQUESTED_DRY_RUN;
 const ACCOUNT = String(process.env.HYPERLIQUID_ACCOUNT_ADDRESS || '').trim().toLowerCase();
 const AGENT_KEY = String(process.env.HYPERLIQUID_AGENT_PRIVATE_KEY || '').trim();
 const MAX_HANDOFF_AGE_MS = Number(process.env.EXECUTION_HANDOFF_TTL_MS || 90000);
@@ -168,9 +168,14 @@ function deterministicCloid(address,coin,sourceEntry){
 
 function formatPrice(price,szDecimals){
   if(!(price>0))throw new Error('INVALID_PRICE');
-  const maxDecimals=Math.max(6-szDecimals,0);
+  const maxDecimals=Math.max(6-Number(szDecimals||0),0);
   const sig=Number(price.toPrecision(5));
-  return sig.toFixed(Math.min(maxDecimals,Math.max(0,(String(sig).split('.')[1]||'').length))).replace(/\.?0+$/,'');
+  // Hyperliquid price rules use up to 5 significant figures AND a maximum
+  // decimal count derived from szDecimals. Never allow a tiny price to round
+  // silently to zero; fail closed if the market's precision cannot represent it.
+  const fixed=Number(sig.toFixed(maxDecimals));
+  if(!(fixed>0))throw new Error(`PRICE_PRECISION_UNREPRESENTABLE:${price}:szDecimals=${szDecimals}`);
+  return fixed.toFixed(maxDecimals).replace(/\.?0+$/,'');
 }
 function formatSize(size,szDecimals){
   if(!(size>0))throw new Error('INVALID_SIZE');
@@ -233,6 +238,7 @@ async function buildCandidate(handoff){
   const lev=num(pos?.leverage?.value||pos?.leverageValue||pos?.leverage||0);
   if(TARGET_LEVERAGE>asset.maxLeverage)throw new Error(`TARGET_LEVERAGE>${asset.maxLeverage}x_FOR_${coin}`);
   if(TARGET_LEVERAGE>MAX_LEVERAGE)throw new Error(`TARGET_LEVERAGE>${MAX_LEVERAGE}x`);
+  if(!(ACCOUNT_ALLOCATION_PCT>0 && ACCOUNT_ALLOCATION_PCT<=MAX_ACCOUNT_ALLOCATION_PCT))throw new Error(`ACCOUNT_ALLOCATION>${MAX_ACCOUNT_ALLOCATION_PCT}%`);
   const margin=acct.accountValue*(ACCOUNT_ALLOCATION_PCT/100);
   const notional=margin*TARGET_LEVERAGE;
   if(!(notional>0))throw new Error('NOTIONAL_ZERO');
@@ -259,34 +265,68 @@ function orderError(result){
   const s=statusList(result).find(x=>typeof x==='object' && x.error);
   return s?.error || null;
 }
-async function placeProtection(exchange,p,filledSize){
+function buildProtectionOrders(p,filledSize){
   const closeBuy=p.side==='SHORT';
   const size=formatSize(filledSize,p.asset.szDecimals);
   const slPx=formatPrice(p.sl,p.asset.szDecimals);
   const tpPx=formatPrice(p.tp,p.asset.szDecimals);
+  return [
+    {a:p.asset.assetIndex,b:closeBuy,p:slPx,s:size,r:true,t:{trigger:{isMarket:true,triggerPx:slPx,tpsl:'sl'}}},
+    {a:p.asset.assetIndex,b:closeBuy,p:tpPx,s:size,r:true,t:{trigger:{isMarket:true,triggerPx:tpPx,tpsl:'tp'}}}
+  ];
+}
+
+async function placeProtection(exchange,p,filledSize){
   const protection=await exchange.order({
-    orders:[
-      {a:p.asset.assetIndex,b:closeBuy,p:slPx,s:size,r:true,t:{trigger:{isMarket:true,triggerPx:slPx,tpsl:'sl'}}},
-      {a:p.asset.assetIndex,b:closeBuy,p:tpPx,s:size,r:true,t:{trigger:{isMarket:true,triggerPx:tpPx,tpsl:'tp'}}}
-    ],
+    orders:buildProtectionOrders(p,filledSize),
     grouping:'normalTpsl',
     expiresAfter:Date.now()+30000
   });
-  const errors=statusList(protection).filter(x=>typeof x==='object'&&x.error).map(x=>x.error);
+  const statuses=statusList(protection);
+  if(statuses.length<2)throw new Error('PROTECTION_RESPONSE_INCOMPLETE');
+  const errors=statuses.filter(x=>typeof x==='object'&&x.error).map(x=>x.error);
   if(errors.length)throw new Error(`PROTECTION_ORDER_REJECTED:${errors.join('|')}`);
   return protection;
 }
 async function emergencyClose(exchange,p,filledSize){
   const closeBuy=p.side==='SHORT';
   const size=formatSize(filledSize,p.asset.szDecimals);
+  const live=await book(p.coin).catch(()=>p.market);
+  // Cross the spread in the direction needed to flatten immediately.
+  const rawPx=closeBuy ? live.ask*(1+SLIPPAGE_BPS/10000) : live.bid*(1-SLIPPAGE_BPS/10000);
   return exchange.order({
-    orders:[{a:p.asset.assetIndex,b:closeBuy,p:formatPrice(p.market.mid,p.asset.szDecimals),s:size,r:true,t:{limit:{tif:'Ioc'}}}],
+    orders:[{a:p.asset.assetIndex,b:closeBuy,p:formatPrice(rawPx,p.asset.szDecimals),s:size,r:true,t:{limit:{tif:'Ioc'}}}],
     grouping:'na',expiresAfter:Date.now()+30000
   });
 }
 
+function assertTest(ok,msg){ if(!ok) throw new Error(`SELF_TEST_FAIL:${msg}`); }
+function runSelfTest(){
+  assertTest(formatPrice(12345.678,4)==='12346','price_precision');
+  let precisionBlocked=false;
+  try{ formatPrice(0.0044085,4); }catch(e){ precisionBlocked=String(e.message).startsWith('PRICE_PRECISION_UNREPRESENTABLE'); }
+  assertTest(precisionBlocked,'tiny_price_precision_fail_closed');
+  assertTest(formatSize(123.456789,3)==='123.457','size_rounding');
+  const lp=planPrices('LONG',100,2);
+  assertTest(lp.sl<100 && lp.tp>100 && lp.rr>=1.5,'long_protection_rr');
+  const sp=planPrices('SHORT',100,2);
+  assertTest(sp.sl>100 && sp.tp<100 && sp.rr>=1.5,'short_protection_rr');
+  const fake={asset:{assetIndex:7,szDecimals:3},side:'LONG',sl:98,tp:104};
+  const po=buildProtectionOrders(fake,1.25);
+  assertTest(po.length===2,'protection_count');
+  assertTest(po.every(x=>x.r===true),'protection_reduce_only');
+  assertTest(po[0].t.trigger.tpsl==='sl' && po[1].t.trigger.tpsl==='tp','protection_types');
+  assertTest(po.every(x=>x.b===false),'long_protection_side');
+  const c1=deterministicCloid('0x0000000000000000000000000000000000000001','KPEPE',0.1234);
+  const c2=deterministicCloid('0x0000000000000000000000000000000000000001','KPEPE',0.1234);
+  assertTest(c1===c2 && /^0x[0-9a-f]{32}$/.test(c1),'cloid_determinism');
+  assertTest(EXECUTION_ENABLED===false && DRY_RUN===true,'safe_defaults');
+  console.log('[EXECUTION][SELF-TEST] PASS — no network order was submitted.');
+}
+
 async function run(){
-  log(`start enabled=${EXECUTION_ENABLED} dryRun=${DRY_RUN} mainnet=${MAINNET}`);
+  log(`start enabled=${EXECUTION_ENABLED} dryRun=${DRY_RUN} paperKill=${PAPER_EXECUTION_ONLY} mainnet=${MAINNET}`);
+  if(EXECUTION_ENABLED && DRY_RUN===false && PAPER_EXECUTION_ONLY===false && !MAINNET) throw new Error('LIVE_TESTNET_BLOCKED_BY_CONFIGURATION');
   const previousState=await loadStateSafe();
   if(previousState?.mode==='LIVE' && previousState?.activePosition) await reconcileClosedPosition(previousState);
   const handoff=await readJson(HANDOFF_PATH);
@@ -331,9 +371,12 @@ async function run(){
     const pOids=protectionOids(protection);
     const slOid=String(pOids[0]||'');
     const tpOid=String(pOids[1]||'');
+    if(!slOid || !tpOid) throw new Error('PROTECTION_OIDS_MISSING');
     log(`PROTECTION LIVE ${p.coin} SL=${fmt(p.sl)} TP=${fmt(p.tp)} size=${fmt(filledSize,8)}`);
     const confirmedPos=await confirmOwnPosition(p.coin,p.side);
-    const actualEntry=confirmedPos?.entryPx?num(confirmedPos.entryPx):(avgPx||p.liveFillPrice);
+    if(!confirmedPos) throw new Error('FILLED_POSITION_CONFIRMATION_TIMEOUT');
+    const actualEntry=num(confirmedPos.entryPx);
+    if(!(actualEntry>0)) throw new Error('CONFIRMED_ENTRY_PRICE_INVALID');
     const activePosition={coin:p.coin,side:p.side,trader:p.trader,entry:actualEntry,size:filledSize,openedAt:Date.now(),leverage:TARGET_LEVERAGE,sl:p.sl,tp:p.tp,slOid,tpOid,protectionOids:pOids};
     await telegram(`🟢 HYPERLIQUID TRADE OPENED\n━━━━━━━━━━━━━━━━━━\n🪙 ${p.coin} | ${p.side}\n👤 Trader: ${p.trader}\n📥 Entry: ${fmt(actualEntry)}\n📦 Size: ${fmt(filledSize,8)}\n💵 Margin: $${fmt(p.margin,2)} (${ACCOUNT_ALLOCATION_PCT}% account)\n⚡ Leverage: ${TARGET_LEVERAGE}x ISOLATED\n🛡️ SL: ${fmt(p.sl)}\n🎯 TP: ${fmt(p.tp)}\n📊 RR: ${fmt(p.rr,2)}\n💳 Account: $${fmt(p.accountValue,2)}\n🕐 ${new Date().toISOString()}`);
     await writeJson(STATE_PATH,{at:Date.now(),mode:'LIVE',plan:p,entryResult:result,protectionResult:protection,activePosition});
@@ -350,7 +393,9 @@ async function run(){
   }
 }
 
-run().catch(async e=>{
+if(String(process.env.EXECUTION_SELF_TEST||'false').toLowerCase()==='true'){
+  try{ runSelfTest(); process.exitCode=0; }catch(e){ console.error(`[EXECUTION][SELF-TEST] ${e.stack||e}`); process.exitCode=1; }
+}else run().catch(async e=>{
   const reason=String(e.message||e);
   console.error(`[EXECUTION][BLOCK] ${e.stack||e}`);
   try{await writeJson(STATE_PATH,{at:Date.now(),mode:'BLOCKED',reason});}catch{}
