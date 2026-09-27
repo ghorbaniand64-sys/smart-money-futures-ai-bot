@@ -153,7 +153,8 @@ async function accountState(){
     throw new Error(`ACCOUNT_VALUE_ZERO_OR_UNAVAILABLE:account=${ACCOUNT}:marginAccountValue=${ma}:crossAccountValue=${cma}:totalRawUsd=${raw}:withdrawable=${wd}`);
   }
 
-  return {raw:s,accountValue,withdrawable,totalMarginUsed,positions,collateralSource};
+  const availableMargin=Number.isFinite(withdrawable)?Math.max(0,withdrawable):NaN;
+  return {raw:s,accountValue,withdrawable,totalMarginUsed,positions,collateralSource,availableMargin};
 }
 
 async function openOrders(){ return info({type:'openOrders',user:ACCOUNT}); }
@@ -297,8 +298,12 @@ async function buildCandidate(handoff){
   // 50% of account value is margin; effective leverage determines position
   // notional. Hyperliquid uses isolated leverage here.
   const margin=Math.max(0,acct.accountValue*MARGIN_ALLOCATION_PCT/100);
-  if(Number.isFinite(acct.withdrawable) && acct.withdrawable < margin)
-    throw new Error(`INSUFFICIENT_WITHDRAWABLE_MARGIN:${fmt(acct.withdrawable,2)}<${fmt(margin,2)}`);
+  const availableMargin=Number.isFinite(acct.availableMargin)
+    ? acct.availableMargin
+    : acct.withdrawable;
+  log(`MARGIN CHECK required=$${fmt(margin,2)} available=$${fmt(availableMargin,2)} source=${acct.collateralSource}`);
+  if(Number.isFinite(availableMargin) && availableMargin < margin)
+    throw new Error(`INSUFFICIENT_AVAILABLE_MARGIN:${fmt(availableMargin,2)}<${fmt(margin,2)}:${acct.collateralSource}`);
   const notional=margin*effectiveLeverage;
   if(!(margin>0&&notional>0))throw new Error('NOTIONAL_ZERO');
 
