@@ -2,7 +2,8 @@ name: Hyperliquid Trader Monitor
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    # Every 5 minutes, offset by 1 minute to reduce :00 scheduling load.
+    - cron: '1-59/5 * * * *'
   workflow_dispatch:
 
 permissions:
