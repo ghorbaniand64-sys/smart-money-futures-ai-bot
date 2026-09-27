@@ -1,4 +1,4 @@
-// Hyperliquid Meme Hunter Execution Engine — V8.7.0-FINAL compatible LIVE
+// Hyperliquid Meme Hunter Execution Engine V8.7.0-LIVE
 // Consumes the V8.7.0-FINAL Hunter handoff.
 // LIVE: 50% account margin per position, 10x isolated leverage, max 2 positions.
 // Entry is followed by fill verification and real reduce-only SL/TP protection.
@@ -17,9 +17,6 @@ const EXECUTION_ENABLED = String(process.env.EXECUTION_ENABLED ?? 'false').toLow
 const DRY_RUN = String(process.env.EXECUTION_DRY_RUN ?? 'true').toLowerCase() !== 'false';
 const ACCOUNT = String(process.env.HYPERLIQUID_ACCOUNT_ADDRESS || '').trim().toLowerCase();
 const AGENT_KEY = String(process.env.HYPERLIQUID_AGENT_PRIVATE_KEY || '').trim();
-const AGENT_ADDRESS = String(process.env.HYPERLIQUID_AGENT_WALLET_ADDRESS || '').trim().toLowerCase();
-const TELEGRAM_TOKEN = String(process.env.TELEGRAM_TOKEN || '').trim();
-const TELEGRAM_CHAT_ID = String(process.env.TELEGRAM_CHAT_ID || '').trim();
 
 const MAX_HANDOFF_AGE_MS = Number(process.env.EXECUTION_HANDOFF_TTL_MS || 90000);
 const MAX_SOURCE_ENTRY_DISTANCE_PCT = Number(process.env.EXECUTION_MAX_SOURCE_ENTRY_DISTANCE_PCT || 0.5);
@@ -29,6 +26,7 @@ const SLIPPAGE_BPS = Number(process.env.EXECUTION_SLIPPAGE_BPS || 50);
 const MARGIN_ALLOCATION_PCT = Number(process.env.EXECUTION_MARGIN_ALLOCATION_PCT || 50);
 const LEVERAGE = Number(process.env.EXECUTION_LEVERAGE || 10);
 const MAX_POSITIONS = Number(process.env.EXECUTION_MAX_POSITIONS || 2);
+const REQUIRE_FULL_FILL = String(process.env.EXECUTION_REQUIRE_FULL_FILL ?? 'true').toLowerCase() !== 'false';
 
 const MIN_RR = Number(process.env.EXECUTION_MIN_RR || 1.5);
 const SL_ATR = Number(process.env.EXECUTION_SL_ATR_MULT || 1.2);
@@ -46,17 +44,6 @@ const MAINNET = String(process.env.HYPERLIQUID_TESTNET || 'false').toLowerCase()
 const API_URL = INFO.replace(/\/info\/?$/, '');
 
 function log(x){ console.log(`[EXECUTION] ${x}`); }
-
-async function telegram(text){
-  if(!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
-  try{
-    const res=await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,{
-      method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({chat_id:TELEGRAM_CHAT_ID,text,disable_web_page_preview:true})
-    });
-    if(!res.ok) log(`TELEGRAM_HTTP_${res.status}`);
-  }catch(e){ log(`TELEGRAM_FAILED ${e.message}`); }
-}
 function num(x){ const n=Number(x); return Number.isFinite(n)?n:NaN; }
 function validAddr(x){ return /^0x[a-f0-9]{40}$/.test(String(x||'').toLowerCase()); }
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
@@ -127,34 +114,46 @@ async function metaAsset(coin){
 
 async function accountState(){
   if(!validAddr(ACCOUNT))throw new Error('HYPERLIQUID_ACCOUNT_ADDRESS_INVALID_OR_MISSING');
+
   const s=await info({type:'clearinghouseState',user:ACCOUNT});
-
-  // Hyperliquid documents marginSummary.accountValue as the primary value.
-  // Keep a defensive fallback for equivalent summary fields so a harmless
-  // response-shape difference does not block an otherwise valid live account.
-  const primary=num(s?.marginSummary?.accountValue);
-  const cross=num(s?.crossMarginSummary?.accountValue);
-  const rawUsd=num(s?.marginSummary?.totalRawUsd);
-  const withdrawable=num(s?.withdrawable);
-  const accountValue=primary>0 ? primary : (cross>0 ? cross : (rawUsd>0 ? rawUsd : withdrawable));
-
+  let accountValue=num(s?.marginSummary?.accountValue);
+  let withdrawable=num(s?.withdrawable);
+  let totalMarginUsed=num(s?.marginSummary?.totalMarginUsed);
   const positions=(Array.isArray(s?.assetPositions)?s.assetPositions:[])
     .map(x=>x?.position).filter(Boolean)
     .filter(p=>Math.abs(num(p?.szi)||0)>0);
 
+  // Hyperliquid Unified Account mode can keep the USDC collateral in the
+  // Spot clearinghouse while the individual default-Dex clearinghouseState
+  // reports accountValue=0. The web UI can therefore show "Avail. to Trade"
+  // while this endpoint still returns a zero perp marginSummary.
+  let collateralSource='PERP_CLEARINGHOUSE';
   if(!(accountValue>0)){
-    const masked=`${ACCOUNT.slice(0,6)}...${ACCOUNT.slice(-4)}`;
-    throw new Error(
-      `ACCOUNT_VALUE_ZERO_OR_UNAVAILABLE:account=${masked}:`+
-      `marginAccountValue=${Number.isFinite(primary)?primary:'n/a'}:`+
-      `crossAccountValue=${Number.isFinite(cross)?cross:'n/a'}:`+
-      `totalRawUsd=${Number.isFinite(rawUsd)?rawUsd:'n/a'}:`+
-      `withdrawable=${Number.isFinite(withdrawable)?withdrawable:'n/a'}`
-    );
+    const spot=await info({type:'spotClearinghouseState',user:ACCOUNT});
+    const balances=Array.isArray(spot?.balances)?spot.balances:[];
+    const usdc=balances.find(b=>String(b?.coin||'').toUpperCase()==='USDC');
+    const total=num(usdc?.total);
+    const hold=num(usdc?.hold);
+    const available=Number.isFinite(total)&&Number.isFinite(hold) ? Math.max(0,total-hold) : NaN;
+
+    if(total>0){
+      accountValue=total;
+      withdrawable=Number.isFinite(available)?available:total;
+      totalMarginUsed=0;
+      collateralSource='UNIFIED_SPOT_USDC';
+      log(`ACCOUNT collateral=USDC ${fmt(accountValue,6)} available=${fmt(withdrawable,6)} source=${collateralSource}`);
+    }
   }
 
-  log(`ACCOUNT accountValue=${fmt(accountValue,4)} positions=${positions.length}`);
-  return {raw:s,accountValue,positions};
+  if(!(accountValue>0)){
+    const ma=fmt(s?.marginSummary?.accountValue,6);
+    const cma=fmt(s?.crossMarginSummary?.accountValue,6);
+    const raw=fmt(s?.crossMarginSummary?.totalRawUsd,6);
+    const wd=fmt(s?.withdrawable,6);
+    throw new Error(`ACCOUNT_VALUE_ZERO_OR_UNAVAILABLE:account=${ACCOUNT}:marginAccountValue=${ma}:crossAccountValue=${cma}:totalRawUsd=${raw}:withdrawable=${wd}`);
+  }
+
+  return {raw:s,accountValue,withdrawable,totalMarginUsed,positions,collateralSource};
 }
 
 async function openOrders(){ return info({type:'openOrders',user:ACCOUNT}); }
@@ -215,13 +214,11 @@ function planPrices(side,entry,atrValue){
 
 async function buildCandidate(handoff){
   if(!handoff || !Array.isArray(handoff.candidates))throw new Error('HANDOFF_INVALID');
-  if(REQUIRE_HANDOFF_READY && handoff.mode && handoff.mode!=='READY')throw new Error(`HANDOFF_NOT_READY:${handoff.mode}`);
   const now=Date.now();
   const age=now-num(handoff.createdAt);
   if(!Number.isFinite(num(handoff.createdAt)) || age<0 || age>MAX_HANDOFF_AGE_MS)throw new Error('HANDOFF_EXPIRED');
-  if(Number.isFinite(num(handoff.expiresAt)) && now>num(handoff.expiresAt))throw new Error('HANDOFF_EXPIRED');
 
-  const ready=handoff.candidates.filter(x=>x?.executionReady && validAddr(x.address));
+  const ready=handoff.candidates.filter(x=>x?.executionReady === true && validAddr(x.address) && x?.position?.coin && ['LONG','SHORT'].includes(String(x?.position?.side||'').toUpperCase()));
   if(REQUIRE_HANDOFF_READY && !ready.length)throw new Error('NO_LIVEREADY_CANDIDATE');
 
   // Hunter V8.7.0 writes the selected best-entry first. Do not re-rank it here.
@@ -250,7 +247,8 @@ async function buildCandidate(handoff){
   if(sourceDistance>MAX_SOURCE_ENTRY_DISTANCE_PCT)
     throw new Error(`SOURCE_ENTRY_DISTANCE>${MAX_SOURCE_ENTRY_DISTANCE_PCT}%`);
 
-  const sourceMid=num(src.position.mid||liveBook.mid);
+  const sourceMid=num(src.position.mid);
+  if(!(sourceMid>0))throw new Error('SOURCE_MID_INVALID');
   const entryMove=Math.abs(liveBook.mid-sourceMid)/sourceMid*100;
   if(entryMove>MAX_REVALIDATION_MOVE_PCT)
     throw new Error(`REVALIDATION_MOVE>${MAX_REVALIDATION_MOVE_PCT}%`);
@@ -280,6 +278,8 @@ async function buildCandidate(handoff){
   // 50% of account value is margin; 10x leverage turns that margin into 5x
   // account value of position notional. Hyperliquid uses isolated leverage here.
   const margin=Math.max(0,acct.accountValue*MARGIN_ALLOCATION_PCT/100);
+  if(Number.isFinite(acct.withdrawable) && acct.withdrawable < margin)
+    throw new Error(`INSUFFICIENT_WITHDRAWABLE_MARGIN:${fmt(acct.withdrawable,2)}<${fmt(margin,2)}`);
   const notional=margin*LEVERAGE;
   if(!(margin>0&&notional>0))throw new Error('NOTIONAL_ZERO');
 
@@ -359,23 +359,32 @@ async function placeProtection(exchange,p){
   const slCloid=deterministicCloid(p.trader,p.coin,p.sourceEntry,'SL');
   const tpCloid=deterministicCloid(p.trader,p.coin,p.sourceEntry,'TP');
 
-  const slOrder=triggerOrder(p.asset.assetIndex,p.side,pp.sl,actualSize,p.asset.szDecimals,'sl',slCloid);
-  const tpOrder=triggerOrder(p.asset.assetIndex,p.side,pp.tp,actualSize,p.asset.szDecimals,'tp',tpCloid);
+  const orders=[
+    triggerOrder(p.asset.assetIndex,p.side,pp.sl,actualSize,p.asset.szDecimals,'sl',slCloid),
+    triggerOrder(p.asset.assetIndex,p.side,pp.tp,actualSize,p.asset.szDecimals,'tp',tpCloid)
+  ];
 
   log(`PROTECTION PLAN ${p.coin} ${p.side} actualEntry=${fmt(actualEntry)} size=${fmt(actualSize,8)} SL=${fmt(pp.sl)} TP=${fmt(pp.tp)} RR=${fmt(pp.rr,2)}`);
 
-  // The entry has already filled. Submit the two reduce-only trigger orders
-  // independently so protection does not depend on a normalTpsl entry bundle.
-  const slResult=await exchange.order({orders:[slOrder],grouping:'na'},{expiresAfter:Date.now()+30000});
-  log(`SL RESPONSE ${JSON.stringify(slResult)}`);
-  const tpResult=await exchange.order({orders:[tpOrder],grouping:'na'},{expiresAfter:Date.now()+30000});
-  log(`TP RESPONSE ${JSON.stringify(tpResult)}`);
+  const result=await exchange.order({
+    orders,
+    grouping:'normalTpsl'
+  },{expiresAfter:Date.now()+30000});
+
+  log(`PROTECTION RESPONSE ${JSON.stringify(result)}`);
 
   const ok=await verifyProtection(p.coin,slCloid,tpCloid,PROTECTION_VERIFY_MS);
   if(!ok)throw new Error('PROTECTION_NOT_CONFIRMED');
 
   return {
-    slResult,tpResult,actualEntry,actualSize,sl:pp.sl,tp:pp.tp,rr:pp.rr,slCloid,tpCloid
+    result,
+    actualEntry,
+    actualSize,
+    sl:pp.sl,
+    tp:pp.tp,
+    rr:pp.rr,
+    slCloid,
+    tpCloid
   };
 }
 
@@ -394,25 +403,8 @@ async function verifyProtection(coin,slCloid,tpCloid,timeout){
   return false;
 }
 
-async function cancelProtection(exchange,p){
-  const cancels=[
-    {asset:p.asset.assetIndex,cloid:deterministicCloid(p.trader,p.coin,p.sourceEntry,'SL')},
-    {asset:p.asset.assetIndex,cloid:deterministicCloid(p.trader,p.coin,p.sourceEntry,'TP')}
-  ];
-  try{
-    const result=await exchange.cancelByCloid({cancels},{expiresAfter:Date.now()+30000});
-    log(`PROTECTION CANCEL ${JSON.stringify(result)}`);
-    return true;
-  }catch(e){
-    log(`PROTECTION CANCEL FAILED ${e.message}`);
-    return false;
-  }
-}
-
 async function emergencyClose(exchange,p){
   try{
-    await cancelProtection(exchange,p);
-
     const pos=await currentPosition(ACCOUNT,p.coin);
     if(!pos)return {closed:true,reason:'NO_POSITION'};
     const size=Math.abs(num(pos.szi)||0);
@@ -449,7 +441,7 @@ async function emergencyClose(exchange,p){
 }
 
 async function run(){
-  log(`V8.7.0-FINAL compatible start enabled=${EXECUTION_ENABLED} dryRun=${DRY_RUN} mainnet=${MAINNET}`);
+  log(`V8.7.0-LIVE start enabled=${EXECUTION_ENABLED} dryRun=${DRY_RUN} mainnet=${MAINNET} margin=${MARGIN_ALLOCATION_PCT}% leverage=${LEVERAGE}x maxPositions=${MAX_POSITIONS}`);
   if(!EXECUTION_ENABLED)throw new Error('EXECUTION_DISABLED');
   if(DRY_RUN)throw new Error('EXECUTION_DRY_RUN_ENABLED');
   if(!validAddr(ACCOUNT))throw new Error('HYPERLIQUID_ACCOUNT_ADDRESS_INVALID_OR_MISSING');
@@ -458,16 +450,13 @@ async function run(){
   if(LEVERAGE<=0)throw new Error('INVALID_EXECUTION_LEVERAGE');
 
   const handoff=await readJson(HANDOFF_PATH);
-  log(`HANDOFF version=${handoff.version||'n/a'} mode=${handoff.mode||'n/a'} candidates=${Array.isArray(handoff.candidates)?handoff.candidates.length:0}`);
+  log(`HANDOFF version=${handoff?.version||'unknown'} mode=${handoff?.mode||'unknown'} candidates=${Array.isArray(handoff?.candidates)?handoff.candidates.length:0}`);
   const p=await buildCandidate(handoff);
 
   log(`PLAN ${p.coin} ${p.side} trader=${p.trader} market=${fmt(p.market.mid)} margin=$${fmt(p.margin,2)} notional=$${fmt(p.notional,2)} size=${fmt(p.size,8)} leverage=${p.leverage}x isolated SL=${fmt(p.sl)} TP=${fmt(p.tp)} RR=${fmt(p.rr,2)}`);
 
   const transport=new hl.HttpTransport({isTestnet:!MAINNET,timeout:30000});
   const wallet=privateKeyToAccount(AGENT_KEY);
-  if(AGENT_ADDRESS && wallet.address.toLowerCase()!==AGENT_ADDRESS)
-    throw new Error('HYPERLIQUID_AGENT_WALLET_ADDRESS_MISMATCH');
-  log(`AGENT ${wallet.address.toLowerCase()} | MAIN ACCOUNT ${ACCOUNT}`);
   const exchange=new hl.ExchangeClient({
     wallet,
     transport,
@@ -483,21 +472,17 @@ async function run(){
     throw new Error(`SOURCE_ENTRY_DISTANCE_FINAL>${MAX_SOURCE_ENTRY_DISTANCE_PCT}%`);
 
   const entryPx=marketLimitPrice(p.side,freshBook,SLIPPAGE_BPS);
-  // Recompute size from the final executable price so the requested 50% margin
-  // allocation remains consistent after the last revalidation.
-  const finalSize=p.notional/entryPx;
-  if(!(finalSize>0))throw new Error('FINAL_SIZE_INVALID');
   const entryOrder={
     a:p.asset.assetIndex,
     b:p.side==='LONG',
     p:formatPrice(entryPx,p.asset.szDecimals),
-    s:formatSize(finalSize,p.asset.szDecimals),
+    s:formatSize(p.size,p.asset.szDecimals),
     r:false,
     t:{limit:{tif:'Ioc'}},
     c:p.cloid
   };
 
-  log(`ENTRY SEND ${p.coin} ${p.side} px=${entryOrder.p} size=${entryOrder.s} IOC slippage=${SLIPPAGE_BPS}bps margin=${fmt(p.margin,2)} notional=${fmt(p.notional,2)}`);
+  log(`ENTRY SEND ${p.coin} ${p.side} px=${entryOrder.p} size=${entryOrder.s} IOC slippage=${SLIPPAGE_BPS}bps`);
   const entryResult=await exchange.order({
     orders:[entryOrder],
     grouping:'na'
@@ -515,6 +500,14 @@ async function run(){
   }
 
   const filledSize=Math.abs(num(filled.szi)||0);
+  const requestedSize=Math.abs(num(p.size)||0);
+  if(REQUIRE_FULL_FILL && filledSize < requestedSize*0.999) {
+    log(`PARTIAL FILL ${p.coin} requested=${fmt(requestedSize,8)} filled=${fmt(filledSize,8)} → emergency close`);
+    const partialClose=await emergencyClose(exchange,p);
+    await writeJson(STATE_PATH,{at:Date.now(),mode:partialClose.closed?'LIVE_PARTIAL_FILL_CLOSED':'LIVE_PARTIAL_FILL_FAILURE',plan:p,entryResult,filled:{entry:num(filled.entryPx),size:filledSize},partialClose});
+    if(!partialClose.closed) throw new Error('PARTIAL_FILL_AND_EMERGENCY_CLOSE_FAILED');
+    throw new Error('PARTIAL_FILL_EMERGENCY_CLOSED');
+  }
   log(`FILL CONFIRMED ${p.coin} ${p.side} entry=${fmt(filled.entryPx)} size=${fmt(filledSize,8)}`);
 
   try{
@@ -532,7 +525,6 @@ async function run(){
       entryResult
     });
     log(`FINAL EXECUTION: LIVE | FILLED | SL+TP CONFIRMED`);
-    await telegram(`🟢 HYPERLIQUID LIVE OPEN\n${p.coin} ${p.side}\nTrader: ${p.trader}\nEntry: ${fmt(protection.actualEntry)}\nSize: ${fmt(protection.actualSize,8)}\nMargin: $${fmt(p.margin,2)} | 10x isolated\nSL: ${fmt(protection.sl)}\nTP: ${fmt(protection.tp)}\nRR: ${fmt(protection.rr,2)}`);
   }catch(e){
     log(`PROTECTION FAILURE: ${e.message}`);
     const emergency=await emergencyClose(exchange,p);
@@ -549,11 +541,7 @@ async function run(){
       protectionError:e.message,
       emergency
     });
-    if(!emergency.closed){
-      await telegram(`🔴 HYPERLIQUID ERROR\n${p.coin} protection failed and emergency close FAILED\nReason: ${e.message}`);
-      throw new Error(`PROTECTION_FAILED_AND_EMERGENCY_CLOSE_FAILED:${e.message}`);
-    }
-    await telegram(`🟠 HYPERLIQUID EMERGENCY CLOSE\n${p.coin} ${p.side}\nProtection failed; position was emergency-closed.\nReason: ${e.message}`);
+    if(!emergency.closed)throw new Error(`PROTECTION_FAILED_AND_EMERGENCY_CLOSE_FAILED:${e.message}`);
     throw new Error(`PROTECTION_FAILED_EMERGENCY_CLOSED:${e.message}`);
   }
 }
@@ -561,12 +549,6 @@ async function run(){
 run().catch(async e=>{
   const reason=String(e.message||e);
   console.error(`[EXECUTION][BLOCK] ${e.stack||e}`);
-  const silentBlock = [
-    'NO_LIVEREADY_CANDIDATE','NO_EXECUTION_HANDOFF','HANDOFF_EXPIRED',
-    'HANDOFF_NOT_READY:BLOCKED','EXECUTION_DISABLED','EXECUTION_DRY_RUN_ENABLED'
-  ].some(x=>reason===x || reason.startsWith(x));
-  if(!silentBlock && !reason.startsWith('PROTECTION_FAILED_'))
-    await telegram(`🔴 HYPERLIQUID EXECUTION ERROR\n${reason.slice(0,900)}`);
   try{
     await writeJson(STATE_PATH,{at:Date.now(),mode:'BLOCKED',reason});
   }catch{}
