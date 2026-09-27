@@ -1,4 +1,4 @@
-Hyperliquid Meme Hunter V8.6.7 — FIXED-3 LIVE TELEGRAM
+Hyperliquid Meme Hunter V8.6.8 — FIXED-3 ENTRY DIAGNOSTICS
 
 Fixed traders (rotation OFF):
 1) 0x64b766b07362405a9cc19c2226490f3015929da9
@@ -13,3 +13,10 @@ Key fixes:
 - Final fixed-copy candidates come from the same analyzed registry used by Deep History.
 - Best current entry remains subject to current-position distance, RR, ATR/volatility and execution-readiness gates.
 - No live order is created by the hunter itself; execution is handed off only when all hard execution gates pass.
+
+V8.6.8 changes:
+- Fixed-3 Entry Selection now displays trader entry/current price with adaptive precision.
+- Correctly preserves zero-valued numeric fields instead of converting them to NaN.
+- Shows WAITING when the only current-entry blocker is distance > 0.5%, including the remaining distance needed to reach the gate.
+- Shows BLOCKED when other hard blockers remain.
+- Worker remains READ-ONLY; it creates no live orders itself.

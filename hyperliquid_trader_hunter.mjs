@@ -9,7 +9,7 @@ const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL || 'https://s
 const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED ?? 'true').toLowerCase() === 'true';
 
 // V8 persistent promotion / execution bridge. Research memory never weakens hard gates.
-const V8_VERSION='V8.6.7-FIXED-3-LIVE-TELEGRAM';
+const V8_VERSION='V8.6.8-FIXED-3-ENTRY-DIAGNOSTICS';
 
 // Fixed-copy mode: no rotating discovery. These are the previously identified
 // Meme specialists/strong research traders selected by the user.
@@ -350,6 +350,13 @@ function addr(x){return /^0x[a-fA-F0-9]{40}$/.test(String(x||''))}
 function norm(x){return String(x).toLowerCase()}
 function short(x){const s=String(x||'');return s.length>14?`${s.slice(0,8)}…${s.slice(-6)}`:s}
 function fmt(x,d=2){return Number.isFinite(Number(x))?Number(x).toFixed(d):'n/a'}
+function priceFmt(x){
+  const n=Number(x);
+  if(!Number.isFinite(n))return '—';
+  const a=Math.abs(n);
+  const d=a>=1000?2:a>=100?3:a>=10?4:a>=1?5:a>=0.1?6:a>=0.01?7:8;
+  return n.toFixed(d).replace(/\.?0+$/,'');
+}
 function pct(x,d=1){return Number.isFinite(Number(x))?`${Number(x).toFixed(d)}%`:'n/a'}
 function exposureGap(p){const e=Number(p?.exposurePct);return Number.isFinite(e)?Math.max(0,MEME_MIN_EXPOSURE-e):NaN}
 function median(a){if(!a.length)return NaN;const s=[...a].sort((a,b)=>a-b),m=Math.floor(s.length/2);return s.length%2?s[m]:(s[m-1]+s[m])/2}
@@ -1793,7 +1800,7 @@ function compactTelegramReport({d,scanned,top,promotionTop,observationCount,cycl
     }else header.push('No specialist-like candidate survived the analyzed registry in this cycle.');
   }
   header.push('','🟢 FIXED-3 ENTRY SELECTION');
-  if(entryAudit.length){entryAudit.forEach((a,i)=>{const detail=[`dist=${Number.isFinite(a.distancePct)?pct(a.distancePct,2):'—'}`,`RR=${Number.isFinite(a.rr)?fmt(a.rr,2):'—'}`,`age=${Number.isFinite(a.ageHours)?fmt(a.ageHours,1)+'h':'—'}`,`ATR=${Number.isFinite(a.atrPct)?pct(a.atrPct,2):'—'}`,`score=${a.score}/100`].join(' | ');header.push(`#${i+1} ${short(a.address)} | ${a.coin} ${a.side} | ${a.status}`,`   Entry ${Number.isFinite(a.traderEntry)?fmt(a.traderEntry):'—'} → Now ${Number.isFinite(a.currentPrice)?fmt(a.currentPrice):'—'} | ${detail}`,`   ${a.status==='ELIGIBLE'?'✅ READY':'🛑 BLOCK: '+([...new Set(a.reasons||[])].join(' | ')||'UNKNOWN')}`);});}else header.push('No Fixed-3 entry data available.');
+  if(entryAudit.length){entryAudit.forEach((a,i)=>{const detail=[`dist=${Number.isFinite(a.distancePct)?pct(a.distancePct,2):'—'}`,`RR=${Number.isFinite(a.rr)?fmt(a.rr,2):'—'}`,`age=${Number.isFinite(a.ageHours)?fmt(a.ageHours,1)+'h':'—'}`,`ATR=${Number.isFinite(a.atrPct)?pct(a.atrPct,2):'—'}`,`score=${a.score}/100`].join(' | ');const cleanReasons=[...new Set(a.reasons||[])]; const wait=Number.isFinite(a.distancePct)&&a.distancePct>MAX_ENTRY_DIST&&cleanReasons.every(r=>r.startsWith('DISTANCE>')||r==='ENTRY_DISTANCE>'+MAX_ENTRY_DIST+'%'); const need=Number.isFinite(a.distancePct)?Math.max(0,a.distancePct-MAX_ENTRY_DIST):NaN; const statusLabel=a.status==='ELIGIBLE'?'READY':wait?'WAITING':'BLOCKED'; const icon=a.status==='ELIGIBLE'?'✅':wait?'🟡':'🔴'; const reasonText=wait?`WAITING: need distance ≤${MAX_ENTRY_DIST}% | reduce by ≈${pct(need,2)}`:cleanReasons.join(' | ')||'UNKNOWN'; header.push(`#${i+1} ${short(a.address)} | ${a.coin} ${a.side} | ${statusLabel}`,`   Trader Entry ${priceFmt(a.traderEntry)} → Current ${priceFmt(a.currentPrice)} | ${detail}`,`   ${icon} ${reasonText}`);});}else header.push('No Fixed-3 entry data available.');
   header.push(handoffCandidates.length?`🏆 SELECTED: ${short(handoffCandidates[0].address)} | ${handoffCandidates[0].position.coin} ${handoffCandidates[0].position.side} | EntryScore ${handoffCandidates[0].entrySelectionScore}/100 | Dist ${pct(handoffCandidates[0].position.distancePct,2)} | RR ${fmt(handoffCandidates[0].copyPlan.rr,2)}`:'⛔ NO TRADE: none of Fixed-3 passed every current-entry gate.', '🟢 LIVE EXECUTION HANDOFF',handoffCandidates.length?'One best-entry live handoff was written.':'No trader passed the current-entry gate.','ℹ️ Promotion memory is synchronized from the final analyzed registry; a Deep-verified trader cannot remain stale as HISTORY_UNVERIFIED.','ℹ️ PnL = realized closed Meme trades. Timing = historical execution behavior, not prediction.',`ℹ️ ${V8_VERSION}: Single-Token Specialists are eligible; concentration is a soft risk factor, not a hard blocker. Deep History upgrades the SAME candidate object used by Final Copy. READ-ONLY. No order is created by this worker.`);
   return header.join('\n');
 }
@@ -2279,7 +2286,7 @@ async function main(){
     : top.filter(x=>x.executionReady===true&&x.copyClassification==='FULL-COPY-CANDIDATE'&&x.current?.coin&&Number(x.current?.entry)>0).slice(0,5);
   const entryOpportunities=[];
   for(const x of handoffPool){
-    const row={address:String(x.address).toLowerCase(),status:'BLOCKED',coin:String(x.current?.coin||'—'),side:String(x.current?.side||'—'),traderEntry:Number(x.current?.entry||NaN),currentPrice:Number(x.current?.mid||NaN),distancePct:Number(x.current?.distancePct||NaN),rr:NaN,ageHours:NaN,atrPct:NaN,score:0,reasons:[]};
+    const row={address:String(x.address).toLowerCase(),status:'BLOCKED',coin:String(x.current?.coin||'—'),side:String(x.current?.side||'—'),traderEntry:Number(x.current?.entry),currentPrice:Number(x.current?.mid),distancePct:Number.isFinite(Number(x.current?.distancePct))?Number(x.current.distancePct):NaN,rr:NaN,ageHours:NaN,atrPct:NaN,score:0,reasons:[]};
     try{
       if(!x.current?.coin || !(Number(x.current?.entry)>0)){row.reasons.push('NO_ACTIVE_POSITION');entryAudit.push(row);continue;}
       const coin=String(x.current.coin);
@@ -2300,6 +2307,7 @@ async function main(){
       else if(entryScore.score<FIXED_COPY_MIN_ENTRY_SCORE)row.reasons.push(`ENTRY_SCORE<${FIXED_COPY_MIN_ENTRY_SCORE}`);
       row.reasons=[...new Set(row.reasons)];
       if(!row.reasons.length){row.status='ELIGIBLE';row.reasons=entryScore.reasons.length?entryScore.reasons:['READY'];}
+      else if(row.reasons.every(r=>r.startsWith('DISTANCE>')||r==='ENTRY_DISTANCE>'+MAX_ENTRY_DIST+'%')) row.status='WAITING';
       entryAudit.push(row);
       entryOpportunities.push({...x,copyPlan:cp,entryScore});
       console.log(`[FIXED-ENTRY] ${short(x.address)} ${coin} ${x.current.side} dist=${Number(x.current.distancePct).toFixed(3)}% rr=${Number(cp.rr).toFixed(2)} age=${Number(cp.positionAgeHours).toFixed(2)}h score=${entryScore.score} eligible=${entryScore.eligible?'YES':'NO'} reasons=${row.reasons.join(',')||'NONE'}`);
