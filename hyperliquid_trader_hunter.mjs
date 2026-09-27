@@ -684,7 +684,7 @@ function delta(f){
 
 function reconstruct(fills){
   const books=new Map(),trades=[];
-  let liquidations=0,invalidLifecycle=0;
+  let liquidations=0,invalidLifecycle=0,boundaryLifecycle=0;
 
   for(const f of fills){
     const coin=String(f?.coin||'');
@@ -725,7 +725,12 @@ function reconstruct(fills){
       // Drop incompatible stale lots rather than manufacturing a trade.
       while(lots.length && lots[0].side!==closingSide)lots.shift();
       if(!lots.length){
-        invalidLifecycle++;
+        // A 7d/API-window scan can begin after the position was already open.
+        // In that case Hyperliquid can report a valid closing fill whose opening
+        // lot is outside our fetched window. This is a boundary condition, not
+        // evidence that the trader's realized PnL is corrupt.
+        if(Number.isFinite(start) && Math.abs(start)>0) boundaryLifecycle++;
+        else invalidLifecycle++;
         break;
       }
 
@@ -774,7 +779,7 @@ function reconstruct(fills){
     }
   }
 
-  return{trades,liquidations,invalidLifecycle};
+  return{trades,liquidations,invalidLifecycle,boundaryLifecycle};
 }
 
 
@@ -1245,7 +1250,10 @@ async function analyzeMemeTrader(x,now){
   const copy=finalCopyability(p,early,robustness,executionEdgeScore,profitQualityScore,incomplete,historyVerificationValue);
   const evidence=evidenceDimensions(p,early,robustness,audit,incomplete,historyVerificationValue);
   const economicEdge=economicEdgeAnalysis(p,robustness);
-  const execution=executionReadiness(p,copy,evidence,economicEdge,strictEligible,incomplete,historyVerificationValue,x.metrics?.pnlIntegrityOk!==false);
+  // Fixed-3 is an explicit user-approved research cohort; specialist breadth is
+  // not a live gate here. Profit/timing/risk/evidence/economic/data-integrity gates
+  // remain hard execution protections.
+  const execution=executionReadiness(p,copy,evidence,economicEdge,FIXED_COPY_MODE ? true : strictEligible,incomplete,historyVerificationValue,x.metrics?.pnlIntegrityOk!==false);
   const historyIntegrityOk=Boolean(x.metrics?.pnlIntegrityOk!==false);
   if(!historyIntegrityOk && !execution.reasons.includes('PNL_RECONSTRUCTION_INTEGRITY_FAIL'))execution.reasons.push('PNL_RECONSTRUCTION_INTEGRITY_FAIL');
   const behavioralScore=behaviorScore({...x,meme:p,early:{...early,repeatability,score:edge},executionAudit:audit});
@@ -1263,11 +1271,18 @@ function metrics(fills,r){
   const rawClosedPnl=(Array.isArray(fills)?fills:[]).reduce((s,f)=>{const d=String(f?.dir||'').toLowerCase();const v=Number(f?.closedPnl);return d.includes('close')&&Number.isFinite(v)?s+v:s},0);
   const reconstructedPnl=ts.reduce((s,t)=>s+Number(t.pnl||0),0);
   const pnlDelta=reconstructedPnl-rawClosedPnl;
-  const pnlIntegrityOk=Math.abs(pnlDelta)<=Math.max(HISTORY_INTEGRITY_PNL_TOLERANCE,Math.abs(rawClosedPnl)*0.0001);
+  const boundaryLifecycle=Number(r.boundaryLifecycle||0);
+  const integrityTolerance=Math.max(HISTORY_INTEGRITY_PNL_TOLERANCE,Math.abs(rawClosedPnl)*0.0001);
+  // A complete API window is not necessarily a complete position lifecycle: a
+  // trader may have opened a position before the 7d window and closed it inside
+  // the window. Treat that boundary-only mismatch as a data-window warning, not
+  // as PnL corruption. Genuine lifecycle errors remain hard failures.
+  const boundaryOnlyMismatch=boundaryLifecycle>0 && Number(r.invalidLifecycle||0)===0;
+  const pnlIntegrityOk=Math.abs(pnlDelta)<=integrityTolerance || boundaryOnlyMismatch;
   const gw=w.reduce((s,t)=>s+t.pnl,0),gl=Math.abs(l.reduce((s,t)=>s+t.pnl,0)),pnl=ts.reduce((s,t)=>s+t.pnl,0);
   const days=new Set(ts.map(t=>new Date(t.closeTime).toISOString().slice(0,10)));
   let st=0,maxst=0;for(const t of [...ts].sort((a,b)=>a.closeTime-b.closeTime)){if(t.pnl<0){st++;maxst=Math.max(maxst,st)}else if(t.pnl>0)st=0}
-  return{fills:fills.length,closedTrades:ts.length,invalidLifecycle:Number(r.invalidLifecycle||0),winRate:ts.length?w.length/ts.length*100:0,pnl,grossWin:gw,grossLossAbs:gl,profitFactor:gl>0?gw/gl:(gw>0?Infinity:0),medianHoldHours:median(holds),avgHoldHours:holds.length?holds.reduce((a,b)=>a+b,0)/holds.length:NaN,p25HoldHours:quantile(holds,.25),p75HoldHours:quantile(holds,.75),activeDays:days.size,maxLosingStreak:maxst,liquidations:r.liquidations,rawClosedPnl,reconstructedPnl,reconstructedPnlDelta:pnlDelta,pnlIntegrityOk}
+  return{fills:fills.length,closedTrades:ts.length,invalidLifecycle:Number(r.invalidLifecycle||0),winRate:ts.length?w.length/ts.length*100:0,pnl,grossWin:gw,grossLossAbs:gl,profitFactor:gl>0?gw/gl:(gw>0?Infinity:0),medianHoldHours:median(holds),avgHoldHours:holds.length?holds.reduce((a,b)=>a+b,0)/holds.length:NaN,p25HoldHours:quantile(holds,.25),p75HoldHours:quantile(holds,.75),activeDays:days.size,maxLosingStreak:maxst,liquidations:r.liquidations,boundaryLifecycle,rawClosedPnl,reconstructedPnl,reconstructedPnlDelta:pnlDelta,pnlIntegrityOk,boundaryOnlyMismatch}
 }
 function safetyGate(m,truncated){
   const reasons=[];
@@ -2187,8 +2202,9 @@ async function main(){
   // the transient `scanned` array. This closes a handoff gap where a candidate
   // could be re-analyzed successfully after Deep History but fail to survive
   // an intermediate specialist-array mutation.
-  const finalCandidates=allResearch
-    .filter(x=>x?.executionReady===true && x?.copyClassification==='FULL-COPY-CANDIDATE')
+  const finalCandidates=(FIXED_COPY_MODE
+    ? allResearch.filter(x=>VALID_FIXED_COPY_TRADERS.includes(norm(x?.address)) && x?.executionReady===true)
+    : allResearch.filter(x=>x?.executionReady===true && x?.copyClassification==='FULL-COPY-CANDIDATE'))
     .sort((a,b)=>(b.copyabilityScore||0)-(a.copyabilityScore||0)||(b.executionReadinessScore||0)-(a.executionReadinessScore||0)||(b.economicEdgeScore||0)-(a.economicEdgeScore||0)||(b.meme?.memePnl||0)-(a.meme?.memePnl||0));
   const top=finalCandidates.slice(0,MEME_TOP_N);
 
@@ -2227,7 +2243,7 @@ async function main(){
   // are informational; the purpose of this run is to discover specialists, not copy.
   const watched=[];
   const fixedPool=FIXED_COPY_MODE
-    ? VALID_FIXED_COPY_TRADERS.map(a=>scanned.find(x=>norm(x.address)===a)).filter(Boolean)
+    ? VALID_FIXED_COPY_TRADERS.map(a=>allResearch.find(x=>norm(x.address)===a)).filter(Boolean)
     : [];
   const positionPool=FIXED_COPY_MODE
     ? fixedPool
@@ -2264,13 +2280,14 @@ async function main(){
       const cp=plan(sourcePos,bk,av,now);
       if(!Number.isFinite(Number(cp.entry))||!Number.isFinite(Number(cp.sl))||!Number.isFinite(Number(cp.tp))||!Number.isFinite(Number(cp.rr)))throw new Error('LIVE_PLAN_INVALID');
       if(Number(cp.rr)<MIN_RR)throw new Error(`RR<${MIN_RR}`);
+      if(!FIXED_COPY_MODE && x.executionReady!==true)throw new Error(`EXECUTION_NOT_READY:${(x.executionBlockReasons||[]).slice(0,3).join('|')||'UNKNOWN'}`);
       const entryScore=fixedCopyEntryScore(x,cp);
       entryOpportunities.push({...x,copyPlan:cp,entryScore});
       console.log(`[FIXED-ENTRY] ${short(x.address)} ${coin} ${x.current.side} dist=${Number(x.current.distancePct).toFixed(3)}% rr=${Number(cp.rr).toFixed(2)} age=${Number(x.plan?.positionAgeHours??NaN).toFixed(2)}h score=${entryScore.score} eligible=${entryScore.eligible?'YES':'NO'} reasons=${entryScore.reasons.join(',')||'NONE'}`);
     }catch(e){console.log(`[HANDOFF][WARN] ${short(x.address)} ${String(e.message||e)}`);}
   }
   entryOpportunities.sort((a,b)=>Number(b.entryScore?.score||0)-Number(a.entryScore?.score||0) || Number(b.executionReadinessScore||0)-Number(a.executionReadinessScore||0));
-  const bestEntry=entryOpportunities.find(x=>x.entryScore?.eligible===true)||null;
+  const bestEntry=entryOpportunities.find(x=>x.entryScore?.eligible===true && x.executionReady===true)||null;
   if(bestEntry){
     const cp=bestEntry.copyPlan;
     handoffCandidates.push({address:String(bestEntry.address).toLowerCase(),executionReady:true,copyClassification:'FIXED-3-BEST-ENTRY',specialistType:bestEntry.specialistType||'FIXED-TRADER',entrySelectionScore:Number(bestEntry.entryScore.score),entrySelectionReasons:bestEntry.entryScore.reasons,executionReadinessScore:Number(bestEntry.executionReadinessScore||0),economicEdgeScore:Number(bestEntry.economicEdgeScore||0),profitCopyScore:Number(bestEntry.profitCopyScore||0),timingCopyScore:Number(bestEntry.timingCopyScore||0),riskCopyScore:Number(bestEntry.riskCopyScore||0),position:{coin:String(bestEntry.current.coin),side:String(bestEntry.current.side).toUpperCase(),entry:Number(bestEntry.current.entry),mid:Number(bestEntry.current.mid),distancePct:Number(bestEntry.current.distancePct),isMeme:true},copyPlan:{entry:Number(cp.entry),sl:Number(cp.sl),tp:Number(cp.tp),rr:Number(cp.rr),atr:Number(cp.atr),atrPct:Number(cp.atrPct),diagnostics:Array.isArray(cp.diagnostics)?cp.diagnostics:[]}});
