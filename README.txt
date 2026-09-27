@@ -25,3 +25,24 @@ V8.6.8 changes:
 - Shows WAITING when the only current-entry blocker is distance > 0.5%, including the remaining distance needed to reach the gate.
 - Shows BLOCKED when other hard blockers remain.
 - Worker remains READ-ONLY; it creates no live orders itself.
+
+V8.6.9 LIVE ACTIVATION
+----------------------
+The included .github/workflows/hyperliquid-monitor.yml runs the READ-ONLY Fixed-3 Hunter first and then the LIVE Execution Engine in the same job, every 5 minutes.
+
+GitHub Environment: production secrets required:
+- HYPERLIQUID_ACCOUNT_ADDRESS = main Hyperliquid account address
+- HYPERLIQUID_AGENT_PRIVATE_KEY = approved Hyperliquid agent-wallet private key
+- TELEGRAM_TOKEN
+- TELEGRAM_CHAT_ID
+
+LIVE settings are explicit in the workflow:
+- EXECUTION_ENABLED=true
+- EXECUTION_DRY_RUN=false
+- PAPER_EXECUTION_ONLY=false
+- HYPERLIQUID_TESTNET=false
+- 50% account margin per position
+- 10x isolated leverage
+- maximum 2 simultaneous positions
+
+The engine still refuses stale/invalid handoffs, source-entry distance >0.5%, RR <1.5, duplicate positions/orders, unsupported leverage, invalid price precision, or missing meme confirmation. After a confirmed fill it requires both reduce-only SL and TP; if protection or position confirmation fails, it attempts an emergency reduce-only close.
