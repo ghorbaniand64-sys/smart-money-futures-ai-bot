@@ -39,26 +39,40 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: node hyperliquid_trader_hunter.mjs
 
-      - name: Run Execution Engine (DRY RUN)
+      - name: Run Execution Engine (LIVE)
         env:
           HYPERLIQUID_API_URL: ${{ secrets.HYPERLIQUID_API_URL }}
           HYPERLIQUID_ACCOUNT_ADDRESS: ${{ secrets.HYPERLIQUID_ACCOUNT_ADDRESS }}
           HYPERLIQUID_AGENT_PRIVATE_KEY: ${{ secrets.HYPERLIQUID_AGENT_PRIVATE_KEY }}
-          EXECUTION_ENABLED: 'false'
-          EXECUTION_DRY_RUN: 'true'
+
+          EXECUTION_ENABLED: 'true'
+          EXECUTION_DRY_RUN: 'false'
+
           HYPERLIQUID_EXECUTION_HANDOFF_TTL_MS: '90000'
           EXECUTION_MAX_SOURCE_ENTRY_DISTANCE_PCT: '0.5'
           EXECUTION_MAX_REVALIDATION_MOVE_PCT: '0.35'
           EXECUTION_SLIPPAGE_BPS: '50'
-          EXECUTION_TARGET_NOTIONAL_USD: '10'
-          EXECUTION_MAX_NOTIONAL_USD: '25'
-          EXECUTION_MAX_ACCOUNT_ALLOCATION_PCT: '1'
-          EXECUTION_MAX_LEVERAGE: '3'
+
+          EXECUTION_MARGIN_ALLOCATION_PCT: '50'
+          EXECUTION_LEVERAGE: '10'
+          EXECUTION_MAX_POSITIONS: '2'
+
           EXECUTION_MIN_RR: '1.5'
           EXECUTION_SL_ATR_MULT: '1.2'
           EXECUTION_TP_ATR_MULT: '2.0'
           EXECUTION_MAX_SL_PCT: '2.0'
+
           EXECUTION_REQUIRE_MEME: 'true'
           EXECUTION_REQUIRE_HANDOFF_READY: 'true'
+
+          EXECUTION_FILL_WAIT_MS: '8000'
+          EXECUTION_FILL_POLL_MS: '500'
+          EXECUTION_PROTECTION_VERIFY_MS: '4000'
+          EXECUTION_EMERGENCY_SLIPPAGE_BPS: '100'
+
           HYPERLIQUID_TESTNET: 'false'
+
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
         run: node hyperliquid_execution_engine.mjs
