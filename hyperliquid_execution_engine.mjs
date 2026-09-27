@@ -1,4 +1,4 @@
-// Hyperliquid Meme Hunter Execution Engine V8.6.9 — FIXED-3 SAFE LIVE
+// Hyperliquid Meme Hunter Execution Engine V8.6.10 — FIXED-3 SAFE LIVE
 // Consumes the Fixed-3 Best-Entry handoff. Live orders are explicit opt-in only.
 // Safety limits: max 2 simultaneous positions, 50% account margin per position, isolated 10x leverage.
 

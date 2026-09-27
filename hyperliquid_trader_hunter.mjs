@@ -9,7 +9,7 @@ const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL || 'https://s
 const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED ?? 'true').toLowerCase() === 'true';
 
 // V8 persistent promotion / execution bridge. Research memory never weakens hard gates.
-const V8_VERSION='V8.6.8-FIXED-3-ENTRY-DIAGNOSTICS';
+const V8_VERSION='V8.6.10-FIXED-3-STABLE-TIMING';
 
 // Fixed-copy mode: no rotating discovery. These are the previously identified
 // Meme specialists/strong research traders selected by the user.
@@ -1108,36 +1108,15 @@ function finalCopyability(p, early, robustness, executionEdgeScore, profitQualit
   return {score,gate,profitCopy,timingCopy,riskCopy,classification,sampleAdequacy,sampleTier,evidence,evidenceTier,economicTier,historyComplete:complete,winWilsonLow:winWilson.low,winWilsonHigh:winWilson.high,timingWilsonLow:timingWilson.low,timingWilsonHigh:timingWilson.high,strongProfitEvidence};
 }
 function stratifiedTimingSample(trades, target){
-  const rows=[...(Array.isArray(trades)?trades:[])].filter(t=>Number.isFinite(Number(t?.openTime))).sort((a,b)=>Number(a.openTime)-Number(b.openTime));
+  // V8.6.10: use a deterministic RECENT sample instead of three temporal buckets.
+  // The old stratified sampler could replace several observations at once whenever
+  // a new fill arrived, causing abrupt Timing changes without a comparable change
+  // in the trader's actual recent execution behavior.
+  const rows=[...(Array.isArray(trades)?trades:[])]
+    .filter(t=>Number.isFinite(Number(t?.openTime)))
+    .sort((a,b)=>Number(b.openTime)-Number(a.openTime));
   const n=Math.min(Math.max(1,target||30),rows.length);
-  if(rows.length<=n)return rows;
-  const buckets=3;
-  const per=Math.floor(n/buckets);
-  const picks=[];
-  const used=new Set();
-  const take=(from,to,count)=>{
-    if(count<=0)return;
-    const span=Math.max(0,to-from);
-    for(let j=0;j<count;j++){
-      const pos=count===1 ? 0.5 : (j+.5)/count;
-      const idx=Math.min(rows.length-1,from+Math.floor(span*pos));
-      const t=rows[idx];
-      const key=`${t.openTime}|${t.closeTime}|${t.coin}|${t.pnl}`;
-      if(!used.has(key)){used.add(key);picks.push(t)}
-    }
-  };
-  take(0,Math.floor(rows.length/3),per);
-  take(Math.floor(rows.length/3),Math.floor(rows.length*2/3),per);
-  take(Math.floor(rows.length*2/3),rows.length,n-per*2);
-  if(picks.length<n){
-    for(const t of rows){
-      const key=`${t.openTime}|${t.closeTime}|${t.coin}|${t.pnl}`;
-      if(used.has(key))continue;
-      used.add(key);picks.push(t);
-      if(picks.length>=n)break;
-    }
-  }
-  return picks.sort((a,b)=>Number(b.openTime)-Number(a.openTime));
+  return rows.slice(0,n);
 }
 function deepHistoryCandidate(x){
   if(!x?.historyIncomplete)return false;
@@ -1213,11 +1192,13 @@ async function analyzeMemeTrader(x,now){
   const auditEligible=p.memeTrades>=MEME_AUDIT_MIN_TRADES;
   if(!auditEligible)return {...x,meme:p,early:zeroEarly,behavioralScore:behaviorScore({...x,meme:p,early:zeroEarly}),executionAudit:{requestedTrades:0,eligibleTrades:0,candleTrades:0,candleErrors:0,noCandleData:0,invalidTrades:0,coinAttempts:0,coinSuccesses:0,errors:[],status:'INSUFFICIENT_MEME_TRADES'},memeEligible:false,focusEligible:false,researchEligible:false,concentratedEligible:false,multiResearchEligible:false,dataQualityGate};
   const recent=stratifiedTimingSample(p.memeTradesList,MEME_TRADE_SAMPLE);
+  const timingSampleMode='RECENT_FIXED_WINDOW';
+  const timingSampleCount=recent.length;
   const byCoin=new Map();
   for(const t of recent){const a=byCoin.get(t.coin)||[];a.push(t);byCoin.set(t.coin,a)}
   const coins=[...byCoin.entries()].sort((a,b)=>b[1].length-a[1].length).slice(0,MEME_COINS_PER_TRADER);
   const results=[];
-  const audit={requestedTrades:recent.length,eligibleTrades:0,candleTrades:0,candleErrors:0,noCandleData:0,invalidTrades:0,coinAttempts:coins.length,coinSuccesses:0,errors:[],status:'OK'};
+  const audit={requestedTrades:recent.length,eligibleTrades:0,candleTrades:0,candleErrors:0,noCandleData:0,invalidTrades:0,coinAttempts:coins.length,coinSuccesses:0,errors:[],status:'OK',sampleMode:timingSampleMode,sampleCount:timingSampleCount};
   for(const [coin,ts] of coins){
     audit.eligibleTrades+=ts.length;
     try{
@@ -1801,7 +1782,7 @@ function compactTelegramReport({d,scanned,top,promotionTop,observationCount,cycl
   }
   header.push('','🟢 FIXED-3 ENTRY SELECTION');
   if(entryAudit.length){entryAudit.forEach((a,i)=>{const detail=[`dist=${Number.isFinite(a.distancePct)?pct(a.distancePct,2):'—'}`,`RR=${Number.isFinite(a.rr)?fmt(a.rr,2):'—'}`,`age=${Number.isFinite(a.ageHours)?fmt(a.ageHours,1)+'h':'—'}`,`ATR=${Number.isFinite(a.atrPct)?pct(a.atrPct,2):'—'}`,`score=${a.score}/100`].join(' | ');const cleanReasons=[...new Set(a.reasons||[])]; const wait=Number.isFinite(a.distancePct)&&a.distancePct>MAX_ENTRY_DIST&&cleanReasons.every(r=>r.startsWith('DISTANCE>')||r==='ENTRY_DISTANCE>'+MAX_ENTRY_DIST+'%'); const need=Number.isFinite(a.distancePct)?Math.max(0,a.distancePct-MAX_ENTRY_DIST):NaN; const statusLabel=a.status==='ELIGIBLE'?'READY':wait?'WAITING':'BLOCKED'; const icon=a.status==='ELIGIBLE'?'✅':wait?'🟡':'🔴'; const reasonText=wait?`WAITING: need distance ≤${MAX_ENTRY_DIST}% | reduce by ≈${pct(need,2)}`:cleanReasons.join(' | ')||'UNKNOWN'; header.push(`#${i+1} ${short(a.address)} | ${a.coin} ${a.side} | ${statusLabel}`,`   Trader Entry ${priceFmt(a.traderEntry)} → Current ${priceFmt(a.currentPrice)} | ${detail}`,`   ${icon} ${reasonText}`);});}else header.push('No Fixed-3 entry data available.');
-  header.push(handoffCandidates.length?`🏆 SELECTED: ${short(handoffCandidates[0].address)} | ${handoffCandidates[0].position.coin} ${handoffCandidates[0].position.side} | EntryScore ${handoffCandidates[0].entrySelectionScore}/100 | Dist ${pct(handoffCandidates[0].position.distancePct,2)} | RR ${fmt(handoffCandidates[0].copyPlan.rr,2)}`:'⛔ NO TRADE: none of Fixed-3 passed every current-entry gate.', '🟢 LIVE EXECUTION HANDOFF',handoffCandidates.length?'One best-entry live handoff was written.':'No trader passed the current-entry gate.','ℹ️ Promotion memory is synchronized from the final analyzed registry; a Deep-verified trader cannot remain stale as HISTORY_UNVERIFIED.','ℹ️ PnL = realized closed Meme trades. Timing = historical execution behavior, not prediction.',`ℹ️ ${V8_VERSION}: Single-Token Specialists are eligible; concentration is a soft risk factor, not a hard blocker. Deep History upgrades the SAME candidate object used by Final Copy. READ-ONLY. No order is created by this worker.`);
+  header.push(handoffCandidates.length?`🏆 SELECTED: ${short(handoffCandidates[0].address)} | ${handoffCandidates[0].position.coin} ${handoffCandidates[0].position.side} | EntryScore ${handoffCandidates[0].entrySelectionScore}/100 | Dist ${pct(handoffCandidates[0].position.distancePct,2)} | RR ${fmt(handoffCandidates[0].copyPlan.rr,2)}`:'⛔ NO TRADE: none of Fixed-3 passed every current-entry gate.', '🟢 LIVE EXECUTION HANDOFF',handoffCandidates.length?'One best-entry live handoff was written.':'No trader passed the current-entry gate.','ℹ️ Promotion memory is synchronized from the final analyzed registry; a Deep-verified trader cannot remain stale as HISTORY_UNVERIFIED.','ℹ️ PnL = realized closed Meme trades. Timing = historical execution behavior, not prediction.',`ℹ️ ${V8_VERSION}: Timing uses a deterministic recent fixed window (${MEME_TRADE_SAMPLE} trades max); new trades roll in one at a time instead of reshuffling three historical buckets.`, `ℹ️ ${V8_VERSION}: Single-Token Specialists are eligible; concentration is a soft risk factor, not a hard blocker. Deep History upgrades the SAME candidate object used by Final Copy. READ-ONLY. No order is created by this worker.`);
   return header.join('\n');
 }
 
@@ -2359,7 +2340,7 @@ async function main(){
   if(!top.length && nearMisses.length){lines.push('','🟡 TOP NEAR-MISSES');nearMisses.forEach((x,i)=>{const p=x.meme||{};lines.push(`#${i+1} ${x.address}`,`🧬 exposure=${pct(p.exposurePct,1)} | memeTrades=${p.memeTrades||0} (≥${MEME_MIN_TRADES}) | unique=${p.uniqueCoins||0} (≥${MEME_MIN_UNIQUE})`,`🔎 audit: ${p.memeTrades||0} meme / ${p.totalTrades||0} total | non-meme=${Math.max(0,Number(p.totalTrades||0)-Number(p.memeTrades||0))} | dominant=${p.dominantMeme||'n/a'} (${p.dominantMemeTrades||0})`,`📌 strict missing: ${[Number(p.exposurePct||0)<MEME_MIN_EXPOSURE?`EXPOSURE ${pct(p.exposurePct,1)} < ${MEME_MIN_EXPOSURE}%`:'',Number(p.memeTrades||0)<MEME_MIN_TRADES?`MEME_TRADES ${p.memeTrades||0} < ${MEME_MIN_TRADES}`:'',Number(p.uniqueCoins||0)<MEME_MIN_UNIQUE?`UNIQUE_MEMES ${p.uniqueCoins||0} < ${MEME_MIN_UNIQUE}`:''].filter(Boolean).join(' | ')||'none'}`,`📏 Exposure gap to strict: ${pct(exposureGap(p),1)}`);const imp=nearImpact[i]?.unknownImpact||[];if(imp.length)lines.push(`🧮 unknown impact: ${imp.slice(0,3).map(u=>`${u.coin} ${u.trades}→${pct(u.hypotheticalExposurePct,1)}`).join(' | ')}`);const a=x.executionAudit;if(a)lines.push(`🧪 timing audit=${a.status||'NOT_RUN'} | valid=${a.candleTrades||0}/${a.eligibleTrades||0} | errors=${a.candleErrors||0} | noData=${a.noCandleData||0} | invalid=${a.invalidTrades||0}`,...(a.errors||[]).slice(0,3).map(z=>`   ↳ ${z}`));});}
   top.forEach((x,i)=>{
     const m=x.metrics,mp=x.meme,e=x.early,c=x.current;
-    lines.push('',`#${i+1} ${x.address}`,`🧬 Meme exposure=${pct(mp.exposurePct,1)} | memeTrades=${mp.memeTrades} | totalTrades=${mp.totalTrades} | unique=${mp.uniqueCoins}`,`🎯 Dominant meme=${mp.dominantMeme||'n/a'} (${mp.dominantMemeTrades||0} trades)`,`📈 Meme WR=${pct(mp.memeWinRate,1)} | PF=${mp.memeProfitFactor===Infinity?'∞':fmt(mp.memeProfitFactor,2)} | PnL=${fmt(mp.memePnl)}`,`🎯 Specialization=${mp.specializationScore}/100 | Early-move edge=${e.score}/100 | Repeatability=${e.repeatability}/100`,`🚀 Pump edge=${e.pump}/100 | Dump edge=${e.dump}/100 | hit +5%=${pct(e.hit5,0)} | +10%=${pct(e.hit10,0)} | +20%=${pct(e.hit20,0)}`,`🕐 Median lead to +5%=${fmt(e.medianLead5,1)}m | MFE median=${pct(e.mfeMedian,1)}`,`📊 Overall quality=${x.qualityScore}/100 | 7D trades=${m.closedTrades} | WR=${pct(m.winRate,1)}`,`🧪 Timing audit=${x.executionAudit?.status||'NOT_RUN'} | valid=${x.executionAudit?.candleTrades||0}/${x.executionAudit?.eligibleTrades||0} | errors=${x.executionAudit?.candleErrors||0} | noData=${x.executionAudit?.noCandleData||0}`);
+    lines.push('',`#${i+1} ${x.address}`,`🧬 Meme exposure=${pct(mp.exposurePct,1)} | memeTrades=${mp.memeTrades} | totalTrades=${mp.totalTrades} | unique=${mp.uniqueCoins}`,`🎯 Dominant meme=${mp.dominantMeme||'n/a'} (${mp.dominantMemeTrades||0} trades)`,`📈 Meme WR=${pct(mp.memeWinRate,1)} | PF=${mp.memeProfitFactor===Infinity?'∞':fmt(mp.memeProfitFactor,2)} | PnL=${fmt(mp.memePnl)}`,`🎯 Specialization=${mp.specializationScore}/100 | Early-move edge=${e.score}/100 | Repeatability=${e.repeatability}/100`,`🚀 Pump edge=${e.pump}/100 | Dump edge=${e.dump}/100 | hit +5%=${pct(e.hit5,0)} | +10%=${pct(e.hit10,0)} | +20%=${pct(e.hit20,0)}`,`🕐 Median lead to +5%=${fmt(e.medianLead5,1)}m | MFE median=${pct(e.mfeMedian,1)}`,`📊 Overall quality=${x.qualityScore}/100 | 7D trades=${m.closedTrades} | WR=${pct(m.winRate,1)}`,`🧪 Timing audit=${x.executionAudit?.status||'NOT_RUN'} | sample=${x.executionAudit?.sampleMode||'n/a'} ${x.executionAudit?.sampleCount||0} | valid=${x.executionAudit?.candleTrades||0}/${x.executionAudit?.eligibleTrades||0} | errors=${x.executionAudit?.candleErrors||0} | noData=${x.executionAudit?.noCandleData||0}`);
     if(c)lines.push(`📍 Current: ${c.coin} | ${c.side} | meme=${c.isMeme?'YES':'NO'} | entry=${fmt(c.entry)} | now=${fmt(c.mid)} | dist=${pct(c.distancePct,2)}`);else lines.push('📍 Current position: NONE');
   });
   lines.push('','📌 WATCHLIST EXPORT — TOP 5 BEHAVIORAL CANDIDATES');

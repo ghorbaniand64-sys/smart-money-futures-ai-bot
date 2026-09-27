@@ -1,4 +1,4 @@
-Hyperliquid Meme Hunter V8.6.9 — FIXED-3 SAFE LIVE EXECUTION
+Hyperliquid Meme Hunter V8.6.10 — FIXED-3 SAFE LIVE EXECUTION
 
 Fixed traders (rotation OFF):
 1) 0x64b766b07362405a9cc19c2226490f3015929da9
@@ -13,11 +13,15 @@ Key fixes:
 - Final fixed-copy candidates come from the same analyzed registry used by Deep History.
 - Best current entry remains subject to current-position distance, RR, ATR/volatility and execution-readiness gates.
 - Hunter remains READ-ONLY; execution is a separate engine.
-- Execution Engine V8.6.9 is LIVE-capable but SAFE by default: EXECUTION_ENABLED=false and EXECUTION_DRY_RUN=true unless explicitly changed.
+- Execution Engine V8.6.10 is LIVE-capable but SAFE by default: EXECUTION_ENABLED=false and EXECUTION_DRY_RUN=true unless explicitly changed.
 - PAPER_EXECUTION_ONLY=true is an emergency paper-only kill switch.
 - Before live entry, the engine revalidates handoff age, source distance, direction, account balance, max 2 positions, duplicate orders, isolated leverage, and 50% margin cap.
 - After a fill, both SL and TP must be accepted and have order IDs, and the position must be confirmed. Any protection/confirmation failure triggers emergency close.
 - Self-test: EXECUTION_SELF_TEST=true node hyperliquid_execution_engine.mjs. This submits no network order.
+
+V8.6.10 changes:
+- Timing audit now uses a deterministic recent fixed window (up to 30 recent closed Meme trades), avoiding abrupt reshuffling caused by temporal bucket boundaries.
+- Hunter version and execution-engine version are synchronized at V8.6.10.
 
 V8.6.8 changes:
 - Fixed-3 Entry Selection now displays trader entry/current price with adaptive precision.
@@ -26,7 +30,7 @@ V8.6.8 changes:
 - Shows BLOCKED when other hard blockers remain.
 - Worker remains READ-ONLY; it creates no live orders itself.
 
-V8.6.9 LIVE ACTIVATION
+V8.6.10 LIVE ACTIVATION
 ----------------------
 The included .github/workflows/hyperliquid-monitor.yml runs the READ-ONLY Fixed-3 Hunter first and then the LIVE Execution Engine in the same job, every 5 minutes.
 
