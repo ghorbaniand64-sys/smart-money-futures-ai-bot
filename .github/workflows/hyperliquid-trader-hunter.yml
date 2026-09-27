@@ -26,10 +26,10 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Validate worker
+      - name: Validate Hunter
         run: node --check hyperliquid_trader_hunter.mjs
 
-      - name: Validate execution engine
+      - name: Validate Execution Engine
         run: node --check hyperliquid_execution_engine.mjs
 
       - name: Run Meme Hunter
@@ -42,36 +42,50 @@ jobs:
       - name: Run Execution Engine (LIVE)
         env:
           HYPERLIQUID_API_URL: ${{ secrets.HYPERLIQUID_API_URL }}
-          HYPERLIQUID_ACCOUNT_ADDRESS: ${{ secrets.HYPERLIQUID_ACCOUNT_ADDRESS }}
-          HYPERLIQUID_AGENT_PRIVATE_KEY: ${{ secrets.HYPERLIQUID_AGENT_PRIVATE_KEY }}
 
+          # Existing GitHub Secrets
+          HYPERLIQUID_ACCOUNT_ADDRESS: ${{ secrets.HL_MAIN_ACCOUNT_ADDRESS }}
+          HYPERLIQUID_AGENT_PRIVATE_KEY: ${{ secrets.HL_API_WALLET_PRIVATE_KEY }}
+
+          # LIVE MODE
           EXECUTION_ENABLED: 'true'
           EXECUTION_DRY_RUN: 'false'
 
-          HYPERLIQUID_EXECUTION_HANDOFF_TTL_MS: '90000'
+          # Handoff safety
+          EXECUTION_HANDOFF_TTL_MS: '90000'
           EXECUTION_MAX_SOURCE_ENTRY_DISTANCE_PCT: '0.5'
           EXECUTION_MAX_REVALIDATION_MOVE_PCT: '0.35'
           EXECUTION_SLIPPAGE_BPS: '50'
 
+          # LIVE POSITION SETTINGS
           EXECUTION_MARGIN_ALLOCATION_PCT: '50'
           EXECUTION_LEVERAGE: '10'
           EXECUTION_MAX_POSITIONS: '2'
 
+          # Risk / TP / SL
           EXECUTION_MIN_RR: '1.5'
           EXECUTION_SL_ATR_MULT: '1.2'
           EXECUTION_TP_ATR_MULT: '2.0'
           EXECUTION_MAX_SL_PCT: '2.0'
 
+          # Trade requirements
           EXECUTION_REQUIRE_MEME: 'true'
           EXECUTION_REQUIRE_HANDOFF_READY: 'true'
 
+          # Fill verification
           EXECUTION_FILL_WAIT_MS: '8000'
           EXECUTION_FILL_POLL_MS: '500'
+
+          # Protection verification
           EXECUTION_PROTECTION_VERIFY_MS: '4000'
+
+          # Emergency close
           EXECUTION_EMERGENCY_SLIPPAGE_BPS: '100'
 
+          # Hyperliquid Mainnet
           HYPERLIQUID_TESTNET: 'false'
 
+          # Telegram
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
