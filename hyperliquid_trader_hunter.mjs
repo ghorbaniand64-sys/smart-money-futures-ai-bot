@@ -9,7 +9,7 @@ const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL || 'https://s
 const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED ?? 'true').toLowerCase() === 'true';
 
 // V8 persistent promotion / execution bridge. Research memory never weakens hard gates.
-const V8_VERSION='V8.6.2-FIXED-3-LIVE';
+const V8_VERSION='V8.6.5-FIXED-3-LIVE-TELEGRAM';
 
 // Fixed-copy mode: no rotating discovery. These are the previously identified
 // Meme specialists/strong research traders selected by the user.
