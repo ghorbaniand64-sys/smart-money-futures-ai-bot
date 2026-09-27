@@ -37,6 +37,11 @@ const REQUIRE_HANDOFF_READY = String(process.env.EXECUTION_REQUIRE_HANDOFF_READY
 const STATE_PATH = process.env.EXECUTION_STATE_PATH || 'state/execution_state.json';
 const MAINNET = String(process.env.HYPERLIQUID_TESTNET || 'false').toLowerCase() !== 'true';
 const API_URL = INFO.replace(/\/info\/?$/, '');
+const TG_TOKEN = String(process.env.TELEGRAM_TOKEN || '').trim();
+const TG_CHAT = String(process.env.TELEGRAM_CHAT_ID || '').trim();
+const TELEGRAM_ENABLED = String(process.env.EXECUTION_TELEGRAM_ENABLED ?? 'true').toLowerCase() !== 'false';
+const FILL_CONFIRM_TIMEOUT_MS = Number(process.env.EXECUTION_FILL_CONFIRM_TIMEOUT_MS || 12000);
+const FILL_CONFIRM_POLL_MS = Number(process.env.EXECUTION_FILL_CONFIRM_POLL_MS || 1200);
 
 function log(x){ console.log(`[EXECUTION] ${x}`); }
 function num(x){ const n=Number(x); return Number.isFinite(n)?n:NaN; }
@@ -46,6 +51,61 @@ function clamp(x,a,b){ return Math.max(a,Math.min(b,x)); }
 function sideFromSize(szi){ return Number(szi)>0?'LONG':'SHORT'; }
 function fmt(x,d=4){ return Number.isFinite(Number(x))?Number(x).toFixed(d):'n/a'; }
 function pct(x,d=2){ return Number.isFinite(Number(x))?`${Number(x).toFixed(d)}%`:'n/a'; }
+
+async function telegram(text){
+  if(!TELEGRAM_ENABLED || !TG_TOKEN || !TG_CHAT){ log('[TELEGRAM] skipped: credentials disabled/missing'); return false; }
+  try{
+    const res=await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:TG_CHAT,text:String(text).slice(0,3900),disable_web_page_preview:true})});
+    if(!res.ok) throw new Error(`TELEGRAM_HTTP_${res.status}`);
+    const body=await res.json();
+    if(body?.ok!==true) throw new Error('TELEGRAM_SEND_FAILED');
+    return true;
+  }catch(e){ log(`[TELEGRAM][ERROR] ${e.message||e}`); return false; }
+}
+
+async function loadStateSafe(){ try{return JSON.parse(await fs.readFile(STATE_PATH,'utf8'));}catch{return null;} }
+
+async function confirmOwnPosition(coin,side){
+  const started=Date.now();
+  while(Date.now()-started<=FILL_CONFIRM_TIMEOUT_MS){
+    const pos=await currentPosition(ACCOUNT,coin).catch(()=>null);
+    if(pos && sideFromSize(pos.szi)===side && Math.abs(num(pos.szi)||0)>0 && num(pos.entryPx)>0) return pos;
+    await sleep(FILL_CONFIRM_POLL_MS);
+  }
+  return null;
+}
+
+function protectionOids(protectionResult){
+  const out=[];
+  for(const st of statusList(protectionResult)){
+    for(const key of ['resting','triggered']){
+      const oid=st?.[key]?.oid;
+      if(oid!=null) out.push(String(oid));
+    }
+  }
+  return out;
+}
+
+async function closingFills(coin,sinceMs){
+  try{
+    const rows=await info({type:'userFillsByTime',user:ACCOUNT,startTime:Math.max(0,Number(sinceMs||0)-5000),endTime:Date.now(),aggregateByTime:false});
+    return (Array.isArray(rows)?rows:[]).filter(f=>String(f?.coin||'')===coin && Number(f?.time||0)>=Number(sinceMs||0));
+  }catch{return [];}
+}
+
+async function reconcileClosedPosition(previous){
+  if(!previous?.activePosition?.coin)return;
+  const p=previous.activePosition;
+  const live=await currentPosition(ACCOUNT,p.coin).catch(()=>null);
+  if(live && Math.abs(num(live.szi)||0)>0)return;
+  const fills=await closingFills(p.coin,p.openedAt);
+  const pnl=fills.reduce((a,f)=>a+(Number(f?.closedPnl)||0),0);
+  const protectedOids=new Set((p.protectionOids||[]).map(String));
+  const matched=fills.filter(f=>protectedOids.has(String(f?.oid)));
+  const reason=matched.some(f=>String(f?.oid)===String(p.slOid))?'🛑 SL':matched.some(f=>String(f?.oid)===String(p.tpOid))?'🎯 TP':'🔴 CLOSED';
+  const exitFill=fills.slice().sort((a,b)=>Number(b?.time||0)-Number(a?.time||0))[0];
+  await telegram(`${reason} HYPERLIQUID TRADE CLOSED\n━━━━━━━━━━━━━━━━━━\n🪙 ${p.coin} | ${p.side}\n👤 Trader: ${p.trader||'n/a'}\n📥 Entry: ${fmt(p.entry)}\n📤 Exit: ${exitFill?.px?fmt(num(exitFill.px)):'n/a'}\n💰 Realized PnL: $${fmt(pnl,2)}\n📦 Closed fills: ${fills.length}\n⚡ Leverage: ${p.leverage||10}x\n🕐 ${new Date(p.openedAt).toISOString()}`);
+}
 
 async function readJson(path){
   try {
@@ -227,6 +287,8 @@ async function emergencyClose(exchange,p,filledSize){
 
 async function run(){
   log(`start enabled=${EXECUTION_ENABLED} dryRun=${DRY_RUN} mainnet=${MAINNET}`);
+  const previousState=await loadStateSafe();
+  if(previousState?.mode==='LIVE' && previousState?.activePosition) await reconcileClosedPosition(previousState);
   const handoff=await readJson(HANDOFF_PATH);
   const p=await buildCandidate(handoff);
   if(PAPER_EXECUTION_ONLY){
@@ -266,8 +328,15 @@ async function run(){
   log(`ENTRY FILLED ${p.coin} ${p.side} size=${fmt(filledSize,8)} avgPx=${fmt(avgPx)}`);
   try{
     const protection=await placeProtection(exchange,p,filledSize);
+    const pOids=protectionOids(protection);
+    const slOid=String(pOids[0]||'');
+    const tpOid=String(pOids[1]||'');
     log(`PROTECTION LIVE ${p.coin} SL=${fmt(p.sl)} TP=${fmt(p.tp)} size=${fmt(filledSize,8)}`);
-    await writeJson(STATE_PATH,{at:Date.now(),mode:'LIVE',plan:p,entryResult:result,protectionResult:protection});
+    const confirmedPos=await confirmOwnPosition(p.coin,p.side);
+    const actualEntry=confirmedPos?.entryPx?num(confirmedPos.entryPx):(avgPx||p.liveFillPrice);
+    const activePosition={coin:p.coin,side:p.side,trader:p.trader,entry:actualEntry,size:filledSize,openedAt:Date.now(),leverage:TARGET_LEVERAGE,sl:p.sl,tp:p.tp,slOid,tpOid,protectionOids:pOids};
+    await telegram(`🟢 HYPERLIQUID TRADE OPENED\n━━━━━━━━━━━━━━━━━━\n🪙 ${p.coin} | ${p.side}\n👤 Trader: ${p.trader}\n📥 Entry: ${fmt(actualEntry)}\n📦 Size: ${fmt(filledSize,8)}\n💵 Margin: $${fmt(p.margin,2)} (${ACCOUNT_ALLOCATION_PCT}% account)\n⚡ Leverage: ${TARGET_LEVERAGE}x ISOLATED\n🛡️ SL: ${fmt(p.sl)}\n🎯 TP: ${fmt(p.tp)}\n📊 RR: ${fmt(p.rr,2)}\n💳 Account: $${fmt(p.accountValue,2)}\n🕐 ${new Date().toISOString()}`);
+    await writeJson(STATE_PATH,{at:Date.now(),mode:'LIVE',plan:p,entryResult:result,protectionResult:protection,activePosition});
   }catch(e){
     const protectionError=String(e.message||e);
     log(`PROTECTION FAILED ${protectionError} | EMERGENCY CLOSE START`);
@@ -275,6 +344,7 @@ async function run(){
     try{closeResult=await emergencyClose(exchange,p,filledSize);log(`EMERGENCY CLOSE RESPONSE ${JSON.stringify(closeResult)}`);}catch(closeErr){
       log(`EMERGENCY CLOSE FAILED ${String(closeErr.message||closeErr)}`);
     }
+    await telegram(`🚨 HYPERLIQUID PROTECTION FAILURE\n━━━━━━━━━━━━━━━━━━\n🪙 ${p.coin} | ${p.side}\n📥 Entry: ${fmt(avgPx||p.liveFillPrice)}\n🛡️ SL/TP registration failed.\n🔴 Emergency close attempted.\n❗ ${protectionError}`);
     await writeJson(STATE_PATH,{at:Date.now(),mode:'LIVE_PROTECTION_FAILURE',plan:p,entryResult:result,protectionError,closeResult});
     throw new Error(`LIVE_PROTECTION_FAILURE:${protectionError}`);
   }
