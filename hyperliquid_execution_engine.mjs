@@ -123,12 +123,18 @@ async function accountState(){
     .map(x=>x?.position).filter(Boolean)
     .filter(p=>Math.abs(num(p?.szi)||0)>0);
 
-  // Hyperliquid Unified Account mode can keep the USDC collateral in the
-  // Spot clearinghouse while the individual default-Dex clearinghouseState
-  // reports accountValue=0. The web UI can therefore show "Avail. to Trade"
-  // while this endpoint still returns a zero perp marginSummary.
+  // Hyperliquid Unified Account mode can keep USDC collateral in the Spot
+  // clearinghouse while clearinghouseState reports little or no withdrawable
+  // perp margin. Do not assume withdrawable=0 means the account has no
+  // trading collateral: check the Unified Spot USDC balance whenever the
+  // perp withdrawable balance cannot fund the requested margin allocation.
   let collateralSource='PERP_CLEARINGHOUSE';
-  if(!(accountValue>0)){
+  const requiredMarginEstimate=Math.max(0,accountValue*MARGIN_ALLOCATION_PCT/100);
+  const needSpotCollateral=!(accountValue>0) ||
+    !(withdrawable>0) ||
+    (Number.isFinite(requiredMarginEstimate) && withdrawable < requiredMarginEstimate);
+
+  if(needSpotCollateral){
     const spot=await info({type:'spotClearinghouseState',user:ACCOUNT});
     const balances=Array.isArray(spot?.balances)?spot.balances:[];
     const usdc=balances.find(b=>String(b?.coin||'').toUpperCase()==='USDC');
@@ -136,9 +142,12 @@ async function accountState(){
     const hold=num(usdc?.hold);
     const available=Number.isFinite(total)&&Number.isFinite(hold) ? Math.max(0,total-hold) : NaN;
 
-    if(total>0){
+    if(total>0 && Number.isFinite(available) && available>0){
+      // In Unified Account mode the Spot USDC balance is the actual
+      // collateral available to trade. Use it for both account value and
+      // margin availability so the 50% allocation is based on real equity.
       accountValue=total;
-      withdrawable=Number.isFinite(available)?available:total;
+      withdrawable=available;
       totalMarginUsed=0;
       collateralSource='UNIFIED_SPOT_USDC';
       log(`ACCOUNT collateral=USDC ${fmt(accountValue,6)} available=${fmt(withdrawable,6)} source=${collateralSource}`);
@@ -153,8 +162,7 @@ async function accountState(){
     throw new Error(`ACCOUNT_VALUE_ZERO_OR_UNAVAILABLE:account=${ACCOUNT}:marginAccountValue=${ma}:crossAccountValue=${cma}:totalRawUsd=${raw}:withdrawable=${wd}`);
   }
 
-  const availableMargin=Number.isFinite(withdrawable)?Math.max(0,withdrawable):NaN;
-  return {raw:s,accountValue,withdrawable,totalMarginUsed,positions,collateralSource,availableMargin};
+  return {raw:s,accountValue,withdrawable,totalMarginUsed,positions,collateralSource};
 }
 
 async function openOrders(){ return info({type:'openOrders',user:ACCOUNT}); }
@@ -298,11 +306,11 @@ async function buildCandidate(handoff){
   // 50% of account value is margin; effective leverage determines position
   // notional. Hyperliquid uses isolated leverage here.
   const margin=Math.max(0,acct.accountValue*MARGIN_ALLOCATION_PCT/100);
-  const availableMargin=Number.isFinite(acct.availableMargin)
-    ? acct.availableMargin
-    : acct.withdrawable;
+  const availableMargin=Number.isFinite(acct.withdrawable)
+    ? acct.withdrawable
+    : NaN;
   log(`MARGIN CHECK required=$${fmt(margin,2)} available=$${fmt(availableMargin,2)} source=${acct.collateralSource}`);
-  if(Number.isFinite(availableMargin) && availableMargin < margin)
+  if(!(availableMargin>=margin))
     throw new Error(`INSUFFICIENT_AVAILABLE_MARGIN:${fmt(availableMargin,2)}<${fmt(margin,2)}:${acct.collateralSource}`);
   const notional=margin*effectiveLeverage;
   if(!(margin>0&&notional>0))throw new Error('NOTIONAL_ZERO');
