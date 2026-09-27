@@ -9,7 +9,19 @@ const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL || 'https://s
 const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED ?? 'true').toLowerCase() === 'true';
 
 // V8 persistent promotion / execution bridge. Research memory never weakens hard gates.
-const V8_VERSION='V8.5.18';
+const V8_VERSION='V8.6.2-FIXED-3-LIVE';
+
+// Fixed-copy mode: no rotating discovery. These are the previously identified
+// Meme specialists/strong research traders selected by the user.
+const FIXED_COPY_TRADERS=[
+  '0x64b766b07362405a9cc19c2226490f3015929da9',
+  '0xe639710e64d7094f7f82ab495915559c2f612953',
+  '0xe86b057f5eb764c9738d6b0d38170befd0723664d'
+].map(norm);
+const FIXED_COPY_MODE=true;
+const FIXED_COPY_MAX_HANDOFFS=1;
+const FIXED_COPY_MIN_ENTRY_SCORE=num('HYPERLIQUID_FIXED_COPY_MIN_ENTRY_SCORE',70);
+const FIXED_COPY_FORCE_HANDOFF=String(process.env.HYPERLIQUID_FIXED_COPY_FORCE_HANDOFF ?? 'true').toLowerCase()!=='false';
 const OPPORTUNITY_POOL_MAX=integer('HYPERLIQUID_MEME_OPPORTUNITY_POOL_MAX',12);
 const RUN_BUDGET_MS=integer('HYPERLIQUID_MEME_RUN_BUDGET_MS',480000);
 const RUN_MIN_REMAINING_MS=integer('HYPERLIQUID_MEME_RUN_MIN_REMAINING_MS',45000);
@@ -348,6 +360,7 @@ function category(e){
   if(/timeout/i.test(s))return'TIMEOUT';
   if(/fetch|network|ECONN|socket|ENOTFOUND/i.test(s))return'NETWORK';
   if(/JSON/i.test(s))return'BAD_JSON';
+  if(/ReferenceError|not defined/i.test(s))return'CODE_RUNTIME';
   if(/fills/i.test(s))return'FILLS';
   return'OTHER'
 }
@@ -1009,16 +1022,17 @@ function economicEdgeAnalysis(p, robustness){
   if(!(score>=MEME_ECONOMIC_EDGE_MIN))reasons.push(`ECONOMIC_EDGE<${MEME_ECONOMIC_EDGE_MIN}`);
   return {score, sampleStrength:Math.round(sample), pfScore:Math.round(pfScore), rddScore:Math.round(rddScore), concentrationScore:Math.round(concentrationScore), economicSignificance, reasons};
 }
-function executionReadiness(p, copy, evidence, economicEdge, strictEligible, historyIncomplete, historyVerification='UNVERIFIED_PARTIAL'){
+function executionReadiness(p, copy, evidence, economicEdge, strictEligible, historyIncomplete, historyVerification='UNVERIFIED_PARTIAL', historyIntegrityOk=true){
   const reasons=[];
   const historyVerifiedPartial=String(historyVerification||'').toUpperCase()==='VERIFIED_PARTIAL';
+  const dataQualityGate=!historyIncomplete || !MEME_REQUIRE_COMPLETE_HISTORY || historyVerifiedPartial;
   if(!strictEligible){
     reasons.push('SPECIALIST_GATE_BLOCKED');
     const specialistReasons=specialistBlockReasons(p, dataQualityGate);
     for(const r of specialistReasons.slice(0,6)){ if(!reasons.includes(`SPECIALIST:${r}`)) reasons.push(`SPECIALIST:${r}`); }
   }
   if(economicEdge?.dataQualityGate===false)reasons.push('DATA_QUALITY_GATE_BLOCKED');
-  if(copy?.historyIntegrityOk===false)reasons.push('PNL_RECONSTRUCTION_INTEGRITY_FAIL');
+  if(historyIntegrityOk===false)reasons.push('PNL_RECONSTRUCTION_INTEGRITY_FAIL');
   if(historyIncomplete && !historyVerifiedPartial)reasons.push('HISTORY_UNVERIFIED');
   if(Number(p.memeTrades||0)<MEME_FULL_COPY_MIN_SAMPLE)reasons.push(`TRADES<${MEME_FULL_COPY_MIN_SAMPLE}`);
   if(!(economicEdge.score>=MEME_ECONOMIC_EDGE_MIN))reasons.push(`ECONOMIC_EDGE<${MEME_ECONOMIC_EDGE_MIN}`);
@@ -1229,7 +1243,7 @@ async function analyzeMemeTrader(x,now){
   const copy=finalCopyability(p,early,robustness,executionEdgeScore,profitQualityScore,incomplete,historyVerificationValue);
   const evidence=evidenceDimensions(p,early,robustness,audit,incomplete,historyVerificationValue);
   const economicEdge=economicEdgeAnalysis(p,robustness);
-  const execution=executionReadiness(p,copy,evidence,economicEdge,strictEligible,incomplete,historyVerificationValue);
+  const execution=executionReadiness(p,copy,evidence,economicEdge,strictEligible,incomplete,historyVerificationValue,x.metrics?.pnlIntegrityOk!==false);
   const historyIntegrityOk=Boolean(x.metrics?.pnlIntegrityOk!==false);
   if(!historyIntegrityOk && !execution.reasons.includes('PNL_RECONSTRUCTION_INTEGRITY_FAIL'))execution.reasons.push('PNL_RECONSTRUCTION_INTEGRITY_FAIL');
   const behavioralScore=behaviorScore({...x,meme:p,early:{...early,repeatability,score:edge},executionAudit:audit});
@@ -1456,6 +1470,39 @@ function plan(pos,m,atrv,now){
     sl,tp,rr,atr:atrv,atrPct,maxHoldHours:MAX_HOLD,positionAgeHours:(Number(pos?.timestamp||pos?.entryTimestamp||0)>0?Math.max(0,(now-Number(pos?.timestamp||pos?.entryTimestamp||0))/3600000):NaN),
     diagnostics
   };
+}
+
+function fixedCopyEntryScore(x,cp){
+  const dist=Number(x?.current?.distancePct);
+  const rr=Number(cp?.rr);
+  const age=Number(x?.plan?.positionAgeHours ?? x?.positionAgeHours);
+  const atrPct=Number(cp?.atrPct);
+  if(!Number.isFinite(dist)||dist>MAX_ENTRY_DIST||!Number.isFinite(rr)||rr<MIN_RR)return {score:0,eligible:false,reasons:['ENTRY_GATE']};
+  let score=0;
+  const reasons=[];
+  // Current entry quality: avoid chasing the trader after a large move.
+  score += dist<=0.10 ? 30 : dist<=0.20 ? 26 : dist<=0.30 ? 21 : dist<=0.40 ? 15 : 8;
+  if(dist<=0.20)reasons.push('NEAR_TRADER_ENTRY');
+  // Risk/reward quality. Current plan is 2.0 ATR TP / 1.2 ATR SL ~= 1.67 RR.
+  score += rr>=2.5 ? 25 : rr>=2.0 ? 22 : rr>=1.8 ? 19 : rr>=1.5 ? 15 : 0;
+  if(rr>=2.0)reasons.push('RR>=2');
+  // Prefer recent/open positions; stale positions are less useful to copy.
+  if(Number.isFinite(age)){
+    score += age<=1 ? 20 : age<=3 ? 17 : age<=6 ? 13 : age<=12 ? 7 : 0;
+    if(age<=3)reasons.push('RECENT_POSITION');
+  } else {
+    score += 6;
+  }
+  // ATR sanity / tradability. Extremely volatile plans are not preferred.
+  if(Number.isFinite(atrPct)){
+    score += atrPct>=0.25 && atrPct<=5 ? 15 : atrPct<=8 ? 8 : 0;
+    if(atrPct>=0.25&&atrPct<=5)reasons.push('ATR_SANITY');
+  }
+  // Historical trader quality is a tie-breaker, not a substitute for a good entry.
+  const hist=(Number(x?.economicEdgeScore||0)*0.30)+(Number(x?.profitCopyScore||0)*0.30)+(Number(x?.timingCopyScore||0)*0.20)+(Number(x?.riskCopyScore||0)*0.20);
+  score += Math.min(10,Math.max(0,hist/10));
+  if(hist>=75)reasons.push('STRONG_TRADER_HISTORY');
+  return {score:Math.round(Math.min(100,score)),eligible:score>=FIXED_COPY_MIN_ENTRY_SCORE,reasons};
 }
 
 function copyability(x){
@@ -1708,7 +1755,7 @@ function compactTelegramReport({d,scanned,top,promotionTop,observationCount,cycl
     return `#${i+1} ${short(x.address)} | ${x.specialistType||'SPECIALIST'} | Copy ${x.copyabilityScore??0} | Ready ${x.executionReadinessScore??0} | ${x.copyClassification||'BLOCKED'} | BLOCK: ${blocks}`;
   });
   const strictDiagnosticText=strictLines.length?strictLines.join('\n'):'none';
-  const header=[`🟣 HYPERLIQUID MEME HUNTER ${V8_VERSION}`,'📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔁 Promotion cycle: ${cycle}`,`🔎 Processed: ${scanStats?.processed||0} | Errors: ${scanStats?.errors||0} | History OK: ${scanStats?.historyOK||0} | Truncated: ${scanStats?.historyTruncated||0}`,`🎯 FINAL COPY CANDIDATES: ${top.length} | Strict specialists: ${strictPool.length}`,`🔬 Deep History: attempted ${deepHistoryStats?.attempted||0} | verified-partial ${deepHistoryStats?.verifiedPartial||0} | complete ${deepHistoryStats?.complete||0} | unverified ${deepHistoryStats?.unverified||0} | errors ${deepHistoryStats?.errors||0}`,`🔬 Promotion / Research tracked: ${promotionTop.length} | Observation excluded: ${observationCount}`,`🧠 Opportunity Pool: ${opportunityPool?.length||0} | Reserved next cycle: ${Math.min(OPPORTUNITY_RESERVED_SLOTS,opportunityPool?.length||0)}`,`🧪 Promotion diagnostic: analyzed ${scanStats?.analyzed||0} | source ${scanStats?.promotionSource||0} | evidence ${scanStats?.promotionEvidence||0} | strict excluded ${scanStats?.strictExcluded||0}`,
+  const header=[`🟣 HYPERLIQUID MEME HUNTER ${V8_VERSION}`,'📡 LIVE TRADING | FIXED-3 | MAX 2 POSITIONS | 10x','━━━━━━━━━━━━━━━━━━',`🔁 Promotion cycle: ${cycle}`,`🔎 Processed: ${scanStats?.processed||0} | Errors: ${scanStats?.errors||0} | History OK: ${scanStats?.historyOK||0} | Truncated: ${scanStats?.historyTruncated||0}`,`🎯 FINAL COPY CANDIDATES: ${top.length} | Strict specialists: ${strictPool.length}`,`🔬 Deep History: attempted ${deepHistoryStats?.attempted||0} | verified-partial ${deepHistoryStats?.verifiedPartial||0} | complete ${deepHistoryStats?.complete||0} | unverified ${deepHistoryStats?.unverified||0} | errors ${deepHistoryStats?.errors||0}`,`🔬 Promotion / Research tracked: ${promotionTop.length} | Observation excluded: ${observationCount}`,`🧠 Opportunity Pool: ${opportunityPool?.length||0} | Reserved next cycle: ${Math.min(OPPORTUNITY_RESERVED_SLOTS,opportunityPool?.length||0)}`,`🧪 Promotion diagnostic: analyzed ${scanStats?.analyzed||0} | source ${scanStats?.promotionSource||0} | evidence ${scanStats?.promotionEvidence||0} | strict excluded ${scanStats?.strictExcluded||0}`,
     `📚 Analysis funnel: eligible ${scanStats?.analysisEligible||0} | skipped low-history ${scanStats?.analysisSkippedLowHistory||0} | closed<${scanStats?.analysisClosedThreshold||MEME_MIN_TRADES}: ${scanStats?.closedTradesLow||0}`,`🧯 Analysis errors: ${scanStats?.analysisErrors||0}${scanStats?.analysisErrorTop?` | ${scanStats.analysisErrorTop}`:''}`,`⏱️ Runtime: ${scanStats?.elapsedSec||0}s / budget ${Math.round(RUN_BUDGET_MS/1000)}s${scanStats?.interrupted?' | SAFE STOP':scanStats?.normalScanStopped?' | DEEP RESERVE USED':' | COMPLETED'}`];
   if(RUN_INTERRUPTED)header.push('','🛑 SAFE STOP: external termination interrupted the run before a usable execution handoff.');
   else if(scanStats?.normalScanStopped)header.push('','🟡 NORMAL SCAN STOPPED: reserved Deep-History budget was used; this is not an execution failure.');
@@ -1723,7 +1770,7 @@ function compactTelegramReport({d,scanned,top,promotionTop,observationCount,cycl
       finalDiagnostic.forEach((x,i)=>header.push(`#${i+1} ${short(x.address)} | ${x.specialistType||'SPECIALIST'} | History ${x.historyVerification||'UNKNOWN'} | Copy ${x.copyabilityScore??0} | Ready ${x.executionReadinessScore??0}`,`   SPECIALIST BLOCKS: ${(x.specialistBlockReasons||[]).join(' | ')||'NONE'}`,`   EXECUTION BLOCKS: ${(x.executionBlockReasons||[]).join(' | ')||'NONE'}`,`   Class: ${x.copyClassification||'BLOCKED'} | Econ ${x.economicEdgeScore??0} | Profit ${x.profitCopyScore??0} | Timing ${x.timingCopyScore??0} | Risk ${x.riskCopyScore??0} | Evidence ${x.evidenceStrength??0}`,`   History integrity: ${x.historyIntegrity||'UNKNOWN'} | PnL Δ=${fmt(x.historyIntegrityDelta||0,2)}`));
     }else header.push('No specialist-like candidate survived the analyzed registry in this cycle.');
   }
-  header.push('','🟢 EXECUTION HANDOFF (READ-ONLY)',top.filter(x=>x.executionReady).length?'A fresh handoff was written only for FULL-COPY-CANDIDATE traders.':'No trader passed the complete live-execution gate in this cycle.','ℹ️ Promotion memory is synchronized from the final analyzed registry; a Deep-verified trader cannot remain stale as HISTORY_UNVERIFIED.','ℹ️ PnL = realized closed Meme trades. Timing = historical execution behavior, not prediction.',`ℹ️ ${V8_VERSION}: Single-Token Specialists are eligible; concentration is a soft risk factor, not a hard blocker. Deep History upgrades the SAME candidate object used by Final Copy. READ-ONLY. No order is created by this worker.`);
+  header.push('','🟢 FIXED-3 ENTRY SELECTION',handoffCandidates.length?`SELECTED: ${short(handoffCandidates[0].address)} | ${handoffCandidates[0].position.coin} ${handoffCandidates[0].position.side} | EntryScore ${handoffCandidates[0].entrySelectionScore}/100 | Dist ${pct(handoffCandidates[0].position.distancePct,2)} | RR ${fmt(handoffCandidates[0].copyPlan.rr,2)}`:'No fixed trader currently has a sufficiently strong copy entry.', '🟢 EXECUTION HANDOFF (READ-ONLY)',handoffCandidates.length?'One best-entry handoff was written.':'No trader passed the current-entry gate.','ℹ️ Promotion memory is synchronized from the final analyzed registry; a Deep-verified trader cannot remain stale as HISTORY_UNVERIFIED.','ℹ️ PnL = realized closed Meme trades. Timing = historical execution behavior, not prediction.',`ℹ️ ${V8_VERSION}: Single-Token Specialists are eligible; concentration is a soft risk factor, not a hard blocker. Deep History upgrades the SAME candidate object used by Final Copy. READ-ONLY. No order is created by this worker.`);
   return header.join('\n');
 }
 
@@ -1927,15 +1974,13 @@ async function main(){
   const now=Date.now(), startTime=now-MEME_HISTORY_DAYS*86400000;
   const errors=[];
   console.log(`[MEME-HUNTER ${V8_VERSION}][START] mode=${MEME_MODE} watchlist=${MEME_WATCHLIST.length}`);
-  let d;
-  try{d=await discover()}catch(e){
-    console.error(`[DISCOVERY][ERROR] ${e.message}`);
-    await telegram(`🟣 HYPERLIQUID MEME HUNTER ${V8_VERSION}\n📡 READ-ONLY | NO ORDERS\n━━━━━━━━━━━━━━━━━━\n❌ DISCOVERY ERROR\n${e.message}`);process.exitCode=1;return;
-  }
-  const universeAddresses=MEME_MODE==='watch'&&MEME_WATCHLIST.length?MEME_WATCHLIST:d.candidates.slice(0,MEME_SCOUT_CANDIDATES);
-  const cohort=MEME_MODE==='watch'?{selected:universeAddresses,slot:0,slots:1,coverage:universeAddresses.length}:selectRotatingMemeCohort(universeAddresses);
-  const protectedOpportunityAddresses=MEME_MODE==='watch'?[]:opportunityAddresses(promotionMemory);
-  const sourceAddresses=MEME_MODE==='watch'?cohort.selected:[...new Set([...protectedOpportunityAddresses,...cohort.selected])];
+  // FIXED-5 MODE: discovery/rotation is intentionally bypassed.
+  // The same five wallets are analyzed every cycle.
+  const d={discovered:'FIXED-5',candidates:FIXED_COPY_TRADERS};
+  const universeAddresses=FIXED_COPY_TRADERS;
+  const cohort={selected:universeAddresses,slot:0,slots:1,coverage:universeAddresses.length};
+  const protectedOpportunityAddresses=[];
+  const sourceAddresses=universeAddresses;
   if(protectedOpportunityAddresses.length)console.log(`[OPPORTUNITY] protected=${protectedOpportunityAddresses.length} pool=${promotionMemory.opportunityPool?.length||0} addresses=${protectedOpportunityAddresses.map(short).join(',')}`);
   console.log(`[COHORT] cycle=${cohort.slot+1}/${cohort.slots} scanned=${sourceAddresses.length} coverage=${cohort.coverage}`);
   const scanned=[];
@@ -2178,7 +2223,12 @@ async function main(){
   // In watch mode, enrich only the fixed five. In scout mode, current positions
   // are informational; the purpose of this run is to discover specialists, not copy.
   const watched=[];
-  const positionPool=[...new Map([...top,...promotionTop].map(x=>[x.address,x])).values()].slice(0,PROMOTION_POOL);
+  const fixedPool=FIXED_COPY_MODE
+    ? FIXED_COPY_TRADERS.map(a=>scanned.find(x=>norm(x.address)===a)).filter(Boolean)
+    : [];
+  const positionPool=FIXED_COPY_MODE
+    ? fixedPool
+    : [...new Map([...top,...promotionTop].map(x=>[x.address,x])).values()].slice(0,PROMOTION_POOL);
   let mids={};
   try{mids=await allMids()}catch(e){console.log(`[POSITION][WARN] allMids ${category(e)} :: ${String(e.message||e).slice(0,180)}`)}
   for(const x of positionPool){
@@ -2197,7 +2247,11 @@ async function main(){
   }
 
   const handoffCandidates=[];
-  for(const x of top.filter(x=>x.executionReady===true&&x.copyClassification==='FULL-COPY-CANDIDATE'&&x.current?.coin&&Number(x.current?.entry)>0).slice(0,5)){
+  const handoffPool=FIXED_COPY_MODE
+    ? watched.filter(x=>FIXED_COPY_TRADERS.includes(norm(x.address)) && x.current?.coin && Number(x.current?.entry)>0)
+    : top.filter(x=>x.executionReady===true&&x.copyClassification==='FULL-COPY-CANDIDATE'&&x.current?.coin&&Number(x.current?.entry)>0).slice(0,5);
+  const entryOpportunities=[];
+  for(const x of handoffPool){
     try{
       const coin=String(x.current.coin);
       if(!x.current.isMeme)throw new Error('CURRENT_POSITION_NOT_MEME');
@@ -2207,8 +2261,19 @@ async function main(){
       const cp=plan(sourcePos,bk,av,now);
       if(!Number.isFinite(Number(cp.entry))||!Number.isFinite(Number(cp.sl))||!Number.isFinite(Number(cp.tp))||!Number.isFinite(Number(cp.rr)))throw new Error('LIVE_PLAN_INVALID');
       if(Number(cp.rr)<MIN_RR)throw new Error(`RR<${MIN_RR}`);
-      handoffCandidates.push({address:String(x.address).toLowerCase(),executionReady:true,copyClassification:x.copyClassification,specialistType:x.specialistType||'UNKNOWN',executionReadinessScore:Number(x.executionReadinessScore||0),economicEdgeScore:Number(x.economicEdgeScore||0),position:{coin,side:String(x.current.side).toUpperCase(),entry:Number(x.current.entry),mid:Number(x.current.mid),distancePct:Number(x.current.distancePct),isMeme:true},copyPlan:{entry:Number(cp.entry),sl:Number(cp.sl),tp:Number(cp.tp),rr:Number(cp.rr),atr:Number(cp.atr),atrPct:Number(cp.atrPct),diagnostics:Array.isArray(cp.diagnostics)?cp.diagnostics:[]}});
+      const entryScore=fixedCopyEntryScore(x,cp);
+      entryOpportunities.push({...x,copyPlan:cp,entryScore});
+      console.log(`[FIXED-ENTRY] ${short(x.address)} ${coin} ${x.current.side} dist=${Number(x.current.distancePct).toFixed(3)}% rr=${Number(cp.rr).toFixed(2)} age=${Number(x.plan?.positionAgeHours??NaN).toFixed(2)}h score=${entryScore.score} eligible=${entryScore.eligible?'YES':'NO'} reasons=${entryScore.reasons.join(',')||'NONE'}`);
     }catch(e){console.log(`[HANDOFF][WARN] ${short(x.address)} ${String(e.message||e)}`);}
+  }
+  entryOpportunities.sort((a,b)=>Number(b.entryScore?.score||0)-Number(a.entryScore?.score||0) || Number(b.executionReadinessScore||0)-Number(a.executionReadinessScore||0));
+  const bestEntry=entryOpportunities.find(x=>x.entryScore?.eligible===true)||null;
+  if(bestEntry){
+    const cp=bestEntry.copyPlan;
+    handoffCandidates.push({address:String(bestEntry.address).toLowerCase(),executionReady:true,copyClassification:'FIXED-3-BEST-ENTRY',specialistType:bestEntry.specialistType||'FIXED-TRADER',entrySelectionScore:Number(bestEntry.entryScore.score),entrySelectionReasons:bestEntry.entryScore.reasons,executionReadinessScore:Number(bestEntry.executionReadinessScore||0),economicEdgeScore:Number(bestEntry.economicEdgeScore||0),profitCopyScore:Number(bestEntry.profitCopyScore||0),timingCopyScore:Number(bestEntry.timingCopyScore||0),riskCopyScore:Number(bestEntry.riskCopyScore||0),position:{coin:String(bestEntry.current.coin),side:String(bestEntry.current.side).toUpperCase(),entry:Number(bestEntry.current.entry),mid:Number(bestEntry.current.mid),distancePct:Number(bestEntry.current.distancePct),isMeme:true},copyPlan:{entry:Number(cp.entry),sl:Number(cp.sl),tp:Number(cp.tp),rr:Number(cp.rr),atr:Number(cp.atr),atrPct:Number(cp.atrPct),diagnostics:Array.isArray(cp.diagnostics)?cp.diagnostics:[]}});
+    console.log(`[FIXED-ENTRY][SELECTED] ${short(bestEntry.address)} ${bestEntry.current.coin} ${bestEntry.current.side} score=${bestEntry.entryScore.score}`);
+  }else{
+    console.log('[FIXED-ENTRY][SELECTED] NONE — no fixed trader has a sufficiently strong current entry');
   }
   await writeExecutionHandoff(RUN_INTERRUPTED?[]:handoffCandidates,(!RUN_INTERRUPTED&&handoffCandidates.length)?'READY':'BLOCKED');
 
@@ -2217,7 +2282,8 @@ async function main(){
   const topUnknownForTrader=(classifierAudit.topUnclassified||[]).slice(0,MEME_UNKNOWN_AUDIT_TOP_N);
   const focusImpact=focusTop.map(x=>({...x,unknownImpact:traderUnknownImpact(x,topUnknownForTrader)}));
   const nearImpact=nearMisses.map(x=>({...x,unknownImpact:traderUnknownImpact(x,topUnknownForTrader)}));
-  const lines=[`🟣 HYPERLIQUID MEME HUNTER ${V8_VERSION}`,'📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`🎯 Mode: ${MEME_MODE==='watch'?'FIXED WATCHLIST':'SCOUT'}`,`🧪 Universe: ${universeAddresses.length} | This cycle: ${sourceAddresses.length}`,`⚡ Fast prefilter: ${funnel.prefilterScanned} → ${funnel.prefilterSelected} full-history | Coverage cycle ${cohort.slot+1}/${cohort.slots}`, `🧬 Meme specialists found: ${scanned.length}`,`🏆 Strict specialists: ${top.length}/${MEME_TOP_N}`,`🟠 Meme-focus candidates: ${focusTop.length}`,`🎯 Focus criteria: exposure>=${MEME_FOCUS_MIN_EXPOSURE}% | meme trades>=${MEME_FOCUS_MIN_TRADES} | unique memes>=${MEME_FOCUS_MIN_UNIQUE} | dominant<=${MEME_FOCUS_MAX_DOMINANT}%`,`⚡ History: ${MEME_HISTORY_DAYS}d | Early-move window: ${MEME_FORWARD_MIN}m | candle=${MEME_CANDLE_INTERVAL}`,`📌 SPECIALIST criteria: exposure>=${MEME_MIN_EXPOSURE}% + meme trades>=${MEME_MIN_TRADES} + (unique>=${MEME_MIN_UNIQUE} OR single-token: unique=1 & trades>=${MEME_SINGLE_SPECIALIST_MIN_TRADES})`
+  const lines=[`🟣 HYPERLIQUID MEME HUNTER ${V8_VERSION}`,'📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`🎯 Mode: FIXED COPY — 3 TRADERS | rotation=OFF | select=BEST ENTRY`
+,`📌 Fixed traders: ${FIXED_COPY_TRADERS.map(short).join(' | ')}`,`🧪 Universe: ${universeAddresses.length} | This cycle: ${sourceAddresses.length}`,`⚡ Fast prefilter: ${funnel.prefilterScanned} → ${funnel.prefilterSelected} full-history | Coverage cycle ${cohort.slot+1}/${cohort.slots}`, `🧬 Meme specialists found: ${scanned.length}`,`🏆 Strict specialists: ${top.length}/${MEME_TOP_N}`,`🟠 Meme-focus candidates: ${focusTop.length}`,`🎯 Focus criteria: exposure>=${MEME_FOCUS_MIN_EXPOSURE}% | meme trades>=${MEME_FOCUS_MIN_TRADES} | unique memes>=${MEME_FOCUS_MIN_UNIQUE} | dominant<=${MEME_FOCUS_MAX_DOMINANT}%`,`⚡ History: ${MEME_HISTORY_DAYS}d | Early-move window: ${MEME_FORWARD_MIN}m | candle=${MEME_CANDLE_INTERVAL}`,`📌 SPECIALIST criteria: exposure>=${MEME_MIN_EXPOSURE}% + meme trades>=${MEME_MIN_TRADES} + (unique>=${MEME_MIN_UNIQUE} OR single-token: unique=1 & trades>=${MEME_SINGLE_SPECIALIST_MIN_TRADES})`
   ,`🔴 Concentrated Meme: exposure>=${MEME_CONCENTRATED_MIN_EXPOSURE}% | meme trades>=${MEME_CONCENTRATED_MIN_TRADES} | dominant>=${MEME_CONCENTRATED_MIN_DOMINANT}% | unique>=${MEME_CONCENTRATED_MIN_UNIQUE}`
   ,`🟡 Multi-Meme Research: exposure>=${MEME_MULTI_RESEARCH_MIN_EXPOSURE}% | meme trades>=${MEME_MULTI_RESEARCH_MIN_TRADES} | unique>=${MEME_MULTI_RESEARCH_MIN_UNIQUE}`,'','🧪 MEME SPECIALIST FUNNEL',`Fast prefilter scanned: ${funnel.prefilterScanned}`,`Fast prefilter selected: ${funnel.prefilterSelected}`,`Prefilter model: CLOSED ECONOMICS + RAW MEME RECALL | rawRecall=${MEME_PREFILTER_RAW_RECALL_SLOTS} | rawBreadth=${MEME_PREFILTER_RAW_BREADTH_SLOTS} | exploration=${MEME_PREFILTER_EXPLORATION_SLOTS}`,`Prefilter errors/skips: ${prefilterErrors}`,`History usable: ${funnel.historyOK}`,`History truncated: ${funnel.historyTruncated}`,`History complete: ${funnel.historyOK} | completeness=${pct(funnel.historyOK/Math.max(1,funnel.historyOK+funnel.historyTruncated)*100,0)}`,`429-affected histories: ${funnel.history429}`,`Other incomplete histories: ${funnel.historyOtherIncomplete}`,`Closed trades >=${MEME_MIN_TRADES}: ${funnel.closedTradesEnough}`,`Closed trades <${MEME_MIN_TRADES}: ${funnel.closedTradesLow}`,`Analysis eligible (closed>=1): ${funnel.analysisEligible}`,`Analysis skipped (no closed trades): ${funnel.analysisSkippedLowHistory}`,`Meme trades >=${MEME_MIN_TRADES}: ${funnel.memeTradesPass}`,`Meme exposure >=${MEME_MIN_EXPOSURE}%: ${funnel.exposurePass}`,`Unique memes >=${MEME_MIN_UNIQUE}: ${funnel.uniquePass}`,`FINAL SPECIALISTS: ${funnel.specialists}`,'','🧬 MEME CLASSIFIER COVERAGE',`Known meme symbols: ${classifierAudit.knownMemeSymbols}`,`Observed symbols: ${classifierAudit.observedSymbols}`,`Confirmed meme symbols: ${classifierAudit.classifiedSymbols}`,`Probable meme symbols: ${classifierAudit.probableSymbols}`,`Explicit non-meme symbols: ${classifierAudit.nonMemeSymbols}`,`Unknown symbols: ${classifierAudit.unclassifiedSymbols}`,`Confirmed meme trades: ${classifierAudit.classifiedTradeCount}`,`Probable meme trades: ${classifierAudit.probableTradeCount}`,`Explicit non-meme trades: ${classifierAudit.nonMemeTradeCount}`,`Unknown trades: ${classifierAudit.unclassifiedTradeCount}`,`Classifier classified trade coverage: ${classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount}/${classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount+classifierAudit.unclassifiedTradeCount} (${pct((classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount)/Math.max(1,classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount+classifierAudit.unclassifiedTradeCount)*100,1)})`];
   if(classifierAudit.topClassified.length){lines.push('Confirmed:');classifierAudit.topClassified.slice(0,8).forEach((x,i)=>lines.push(`#${i+1} ${x.coin} — ${x.trades} trades`));}
@@ -2251,7 +2317,7 @@ async function main(){
   const watchPool=[...top,...focusTop,...multiResearchTop,...concentratedTop,...researchTop,...singleTop,...nearMisses];
   const exportRows=[...new Map(watchPool.map(x=>[x.address,x])).values()].slice(0,5);
   if(exportRows.length){lines.push(`Exported: ${exportRows.length}/5`);exportRows.forEach((x,i)=>{const p=x.meme||{};const tier=x.memeEligible?'STRICT':x.focusEligible?'FOCUS':x.multiResearchEligible?'MULTI-RESEARCH':x.concentratedEligible?'CONCENTRATED':x.researchEligible?'RESEARCH':'NEAR-MISS';lines.push(`#${i+1} ${x.address} | tier=${tier} | exposure=${pct(p.exposurePct,1)} | memeTrades=${p.memeTrades||0} | unique=${p.uniqueCoins||0} | dominant=${p.dominantMeme||'n/a'} ${pct(p.dominantPct,1)}`);});lines.push(`HYPERLIQUID_MEME_WATCHLIST=${exportRows.map(x=>x.address).join(',')}`);}else lines.push('Exported: 0/5','HYPERLIQUID_MEME_WATCHLIST=');
-  lines.push('','ℹ️ V5.53 validates realized Meme PnL/WR/PF plus entry timing, exit capture and post-exit continuation on the sampled recent Meme trades.' ,'ℹ️ Early/exit behavior describes repeated historical execution; it does NOT establish advance knowledge of future pumps/dumps.','ℹ️ Watchlist contains the top five available research candidates; Copyability is shown separately from Meme specialization.','ℹ️ V5.53 keeps Strict Multi-Meme Specialist separate from Concentrated Meme behavior; neither research tier redefines strict eligibility.','ℹ️ Probable/unknown symbols never count toward specialist eligibility.','ℹ️ No orders are created by this worker.',`🕐 ${new Date().toISOString()}`);
+  lines.push('','ℹ️ V5.53 validates realized Meme PnL/WR/PF plus entry timing, exit capture and post-exit continuation on the sampled recent Meme trades.' ,'ℹ️ Early/exit behavior describes repeated historical execution; it does NOT establish advance knowledge of future pumps/dumps.','ℹ️ Watchlist contains the top five available research candidates; Copyability is shown separately from Meme specialization.','ℹ️ V5.53 keeps Strict Multi-Meme Specialist separate from Concentrated Meme behavior; neither research tier redefines strict eligibility.','ℹ️ Probable/unknown symbols never count toward specialist eligibility.','ℹ️ No orders are created by this worker.',`🔒 FIXED COPY: 5 wallets are permanent; leaderboard discovery/rotation is OFF.`, `⚠️ Fixed-copy handoff may bypass research classification gates, but current-position, Meme, entry-distance, book/ATR and RR checks remain enforced.`, `🕐 ${new Date().toISOString()}`);
   if(errors.length){lines.push('','🧪 SAMPLE ERRORS');errors.slice(0,8).forEach(e=>lines.push(`${short(e.address)} → ${e.cat} → ${String(e.message||'').slice(0,180)}`))}
   console.log(`[MEME-HUNTER ${V8_VERSION}][DONE] discovered=${d.discovered} scanned=${sourceAddresses.length} specialists=${scanned.length} top=${top.length} deep=${deepHistoryStats.attempted}/${deepHistoryStats.verifiedPartial}vp/${deepHistoryStats.complete}complete errors=${errors.length} seconds=${((Date.now()-t0)/1000).toFixed(1)}`);
   await telegram(compactTelegramReport({d,scanned,top,promotionTop,observationCount:Math.max(0,promotionDiag.source-promotionDiag.evidenceBacked-promotionDiag.strictExcluded),cycle,analyzedCandidates:allResearch,deepHistoryStats,scanStats:{processed:sourceAddresses.length-errors.length,elapsedSec:Math.round((Date.now()-t0)/1000),interrupted:RUN_INTERRUPTED,normalScanStopped:NORMAL_SCAN_STOPPED,errors:errors.length,historyOK:funnel.historyOK,historyTruncated:funnel.historyTruncated,analyzed:allResearch.length,promotionSource:promotionDiag.source,promotionEvidence:promotionDiag.evidenceBacked,strictExcluded:promotionDiag.strictExcluded,analysisErrors:funnel.analysisErrors,analysisErrorTop,analysisEligible:funnel.analysisEligible,analysisSkippedLowHistory:funnel.analysisSkippedLowHistory,closedTradesLow:funnel.closedTradesLow,analysisClosedThreshold:MEME_MIN_TRADES},opportunityPool}));

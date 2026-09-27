@@ -1,6 +1,6 @@
-// Hyperliquid Meme Hunter Execution Engine V6.2 — PAPER-FIRST SAFETY MODE
-// Consumes V6.1 READ-ONLY handoff. Default: DRY RUN / NO ORDERS.
-// Live orders require BOTH EXECUTION_ENABLED=true and EXECUTION_DRY_RUN=false.
+// Hyperliquid Meme Hunter Execution Engine V8.6.2 — LIVE FIXED-3
+// Consumes the Fixed-3 Best-Entry handoff. LIVE is enabled by default for the configured test account.
+// Safety limits: max 2 simultaneous positions, 50% account margin per position, isolated 10x leverage.
 
 import fs from 'node:fs/promises';
 import crypto from 'node:crypto';
@@ -9,11 +9,11 @@ import { privateKeyToAccount } from 'viem/accounts';
 
 const INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const HANDOFF_PATH = process.env.HYPERLIQUID_EXECUTION_HANDOFF_PATH || 'state/meme_execution_handoff.json';
-const EXECUTION_ENABLED = String(process.env.EXECUTION_ENABLED ?? 'false').toLowerCase() === 'true';
-const REQUESTED_DRY_RUN = String(process.env.EXECUTION_DRY_RUN ?? 'true').toLowerCase() !== 'false';
+const EXECUTION_ENABLED = String(process.env.EXECUTION_ENABLED ?? 'true').toLowerCase() === 'true';
+const REQUESTED_DRY_RUN = String(process.env.EXECUTION_DRY_RUN ?? 'false').toLowerCase() !== 'false';
 // Safety: this build is paper-only. EXECUTION_ENABLED may be true for pipeline testing,
 // but no live order path is permitted by this worker build.
-const PAPER_EXECUTION_ONLY = String(process.env.PAPER_EXECUTION_ONLY ?? 'true').toLowerCase() !== 'false';
+const PAPER_EXECUTION_ONLY = String(process.env.PAPER_EXECUTION_ONLY ?? 'false').toLowerCase() !== 'false';
 const DRY_RUN = PAPER_EXECUTION_ONLY ? true : REQUESTED_DRY_RUN;
 const ACCOUNT = String(process.env.HYPERLIQUID_ACCOUNT_ADDRESS || '').trim().toLowerCase();
 const AGENT_KEY = String(process.env.HYPERLIQUID_AGENT_PRIVATE_KEY || '').trim();
@@ -21,10 +21,11 @@ const MAX_HANDOFF_AGE_MS = Number(process.env.EXECUTION_HANDOFF_TTL_MS || 90000)
 const MAX_SOURCE_ENTRY_DISTANCE_PCT = Number(process.env.EXECUTION_MAX_SOURCE_ENTRY_DISTANCE_PCT || 0.5);
 const MAX_REVALIDATION_MOVE_PCT = Number(process.env.EXECUTION_MAX_REVALIDATION_MOVE_PCT || 0.35);
 const SLIPPAGE_BPS = Number(process.env.EXECUTION_SLIPPAGE_BPS || 50);
-const TARGET_NOTIONAL_USD = Number(process.env.EXECUTION_TARGET_NOTIONAL_USD || 10);
-const MAX_NOTIONAL_USD = Number(process.env.EXECUTION_MAX_NOTIONAL_USD || 25);
-const MAX_ACCOUNT_ALLOCATION_PCT = Number(process.env.EXECUTION_MAX_ACCOUNT_ALLOCATION_PCT || 1);
-const MAX_LEVERAGE = Number(process.env.EXECUTION_MAX_LEVERAGE || 3);
+const ACCOUNT_ALLOCATION_PCT = Number(process.env.EXECUTION_ACCOUNT_ALLOCATION_PCT || 50);
+const MAX_ACCOUNT_ALLOCATION_PCT = Number(process.env.EXECUTION_MAX_ACCOUNT_ALLOCATION_PCT || 50);
+const TARGET_LEVERAGE = Number(process.env.EXECUTION_LEVERAGE || 10);
+const MAX_LEVERAGE = Number(process.env.EXECUTION_MAX_LEVERAGE || 10);
+const MAX_SIMULTANEOUS_POSITIONS = Number(process.env.EXECUTION_MAX_SIMULTANEOUS_POSITIONS || 2);
 const PAPER_LEVERAGE = Number(process.env.PAPER_LEVERAGE || 10);
 const PAPER_ACCOUNT_ALLOCATION_PCT = Number(process.env.PAPER_ACCOUNT_ALLOCATION_PCT || 50);
 const MIN_RR = Number(process.env.EXECUTION_MIN_RR || 1.5);
@@ -159,7 +160,9 @@ async function buildCandidate(handoff){
   const entryMove=Math.abs(liveBook.mid-num(src.position.mid||liveBook.mid))/num(src.position.mid||liveBook.mid)*100;
   if(entryMove>MAX_REVALIDATION_MOVE_PCT)throw new Error(`REVALIDATION_MOVE>${MAX_REVALIDATION_MOVE_PCT}%`);
   const acct=await accountState();
-  const ownCoin=acct.positions.find(p=>String(p?.coin||'')===coin && Math.abs(num(p?.szi)||0)>0);
+  const livePositions=acct.positions.filter(p=>Math.abs(num(p?.szi)||0)>0);
+  if(livePositions.length>=MAX_SIMULTANEOUS_POSITIONS)throw new Error(`MAX_SIMULTANEOUS_POSITIONS:${MAX_SIMULTANEOUS_POSITIONS}`);
+  const ownCoin=livePositions.find(p=>String(p?.coin||'')===coin);
   if(ownCoin)throw new Error('OWN_POSITION_ALREADY_EXISTS');
   const orders=await openOrders();
   if((Array.isArray(orders)?orders:[]).some(o=>String(o?.coin||'')===coin))throw new Error('OWN_OPEN_ORDER_ALREADY_EXISTS');
@@ -168,8 +171,11 @@ async function buildCandidate(handoff){
   if((Array.isArray(history)?history:[]).some(x=>String(x?.order?.cloid||'').toLowerCase()===cloid.toLowerCase()))throw new Error('DUPLICATE_CLOID_ALREADY_USED');
   const asset=await metaAsset(coin);
   const lev=num(pos?.leverage?.value||pos?.leverageValue||pos?.leverage||0);
-  if(lev>MAX_LEVERAGE)throw new Error(`SOURCE_LEVERAGE>${MAX_LEVERAGE}x`);
-  const notional=Math.min(TARGET_NOTIONAL_USD,MAX_NOTIONAL_USD,acct.accountValue*MAX_ACCOUNT_ALLOCATION_PCT/100);
+  if(TARGET_LEVERAGE>asset.maxLeverage)throw new Error(`TARGET_LEVERAGE>${asset.maxLeverage}x_FOR_${coin}`);
+  if(TARGET_LEVERAGE>MAX_LEVERAGE)throw new Error(`TARGET_LEVERAGE>${MAX_LEVERAGE}x`);
+  const margin=acct.accountValue*(ACCOUNT_ALLOCATION_PCT/100);
+  const notional=margin*TARGET_LEVERAGE;
+  if(!(notional>0))throw new Error('NOTIONAL_ZERO');
   if(!(notional>0))throw new Error('NOTIONAL_ZERO');
   const entryPx=side==='LONG'?liveBook.ask:liveBook.bid;
   const size=notional/entryPx;
@@ -178,7 +184,45 @@ async function buildCandidate(handoff){
   if(pp.rr<MIN_RR)throw new Error(`RR<${MIN_RR}`);
   if(side==='LONG' && !(pp.sl<entryPx&&pp.tp>entryPx))throw new Error('INVALID_LONG_PROTECTION');
   if(side==='SHORT' && !(pp.sl>entryPx&&pp.tp<entryPx))throw new Error('INVALID_SHORT_PROTECTION');
-  return {trader,coin,side,sourceEntry,sourceDistance,liveEntry,market:liveBook,notional,size,asset,leverage:lev,atr:a,cloid,sl:pp.sl,tp:pp.tp,rr:pp.rr,accountValue:acct.accountValue};
+  return {trader,coin,side,sourceEntry,sourceDistance,liveEntry,market:liveBook,notional,size,asset,sourceLeverage:lev,targetLeverage:TARGET_LEVERAGE,margin,atr:a,cloid,sl:pp.sl,tp:pp.tp,rr:pp.rr,accountValue:acct.accountValue,openPositions:livePositions.length};
+}
+
+
+function statusList(result){
+  return Array.isArray(result?.response?.data?.statuses) ? result.response.data.statuses : [];
+}
+function filledStatus(result){
+  const s=statusList(result).find(x=>x && typeof x==='object' && x.filled);
+  return s?.filled || null;
+}
+function orderError(result){
+  const s=statusList(result).find(x=>typeof x==='object' && x.error);
+  return s?.error || null;
+}
+async function placeProtection(exchange,p,filledSize){
+  const closeBuy=p.side==='SHORT';
+  const size=formatSize(filledSize,p.asset.szDecimals);
+  const slPx=formatPrice(p.sl,p.asset.szDecimals);
+  const tpPx=formatPrice(p.tp,p.asset.szDecimals);
+  const protection=await exchange.order({
+    orders:[
+      {a:p.asset.assetIndex,b:closeBuy,p:slPx,s:size,r:true,t:{trigger:{isMarket:true,triggerPx:slPx,tpsl:'sl'}}},
+      {a:p.asset.assetIndex,b:closeBuy,p:tpPx,s:size,r:true,t:{trigger:{isMarket:true,triggerPx:tpPx,tpsl:'tp'}}}
+    ],
+    grouping:'normalTpsl',
+    expiresAfter:Date.now()+30000
+  });
+  const errors=statusList(protection).filter(x=>typeof x==='object'&&x.error).map(x=>x.error);
+  if(errors.length)throw new Error(`PROTECTION_ORDER_REJECTED:${errors.join('|')}`);
+  return protection;
+}
+async function emergencyClose(exchange,p,filledSize){
+  const closeBuy=p.side==='SHORT';
+  const size=formatSize(filledSize,p.asset.szDecimals);
+  return exchange.order({
+    orders:[{a:p.asset.assetIndex,b:closeBuy,p:formatPrice(p.market.mid,p.asset.szDecimals),s:size,r:true,t:{limit:{tif:'Ioc'}}}],
+    grouping:'na',expiresAfter:Date.now()+30000
+  });
 }
 
 async function run(){
@@ -186,12 +230,12 @@ async function run(){
   const handoff=await readJson(HANDOFF_PATH);
   const p=await buildCandidate(handoff);
   if(PAPER_EXECUTION_ONLY){
-    const paperNotional=p.accountValue*(PAPER_ACCOUNT_ALLOCATION_PCT/100)*PAPER_LEVERAGE;
-    p.paper={accountAllocationPct:PAPER_ACCOUNT_ALLOCATION_PCT,leverage:PAPER_LEVERAGE,margin:p.accountValue*(PAPER_ACCOUNT_ALLOCATION_PCT/100),notional:paperNotional,simulatedSize:paperNotional/p.market.mid};
+    const paperNotional=p.accountValue*(ACCOUNT_ALLOCATION_PCT/100)*TARGET_LEVERAGE;
+    p.paper={accountAllocationPct:ACCOUNT_ALLOCATION_PCT,leverage:TARGET_LEVERAGE,margin:p.accountValue*(ACCOUNT_ALLOCATION_PCT/100),notional:paperNotional,simulatedSize:paperNotional/p.market.mid};
   }
-  log(`PLAN ${p.coin} ${p.side} trader=${p.trader} entry=${fmt(p.market.mid)} notional=$${fmt(PAPER_EXECUTION_ONLY?p.paper.notional:p.notional,2)} size=${fmt(PAPER_EXECUTION_ONLY?p.paper.simulatedSize:p.size,8)} SL=${fmt(p.sl)} TP=${fmt(p.tp)} RR=${fmt(p.rr,2)} cloid=${p.cloid}`);
+  log(`PLAN ${p.coin} ${p.side} trader=${p.trader} entry=${fmt(p.market.mid)} margin=$${fmt(p.margin,2)} notional=$${fmt(p.notional,2)} size=${fmt(p.size,8)} leverage=${p.targetLeverage}x SL=${fmt(p.sl)} TP=${fmt(p.tp)} RR=${fmt(p.rr,2)} cloid=${p.cloid}`);
   if(PAPER_EXECUTION_ONLY){
-    log(`PAPER EXECUTION: allocation=${PAPER_ACCOUNT_ALLOCATION_PCT}% | leverage=${PAPER_LEVERAGE}x | margin=$${fmt(p.paper.margin,2)} | notional=$${fmt(p.paper.notional,2)} | ORDER SENT: NO`);
+    log(`PAPER EXECUTION: allocation=${ACCOUNT_ALLOCATION_PCT}% | leverage=${TARGET_LEVERAGE}x | ORDER SENT: NO`);
     await writeJson(STATE_PATH,{at:Date.now(),mode:'PAPER',plan:p});
     return;
   }
@@ -204,11 +248,36 @@ async function run(){
   const transport=new hl.HttpTransport({isTestnet:!MAINNET,timeout:30000});
   const wallet=privateKeyToAccount(AGENT_KEY);
   const exchange=new hl.ExchangeClient({wallet,transport,signatureChainId:()=> '0xa4b1'});
-  const px=formatPrice(p.market.mid,p.asset.szDecimals);
+  await exchange.updateLeverage({asset:p.asset.assetIndex,isCross:false,leverage:TARGET_LEVERAGE});
+  log(`LEVERAGE SET ${p.coin} isolated=${TARGET_LEVERAGE}x`);
+  const rawEntryPx=p.side==='LONG'?p.market.ask*(1+SLIPPAGE_BPS/10000):p.market.bid*(1-SLIPPAGE_BPS/10000);
+  const px=formatPrice(rawEntryPx,p.asset.szDecimals);
   const size=formatSize(p.size,p.asset.szDecimals);
   const result=await exchange.order({orders:[{a:p.asset.assetIndex,b:p.side==='LONG',p:px,s:size,r:false,t:{limit:{tif:'Ioc'}},c:p.cloid}],grouping:'na',expiresAfter:Date.now()+30000});
-  log(`ORDER RESPONSE ${JSON.stringify(result)}`);
-  await writeJson(STATE_PATH,{at:Date.now(),mode:'LIVE',plan:p,result});
+  const filled=filledStatus(result);
+  const err=orderError(result);
+  if(err)throw new Error(`ENTRY_ORDER_REJECTED:${err}`);
+  if(!filled)throw new Error('ENTRY_NOT_FILLED');
+  const filledSize=num(filled.totalSz);
+  if(!(filledSize>0))throw new Error('ENTRY_FILLED_SIZE_INVALID');
+  const avgPx=num(filled.avgPx);
+  if(avgPx>0)p.liveFillPrice=avgPx;
+  p.filledSize=filledSize;
+  log(`ENTRY FILLED ${p.coin} ${p.side} size=${fmt(filledSize,8)} avgPx=${fmt(avgPx)}`);
+  try{
+    const protection=await placeProtection(exchange,p,filledSize);
+    log(`PROTECTION LIVE ${p.coin} SL=${fmt(p.sl)} TP=${fmt(p.tp)} size=${fmt(filledSize,8)}`);
+    await writeJson(STATE_PATH,{at:Date.now(),mode:'LIVE',plan:p,entryResult:result,protectionResult:protection});
+  }catch(e){
+    const protectionError=String(e.message||e);
+    log(`PROTECTION FAILED ${protectionError} | EMERGENCY CLOSE START`);
+    let closeResult=null;
+    try{closeResult=await emergencyClose(exchange,p,filledSize);log(`EMERGENCY CLOSE RESPONSE ${JSON.stringify(closeResult)}`);}catch(closeErr){
+      log(`EMERGENCY CLOSE FAILED ${String(closeErr.message||closeErr)}`);
+    }
+    await writeJson(STATE_PATH,{at:Date.now(),mode:'LIVE_PROTECTION_FAILURE',plan:p,entryResult:result,protectionError,closeResult});
+    throw new Error(`LIVE_PROTECTION_FAILURE:${protectionError}`);
+  }
 }
 
 run().catch(async e=>{
