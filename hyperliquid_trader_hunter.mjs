@@ -9,19 +9,21 @@ const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL || 'https://s
 const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED ?? 'true').toLowerCase() === 'true';
 
 // V8 persistent promotion / execution bridge. Research memory never weakens hard gates.
-const V8_VERSION='V8.6.5-FIXED-3-LIVE-TELEGRAM';
+const V8_VERSION='V8.6.6-FIXED-3-LIVE-TELEGRAM';
 
 // Fixed-copy mode: no rotating discovery. These are the previously identified
 // Meme specialists/strong research traders selected by the user.
 const FIXED_COPY_TRADERS=[
   '0x64b766b07362405a9cc19c2226490f3015929da9',
   '0xe639710e64d7094f7f82ab495915559c2f612953',
-  '0xe86b057f5eb764c9738d6b0d38170befd0723664d'
+  '0xe86b057f5eb764c9738d6b0d38170befd0723664'
 ].map(norm);
 const FIXED_COPY_MODE=true;
 const FIXED_COPY_MAX_HANDOFFS=1;
 const FIXED_COPY_MIN_ENTRY_SCORE=num('HYPERLIQUID_FIXED_COPY_MIN_ENTRY_SCORE',70);
 const FIXED_COPY_FORCE_HANDOFF=String(process.env.HYPERLIQUID_FIXED_COPY_FORCE_HANDOFF ?? 'true').toLowerCase()!=='false';
+const VALID_FIXED_COPY_TRADERS=FIXED_COPY_TRADERS.filter(a=>/^0x[a-f0-9]{40}$/i.test(String(a)));
+const INVALID_FIXED_COPY_TRADERS=FIXED_COPY_TRADERS.filter(a=>!VALID_FIXED_COPY_TRADERS.includes(a));
 const OPPORTUNITY_POOL_MAX=integer('HYPERLIQUID_MEME_OPPORTUNITY_POOL_MAX',12);
 const RUN_BUDGET_MS=integer('HYPERLIQUID_MEME_RUN_BUDGET_MS',480000);
 const RUN_MIN_REMAINING_MS=integer('HYPERLIQUID_MEME_RUN_MIN_REMAINING_MS',45000);
@@ -1975,9 +1977,9 @@ async function main(){
   const errors=[];
   console.log(`[MEME-HUNTER ${V8_VERSION}][START] mode=${MEME_MODE} watchlist=${MEME_WATCHLIST.length}`);
   if(INVALID_FIXED_COPY_TRADERS.length) console.log(`[FIXED-TRADER][INVALID] ${INVALID_FIXED_COPY_TRADERS.join(',')} — expected 42-char 0x address; excluded from API calls`);
-  // FIXED-5 MODE: discovery/rotation is intentionally bypassed.
-  // The same five wallets are analyzed every cycle.
-  const d={discovered:'FIXED-5',candidates:FIXED_COPY_TRADERS};
+  // FIXED-3 MODE: discovery/rotation is intentionally bypassed.
+  // The same three wallets are analyzed every cycle.
+  const d={discovered:'FIXED-3',candidates:FIXED_COPY_TRADERS};
   const universeAddresses=VALID_FIXED_COPY_TRADERS;
   const cohort={selected:universeAddresses,slot:0,slots:1,coverage:universeAddresses.length};
   const protectedOpportunityAddresses=[];
@@ -2284,7 +2286,7 @@ async function main(){
   const focusImpact=focusTop.map(x=>({...x,unknownImpact:traderUnknownImpact(x,topUnknownForTrader)}));
   const nearImpact=nearMisses.map(x=>({...x,unknownImpact:traderUnknownImpact(x,topUnknownForTrader)}));
   const lines=[`🟣 HYPERLIQUID MEME HUNTER ${V8_VERSION}`,'📡 READ-ONLY | NO ORDERS','━━━━━━━━━━━━━━━━━━',`🔎 Leaderboard: ${d.discovered}`,`🎯 Mode: FIXED COPY — 3 TRADERS | rotation=OFF | select=BEST ENTRY`
-,`📌 Fixed traders: ${FIXED_COPY_TRADERS.map(short).join(' | ')}`,`🧪 Universe: ${universeAddresses.length} | This cycle: ${sourceAddresses.length}`,`⚡ Fast prefilter: ${funnel.prefilterScanned} → ${funnel.prefilterSelected} full-history | Coverage cycle ${cohort.slot+1}/${cohort.slots}`, `🧬 Meme specialists found: ${scanned.length}`,`🏆 Strict specialists: ${top.length}/${MEME_TOP_N}`,`🟠 Meme-focus candidates: ${focusTop.length}`,`🎯 Focus criteria: exposure>=${MEME_FOCUS_MIN_EXPOSURE}% | meme trades>=${MEME_FOCUS_MIN_TRADES} | unique memes>=${MEME_FOCUS_MIN_UNIQUE} | dominant<=${MEME_FOCUS_MAX_DOMINANT}%`,`⚡ History: ${MEME_HISTORY_DAYS}d | Early-move window: ${MEME_FORWARD_MIN}m | candle=${MEME_CANDLE_INTERVAL}`,`📌 SPECIALIST criteria: exposure>=${MEME_MIN_EXPOSURE}% + meme trades>=${MEME_MIN_TRADES} + (unique>=${MEME_MIN_UNIQUE} OR single-token: unique=1 & trades>=${MEME_SINGLE_SPECIALIST_MIN_TRADES})`
+,`📌 Fixed-3 traders: ${FIXED_COPY_TRADERS.map(short).join(' | ')}`,`🧪 Universe: ${universeAddresses.length} | This cycle: ${sourceAddresses.length}`,`⚡ Fast prefilter: ${funnel.prefilterScanned} → ${funnel.prefilterSelected} full-history | Coverage cycle ${cohort.slot+1}/${cohort.slots}`, `🧬 Meme specialists found: ${scanned.length}`,`🏆 Strict specialists: ${top.length}/${MEME_TOP_N}`,`🟠 Meme-focus candidates: ${focusTop.length}`,`🎯 Focus criteria: exposure>=${MEME_FOCUS_MIN_EXPOSURE}% | meme trades>=${MEME_FOCUS_MIN_TRADES} | unique memes>=${MEME_FOCUS_MIN_UNIQUE} | dominant<=${MEME_FOCUS_MAX_DOMINANT}%`,`⚡ History: ${MEME_HISTORY_DAYS}d | Early-move window: ${MEME_FORWARD_MIN}m | candle=${MEME_CANDLE_INTERVAL}`,`📌 SPECIALIST criteria: exposure>=${MEME_MIN_EXPOSURE}% + meme trades>=${MEME_MIN_TRADES} + (unique>=${MEME_MIN_UNIQUE} OR single-token: unique=1 & trades>=${MEME_SINGLE_SPECIALIST_MIN_TRADES})`
   ,`🔴 Concentrated Meme: exposure>=${MEME_CONCENTRATED_MIN_EXPOSURE}% | meme trades>=${MEME_CONCENTRATED_MIN_TRADES} | dominant>=${MEME_CONCENTRATED_MIN_DOMINANT}% | unique>=${MEME_CONCENTRATED_MIN_UNIQUE}`
   ,`🟡 Multi-Meme Research: exposure>=${MEME_MULTI_RESEARCH_MIN_EXPOSURE}% | meme trades>=${MEME_MULTI_RESEARCH_MIN_TRADES} | unique>=${MEME_MULTI_RESEARCH_MIN_UNIQUE}`,'','🧪 MEME SPECIALIST FUNNEL',`Fast prefilter scanned: ${funnel.prefilterScanned}`,`Fast prefilter selected: ${funnel.prefilterSelected}`,`Prefilter model: CLOSED ECONOMICS + RAW MEME RECALL | rawRecall=${MEME_PREFILTER_RAW_RECALL_SLOTS} | rawBreadth=${MEME_PREFILTER_RAW_BREADTH_SLOTS} | exploration=${MEME_PREFILTER_EXPLORATION_SLOTS}`,`Prefilter errors/skips: ${prefilterErrors}`,`History usable: ${funnel.historyOK}`,`History truncated: ${funnel.historyTruncated}`,`History complete: ${funnel.historyOK} | completeness=${pct(funnel.historyOK/Math.max(1,funnel.historyOK+funnel.historyTruncated)*100,0)}`,`429-affected histories: ${funnel.history429}`,`Other incomplete histories: ${funnel.historyOtherIncomplete}`,`Closed trades >=${MEME_MIN_TRADES}: ${funnel.closedTradesEnough}`,`Closed trades <${MEME_MIN_TRADES}: ${funnel.closedTradesLow}`,`Analysis eligible (closed>=1): ${funnel.analysisEligible}`,`Analysis skipped (no closed trades): ${funnel.analysisSkippedLowHistory}`,`Meme trades >=${MEME_MIN_TRADES}: ${funnel.memeTradesPass}`,`Meme exposure >=${MEME_MIN_EXPOSURE}%: ${funnel.exposurePass}`,`Unique memes >=${MEME_MIN_UNIQUE}: ${funnel.uniquePass}`,`FINAL SPECIALISTS: ${funnel.specialists}`,'','🧬 MEME CLASSIFIER COVERAGE',`Known meme symbols: ${classifierAudit.knownMemeSymbols}`,`Observed symbols: ${classifierAudit.observedSymbols}`,`Confirmed meme symbols: ${classifierAudit.classifiedSymbols}`,`Probable meme symbols: ${classifierAudit.probableSymbols}`,`Explicit non-meme symbols: ${classifierAudit.nonMemeSymbols}`,`Unknown symbols: ${classifierAudit.unclassifiedSymbols}`,`Confirmed meme trades: ${classifierAudit.classifiedTradeCount}`,`Probable meme trades: ${classifierAudit.probableTradeCount}`,`Explicit non-meme trades: ${classifierAudit.nonMemeTradeCount}`,`Unknown trades: ${classifierAudit.unclassifiedTradeCount}`,`Classifier classified trade coverage: ${classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount}/${classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount+classifierAudit.unclassifiedTradeCount} (${pct((classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount)/Math.max(1,classifierAudit.classifiedTradeCount+classifierAudit.probableTradeCount+classifierAudit.nonMemeTradeCount+classifierAudit.unclassifiedTradeCount)*100,1)})`];
   if(classifierAudit.topClassified.length){lines.push('Confirmed:');classifierAudit.topClassified.slice(0,8).forEach((x,i)=>lines.push(`#${i+1} ${x.coin} — ${x.trades} trades`));}
