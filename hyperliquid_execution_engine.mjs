@@ -128,11 +128,32 @@ async function metaAsset(coin){
 async function accountState(){
   if(!validAddr(ACCOUNT))throw new Error('HYPERLIQUID_ACCOUNT_ADDRESS_INVALID_OR_MISSING');
   const s=await info({type:'clearinghouseState',user:ACCOUNT});
-  const accountValue=num(s?.marginSummary?.accountValue);
-  if(!(accountValue>0))throw new Error('ACCOUNT_VALUE_UNAVAILABLE');
+
+  // Hyperliquid documents marginSummary.accountValue as the primary value.
+  // Keep a defensive fallback for equivalent summary fields so a harmless
+  // response-shape difference does not block an otherwise valid live account.
+  const primary=num(s?.marginSummary?.accountValue);
+  const cross=num(s?.crossMarginSummary?.accountValue);
+  const rawUsd=num(s?.marginSummary?.totalRawUsd);
+  const withdrawable=num(s?.withdrawable);
+  const accountValue=primary>0 ? primary : (cross>0 ? cross : (rawUsd>0 ? rawUsd : withdrawable));
+
   const positions=(Array.isArray(s?.assetPositions)?s.assetPositions:[])
     .map(x=>x?.position).filter(Boolean)
     .filter(p=>Math.abs(num(p?.szi)||0)>0);
+
+  if(!(accountValue>0)){
+    const masked=`${ACCOUNT.slice(0,6)}...${ACCOUNT.slice(-4)}`;
+    throw new Error(
+      `ACCOUNT_VALUE_ZERO_OR_UNAVAILABLE:account=${masked}:`+
+      `marginAccountValue=${Number.isFinite(primary)?primary:'n/a'}:`+
+      `crossAccountValue=${Number.isFinite(cross)?cross:'n/a'}:`+
+      `totalRawUsd=${Number.isFinite(rawUsd)?rawUsd:'n/a'}:`+
+      `withdrawable=${Number.isFinite(withdrawable)?withdrawable:'n/a'}`
+    );
+  }
+
+  log(`ACCOUNT accountValue=${fmt(accountValue,4)} positions=${positions.length}`);
   return {raw:s,accountValue,positions};
 }
 
