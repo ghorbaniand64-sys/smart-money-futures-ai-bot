@@ -9,7 +9,7 @@ const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL || 'https://s
 const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED ?? 'true').toLowerCase() === 'true';
 
 // V8 persistent promotion / execution bridge. Research memory never weakens hard gates.
-const V8_VERSION='V8.6.13-CURRENT-TRADE-QUALITY';
+const V8_VERSION='V8.7.0-FINAL';
 
 // Fixed-copy mode: no rotating discovery. These are the previously identified
 // Meme specialists/strong research traders selected by the user.
@@ -19,9 +19,6 @@ const FIXED_COPY_TRADERS=[
   '0xe86b057f5eb764c9738d6b0d38170befd0723664'
 ].map(norm);
 const FIXED_COPY_MODE=true;
-const FIXED_COPY_MAX_HANDOFFS=1;
-const FIXED_COPY_MIN_ENTRY_SCORE=num('HYPERLIQUID_FIXED_COPY_MIN_ENTRY_SCORE',70);
-const FIXED_COPY_FORCE_HANDOFF=String(process.env.HYPERLIQUID_FIXED_COPY_FORCE_HANDOFF ?? 'true').toLowerCase()!=='false';
 const VALID_FIXED_COPY_TRADERS=FIXED_COPY_TRADERS.filter(a=>/^0x[a-f0-9]{40}$/i.test(String(a)));
 const INVALID_FIXED_COPY_TRADERS=FIXED_COPY_TRADERS.filter(a=>!VALID_FIXED_COPY_TRADERS.includes(a));
 const OPPORTUNITY_POOL_MAX=integer('HYPERLIQUID_MEME_OPPORTUNITY_POOL_MAX',12);
@@ -199,7 +196,7 @@ const FIXED3_MIN_ECONOMIC_EDGE = num('HYPERLIQUID_FIXED3_MIN_ECONOMIC_EDGE', 80)
 const FIXED3_MIN_PROFIT_COPY = num('HYPERLIQUID_FIXED3_MIN_PROFIT_COPY', 80);
 const FIXED3_MIN_EVIDENCE = num('HYPERLIQUID_FIXED3_MIN_EVIDENCE', 60);
 const FIXED3_MIN_TRADES = integer('HYPERLIQUID_FIXED3_MIN_TRADES', 60);
-const FIXED3_MIN_CURRENT_ENTRY_SCORE = num('HYPERLIQUID_FIXED3_MIN_CURRENT_ENTRY_SCORE', 60);
+const FIXED3_MIN_CURRENT_ENTRY_SCORE = num('HYPERLIQUID_FIXED3_MIN_CURRENT_ENTRY_SCORE', 0); // informational only; never a hard execution gate
 const MEME_EXECUTION_MIN_EVIDENCE = num('HYPERLIQUID_MEME_EXECUTION_MIN_EVIDENCE', 70);
 // V5.53: separate evidence/sample adequacy from behavioral scores. A strong score
 // on a tiny or incomplete sample must never be presented as equivalent to a
@@ -1488,14 +1485,17 @@ function plan(pos,m,atrv,now){
   };
 }
 
-function fixed3CurrentTradeGate(x){
-  const reasons=[];
-  if(Number(x?.economicEdgeScore||0)<FIXED3_MIN_ECONOMIC_EDGE) reasons.push(`TRADER_ECONOMIC<${FIXED3_MIN_ECONOMIC_EDGE}`);
-  if(Number(x?.profitCopyScore||0)<FIXED3_MIN_PROFIT_COPY) reasons.push(`TRADER_PROFIT<${FIXED3_MIN_PROFIT_COPY}`);
-  if(Number(x?.evidenceStrength||0)<FIXED3_MIN_EVIDENCE) reasons.push(`EVIDENCE<${FIXED3_MIN_EVIDENCE}`);
-  if(Number(x?.meme?.memeTrades||0)<FIXED3_MIN_TRADES) reasons.push(`TRADES<${FIXED3_MIN_TRADES}`);
-  if(x?.historyIntegrity!=='PASS') reasons.push('HISTORY_INTEGRITY_NOT_PASS');
-  return {ready:reasons.length===0,reasons};
+function fixed3TraderQualityGate(x){
+  // Fixed-3 are already selected/trusted by the user. Historical metrics are
+  // advisory/ranking data here; they must never veto a live opportunity.
+  // Live safety belongs to the current-position gates below.
+  const advisory=[];
+  if(Number(x?.economicEdgeScore||0)<FIXED3_MIN_ECONOMIC_EDGE) advisory.push(`ECONOMIC<${FIXED3_MIN_ECONOMIC_EDGE}`);
+  if(Number(x?.profitCopyScore||0)<FIXED3_MIN_PROFIT_COPY) advisory.push(`PROFIT<${FIXED3_MIN_PROFIT_COPY}`);
+  if(Number(x?.evidenceStrength||0)<FIXED3_MIN_EVIDENCE) advisory.push(`EVIDENCE<${FIXED3_MIN_EVIDENCE}`);
+  if(Number(x?.meme?.memeTrades||0)<FIXED3_MIN_TRADES) advisory.push(`TRADES<${FIXED3_MIN_TRADES}`);
+  if(x?.historyIntegrity!=='PASS') advisory.push('HISTORY_INTEGRITY_ADVISORY');
+  return {ready:true,reasons:[],advisory};
 }
 
 function fixedCopyEntryScore(x,cp){
@@ -1508,7 +1508,6 @@ function fixedCopyEntryScore(x,cp){
   else if(dist>MAX_ENTRY_DIST)hardReasons.push(`DISTANCE>${MAX_ENTRY_DIST}%`);
   if(!Number.isFinite(rr))hardReasons.push('RR_UNAVAILABLE');
   else if(rr<MIN_RR)hardReasons.push(`RR<${MIN_RR}`);
-  if(hardReasons.length)return {score:0,eligible:false,reasons:hardReasons,hardReasons};
   let score=0;
   const reasons=[];
   // Current entry quality: avoid chasing the trader after a large move.
@@ -1533,7 +1532,11 @@ function fixedCopyEntryScore(x,cp){
   const hist=(Number(x?.economicEdgeScore||0)*0.30)+(Number(x?.profitCopyScore||0)*0.30)+(Number(x?.timingCopyScore||0)*0.20)+(Number(x?.riskCopyScore||0)*0.20);
   score += Math.min(10,Math.max(0,hist/10));
   if(hist>=75)reasons.push('STRONG_TRADER_HISTORY');
-  return {score:Math.round(Math.min(100,score)),eligible:score>=FIXED3_MIN_CURRENT_ENTRY_SCORE,reasons};
+  const finalScore=Math.round(Math.min(100,score));
+  // Score ranks valid opportunities; it never blocks them. Hard market-safety
+  // reasons (distance/RR/ATR/plan) remain the only current-entry vetoes.
+  const eligible=hardReasons.length===0;
+  return {score:finalScore,eligible,reasons,hardReasons,qualityStatus:eligible?'PASS':'BLOCKED_BY_HARD_GATE'};
 }
 
 function copyability(x){
@@ -1802,8 +1805,8 @@ function compactTelegramReport({d,scanned,top,promotionTop,observationCount,cycl
     }else header.push('No specialist-like candidate survived the analyzed registry in this cycle.');
   }
   header.push('','🟢 FIXED-3 ENTRY SELECTION');
-  if(entryAudit.length){entryAudit.forEach((a,i)=>{const detail=[`dist=${Number.isFinite(a.distancePct)?pct(a.distancePct,2):'—'}`,`RR=${Number.isFinite(a.rr)?fmt(a.rr,2):'—'}`,`age=${Number.isFinite(a.ageHours)?fmt(a.ageHours,1)+'h':'—'}`,`ATR=${Number.isFinite(a.atrPct)?pct(a.atrPct,2):'—'}`,`score=${a.score}/100`].join(' | ');const cleanReasons=[...new Set(a.reasons||[])]; const wait=Number.isFinite(a.distancePct)&&a.distancePct>MAX_ENTRY_DIST&&cleanReasons.every(r=>r.startsWith('DISTANCE>')||r==='ENTRY_DISTANCE>'+MAX_ENTRY_DIST+'%'); const need=Number.isFinite(a.distancePct)?Math.max(0,a.distancePct-MAX_ENTRY_DIST):NaN; const statusLabel=a.status==='ELIGIBLE'?'READY':wait?'WAITING':'BLOCKED'; const icon=a.status==='ELIGIBLE'?'✅':wait?'🟡':'🔴'; const reasonText=wait?`WAITING: need distance ≤${MAX_ENTRY_DIST}% | reduce by ≈${pct(need,2)}`:cleanReasons.join(' | ')||'UNKNOWN'; header.push(`#${i+1} ${short(a.address)} | ${a.coin} ${a.side} | ${statusLabel}`,`   Trader Entry ${priceFmt(a.traderEntry)} → Current ${priceFmt(a.currentPrice)} | ${detail}`,`   ${icon} ${reasonText}`);});}else header.push('No Fixed-3 entry data available.');
-  header.push(handoffCandidates.length?`🏆 SELECTED: ${short(handoffCandidates[0].address)} | ${handoffCandidates[0].position.coin} ${handoffCandidates[0].position.side} | EntryScore ${handoffCandidates[0].entrySelectionScore}/100 | Dist ${pct(handoffCandidates[0].position.distancePct,2)} | RR ${fmt(handoffCandidates[0].copyPlan.rr,2)}`:'⛔ NO TRADE: none of Fixed-3 passed every current-entry gate.', '🟢 LIVE EXECUTION HANDOFF',handoffCandidates.length?'One best-entry live handoff was written.':'No trader passed the current-entry gate.','ℹ️ Promotion memory is synchronized from the final analyzed registry; a Deep-verified trader cannot remain stale as HISTORY_UNVERIFIED.','ℹ️ PnL = realized closed Meme trades. Timing = historical execution behavior, not prediction.',`ℹ️ ${V8_VERSION}: Fixed-3 separates Trader Quality from Current Trade Quality; historical Timing/Risk remain advisory and ranking factors, not standalone execution blockers.`, `ℹ️ ${V8_VERSION}: ATR_OK is informational (ATR 0.25%-5% gets positive entry score); ATR_SANITY_FAIL is reserved for invalid/extreme ATR.`,`ℹ️ ${V8_VERSION}: Timing uses a deterministic recent fixed window (${MEME_TRADE_SAMPLE} trades max); new trades roll in one at a time instead of reshuffling three historical buckets.`, `ℹ️ ${V8_VERSION}: Single-Token Specialists are eligible; concentration is a soft risk factor, not a hard blocker. Deep History upgrades the SAME candidate object used by Final Copy. READ-ONLY. No order is created by this worker.`);
+  if(entryAudit.length){entryAudit.forEach((a,i)=>{const detail=[`dist=${Number.isFinite(a.distancePct)?pct(a.distancePct,2):'—'}`,`RR=${Number.isFinite(a.rr)?fmt(a.rr,2):'—'}`,`age=${Number.isFinite(a.ageHours)?fmt(a.ageHours,1)+'h':'—'}`,`ATR=${Number.isFinite(a.atrPct)?pct(a.atrPct,2):'—'}`,`CTQ=${a.score}/100`].join(' | ');const cleanReasons=[...new Set(a.reasons||[])]; const wait=Number.isFinite(a.distancePct)&&a.distancePct>MAX_ENTRY_DIST&&cleanReasons.every(r=>r.startsWith('DISTANCE>')||r==='ENTRY_DISTANCE>'+MAX_ENTRY_DIST+'%'); const need=Number.isFinite(a.distancePct)?Math.max(0,a.distancePct-MAX_ENTRY_DIST):NaN; const statusLabel=a.status==='ELIGIBLE'?'READY':wait?'WAITING':'BLOCKED'; const icon=a.status==='ELIGIBLE'?'✅':wait?'🟡':'🔴'; const reasonText=wait?`WAITING: need distance ≤${MAX_ENTRY_DIST}% | reduce by ≈${pct(need,2)}`:cleanReasons.join(' | ')||'UNKNOWN'; header.push(`#${i+1} ${short(a.address)} | ${a.coin} ${a.side} | ${statusLabel}`,`   Trader Entry ${priceFmt(a.traderEntry)} → Current ${priceFmt(a.currentPrice)} | ${detail}`,`   ${icon} ${reasonText}`);});}else header.push('No Fixed-3 entry data available.');
+  header.push(handoffCandidates.length?`🏆 SELECTED: ${short(handoffCandidates[0].address)} | ${handoffCandidates[0].position.coin} ${handoffCandidates[0].position.side} | EntryScore ${handoffCandidates[0].entrySelectionScore}/100 | Dist ${pct(handoffCandidates[0].position.distancePct,2)} | RR ${fmt(handoffCandidates[0].copyPlan.rr,2)}`:'⛔ NO TRADE: none of Fixed-3 passed every current-entry gate.', '🟢 LIVE EXECUTION HANDOFF',handoffCandidates.length?'One best-entry live handoff was written.':'No trader passed the current-entry gate.','ℹ️ Promotion memory is synchronized from the final analyzed registry; a Deep-verified trader cannot remain stale as HISTORY_UNVERIFIED.','ℹ️ PnL = realized closed Meme trades. Timing = historical execution behavior, not prediction.',`ℹ️ ${V8_VERSION}: Trader Quality and Current Trade Quality are separate; Timing/Risk are advisory, while Distance/RR/ATR-sanity and the current-entry score are execution gates.`, `ℹ️ ${V8_VERSION}: ATR_OK is informational (ATR 0.25%-5% gets positive entry score); ATR_SANITY_FAIL is reserved for invalid/extreme ATR.`,`ℹ️ ${V8_VERSION}: Timing uses a deterministic recent fixed window (${MEME_TRADE_SAMPLE} trades max); new trades roll in one at a time instead of reshuffling three historical buckets.`, `ℹ️ ${V8_VERSION}: Single-Token Specialists are eligible; concentration is a soft risk factor, not a hard blocker. Deep History upgrades the SAME candidate object used by Final Copy. READ-ONLY. No order is created by this worker.`);
   return header.join('\n');
 }
 
@@ -2302,16 +2305,14 @@ async function main(){
       if(!Number.isFinite(Number(cp.entry))||!Number.isFinite(Number(cp.sl))||!Number.isFinite(Number(cp.tp)))row.reasons.push('LIVE_PLAN_INVALID');
       if(!Number.isFinite(Number(cp.rr))||Number(cp.rr)<MIN_RR)row.reasons.push(Number.isFinite(Number(cp.rr))?`RR<${MIN_RR}`:'RR_UNAVAILABLE');
       if(Array.isArray(cp.diagnostics))row.reasons.push(...cp.diagnostics);
-      const currentGate=fixed3CurrentTradeGate(x);
-      if(!currentGate.ready)row.reasons.push(`CURRENT_TRADE_QUALITY:${currentGate.reasons.join('|')}`);
-      else row.reasons.push('CURRENT_TRADE_QUALITY_OK');
+      const traderGate=fixed3TraderQualityGate(x);
+      // Historical trader quality is advisory only in Fixed-3 mode.
       const entryScore=fixedCopyEntryScore(x,cp);
       row.score=entryScore.score;
-      if(entryScore.eligible!==true)row.reasons.push(...entryScore.hardReasons||entryScore.reasons||['ENTRY_SCORE_GATE']);
-      else if(entryScore.score<FIXED3_MIN_CURRENT_ENTRY_SCORE)row.reasons.push(`CURRENT_ENTRY_SCORE<${FIXED3_MIN_CURRENT_ENTRY_SCORE}`);
+      if(entryScore.hardReasons?.length)row.reasons.push(...entryScore.hardReasons);
       row.reasons=[...new Set(row.reasons)];
-      const blockingReasons=row.reasons.filter(r=>r!=='CURRENT_TRADE_QUALITY_OK');
-      if(!blockingReasons.length){row.status='ELIGIBLE';row.reasons=[...entryScore.reasons,'CURRENT_TRADE_QUALITY_OK'];}
+      const blockingReasons=[...new Set(row.reasons)];
+      if(!blockingReasons.length){row.status='ELIGIBLE';row.reasons=[...entryScore.reasons];}
       else if(row.reasons.every(r=>r.startsWith('DISTANCE>')||r==='ENTRY_DISTANCE>'+MAX_ENTRY_DIST+'%')) row.status='WAITING';
       entryAudit.push(row);
       entryOpportunities.push({...x,copyPlan:cp,entryScore});
@@ -2323,7 +2324,7 @@ async function main(){
     }
   }
   entryOpportunities.sort((a,b)=>Number(b.entryScore?.score||0)-Number(a.entryScore?.score||0) || Number(b.executionReadinessScore||0)-Number(a.executionReadinessScore||0));
-  const bestEntry=entryOpportunities.find(x=>x.entryScore?.eligible===true && x.entryScore?.score>=FIXED3_MIN_CURRENT_ENTRY_SCORE && fixed3CurrentTradeGate(x).ready)||null;
+  const bestEntry=entryOpportunities.find(x=>x.entryScore?.eligible===true && x.entryScore?.score>=FIXED3_MIN_CURRENT_ENTRY_SCORE && fixed3TraderQualityGate(x).ready)||null;
   if(bestEntry){
     const cp=bestEntry.copyPlan;
     handoffCandidates.push({address:String(bestEntry.address).toLowerCase(),executionReady:true,copyClassification:'FIXED-3-BEST-ENTRY',specialistType:bestEntry.specialistType||'FIXED-TRADER',entrySelectionScore:Number(bestEntry.entryScore.score),entrySelectionReasons:bestEntry.entryScore.reasons,executionReadinessScore:Number(bestEntry.executionReadinessScore||0),economicEdgeScore:Number(bestEntry.economicEdgeScore||0),profitCopyScore:Number(bestEntry.profitCopyScore||0),timingCopyScore:Number(bestEntry.timingCopyScore||0),riskCopyScore:Number(bestEntry.riskCopyScore||0),position:{coin:String(bestEntry.current.coin),side:String(bestEntry.current.side).toUpperCase(),entry:Number(bestEntry.current.entry),mid:Number(bestEntry.current.mid),distancePct:Number(bestEntry.current.distancePct),isMeme:true},copyPlan:{entry:Number(cp.entry),sl:Number(cp.sl),tp:Number(cp.tp),rr:Number(cp.rr),atr:Number(cp.atr),atrPct:Number(cp.atrPct),diagnostics:Array.isArray(cp.diagnostics)?cp.diagnostics:[]}});

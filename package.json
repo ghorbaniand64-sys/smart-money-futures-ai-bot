@@ -1,10 +1,13 @@
 {
-  "name": "hyperliquid-meme-hunter-v5-53-execution",
+  "name": "hyperliquid-meme-hunter-v8-final",
+  "version": "8.7.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "dependencies": {
-    "@nktkas/hyperliquid": "^0.33.0",
-    "viem": "^2.0.0"
+    "@nktkas/hyperliquid": "0.33.3",
+    "viem": "2.56.8"
   }
 }

@@ -1,4 +1,4 @@
-// Hyperliquid Meme Hunter Execution Engine V8.6.11 — FIXED-3 SAFE LIVE
+// Hyperliquid Meme Hunter Execution Engine V8.7.0-FINAL — FIXED-3 SAFE LIVE
 // Consumes the Fixed-3 Best-Entry handoff. Live orders are explicit opt-in only.
 // Safety limits: max 2 simultaneous positions, 50% account margin per position, isolated 10x leverage.
 
@@ -241,7 +241,6 @@ async function buildCandidate(handoff){
   if(!(ACCOUNT_ALLOCATION_PCT>0 && ACCOUNT_ALLOCATION_PCT<=MAX_ACCOUNT_ALLOCATION_PCT))throw new Error(`ACCOUNT_ALLOCATION>${MAX_ACCOUNT_ALLOCATION_PCT}%`);
   const margin=acct.accountValue*(ACCOUNT_ALLOCATION_PCT/100);
   const notional=margin*TARGET_LEVERAGE;
-  if(!(notional>0))throw new Error('NOTIONAL_ZERO');
   if(!(notional>0))throw new Error('NOTIONAL_ZERO');
   const entryPx=side==='LONG'?liveBook.ask:liveBook.bid;
   const size=notional/entryPx;

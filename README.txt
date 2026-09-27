@@ -1,59 +1,58 @@
-Hyperliquid Meme Hunter V8.6.11 — FIXED-3 SAFE LIVE EXECUTION
+Hyperliquid Meme Hunter V8.7.0-FINAL — FIXED-3 SAFE LIVE EXECUTION
+
+This is the consolidated final build. Hunter and execution-engine versions are synchronized.
 
 Fixed traders (rotation OFF):
 1) 0x64b766b07362405a9cc19c2226490f3015929da9
 2) 0xe639710e64d7094f7f82ab495915559c2f612953
 3) 0xe86b057f5eb764c9738d6b0d38170befd0723664
 
-Key fixes:
-- Fixed-3 execution is no longer blocked by the generic Meme Specialist breadth gate.
-- Single-token concentration remains a soft risk factor.
-- PnL reconstruction integrity now recognizes position-lifecycle boundaries outside the fetched history window.
-- Genuine lifecycle/data-integrity failures remain hard execution blocks.
-- Final fixed-copy candidates come from the same analyzed registry used by Deep History.
-- Best current entry remains subject to current-position distance, RR, ATR/volatility and execution-readiness gates.
-- Hunter remains READ-ONLY; execution is a separate engine.
-- Execution Engine V8.6.11 is LIVE-capable but SAFE by default: EXECUTION_ENABLED=false and EXECUTION_DRY_RUN=true unless explicitly changed.
-- PAPER_EXECUTION_ONLY=true is an emergency paper-only kill switch.
-- Before live entry, the engine revalidates handoff age, source distance, direction, account balance, max 2 positions, duplicate orders, isolated leverage, and 50% margin cap.
-- After a fill, both SL and TP must be accepted and have order IDs, and the position must be confirmed. Any protection/confirmation failure triggers emergency close.
-- Self-test: EXECUTION_SELF_TEST=true node hyperliquid_execution_engine.mjs. This submits no network order.
+Architecture:
+- Hunter is READ-ONLY and never creates orders.
+- Execution engine is separate and performs final live revalidation before any order.
+- Fixed-3 selection is current-opportunity based: one best valid trade is selected, not every trader position.
+- Single-token specialists are allowed; concentration is a soft risk factor, not a hard blocker.
+- Historical Timing/Risk are advisory/ranking factors, not standalone execution blockers.
 
-V8.6.11 changes:
-- Timing audit now uses a deterministic recent fixed window (up to 30 recent closed Meme trades), avoiding abrupt reshuffling caused by temporal bucket boundaries.
-- Hunter version and execution-engine version are synchronized at V8.6.11.
+Current-entry hard gates:
+- Trader/source entry distance <= 0.5%
+- RR >= 1.5
+- Valid live book and ATR/SL/TP plan
+- Current Trade Quality score is informational/ranking only; it NEVER blocks a valid Fixed-3 trade
+- Historical Economic/Profit/Evidence/Trades/History metrics are advisory/ranking only in Fixed-3 mode
 
-V8.6.8 changes:
-- Fixed-3 Entry Selection now displays trader entry/current price with adaptive precision.
-- Correctly preserves zero-valued numeric fields instead of converting them to NaN.
-- Shows WAITING when the only current-entry blocker is distance > 0.5%, including the remaining distance needed to reach the gate.
-- Shows BLOCKED when other hard blockers remain.
-- Worker remains READ-ONLY; it creates no live orders itself.
+Current Trade Quality score is informationally separated from Trader Quality. Historical trader-quality metrics never appear as hard block reasons. Only live current-entry safety gates can block: distance, RR, ATR/plan validity, non-meme position, or missing market data.
 
-V8.6.11 LIVE ACTIVATION
-----------------------
-The included .github/workflows/hyperliquid-monitor.yml runs the READ-ONLY Fixed-3 Hunter first and then the LIVE Execution Engine in the same job, every 5 minutes.
-
-GitHub Environment: production secrets required:
-- HYPERLIQUID_ACCOUNT_ADDRESS = main Hyperliquid account address
-- HYPERLIQUID_AGENT_PRIVATE_KEY = approved Hyperliquid agent-wallet private key
-- TELEGRAM_TOKEN
-- TELEGRAM_CHAT_ID
-
-LIVE settings are explicit in the workflow:
-- EXECUTION_ENABLED=true
-- EXECUTION_DRY_RUN=false
-- PAPER_EXECUTION_ONLY=false
-- HYPERLIQUID_TESTNET=false
-- 50% account margin per position
+Live execution safety:
+- Maximum 2 simultaneous positions
+- 50% account margin allocation per position
 - 10x isolated leverage
-- maximum 2 simultaneous positions
+- Duplicate position/order/cloid prevention
+- Source entry revalidation <=0.5% and revalidation move <=0.35%
+- Minimum RR 1.5
+- Real SL + TP required after fill
+- Position confirmation required after protection
+- Protection/confirmation failure triggers emergency close attempt
+- Mainnet live execution is explicitly configured by the GitHub workflow
 
-The engine still refuses stale/invalid handoffs, source-entry distance >0.5%, RR <1.5, duplicate positions/orders, unsupported leverage, invalid price precision, or missing meme confirmation. After a confirmed fill it requires both reduce-only SL and TP; if protection or position confirmation fails, it attempts an emergency reduce-only close.
+Workflow:
+- Name: Hyperliquid Trader Monitor
+- Schedule: */5 * * * *
+- workflow_dispatch enabled
+- Node 22
+- production environment
+- contents: write
 
+Runtime dependencies:
+- @nktkas/hyperliquid 0.33.3
+- viem 2.56.8
+- package.json is included so GitHub Actions npm install installs the Engine dependencies.
 
-V8.6.11 audit changes:
-- Timing/Risk formulas and hard thresholds are preserved; no safety gate was weakened.
-- Exposes Timing component diagnostics: execution edge, entry quality, exit quality, coverage.
-- Exposes Risk component diagnostics: robustness, concentration, losing-streak, temporal stability.
-- Renames positive ATR scoring note from ATR_SANITY to ATR_OK. ATR_SANITY_FAIL remains a true failure only for invalid/extreme ATR.
+Validation performed for this build:
+- node --check hyperliquid_trader_hunter.mjs
+- node --check hyperliquid_execution_engine.mjs
+- Execution engine self-test
+- ZIP integrity test
+- Workflow/version synchronization audit
+
+No orders are created by the Hunter. The included workflow then invokes the separate live execution engine.
