@@ -281,15 +281,25 @@ async function buildCandidate(handoff){
     throw new Error('CLOID_GENERATION_COLLISION');
 
   const asset=await metaAsset(coin);
-  if(!(asset.maxLeverage>=LEVERAGE))
-    throw new Error(`ASSET_MAX_LEVERAGE<${LEVERAGE}x:${asset.maxLeverage}`);
+  if(!(asset.maxLeverage>0))
+    throw new Error(`ASSET_MAX_LEVERAGE_INVALID:${asset.maxLeverage}`);
 
-  // 50% of account value is margin; 10x leverage turns that margin into 5x
-  // account value of position notional. Hyperliquid uses isolated leverage here.
+  // Requested leverage is a global ceiling, but each Hyperliquid perp can
+  // impose a lower asset-specific maximum. Use the lower of the two rather
+  // than blocking an otherwise valid trade. This keeps margin allocation
+  // unchanged while reducing notional on low-leverage assets.
+  const effectiveLeverage=Math.min(LEVERAGE,asset.maxLeverage);
+  if(!(effectiveLeverage>0))
+    throw new Error(`EFFECTIVE_LEVERAGE_INVALID:${effectiveLeverage}`);
+  if(effectiveLeverage<LEVERAGE)
+    log(`LEVERAGE CAP ${coin}: requested=${LEVERAGE}x assetMax=${asset.maxLeverage}x effective=${effectiveLeverage}x`);
+
+  // 50% of account value is margin; effective leverage determines position
+  // notional. Hyperliquid uses isolated leverage here.
   const margin=Math.max(0,acct.accountValue*MARGIN_ALLOCATION_PCT/100);
   if(Number.isFinite(acct.withdrawable) && acct.withdrawable < margin)
     throw new Error(`INSUFFICIENT_WITHDRAWABLE_MARGIN:${fmt(acct.withdrawable,2)}<${fmt(margin,2)}`);
-  const notional=margin*LEVERAGE;
+  const notional=margin*effectiveLeverage;
   if(!(margin>0&&notional>0))throw new Error('NOTIONAL_ZERO');
 
   const entryPx=side==='LONG'?liveBook.ask:liveBook.bid;
@@ -307,7 +317,7 @@ async function buildCandidate(handoff){
     trader,coin,side,sourceEntry,sourceDistance,
     liveEntry:num(pos.entryPx),market:liveBook,
     accountValue:acct.accountValue,margin,notional,size,
-    asset,leverage:LEVERAGE,atr:a,cloid,
+    asset,leverage:effectiveLeverage,requestedLeverage:LEVERAGE,atr:a,cloid,
     sl:pp.sl,tp:pp.tp,rr:pp.rr
   };
 }
@@ -317,13 +327,13 @@ function marketLimitPrice(side,book,bps=SLIPPAGE_BPS){
   return side==='LONG' ? book.ask*(1+f) : book.bid*(1-f);
 }
 
-async function updateIsolatedLeverage(exchange,assetIndex){
+async function updateIsolatedLeverage(exchange,assetIndex,leverage){
   await exchange.updateLeverage({
     asset:assetIndex,
     isCross:false,
-    leverage:LEVERAGE
+    leverage
   });
-  log(`LEVERAGE: isolated ${LEVERAGE}x set asset=${assetIndex}`);
+  log(`LEVERAGE: isolated ${leverage}x set asset=${assetIndex}`);
 }
 
 async function waitForOwnPosition(coin,expectedSide,timeout=FILL_WAIT_MS){
@@ -479,7 +489,7 @@ async function run(){
     signatureChainId:()=> '0xa4b1'
   });
 
-  await updateIsolatedLeverage(exchange,p.asset.assetIndex);
+  await updateIsolatedLeverage(exchange,p.asset.assetIndex,p.leverage);
 
   // Re-read the book immediately before the real entry.
   const freshBook=await book(p.coin);
