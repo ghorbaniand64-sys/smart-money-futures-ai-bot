@@ -9,7 +9,7 @@ const DISCOVERY_URL = process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL || 'https://s
 const DISCOVERY_ENABLED = String(process.env.HYPERLIQUID_HUNTER_DISCOVERY_ENABLED ?? 'true').toLowerCase() === 'true';
 
 // V8 persistent promotion / execution bridge. Research memory never weakens hard gates.
-const V8_VERSION='V8.5.17';
+const V8_VERSION='V8.5.18';
 const OPPORTUNITY_POOL_MAX=integer('HYPERLIQUID_MEME_OPPORTUNITY_POOL_MAX',12);
 const RUN_BUDGET_MS=integer('HYPERLIQUID_MEME_RUN_BUDGET_MS',480000);
 const RUN_MIN_REMAINING_MS=integer('HYPERLIQUID_MEME_RUN_MIN_REMAINING_MS',45000);
@@ -83,6 +83,8 @@ const DEEP_HISTORY_PRIORITY_TARGET = integer('HYPERLIQUID_MEME_DEEP_HISTORY_PRIO
 const DEEP_HISTORY_POSTSCAN_TARGET = integer('HYPERLIQUID_MEME_DEEP_HISTORY_POSTSCAN_TARGET', 2);
 const DEEP_HISTORY_RECOVERY_RETRIES = integer('HYPERLIQUID_MEME_DEEP_HISTORY_RECOVERY_RETRIES', 2);
 const DEEP_HISTORY_RECOVERY_MIN_REMAINING_MS = integer('HYPERLIQUID_MEME_DEEP_HISTORY_RECOVERY_MIN_REMAINING_MS', 45000);
+const API_DOCUMENTED_FILL_PAGE_LIMIT = integer('HYPERLIQUID_MEME_API_DOCUMENTED_FILL_LIMIT', 10000);
+const HISTORY_INTEGRITY_PNL_TOLERANCE = num('HYPERLIQUID_MEME_HISTORY_PNL_TOLERANCE', 0.01);
 const TIMEOUT = integer('HYPERLIQUID_HUNTER_REQUEST_TIMEOUT_MS', 30000);
 
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
@@ -653,8 +655,9 @@ async function getFills(user,start,end,pageLimit=MAX_PAGES){
   }
   const fills=[...map.values()].sort((a,b)=>Number(a.time)-Number(b.time));
   const maxPageReached=pages>=pageLimit;
+  const documentedCapReached=fills.length>=API_DOCUMENTED_FILL_PAGE_LIMIT;
   const truncated=maxPageReached||!!incompleteReason;
-  return{fills,pages,truncated,incompleteReason,rateLimitAffected,networkAffected,complete:!truncated};
+  return{fills,pages,truncated,incompleteReason,rateLimitAffected,networkAffected,complete:!truncated,documentedCapReached,historyIntegrity:{returnedFills:fills.length,pages,pageLimit,documentedCap:API_DOCUMENTED_FILL_PAGE_LIMIT,documentedCapReached,completeWithinApiWindow:!truncated}};
 }
 
 function delta(f){
@@ -1009,7 +1012,13 @@ function economicEdgeAnalysis(p, robustness){
 function executionReadiness(p, copy, evidence, economicEdge, strictEligible, historyIncomplete, historyVerification='UNVERIFIED_PARTIAL'){
   const reasons=[];
   const historyVerifiedPartial=String(historyVerification||'').toUpperCase()==='VERIFIED_PARTIAL';
-  if(!strictEligible)reasons.push('SPECIALIST_GATE_BLOCKED');
+  if(!strictEligible){
+    reasons.push('SPECIALIST_GATE_BLOCKED');
+    const specialistReasons=specialistBlockReasons(p, dataQualityGate);
+    for(const r of specialistReasons.slice(0,6)){ if(!reasons.includes(`SPECIALIST:${r}`)) reasons.push(`SPECIALIST:${r}`); }
+  }
+  if(economicEdge?.dataQualityGate===false)reasons.push('DATA_QUALITY_GATE_BLOCKED');
+  if(copy?.historyIntegrityOk===false)reasons.push('PNL_RECONSTRUCTION_INTEGRITY_FAIL');
   if(historyIncomplete && !historyVerifiedPartial)reasons.push('HISTORY_UNVERIFIED');
   if(Number(p.memeTrades||0)<MEME_FULL_COPY_MIN_SAMPLE)reasons.push(`TRADES<${MEME_FULL_COPY_MIN_SAMPLE}`);
   if(!(economicEdge.score>=MEME_ECONOMIC_EDGE_MIN))reasons.push(`ECONOMIC_EDGE<${MEME_ECONOMIC_EDGE_MIN}`);
@@ -1221,6 +1230,8 @@ async function analyzeMemeTrader(x,now){
   const evidence=evidenceDimensions(p,early,robustness,audit,incomplete,historyVerificationValue);
   const economicEdge=economicEdgeAnalysis(p,robustness);
   const execution=executionReadiness(p,copy,evidence,economicEdge,strictEligible,incomplete,historyVerificationValue);
+  const historyIntegrityOk=Boolean(x.metrics?.pnlIntegrityOk!==false);
+  if(!historyIntegrityOk && !execution.reasons.includes('PNL_RECONSTRUCTION_INTEGRITY_FAIL'))execution.reasons.push('PNL_RECONSTRUCTION_INTEGRITY_FAIL');
   const behavioralScore=behaviorScore({...x,meme:p,early:{...early,repeatability,score:edge},executionAudit:audit});
   let behaviorClass='UNPROVEN';
   if(copy.gate && copy.score>=MEME_COPYABILITY_MIN) behaviorClass='COPYABLE_PROVISIONAL';
@@ -1229,14 +1240,18 @@ async function analyzeMemeTrader(x,now){
   else if(p.memePnl>0 && profitQualityScore>=MEME_PROFIT_QUALITY_MIN) behaviorClass='PROFITABLE_BUT_TIMING_WEAK';
   else if(p.memePnl>0) behaviorClass='PROFITABLE_PROVISIONAL';
   else if(p.memePnl<0 && early.count>=MEME_TIMING_MIN_SAMPLE) behaviorClass='UNPROFITABLE_EXECUTION';
-  return {...x,historyVerification:historyVerificationValue,historyVerifiedPartial,meme:p,early:{...early,repeatability,score:edge},behavioralScore,executionEdgeScore,profitQualityScore,behaviorClass,robustness,economicEdgeScore:economicEdge.score,economicEdge,economicEdgeTier:economicLabel(economicEdge.score),executionReady:execution.ready,executionReadinessScore:execution.score,executionBlockReasons:execution.reasons,copyabilityScore:copy.score,copyabilityGate:copy.gate,copyClassification:copy.classification,profitCopyScore:copy.profitCopy,timingCopyScore:copy.timingCopy,riskCopyScore:copy.riskCopy,sampleAdequacy:copy.sampleAdequacy,sampleTier:copy.sampleTier,evidenceStrength:evidence.overall,dataEvidence:evidence.dataEvidence,profitEvidence:evidence.profitEvidence,timingEvidence:evidence.timingEvidence,riskEvidence:evidence.riskEvidence,evidenceTiers:{data:evidence.dataTier,profit:evidence.profitTier,timing:evidence.timingTier,risk:evidence.riskTier},executionAudit:audit,memeEligible:strictEligible,focusEligible,researchEligible,concentratedEligible,multiResearchEligible,memeFocusScore:focusEligible?Math.max(0,Math.min(100,focusScore)):0,researchScore:researchEligible?Math.max(0,Math.min(100,researchScore)):0,dominantPct,multiSpecialistCriteria,singleSpecialistCriteria,specialistType:singleSpecialistCriteria?'SINGLE-TOKEN':multiSpecialistCriteria?'MULTI-MEME':'NONE',specialistBlockReasons:specialistBlockReasons(p,dataQualityGate)};
+  return {...x,historyVerification:historyVerificationValue,historyVerifiedPartial,historyIntegrity:x.metrics?.pnlIntegrityOk!==false?'PASS':'FAIL',historyIntegrityDelta:Number(x.metrics?.reconstructedPnlDelta||0),meme:p,early:{...early,repeatability,score:edge},behavioralScore,executionEdgeScore,profitQualityScore,behaviorClass,robustness,economicEdgeScore:economicEdge.score,economicEdge,economicEdgeTier:economicLabel(economicEdge.score),executionReady:execution.ready,executionReadinessScore:execution.score,executionBlockReasons:execution.reasons,copyabilityScore:copy.score,copyabilityGate:copy.gate,copyClassification:copy.classification,profitCopyScore:copy.profitCopy,timingCopyScore:copy.timingCopy,riskCopyScore:copy.riskCopy,sampleAdequacy:copy.sampleAdequacy,sampleTier:copy.sampleTier,evidenceStrength:evidence.overall,dataEvidence:evidence.dataEvidence,profitEvidence:evidence.profitEvidence,timingEvidence:evidence.timingEvidence,riskEvidence:evidence.riskEvidence,evidenceTiers:{data:evidence.dataTier,profit:evidence.profitTier,timing:evidence.timingTier,risk:evidence.riskTier},executionAudit:audit,memeEligible:strictEligible,focusEligible,researchEligible,concentratedEligible,multiResearchEligible,memeFocusScore:focusEligible?Math.max(0,Math.min(100,focusScore)):0,researchScore:researchEligible?Math.max(0,Math.min(100,researchScore)):0,dominantPct,multiSpecialistCriteria,singleSpecialistCriteria,specialistType:singleSpecialistCriteria?'SINGLE-TOKEN':multiSpecialistCriteria?'MULTI-MEME':'NONE',specialistBlockReasons:specialistBlockReasons(p,dataQualityGate)};
 }
 function metrics(fills,r){
   const ts=r.trades,w=ts.filter(t=>t.pnl>0),l=ts.filter(t=>t.pnl<0),holds=ts.map(t=>t.holdHours).filter(Number.isFinite);
+  const rawClosedPnl=(Array.isArray(fills)?fills:[]).reduce((s,f)=>{const d=String(f?.dir||'').toLowerCase();const v=Number(f?.closedPnl);return d.includes('close')&&Number.isFinite(v)?s+v:s},0);
+  const reconstructedPnl=ts.reduce((s,t)=>s+Number(t.pnl||0),0);
+  const pnlDelta=reconstructedPnl-rawClosedPnl;
+  const pnlIntegrityOk=Math.abs(pnlDelta)<=Math.max(HISTORY_INTEGRITY_PNL_TOLERANCE,Math.abs(rawClosedPnl)*0.0001);
   const gw=w.reduce((s,t)=>s+t.pnl,0),gl=Math.abs(l.reduce((s,t)=>s+t.pnl,0)),pnl=ts.reduce((s,t)=>s+t.pnl,0);
   const days=new Set(ts.map(t=>new Date(t.closeTime).toISOString().slice(0,10)));
   let st=0,maxst=0;for(const t of [...ts].sort((a,b)=>a.closeTime-b.closeTime)){if(t.pnl<0){st++;maxst=Math.max(maxst,st)}else if(t.pnl>0)st=0}
-  return{fills:fills.length,closedTrades:ts.length,invalidLifecycle:Number(r.invalidLifecycle||0),winRate:ts.length?w.length/ts.length*100:0,pnl,grossWin:gw,grossLossAbs:gl,profitFactor:gl>0?gw/gl:(gw>0?Infinity:0),medianHoldHours:median(holds),avgHoldHours:holds.length?holds.reduce((a,b)=>a+b,0)/holds.length:NaN,p25HoldHours:quantile(holds,.25),p75HoldHours:quantile(holds,.75),activeDays:days.size,maxLosingStreak:maxst,liquidations:r.liquidations}
+  return{fills:fills.length,closedTrades:ts.length,invalidLifecycle:Number(r.invalidLifecycle||0),winRate:ts.length?w.length/ts.length*100:0,pnl,grossWin:gw,grossLossAbs:gl,profitFactor:gl>0?gw/gl:(gw>0?Infinity:0),medianHoldHours:median(holds),avgHoldHours:holds.length?holds.reduce((a,b)=>a+b,0)/holds.length:NaN,p25HoldHours:quantile(holds,.25),p75HoldHours:quantile(holds,.75),activeDays:days.size,maxLosingStreak:maxst,liquidations:r.liquidations,rawClosedPnl,reconstructedPnl,reconstructedPnlDelta:pnlDelta,pnlIntegrityOk}
 }
 function safetyGate(m,truncated){
   const reasons=[];
@@ -1705,7 +1720,7 @@ function compactTelegramReport({d,scanned,top,promotionTop,observationCount,cycl
   if(!top.length){
     header.push('','🧪 FINAL-COPY DIAGNOSTIC — EXACT BLOCKS');
     if(finalDiagnostic.length){
-      finalDiagnostic.forEach((x,i)=>header.push(`#${i+1} ${short(x.address)} | ${x.specialistType||'SPECIALIST'} | History ${x.historyVerification||'UNKNOWN'} | Copy ${x.copyabilityScore??0} | Ready ${x.executionReadinessScore??0}`,`   BLOCK: ${(x.executionBlockReasons||[]).join(' | ')||'NONE'}`,`   Class: ${x.copyClassification||'BLOCKED'} | Econ ${x.economicEdgeScore??0} | Profit ${x.profitCopyScore??0} | Timing ${x.timingCopyScore??0} | Risk ${x.riskCopyScore??0} | Evidence ${x.evidenceStrength??0}`));
+      finalDiagnostic.forEach((x,i)=>header.push(`#${i+1} ${short(x.address)} | ${x.specialistType||'SPECIALIST'} | History ${x.historyVerification||'UNKNOWN'} | Copy ${x.copyabilityScore??0} | Ready ${x.executionReadinessScore??0}`,`   SPECIALIST BLOCKS: ${(x.specialistBlockReasons||[]).join(' | ')||'NONE'}`,`   EXECUTION BLOCKS: ${(x.executionBlockReasons||[]).join(' | ')||'NONE'}`,`   Class: ${x.copyClassification||'BLOCKED'} | Econ ${x.economicEdgeScore??0} | Profit ${x.profitCopyScore??0} | Timing ${x.timingCopyScore??0} | Risk ${x.riskCopyScore??0} | Evidence ${x.evidenceStrength??0}`,`   History integrity: ${x.historyIntegrity||'UNKNOWN'} | PnL Δ=${fmt(x.historyIntegrityDelta||0,2)}`));
     }else header.push('No specialist-like candidate survived the analyzed registry in this cycle.');
   }
   header.push('','🟢 EXECUTION HANDOFF (READ-ONLY)',top.filter(x=>x.executionReady).length?'A fresh handoff was written only for FULL-COPY-CANDIDATE traders.':'No trader passed the complete live-execution gate in this cycle.','ℹ️ Promotion memory is synchronized from the final analyzed registry; a Deep-verified trader cannot remain stale as HISTORY_UNVERIFIED.','ℹ️ PnL = realized closed Meme trades. Timing = historical execution behavior, not prediction.',`ℹ️ ${V8_VERSION}: Single-Token Specialists are eligible; concentration is a soft risk factor, not a hard blocker. Deep History upgrades the SAME candidate object used by Final Copy. READ-ONLY. No order is created by this worker.`);
@@ -2037,7 +2052,7 @@ async function main(){
       // transparent instead of silently dropping 1-2-trade histories.
       if(m.closedTrades<1){funnel.analysisSkippedLowHistory++; continue;}
       funnel.analysisEligible++;
-      const x={address,metrics:m,safety:sg,truncated:f.truncated,historyIncomplete:f.truncated,historyIncompleteReason:f.incompleteReason||null,history429:f.rateLimitAffected,historyPages:f.pages,historyFills:f.fills,historyVerification:priorityDeepPrefetch.has(String(address).toLowerCase()) ? (f.truncated ? ((!f.rateLimitAffected&&!f.networkAffected&&m.closedTrades>=DEEP_HISTORY_MIN_CLOSED)?'VERIFIED_PARTIAL':'UNVERIFIED_PARTIAL') : 'COMPLETE') : (f.truncated?'UNVERIFIED_PARTIAL':'COMPLETE'),qualityScore:Math.round(qualityScore(m))};
+      const x={address,metrics:m,safety:sg,truncated:f.truncated,historyIncomplete:f.truncated,historyIncompleteReason:f.incompleteReason||null,history429:f.rateLimitAffected,historyPages:f.pages,historyFills:f.fills,historyIntegrity:m.pnlIntegrityOk!==false?'PASS':'FAIL',historyVerification:priorityDeepPrefetch.has(String(address).toLowerCase()) ? (f.truncated ? ((!f.rateLimitAffected&&!f.networkAffected&&m.closedTrades>=DEEP_HISTORY_MIN_CLOSED)?'VERIFIED_PARTIAL':'UNVERIFIED_PARTIAL') : 'COMPLETE') : (f.truncated?'UNVERIFIED_PARTIAL':'COMPLETE'),qualityScore:Math.round(qualityScore(m))};
       const y=await analyzeMemeTrader(x,now);
       analyzedCandidates.push(y);
       ACTIVE_RUN.analyzedCandidates=analyzedCandidates;
@@ -2096,7 +2111,7 @@ async function main(){
         const dr=reconstruct(df.fills),dm=metrics(df.fills,dr);
         const verifiedPartial=Boolean(df.truncated && !df.rateLimitAffected && !df.networkAffected && dm.closedTrades>=DEEP_HISTORY_MIN_CLOSED);
         const verification=df.truncated?(verifiedPartial?'VERIFIED_PARTIAL':'UNVERIFIED_PARTIAL'):'COMPLETE';
-        const dx={...target,metrics:dm,safety:safetyGate(dm,df.truncated),truncated:df.truncated,historyIncomplete:df.truncated,historyIncompleteReason:df.incompleteReason||null,history429:df.rateLimitAffected,historyPages:df.pages,historyFills:df.fills,historyVerification:verification};
+        const dx={...target,metrics:dm,safety:safetyGate(dm,df.truncated),truncated:df.truncated,historyIncomplete:df.truncated,historyIncompleteReason:df.incompleteReason||null,history429:df.rateLimitAffected,historyPages:df.pages,historyFills:df.fills,historyIntegrity:dm.pnlIntegrityOk!==false?'PASS':'FAIL',historyVerification:verification};
         const dy=await analyzeMemeTrader(dx,now);
         const idx=analyzedCandidates.findIndex(x=>x.address===target.address);
         if(idx>=0)analyzedCandidates[idx]=dy;
