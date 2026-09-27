@@ -164,6 +164,15 @@ function deterministicCloid(...parts){
   return `0x${crypto.createHash('sha256').update(raw).digest('hex').slice(0,32)}`;
 }
 
+function executionCloid(trader,coin,sourceEntry){
+  // A deterministic CLOID is unsafe for a retry: Hyperliquid permanently
+  // remembers used CLOIDs, even after an emergency close. Each real execution
+  // attempt therefore gets a fresh 128-bit client order id.
+  const nonce=`${Date.now()}:${process.hrtime.bigint()}:${crypto.randomBytes(8).toString('hex')}`;
+  const raw=`MEME-HUNTER-V87-EXEC:${trader}:${coin}:${sourceEntry}:${nonce}`;
+  return `0x${crypto.createHash('sha256').update(raw).digest('hex').slice(0,32)}`;
+}
+
 function formatPrice(price,szDecimals){
   if(!(price>0))throw new Error('INVALID_PRICE');
   const maxDecimals=Math.max(6-szDecimals,0);
@@ -265,11 +274,11 @@ async function buildCandidate(handoff){
   if((Array.isArray(orders)?orders:[]).some(o=>String(o?.coin||'')===coin))
     throw new Error('OWN_OPEN_ORDER_ALREADY_EXISTS');
 
-  const cloid=deterministicCloid(trader,coin,sourceEntry,'ENTRY');
+  const cloid=executionCloid(trader,coin,sourceEntry);
   const history=await historicalOrders();
   if((Array.isArray(history)?history:[]).some(x=>
     String(x?.order?.cloid||'').toLowerCase()===cloid.toLowerCase()))
-    throw new Error('DUPLICATE_CLOID_ALREADY_USED');
+    throw new Error('CLOID_GENERATION_COLLISION');
 
   const asset=await metaAsset(coin);
   if(!(asset.maxLeverage>=LEVERAGE))
@@ -356,8 +365,10 @@ async function placeProtection(exchange,p){
   if(!(actualEntry>0))throw new Error('ACTUAL_ENTRY_INVALID');
   const pp=planPrices(p.side,actualEntry,p.atr);
 
-  const slCloid=deterministicCloid(p.trader,p.coin,p.sourceEntry,'SL');
-  const tpCloid=deterministicCloid(p.trader,p.coin,p.sourceEntry,'TP');
+  // Protection CLOIDs are derived from this execution's unique entry CLOID,
+  // so a retry after an earlier aborted execution can safely place fresh SL/TP.
+  const slCloid=deterministicCloid(p.cloid,'SL');
+  const tpCloid=deterministicCloid(p.cloid,'TP');
 
   const orders=[
     triggerOrder(p.asset.assetIndex,p.side,pp.sl,actualSize,p.asset.szDecimals,'sl',slCloid),
@@ -425,7 +436,7 @@ async function emergencyClose(exchange,p){
       s:formatSize(size,p.asset.szDecimals),
       r:true,
       t:{limit:{tif:'Ioc'}},
-      c:deterministicCloid(p.trader,p.coin,p.sourceEntry,'EMERGENCY')
+      c:deterministicCloid(p.cloid,'EMERGENCY')
     };
 
     log(`EMERGENCY CLOSE ${p.coin} ${side} size=${fmt(size,8)}`);
