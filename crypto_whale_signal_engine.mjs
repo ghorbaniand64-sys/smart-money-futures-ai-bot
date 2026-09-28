@@ -3,7 +3,7 @@
 // Exactly 10 fixed signal sources: 5 Spot + 5 Futures.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V1.3-WHALE-SIGNAL-10-HEALTH';
+const VERSION = 'V1.4-WHALE-SIGNAL-10-HEALTH-SEPARATED';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -226,6 +226,43 @@ function blockedLine(x){
   return `${icon} ${x.wallet.name} ${x.coin} ${x.side} | now=${fmt(x.current)} | entry=${fmt(x.sourceEntry)} | dist=${pct(x.distancePct,2)} | ${label} | BLOCK ${reason}`;
 }
 
+function healthIcon(h){return h?.health==='HEALTHY'?'🟢':h?.health==='WATCH'?'🟡':'🔴';}
+function compactHealth(h){
+  const p=[];
+  if(Number.isFinite(h?.realized))p.push(`30D ${money(h.realized)}`);
+  else if(Number.isFinite(h?.pnl30d))p.push(`30D ${h.pnl30d.toFixed(1)} SOL`);
+  if(Number.isFinite(h?.wr))p.push(`WR ${h.wr.toFixed(1)}%`);
+  else if(Number.isFinite(h?.wr30d))p.push(`WR ${h.wr30d.toFixed(1)}%`);
+  if(Number.isFinite(h?.pf))p.push(`PF ${h.pf.toFixed(2)}`);
+  if(Number.isFinite(h?.count))p.push(`fills ${h.count}`);
+  else if(Number.isFinite(h?.trades30d))p.push(`trades ${h.trades30d}`);
+  return p.join(' | ');
+}
+function positionDetailLine(x){
+  const cls=classifyPosition(x);
+  const icon=cls==='GREEN'?'🟢':cls==='YELLOW'?'🟡':'🔴';
+  const label=cls==='GREEN'?'ENTRY READY':cls==='YELLOW'?'NEAR / BLOCKED':'TOO LATE';
+  const why=setupReason(x);
+  const block=cls==='GREEN'?'VALID':(why.length?why.join(','):'NO_VALID_SETUP');
+  const lev=Number.isFinite(Number(x.leverage))?` | Lev ${fmt(x.leverage,1)}x`:'';
+  const pos=Number.isFinite(Number(x.positionValue))?` | Pos ${money(x.positionValue)}`:'';
+  const up=Number.isFinite(Number(x.unrealized))?` | uPnL ${money(x.unrealized)}`:'';
+  return `${icon} ${x.coin} ${x.side} | Now ${fmt(x.current)} | Entry ${fmt(x.sourceEntry)} | Dist ${pct(x.distancePct,2)} | SL ${fmt(x.sl)} | TP ${fmt(x.tp)} | RR ${fmt(x.rr,2)}${lev}${pos}${up} | ${label}${cls==='GREEN'?'':' | '+block}`;
+}
+function traderBlock(result){
+  const h=result.health||{health:'WATCH',reason:'NO_HEALTH_DATA'};
+  const icon=healthIcon(h);
+  const header=`${icon} ${result.wallet.name} — ${h.health}${compactHealth(h)?' | '+compactHealth(h):''}`;
+  const ps=result.positions||[];
+  if(!ps.length)return [header+' | Position: NONE'];
+  return [header,...ps.map(x=>'   '+positionDetailLine(x))];
+}
+function marketSection(title,results){
+  const rows=[];
+  rows.push(title,'━━━━━━━━━━━━━━━━━━');
+  results.forEach(r=>rows.push(...traderBlock(r)));
+  return rows;
+}
 async function main(){
   const started=Date.now();
   console.log(`[SIGNAL-ENGINE ${VERSION}][START] spot=${SPOT_WALLETS.length} futures=${FUTURES_WALLETS.length}`);
@@ -236,7 +273,8 @@ async function main(){
   const green=classified.filter(x=>x.status==='GREEN');
   const yellow=classified.filter(x=>x.status==='YELLOW');
   const red=classified.filter(x=>x.status==='RED');
-  const allSignals=green.sort((a,b)=>b.rr-a.rr);
+  const spotGreen=green.filter(x=>x.mint);
+  const futuresGreen=green.filter(x=>!x.mint);
   const lines=[
     `🟣 CRYPTO WHALE SIGNAL ENGINE ${VERSION}`,
     '📡 READ-ONLY | NO ORDERS | NO EXECUTION',
@@ -246,29 +284,44 @@ async function main(){
     `🔎 Exact scans: ${spot.filter(x=>!x.error).length}/5 Spot | ${futures.filter(x=>!x.error).length}/5 Futures`,
     `🟢 ENTRY READY: ${green.length} | 🟡 NEAR: ${yellow.length} | 🔴 TOO LATE: ${red.length}`,
     `📏 Green ≤${ENTRY_WINDOW_PCT}% | Yellow ≤${WATCH_WINDOW_PCT}% | Min RR ${MIN_RR}`,
-    ''
+    '',
+    '🟢 ENTRY READY — SPOT',
+    '━━━━━━━━━━━━━━━━━━'
   ];
+  if(spotGreen.length)spotGreen.forEach((x,i)=>{lines.push(signalLine(x,i+1));if(x.mint)lines.push(`🔗 ${x.mint}`);});
+  else lines.push('No Spot entry opportunity right now.');
 
-  lines.push('🟢 ENTRY READY — REAL OPPORTUNITIES');
-  const gs=allSignals;
-  if(gs.length)gs.forEach((x,i)=>{ lines.push(signalLine(x,i+1)); if(x.mint)lines.push(`🔗 ${x.mint}`); });
-  else lines.push('No valid entry opportunity right now.');
+  lines.push('','🟢 ENTRY READY — FUTURES','━━━━━━━━━━━━━━━━━━');
+  if(futuresGreen.length)futuresGreen.forEach((x,i)=>lines.push(signalLine(x,i+1)));
+  else lines.push('No Futures entry opportunity right now.');
 
-  lines.push('','🟡 NEAR ENTRY — WAIT / BLOCKED');
-  if(yellow.length)yellow.forEach(x=>lines.push('• '+blockedLine(x)));
-  else lines.push('No near-entry blocked positions.');
+  lines.push('','🟡 NEAR ENTRY — SPOT');
+  const spotYellow=yellow.filter(x=>x.mint);
+  if(spotYellow.length)spotYellow.forEach(x=>lines.push('• '+blockedLine(x)));else lines.push('No Spot near-entry blocked positions.');
 
-  lines.push('','🔴 TOO LATE — DO NOT ENTER');
-  if(red.length)red.forEach(x=>lines.push('• '+blockedLine(x)));
-  else lines.push('No positions are too far from source entry.');
+  lines.push('','🟡 NEAR ENTRY — FUTURES');
+  const futuresYellow=yellow.filter(x=>!x.mint);
+  if(futuresYellow.length)futuresYellow.forEach(x=>lines.push('• '+blockedLine(x)));else lines.push('No Futures near-entry blocked positions.');
 
-  lines.push('','🏥 TRADER HEALTH');
-  spot.forEach(x=>lines.push(healthLine(x.health||spotHealth(x.wallet),x.wallet)));
-  futures.forEach(x=>lines.push(healthLine(x.health||{health:'WATCH',reason:'NO_HEALTH_DATA'},x.wallet)));
+  lines.push('','🔴 TOO LATE — SPOT');
+  const spotRed=red.filter(x=>x.mint);
+  if(spotRed.length)spotRed.forEach(x=>lines.push('• '+blockedLine(x)));else lines.push('No Spot positions are too far from source entry.');
+
+  lines.push('','🔴 TOO LATE — FUTURES');
+  const futuresRed=red.filter(x=>!x.mint);
+  if(futuresRed.length)futuresRed.forEach(x=>lines.push('• '+blockedLine(x)));else lines.push('No Futures positions are too far from source entry.');
+
+  // The key new section: each wallet is grouped under its own market and its
+  // Health is printed immediately above its CURRENT positions. This prevents
+  // a health status from becoming detached from the positions it describes.
+  lines.push('',...marketSection('🏥 SPOT TRADER HEALTH + CURRENT POSITIONS',spot));
+  lines.push('',...marketSection('🏥 FUTURES TRADER HEALTH + CURRENT POSITIONS',futures));
+
   const errs=[...spot.filter(x=>x.error).map(x=>`SPOT ${x.wallet.name}: ${x.error}`),...futures.filter(x=>x.error).map(x=>`FUTURES ${x.wallet.name}: ${x.error}`)];
   if(errs.length){lines.push('','⚠️ DATA ERRORS');errs.forEach(e=>lines.push(e));}
-  lines.push('','📌 Signal logic: Green requires distance to source entry within the entry window plus a valid RR/setup; yellow means near but blocked; red means too far and not worth entering. Spot requires a currently held SPL token plus a recent observed buy; source entry is reconstructed from on-chain SOL/token balance deltas and is diagnostic, not an exchange fill price. Futures uses the live Hyperliquid position entry and mid price.','📌 No private keys, order placement, leverage changes, SL/TP orders, or execution handoff exist in this engine.',`⏱ Runtime ${(Date.now()-started)/1000}s`);
-  console.log(`[SIGNAL-ENGINE ${VERSION}][DONE] signals=${allSignals.length} positions=${allPositions.length} errors=${errs.length}`);
+  lines.push('','📌 Signal logic: Green requires distance to source entry within the entry window plus valid RR/setup; yellow means near but blocked; red means too far and not worth entering.','📌 Health is the trader-level monitoring status; it is separate from the entry status of each current position. A HEALTHY trader can have a RED/TOO-LATE position, and a RISKY/WATCH trader can still have a technically near-entry position.','📌 Spot source entry is reconstructed from on-chain SOL/token balance deltas and is diagnostic, not an exchange fill price. Futures uses the live Hyperliquid position entry and mid price.','📌 No private keys, order placement, leverage changes, SL/TP orders, or execution handoff exist in this engine.',`⏱ Runtime ${((Date.now()-started)/1000).toFixed(1)}s`);
+  console.log(`[SIGNAL-ENGINE ${VERSION}][DONE] signals=${green.length} positions=${allPositions.length} errors=${errs.length}`);
   await telegram(lines.join('\n'));
 }
+
 main().catch(async e=>{console.error(`[SIGNAL-ENGINE][FATAL] ${e.stack||e}`);await telegram(`🟣 CRYPTO WHALE SIGNAL ENGINE ${VERSION}\n📡 READ-ONLY | NO EXECUTION\n💥 FATAL\n${String(e.message||e).slice(0,1200)}`);process.exitCode=1});
