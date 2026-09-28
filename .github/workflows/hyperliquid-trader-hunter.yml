@@ -1,93 +1,82 @@
-name: Hyperliquid Trader Monitor
+name: Crypto Whale Signal Engine
 
 on:
   schedule:
-    # Every 5 minutes, offset by 1 minute to reduce :00 scheduling load.
     - cron: '1-59/5 * * * *'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: crypto-whale-signal-engine
+  cancel-in-progress: true
 
 jobs:
-  monitor:
+  signal-engine:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     environment: production
-    timeout-minutes: 10
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-      - name: Setup Node 22
-        uses: actions/setup-node@v4
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: '22'
 
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
+      - name: Verify signal engine exists
+        run: |
+          test -f hyperliquid_trader_hunter.mjs
+          node --check hyperliquid_trader_hunter.mjs
 
-      - name: Validate Hunter
-        run: node --check hyperliquid_trader_hunter.mjs
+      - name: Verify execution engine is absent
+        run: |
+          if [ -f hyperliquid_execution_engine.mjs ]; then
+            echo "ERROR: hyperliquid_execution_engine.mjs exists."
+            echo "This repository must be signal-only."
+            exit 1
+          fi
 
-      - name: Validate Execution Engine
-        run: node --check hyperliquid_execution_engine.mjs
+      - name: Verify no execution workflow exists
+        run: |
+          if grep -RniE \
+            'hyperliquid_execution_engine|EXECUTION_ENABLED|PRIVATE_KEY|PRIVATEKEY|placeOrder|createOrder|cancelOrder|updateLeverage|setLeverage' \
+            .github/workflows hyperliquid_trader_hunter.mjs 2>/dev/null; then
+            echo "ERROR: Execution-related content detected."
+            echo "Signal engine must remain read-only."
+            exit 1
+          fi
 
-      - name: Run Meme Hunter
+      - name: Verify Telegram secrets
         env:
-          HYPERLIQUID_API_URL: ${{ secrets.HYPERLIQUID_API_URL }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: node hyperliquid_trader_hunter.mjs
+        run: |
+          test -n "$TELEGRAM_TOKEN"
+          test -n "$TELEGRAM_CHAT_ID"
 
-      - name: Run Execution Engine (LIVE)
+      - name: Run signal engine
         env:
           HYPERLIQUID_API_URL: ${{ secrets.HYPERLIQUID_API_URL }}
-
-          # Existing GitHub Secrets
-          HYPERLIQUID_ACCOUNT_ADDRESS: ${{ secrets.HL_MAIN_ACCOUNT_ADDRESS }}
-          HYPERLIQUID_AGENT_PRIVATE_KEY: ${{ secrets.HL_API_WALLET_PRIVATE_KEY }}
-
-          # LIVE MODE
-          EXECUTION_ENABLED: 'true'
-          EXECUTION_DRY_RUN: 'false'
-
-          # Handoff safety
-          EXECUTION_HANDOFF_TTL_MS: '90000'
-          EXECUTION_MAX_SOURCE_ENTRY_DISTANCE_PCT: '0.5'
-          EXECUTION_MAX_REVALIDATION_MOVE_PCT: '0.35'
-          EXECUTION_SLIPPAGE_BPS: '50'
-
-          # LIVE POSITION SETTINGS
-          EXECUTION_MARGIN_ALLOCATION_PCT: '50'
-          EXECUTION_LEVERAGE: '10'
-          EXECUTION_MAX_POSITIONS: '2'
-
-          # Risk / TP / SL
-          EXECUTION_MIN_RR: '1.5'
-          EXECUTION_SL_ATR_MULT: '1.2'
-          EXECUTION_TP_ATR_MULT: '2.0'
-          EXECUTION_MAX_SL_PCT: '2.0'
-
-          # Trade requirements
-          EXECUTION_REQUIRE_MEME: 'true'
-          EXECUTION_REQUIRE_HANDOFF_READY: 'true'
-
-          # Fill verification
-          EXECUTION_FILL_WAIT_MS: '8000'
-          EXECUTION_FILL_POLL_MS: '500'
-
-          # Protection verification
-          EXECUTION_PROTECTION_VERIFY_MS: '4000'
-
-          # Emergency close
-          EXECUTION_EMERGENCY_SLIPPAGE_BPS: '100'
-
-          # Hyperliquid Mainnet
-          HYPERLIQUID_TESTNET: 'false'
-
-          # Telegram
+          SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
-        run: node hyperliquid_execution_engine.mjs
+          SIGNAL_MAX_ENTRY_DISTANCE_PCT: "0.75"
+          SIGNAL_MIN_RR: "2.0"
+
+          SIGNAL_SPOT_SL_PCT: "2.0"
+          SIGNAL_SPOT_TP_PCT: "4.0"
+
+          SIGNAL_FUTURES_SL_PCT: "1.5"
+          SIGNAL_FUTURES_TP_PCT: "3.0"
+
+          SIGNAL_SPOT_SIGNATURES: "30"
+          SIGNAL_MAX_SPOT_POSITIONS_PER_WALLET: "5"
+          SIGNAL_REQUEST_TIMEOUT_MS: "20000"
+
+        run: |
+          node hyperliquid_trader_hunter.mjs
