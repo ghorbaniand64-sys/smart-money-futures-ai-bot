@@ -3,7 +3,7 @@
 // Exactly 10 fixed signal sources: 5 Spot + 5 Futures.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V1.1-WHALE-SIGNAL-10';
+const VERSION = 'V1.3-WHALE-SIGNAL-10-HEALTH';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -20,6 +20,8 @@ const FETCH_TIMEOUT = Number(process.env.SIGNAL_REQUEST_TIMEOUT_MS || 18000);
 const RECENT_SIGS = Number(process.env.SIGNAL_SPOT_SIGNATURES || 30);
 const MAX_SPOT_POSITIONS = Number(process.env.SIGNAL_MAX_SPOT_POSITIONS_PER_WALLET || 4);
 const TG_LIMIT = 3800;
+const HEALTH_LOOKBACK_DAYS = Number(process.env.SIGNAL_HEALTH_LOOKBACK_DAYS || 30);
+const HEALTH_MIN_TRADES = Number(process.env.SIGNAL_HEALTH_MIN_TRADES || 20);
 
 const SPOT_WALLETS = [
   {name:'DECU', address:'4vw54BmAogeRV3vPKWyFet5yf8DTLcREzdSzx4rw9Ud9'},
@@ -28,6 +30,14 @@ const SPOT_WALLETS = [
   {name:'MR_FROG', address:'4DdrfiDHpmx55i4SPssxVzS9ZaKLb8qr45NKY9Er9nNh'},
   {name:'JIJO', address:'4BdKaxN8G6ka4GYtQQWk4G4dZRUTX2vQH9GcXdBREFUk'}
 ];
+
+const SPOT_HEALTH_BASELINE = {
+  DECU:{pnl30d:3924.7,wr30d:63,trades30d:3868},
+  TRUNOEST:{pnl30d:3653.05,wr30d:57,trades30d:4299},
+  CENTED:{pnl30d:3958.0,wr30d:51,trades30d:4824},
+  MR_FROG:{pnl30d:2581.2,wr30d:92,trades30d:3417},
+  JIJO:{pnl30d:null,wr30d:null,trades30d:null}
+};
 
 const FUTURES_WALLETS = [
   {name:'F29C', address:'0xf29c6bc1147a841519b382459a6d7a373c6b9971'},
@@ -126,13 +136,57 @@ async function scanSpot(w){
     candidates.push({wallet:w,coin:info.symbol,mint:h.mint,side:'LONG',balance:h.amount,sourceEntry,current:px,distancePct:dist,sl,tp,rr:R,age:row.blockTime,liquidity:info.liquidity,volume24h:info.volume24h,tx:row.sig,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R>=MIN_RR});
     if(candidates.length>=MAX_SPOT_POSITIONS)break;
   }
-  return {wallet:w,signals:candidates.filter(x=>x.eligible),positions:candidates,scanned:sigs.length,txs:txs.length,holdings:holdings.length};
+  return {wallet:w,signals:candidates.filter(x=>x.eligible),positions:candidates,scanned:sigs.length,txs:txs.length,holdings:holdings.length,health:spotHealth(w)};
 }
 
 function hlPositions(state){
   return (state?.assetPositions||[]).map(x=>x?.position||x).filter(p=>p&&Math.abs(n(p.szi))>0).map(p=>({coin:p.coin,side:n(p.szi)>0?'LONG':'SHORT',size:Math.abs(n(p.szi)),entry:n(p.entryPx),positionValue:Math.abs(n(p.positionValue)),unrealized:n(p.unrealizedPnl),leverage:n(p.leverage?.value||p.leverage),liq:n(p.liquidationPx),margin:n(p.marginUsed)}));
 }
+async function futuresHealth(w){
+  try{
+    const startTime=Date.now()-HEALTH_LOOKBACK_DAYS*86400000;
+    const fills=await hl({type:'userFillsByTime',user:w.address,startTime},`fills:${w.name}`);
+    const rows=Array.isArray(fills)?fills:[];
+    const pnlRows=rows.map(f=>n(f.closedPnl)).filter(Number.isFinite);
+    const wins=pnlRows.filter(v=>v>0).length, losses=pnlRows.filter(v=>v<0).length;
+    const realized=pnlRows.reduce((a,b)=>a+b,0);
+    const count=pnlRows.length;
+    const wr=count?wins/count*100:null;
+    const grossWin=pnlRows.filter(v=>v>0).reduce((a,b)=>a+b,0);
+    const grossLoss=Math.abs(pnlRows.filter(v=>v<0).reduce((a,b)=>a+b,0));
+    const pf=grossLoss>0?grossWin/grossLoss:null;
+    let health='WATCH', reason='INSUFFICIENT_RECENT_DATA';
+    if(count>=HEALTH_MIN_TRADES){
+      if(realized>0 && wr>=55 && (pf===null||pf>=1.5)) {health='HEALTHY';reason='POSITIVE_PNL+WIN_RATE+PROFIT_FACTOR';}
+      else if(realized>0 && wr>=45 && (pf===null||pf>=1.0)) {health='WATCH';reason='POSITIVE_BUT_MIXED_RECENT_STATS';}
+      else {health='RISKY';reason='WEAK_RECENT_STATS';}
+    }
+    return {health,reason,realized,count,wr,pf};
+  }catch(e){return {health:'WATCH',reason:'HEALTH_DATA_ERROR',error:e.message,realized:null,count:0,wr:null,pf:null};}
+}
+function spotHealth(w){
+  const b=SPOT_HEALTH_BASELINE[w.name]||{};
+  if(!Number.isFinite(b.pnl30d)||!Number.isFinite(b.wr30d)||!Number.isFinite(b.trades30d)) return {health:'WATCH',reason:'SPOT_HISTORY_NOT_ENOUGH_FOR_DYNAMIC_HEALTH',...b};
+  if(b.pnl30d>0 && b.wr30d>=55 && b.trades30d>=HEALTH_MIN_TRADES) return {health:'HEALTHY',reason:'AUDITED_30D_BASELINE',...b};
+  if(b.pnl30d>0 && b.wr30d>=40) return {health:'WATCH',reason:'POSITIVE_BUT_MIXED_30D_BASELINE',...b};
+  return {health:'RISKY',reason:'WEAK_30D_BASELINE',...b};
+}
+function healthLine(h,w){
+  const icon=h.health==='HEALTHY'?'🟢':h.health==='WATCH'?'🟡':'🔴';
+  const parts=[`${icon} ${w.name} — ${h.health}`];
+  if(Number.isFinite(h.realized))parts.push(`30D realized ${money(h.realized)}`);
+  else if(Number.isFinite(h.pnl30d))parts.push(`30D realized ${h.pnl30d.toFixed(1)} SOL`);
+  if(Number.isFinite(h.wr))parts.push(`WR ${h.wr.toFixed(1)}%`);
+  else if(Number.isFinite(h.wr30d))parts.push(`WR ${h.wr30d.toFixed(1)}%`);
+  if(Number.isFinite(h.pf))parts.push(`PF ${h.pf.toFixed(2)}`);
+  if(Number.isFinite(h.count))parts.push(`fills ${h.count}`);
+  if(Number.isFinite(h.trades30d))parts.push(`trades ${h.trades30d}`);
+  parts.push(`Reason: ${h.reason}`);
+  return parts.join(' | ');
+}
+
 async function scanFutures(w){
+  const health=await futuresHealth(w);
   const state=await hl({type:'clearinghouseState',user:w.address},`state:${w.name}`); const ps=hlPositions(state);
   const mids=await hl({type:'allMids'},`mids:${w.name}`); const signals=[],positions=[];
   for(const p of ps){
@@ -144,7 +198,7 @@ async function scanFutures(w){
     const x={wallet:w,coin:p.coin,side:p.side,sourceEntry:p.entry,current:mid,distancePct:dist,sl,tp,rr:R,size:p.size,positionValue:p.positionValue,unrealized:p.unrealized,leverage:p.leverage,liq:p.liq,margin:p.margin,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R>=MIN_RR};
     positions.push(x);if(x.eligible)signals.push(x);
   }
-  return {wallet:w,signals,positions,scanned:1};
+  return {wallet:w,signals,positions,scanned:1,health};
 }
 function signalLine(x,i){
   return `${i}. ${x.wallet.name} | ${x.coin} | ${x.side}\n   Source Entry ${fmt(x.sourceEntry)} | Now ${fmt(x.current)} | Dist ${pct(x.distancePct,2)}\n   SL ${fmt(x.sl)} | TP ${fmt(x.tp)} | RR ${fmt(x.rr,2)} | ${x.leverage?`Lev ${fmt(x.leverage,1)}x | `:''}${x.positionValue?`Pos ${money(x.positionValue)} | `:''}${x.liquidity?`Liq ${money(x.liquidity)}`:''}`;
@@ -175,8 +229,8 @@ function blockedLine(x){
 async function main(){
   const started=Date.now();
   console.log(`[SIGNAL-ENGINE ${VERSION}][START] spot=${SPOT_WALLETS.length} futures=${FUTURES_WALLETS.length}`);
-  const spot=await Promise.all(SPOT_WALLETS.map(w=>scanSpot(w).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0,txs:0}))));
-  const futures=await Promise.all(FUTURES_WALLETS.map(w=>scanFutures(w).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0}))));
+  const spot=await Promise.all(SPOT_WALLETS.map(w=>scanSpot(w).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0,txs:0,health:spotHealth(w)}))));
+  const futures=await Promise.all(FUTURES_WALLETS.map(w=>scanFutures(w).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0,health:{health:'WATCH',reason:'HEALTH_DATA_ERROR',error:e.message}}))));
   const allPositions=[...spot.flatMap(x=>x.positions),...futures.flatMap(x=>x.positions)];
   const classified=allPositions.map(x=>({...x,status:classifyPosition(x)}));
   const green=classified.filter(x=>x.status==='GREEN');
@@ -208,6 +262,9 @@ async function main(){
   if(red.length)red.forEach(x=>lines.push('• '+blockedLine(x)));
   else lines.push('No positions are too far from source entry.');
 
+  lines.push('','🏥 TRADER HEALTH');
+  spot.forEach(x=>lines.push(healthLine(x.health||spotHealth(x.wallet),x.wallet)));
+  futures.forEach(x=>lines.push(healthLine(x.health||{health:'WATCH',reason:'NO_HEALTH_DATA'},x.wallet)));
   const errs=[...spot.filter(x=>x.error).map(x=>`SPOT ${x.wallet.name}: ${x.error}`),...futures.filter(x=>x.error).map(x=>`FUTURES ${x.wallet.name}: ${x.error}`)];
   if(errs.length){lines.push('','⚠️ DATA ERRORS');errs.forEach(e=>lines.push(e));}
   lines.push('','📌 Signal logic: Green requires distance to source entry within the entry window plus a valid RR/setup; yellow means near but blocked; red means too far and not worth entering. Spot requires a currently held SPL token plus a recent observed buy; source entry is reconstructed from on-chain SOL/token balance deltas and is diagnostic, not an exchange fill price. Futures uses the live Hyperliquid position entry and mid price.','📌 No private keys, order placement, leverage changes, SL/TP orders, or execution handoff exist in this engine.',`⏱ Runtime ${(Date.now()-started)/1000}s`);
