@@ -17,11 +17,14 @@ const MIN_RR = Number(process.env.SIGNAL_MIN_RR || 2.0);
 const SL_PCT = Number(process.env.SIGNAL_SPOT_SL_PCT || 2.0);
 const TP_PCT = Number(process.env.SIGNAL_SPOT_TP_PCT || 4.0);
 const FETCH_TIMEOUT = Number(process.env.SIGNAL_REQUEST_TIMEOUT_MS || 20000);
-const RECENT_SIGS = Number(process.env.SIGNAL_SPOT_SIGNATURES || 60);
+const RECENT_SIGS = Number(process.env.SIGNAL_SPOT_SIGNATURES || 40);
 const MAX_SPOT_POSITIONS = Number(process.env.SIGNAL_MAX_SPOT_POSITIONS_PER_WALLET || 5);
 const SPOT_MIN_BUY_USD = Number(process.env.SIGNAL_SPOT_MIN_BUY_USD || 1000);
 const SPOT_MAX_BUYS_PER_WALLET = Number(process.env.SIGNAL_SPOT_MAX_BUYS_PER_WALLET || 8);
 const SPOT_STALE_HOURS = Number(process.env.SIGNAL_SPOT_STALE_HOURS || 48);
+const SPOT_TX_BATCH = Number(process.env.SIGNAL_SPOT_TX_BATCH || 3);
+const SPOT_TX_DELAY_MS = Number(process.env.SIGNAL_SPOT_TX_DELAY_MS || 450);
+const SPOT_TX_MAX_RETRIES = Number(process.env.SIGNAL_SPOT_TX_MAX_RETRIES || 3);
 
 // Futures quality policy. These are deliberately conservative.
 const FUTURES_FRESH_HOURS = Number(process.env.SIGNAL_FUTURES_FRESH_HOURS || 2);
@@ -76,7 +79,7 @@ const QUOTE_MINTS = new Set([
 function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
 function short(a){return `${String(a).slice(0,6)}…${String(a).slice(-6)}`}
 function n(v,d=0){const x=Number(v);return Number.isFinite(x)?x:d}
-function finite(v){return Number.isFinite(Number(v))}
+function finite(v){if(v===null||v===undefined||v==='')return false;const x=Number(v);return Number.isFinite(x)}
 function money(v){return finite(v)?`$${Number(v).toLocaleString('en-US',{maximumFractionDigits:2})}`:'N/A'}
 function pct(v,d=2){return finite(v)?`${Number(v).toFixed(d)}%`:'N/A'}
 function fmt(v,d=4){return finite(v)?Number(v).toFixed(d):'N/A'}
@@ -115,8 +118,19 @@ async function solSignatures(address){
   return Array.isArray(r?.result)?r.result.filter(x=>!x.err):[];
 }
 async function solTx(sig){
-  const r=await sol({method:'getTransaction',params:[sig,{encoding:'jsonParsed',maxSupportedTransactionVersion:0}]},'getTransaction');
-  return r?.result||null;
+  let last;
+  for(let attempt=0;attempt<=SPOT_TX_MAX_RETRIES;attempt++){
+    try{
+      const r=await sol({method:'getTransaction',params:[sig,{encoding:'jsonParsed',maxSupportedTransactionVersion:0}]},'getTransaction');
+      return r?.result||null;
+    }catch(e){
+      last=e;
+      const msg=String(e?.message||e);
+      if(!/HTTP_429|Too many requests|429/i.test(msg)||attempt>=SPOT_TX_MAX_RETRIES)break;
+      await sleep(Math.min(5000,SPOT_TX_DELAY_MS*Math.pow(2,attempt)));
+    }
+  }
+  throw last||new Error('GET_TRANSACTION_FAILED');
 }
 function ownerTokenDeltas(tx,wallet){
   const pre=tx?.meta?.preTokenBalances||[], post=tx?.meta?.postTokenBalances||[];
@@ -168,12 +182,30 @@ async function scanSpot(w){
   if(!(solUsd>0))throw new Error('SOL_USD_UNAVAILABLE');
   const [sigs,holdings]=await Promise.all([solSignatures(w.address),solHoldings(w.address)]);
   const txs=[];
-  // Fetch in small batches to reduce public RPC burst/rate-limit pressure.
-  for(let i=0;i<sigs.length;i+=6){
-    const batch=sigs.slice(i,i+6);
-    const got=await Promise.all(batch.map(async s=>{try{const tx=await solTx(s.signature);return tx?{sig:s.signature,tx,blockTime:n(tx.blockTime||s.blockTime)*1000}:null}catch(e){console.log(`[SPOT][TX] ${w.name} ${e.message}`);return null}}));
+  // Fetch in very small batches with retry/backoff. Public Solana RPCs commonly
+  // return 429 under bursty getTransaction traffic; a partial scan is preferable
+  // to turning the whole cycle into a fatal error.
+  let consecutiveFailures=0;
+  for(let i=0;i<sigs.length;i+=SPOT_TX_BATCH){
+    const batch=sigs.slice(i,i+SPOT_TX_BATCH);
+    const got=await Promise.all(batch.map(async s=>{
+      try{
+        const tx=await solTx(s.signature);
+        if(tx){consecutiveFailures=0;return {sig:s.signature,tx,blockTime:n(tx.blockTime||s.blockTime)*1000};}
+        consecutiveFailures++;
+        return null;
+      }catch(e){
+        consecutiveFailures++;
+        console.log(`[SPOT][TX] ${w.name} ${e.message}`);
+        return null;
+      }
+    }));
     txs.push(...got.filter(Boolean));
-    if(i+6<sigs.length)await sleep(120);
+    if(consecutiveFailures>=8){
+      console.log(`[SPOT][TX] ${w.name} stopping partial history scan after ${consecutiveFailures} consecutive failures`);
+      break;
+    }
+    if(i+SPOT_TX_BATCH<sigs.length)await sleep(SPOT_TX_DELAY_MS);
   }
   const buys=[];
   for(const row of txs){
@@ -202,7 +234,7 @@ async function scanSpot(w){
     x.eligible=!x.stale&&Math.abs(x.distancePct)<=ENTRY_WINDOW_PCT&&x.rr>=MIN_RR;
   }
   const positions=candidates.slice(0,MAX_SPOT_POSITIONS);
-  return {wallet:w,signals:positions.filter(x=>x.eligible),positions,scanned:sigs.length,txs:txs.length,holdings:holdings.length,reconstructedBuys:buys.length,health:spotHealth(w)};
+  return {wallet:w,signals:positions.filter(x=>x.eligible),positions,scanned:sigs.length,txs:txs.length,holdings:holdings.length,reconstructedBuys:buys.length,partialHistory:txs.length<sigs.length,health:spotHealth(w)};
 }
 
 // ---------------- FUTURES ----------------
