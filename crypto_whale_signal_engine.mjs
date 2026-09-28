@@ -3,14 +3,15 @@
 // Exactly 10 fixed signal sources: 5 Spot + 5 Futures.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V1.0-WHALE-SIGNAL-10';
+const VERSION = 'V1.1-WHALE-SIGNAL-10';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
 const TG_CHAT = process.env.TELEGRAM_CHAT_ID || '';
 const ENTRY_WINDOW_PCT = Number(process.env.SIGNAL_MAX_ENTRY_DISTANCE_PCT || 0.75);
-const MIN_RR = Number(process.env.SIGNAL_MIN_RR || 1.5);
+const WATCH_WINDOW_PCT = Number(process.env.SIGNAL_WATCH_DISTANCE_PCT || 3.0);
+const MIN_RR = Number(process.env.SIGNAL_MIN_RR || 2.0);
 const SL_PCT = Number(process.env.SIGNAL_SPOT_SL_PCT || 2.0);
 const TP_PCT = Number(process.env.SIGNAL_SPOT_TP_PCT || 4.0);
 const HL_SL_PCT = Number(process.env.SIGNAL_FUTURES_SL_PCT || 1.5);
@@ -122,7 +123,7 @@ async function scanSpot(w){
     const sourceEntry=Math.abs(sd)*solUsd/d.delta; if(!(sourceEntry>0))continue;
     const dist=(px/sourceEntry-1)*100;
     const sl=sourceEntry*(1-SL_PCT/100),tp=sourceEntry*(1+TP_PCT/100),R=rr(sourceEntry-sl,tp-sourceEntry);
-    candidates.push({wallet:w,coin:info.symbol,mint:h.mint,side:'LONG',balance:h.amount,sourceEntry,current:px,distancePct:dist,sl,tp,rr:R,age:row.blockTime,liquidity:info.liquidity,volume24h:info.volume24h,tx:row.sig,eligible:dist<=ENTRY_WINDOW_PCT&&R>=MIN_RR});
+    candidates.push({wallet:w,coin:info.symbol,mint:h.mint,side:'LONG',balance:h.amount,sourceEntry,current:px,distancePct:dist,sl,tp,rr:R,age:row.blockTime,liquidity:info.liquidity,volume24h:info.volume24h,tx:row.sig,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R>=MIN_RR});
     if(candidates.length>=MAX_SPOT_POSITIONS)break;
   }
   return {wallet:w,signals:candidates.filter(x=>x.eligible),positions:candidates,scanned:sigs.length,txs:txs.length,holdings:holdings.length};
@@ -140,16 +141,35 @@ async function scanFutures(w){
     const sl=p.side==='LONG'?p.entry*(1-HL_SL_PCT/100):p.entry*(1+HL_SL_PCT/100);
     const tp=p.side==='LONG'?p.entry*(1+HL_TP_PCT/100):p.entry*(1-HL_TP_PCT/100);
     const R=rr(Math.abs(p.entry-sl),Math.abs(tp-p.entry));
-    const x={wallet:w,coin:p.coin,side:p.side,sourceEntry:p.entry,current:mid,distancePct:dist,sl,tp,rr:R,size:p.size,positionValue:p.positionValue,unrealized:p.unrealized,leverage:p.leverage,liq:p.liq,margin:p.margin,eligible:dist<=ENTRY_WINDOW_PCT&&R>=MIN_RR};
+    const x={wallet:w,coin:p.coin,side:p.side,sourceEntry:p.entry,current:mid,distancePct:dist,sl,tp,rr:R,size:p.size,positionValue:p.positionValue,unrealized:p.unrealized,leverage:p.leverage,liq:p.liq,margin:p.margin,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R>=MIN_RR};
     positions.push(x);if(x.eligible)signals.push(x);
   }
   return {wallet:w,signals,positions,scanned:1};
 }
 function signalLine(x,i){
-  return `${i}. ${x.wallet.name} | ${x.coin} | ${x.side}\n   Entry source ${fmt(x.sourceEntry)} | Now ${fmt(x.current)} | Dist ${pct(x.distancePct,2)}\n   SL ${fmt(x.sl)} | TP ${fmt(x.tp)} | RR ${fmt(x.rr,2)} | ${x.leverage?`Lev ${fmt(x.leverage,1)}x | `:''}${x.positionValue?`Pos ${money(x.positionValue)} | `:''}${x.liquidity?`Liq ${money(x.liquidity)}`:''}`;
+  return `${i}. ${x.wallet.name} | ${x.coin} | ${x.side}\n   Source Entry ${fmt(x.sourceEntry)} | Now ${fmt(x.current)} | Dist ${pct(x.distancePct,2)}\n   SL ${fmt(x.sl)} | TP ${fmt(x.tp)} | RR ${fmt(x.rr,2)} | ${x.leverage?`Lev ${fmt(x.leverage,1)}x | `:''}${x.positionValue?`Pos ${money(x.positionValue)} | `:''}${x.liquidity?`Liq ${money(x.liquidity)}`:''}`;
+}
+function distanceAbs(x){return Math.abs(Number(x.distancePct));}
+function setupReason(x){
+  const why=[];
+  if(distanceAbs(x)>ENTRY_WINDOW_PCT)why.push(`DIST>${ENTRY_WINDOW_PCT}%`);
+  if(x.rr<MIN_RR)why.push(`RR<${MIN_RR}`);
+  return why;
+}
+function classifyPosition(x){
+  const dist=distanceAbs(x);
+  const why=setupReason(x);
+  if(dist<=ENTRY_WINDOW_PCT && why.length===0)return 'GREEN';
+  if(dist<=WATCH_WINDOW_PCT)return 'YELLOW';
+  return 'RED';
 }
 function blockedLine(x){
-  const why=[]; if(x.distancePct>ENTRY_WINDOW_PCT)why.push(`DIST>${ENTRY_WINDOW_PCT}%`); if(x.rr<MIN_RR)why.push(`RR<${MIN_RR}`); return `${x.wallet.name} ${x.coin} ${x.side} | now=${fmt(x.current)} | entry=${fmt(x.sourceEntry)} | dist=${pct(x.distancePct,2)} | BLOCK ${why.join(',')||'NO_VALID_SETUP'}`;
+  const cls=classifyPosition(x);
+  const why=setupReason(x);
+  const reason=why.length?why.join(','):'NO_VALID_SETUP';
+  const icon=cls==='YELLOW'?'🟡':'🔴';
+  const label=cls==='YELLOW'?'NEAR ENTRY':'TOO LATE';
+  return `${icon} ${x.wallet.name} ${x.coin} ${x.side} | now=${fmt(x.current)} | entry=${fmt(x.sourceEntry)} | dist=${pct(x.distancePct,2)} | ${label} | BLOCK ${reason}`;
 }
 
 async function main(){
@@ -157,20 +177,40 @@ async function main(){
   console.log(`[SIGNAL-ENGINE ${VERSION}][START] spot=${SPOT_WALLETS.length} futures=${FUTURES_WALLETS.length}`);
   const spot=await Promise.all(SPOT_WALLETS.map(w=>scanSpot(w).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0,txs:0}))));
   const futures=await Promise.all(FUTURES_WALLETS.map(w=>scanFutures(w).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0}))));
-  const allSignals=[...spot.flatMap(x=>x.signals),...futures.flatMap(x=>x.signals)].sort((a,b)=>b.rr-a.rr);
   const allPositions=[...spot.flatMap(x=>x.positions),...futures.flatMap(x=>x.positions)];
-  const lines=[`🟣 CRYPTO WHALE SIGNAL ENGINE ${VERSION}`,'📡 READ-ONLY | NO ORDERS | NO EXECUTION','━━━━━━━━━━━━━━━━━━',`🕐 Cycle: ${new Date().toISOString()}`,`🎯 Sources: SPOT ${SPOT_WALLETS.length}/5 | FUTURES ${FUTURES_WALLETS.length}/5`,`🔎 Exact scans: ${spot.filter(x=>!x.error).length}/5 Spot | ${futures.filter(x=>!x.error).length}/5 Futures`,`🚨 ENTRY OPPORTUNITIES: ${allSignals.length}`,`📏 Entry window: ≤${ENTRY_WINDOW_PCT}% from source entry | Min RR ${MIN_RR}`,''];
-  lines.push('🟢 SPOT SIGNALS');
-  const ss=allSignals.filter(x=>SPOT_WALLETS.some(w=>w.address===x.wallet.address));
-  if(ss.length)ss.forEach((x,i)=>lines.push(signalLine(x,i+1),'🔗 '+x.mint));else lines.push('No Spot position currently inside the entry window.');
-  lines.push('','🔵 FUTURES SIGNALS');
-  const fs=allSignals.filter(x=>FUTURES_WALLETS.some(w=>w.address===x.wallet.address));
-  if(fs.length)fs.forEach((x,i)=>lines.push(signalLine(x,i+1)));else lines.push('No Futures position currently inside the entry window.');
-  lines.push('','📋 ALL CURRENT POSITIONS / WHY NOT ENTRY');
-  if(allPositions.length){for(const x of allPositions.slice(0,20))lines.push('• '+blockedLine(x));}else lines.push('No readable current positions detected.');
+  const classified=allPositions.map(x=>({...x,status:classifyPosition(x)}));
+  const green=classified.filter(x=>x.status==='GREEN');
+  const yellow=classified.filter(x=>x.status==='YELLOW');
+  const red=classified.filter(x=>x.status==='RED');
+  const allSignals=green.sort((a,b)=>b.rr-a.rr);
+  const lines=[
+    `🟣 CRYPTO WHALE SIGNAL ENGINE ${VERSION}`,
+    '📡 READ-ONLY | NO ORDERS | NO EXECUTION',
+    '━━━━━━━━━━━━━━━━━━',
+    `🕐 Cycle: ${new Date().toISOString()}`,
+    `🎯 Sources: SPOT ${SPOT_WALLETS.length}/5 | FUTURES ${FUTURES_WALLETS.length}/5`,
+    `🔎 Exact scans: ${spot.filter(x=>!x.error).length}/5 Spot | ${futures.filter(x=>!x.error).length}/5 Futures`,
+    `🟢 ENTRY READY: ${green.length} | 🟡 NEAR: ${yellow.length} | 🔴 TOO LATE: ${red.length}`,
+    `📏 Green ≤${ENTRY_WINDOW_PCT}% | Yellow ≤${WATCH_WINDOW_PCT}% | Min RR ${MIN_RR}`,
+    ''
+  ];
+
+  lines.push('🟢 ENTRY READY — REAL OPPORTUNITIES');
+  const gs=allSignals;
+  if(gs.length)gs.forEach((x,i)=>{ lines.push(signalLine(x,i+1)); if(x.mint)lines.push(`🔗 ${x.mint}`); });
+  else lines.push('No valid entry opportunity right now.');
+
+  lines.push('','🟡 NEAR ENTRY — WAIT / BLOCKED');
+  if(yellow.length)yellow.forEach(x=>lines.push('• '+blockedLine(x)));
+  else lines.push('No near-entry blocked positions.');
+
+  lines.push('','🔴 TOO LATE — DO NOT ENTER');
+  if(red.length)red.forEach(x=>lines.push('• '+blockedLine(x)));
+  else lines.push('No positions are too far from source entry.');
+
   const errs=[...spot.filter(x=>x.error).map(x=>`SPOT ${x.wallet.name}: ${x.error}`),...futures.filter(x=>x.error).map(x=>`FUTURES ${x.wallet.name}: ${x.error}`)];
   if(errs.length){lines.push('','⚠️ DATA ERRORS');errs.forEach(e=>lines.push(e));}
-  lines.push('','📌 Signal logic: Spot requires a currently held SPL token plus a recent observed buy; source entry is reconstructed from on-chain SOL/token balance deltas and is diagnostic, not an exchange fill price. Futures uses the live Hyperliquid position entry and mid price.','📌 No private keys, order placement, leverage changes, SL/TP orders, or execution handoff exist in this engine.',`⏱ Runtime ${(Date.now()-started)/1000}s`);
+  lines.push('','📌 Signal logic: Green requires distance to source entry within the entry window plus a valid RR/setup; yellow means near but blocked; red means too far and not worth entering. Spot requires a currently held SPL token plus a recent observed buy; source entry is reconstructed from on-chain SOL/token balance deltas and is diagnostic, not an exchange fill price. Futures uses the live Hyperliquid position entry and mid price.','📌 No private keys, order placement, leverage changes, SL/TP orders, or execution handoff exist in this engine.',`⏱ Runtime ${(Date.now()-started)/1000}s`);
   console.log(`[SIGNAL-ENGINE ${VERSION}][DONE] signals=${allSignals.length} positions=${allPositions.length} errors=${errs.length}`);
   await telegram(lines.join('\n'));
 }
