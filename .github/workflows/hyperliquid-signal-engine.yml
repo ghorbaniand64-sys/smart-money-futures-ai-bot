@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   signal-engine:
+    name: Run Crypto Whale Signal Engine
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: production
@@ -29,28 +30,54 @@ jobs:
 
       - name: Verify signal engine
         run: |
-          test -f hyperliquid_trader_hunter.mjs
-          node --check hyperliquid_trader_hunter.mjs
+          set -e
+
+          test -f crypto_whale_signal_engine.mjs
+
+          echo "Checking Node.js syntax..."
+          node --check crypto_whale_signal_engine.mjs
+
+          echo "Signal engine file:"
+          ls -lh crypto_whale_signal_engine.mjs
+
+          echo "Signal engine verification: OK"
 
       - name: Verify old execution engine is absent
         run: |
+          set -e
+
           if [ -f hyperliquid_execution_engine.mjs ]; then
             echo "ERROR: old execution engine exists"
+            echo "Remove hyperliquid_execution_engine.mjs from the repository."
             exit 1
           fi
 
-      - name: Verify Telegram secrets
+          echo "Old execution engine: ABSENT"
+
+      - name: Verify required secrets
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          test -n "$TELEGRAM_TOKEN"
-          test -n "$TELEGRAM_CHAT_ID"
+          set -e
+
+          if [ -z "$TELEGRAM_TOKEN" ]; then
+            echo "ERROR: TELEGRAM_TOKEN secret is missing"
+            exit 1
+          fi
+
+          if [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "ERROR: TELEGRAM_CHAT_ID secret is missing"
+            exit 1
+          fi
+
+          echo "Telegram secrets: OK"
 
       - name: Run signal engine
         env:
           HYPERLIQUID_API_URL: ${{ secrets.HYPERLIQUID_API_URL }}
           SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
+
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
@@ -65,7 +92,20 @@ jobs:
 
           SIGNAL_SPOT_SIGNATURES: "30"
           SIGNAL_MAX_SPOT_POSITIONS_PER_WALLET: "5"
+
           SIGNAL_REQUEST_TIMEOUT_MS: "20000"
 
         run: |
-          node hyperliquid_trader_hunter.mjs
+          set -e
+
+          echo "========================================"
+          echo "CRYPTO WHALE SIGNAL ENGINE"
+          echo "========================================"
+          echo "Mode: READ-ONLY / SIGNAL-ONLY"
+          echo "Worker: crypto_whale_signal_engine.mjs"
+          echo "No orders"
+          echo "No execution"
+          echo "No leverage changes"
+          echo "========================================"
+
+          node crypto_whale_signal_engine.mjs
