@@ -3,7 +3,7 @@
 // Exactly 10 fixed signal sources: 5 Spot + 5 Futures.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V3.0-WHALE-SIGNAL-FRESH-REENTRY-AVERAGING';
+const VERSION = 'V3.1-WHALE-SIGNAL-FRESH-REENTRY-AVERAGING-FILTERED';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -398,8 +398,18 @@ async function scanFutures(w,mids,now){
 
   const signals=[];
   const sortedCandidates=latest.sort((a,b)=>n(b?.time)-n(a?.time));
-  console.log(`[FUTURES][CANDIDATE-AUDIT] ${w.name} evaluating=${sortedCandidates.length} freshness<=${FUTURES_SIGNAL_FRESHNESS_MIN}m`);
-  for(const f of sortedCandidates){
+  const freshCandidates=sortedCandidates.filter(f=>{
+    const a=Math.max(0,(now-n(f.time))/60000);
+    return a<=FUTURES_SIGNAL_FRESHNESS_MIN;
+  });
+  const staleCandidates=sortedCandidates.length-freshCandidates.length;
+  console.log(`[FUTURES][CANDIDATE-AUDIT] ${w.name} addEvents=${sortedCandidates.length} fresh<=${FUTURES_SIGNAL_FRESHNESS_MIN}m=${freshCandidates.length} staleIgnored=${staleCandidates}`);
+  if(!freshCandidates.length && sortedCandidates.length){
+    const latestStale=sortedCandidates[0];
+    const staleAge=Math.max(0,(now-n(latestStale.time))/60000);
+    console.log(`[FUTURES][FRESHNESS-DROP] ${w.name} | ${String(latestStale.coin)} | latest ADD age=${staleAge.toFixed(1)}m > ${FUTURES_SIGNAL_FRESHNESS_MIN}m | hidden=STALE`);
+  }
+  for(const f of freshCandidates){
     const coin=String(f.coin);
     const side=f._derivedSide || (f.dir==='Open Long'?'LONG':'SHORT');
     const entry=n(f.px);
