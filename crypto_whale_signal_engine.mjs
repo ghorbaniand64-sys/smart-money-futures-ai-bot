@@ -3,7 +3,7 @@
 // Exactly 10 fixed signal sources: 5 Spot + 5 Futures.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V2.5-WHALE-SIGNAL-TRUE-RECENT-FUTURES-ENTRY';
+const VERSION = 'V2.6-WHALE-SIGNAL-RATE-LIMIT-RESILIENT-RECENT-ENTRY';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -22,6 +22,9 @@ const SPOT_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_SPOT_ACTIVITY_LOOKB
 const SPOT_MIN_BUY_USD = Number(process.env.SIGNAL_SPOT_MIN_BUY_USD || 25);
 const MAX_SIGNAL_LATENCY_MIN = Number(process.env.SIGNAL_MAX_LATENCY_MIN || 5);
 const FUTURES_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_FUTURES_ACTIVITY_LOOKBACK_MIN || 15);
+const FUTURES_FETCH_RETRY = Number(process.env.SIGNAL_FUTURES_FETCH_RETRY || 4);
+const FUTURES_BETWEEN_WALLETS_MS = Number(process.env.SIGNAL_FUTURES_BETWEEN_WALLETS_MS || 900);
+const FUTURES_RETRY_BASE_MS = Number(process.env.SIGNAL_FUTURES_RETRY_BASE_MS || 1200);
 const SPOT_MAX_ACTIVITY_AGE_MIN = Number(process.env.SIGNAL_SPOT_MAX_ACTIVITY_AGE_MIN || SPOT_ACTIVITY_LOOKBACK_MIN);
 const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const WSOL_MINT = 'So11111111111111111111111111111111111111112';
@@ -302,74 +305,57 @@ function healthLine(h,w){
   return parts.join(' | ');
 }
 
-async function scanFutures(w){
-  // FUTURES SIGNALS ARE ACTIVITY-FIRST.
-  // Do NOT turn old open positions into new entry signals.
-  // A signal must originate from a recent Hyperliquid Open Long/Open Short fill.
-  const health=await futuresHealth(w);
-  const mids=await hl({type:'allMids'},`mids:${w.name}`);
+async function fetchRecentFuturesFills(w, cutoff, now){
+  let lastErr=null;
+  for(let attempt=1; attempt<=FUTURES_FETCH_RETRY; attempt++){
+    try{
+      const r=await hl({type:'userFillsByTime',user:w.address,startTime:cutoff,endTime:now,aggregateByTime:true},`recentFills:${w.name}:a${attempt}`);
+      const rows=Array.isArray(r)?r:[];
+      console.log(`[FUTURES][FILLS] ${w.name} recent=${rows.length}`);
+      return rows;
+    }catch(e){
+      lastErr=e;
+      const is429=String(e?.message||e).includes('HTTP_429');
+      if(!is429 || attempt>=FUTURES_FETCH_RETRY)break;
+      const wait=FUTURES_RETRY_BASE_MS*Math.pow(2,attempt-1)+Math.floor(Math.random()*350);
+      console.log(`[FUTURES][429] ${w.name} attempt=${attempt}/${FUTURES_FETCH_RETRY} retry=${wait}ms`);
+      await sleep(wait);
+    }
+  }
+  console.log(`[FUTURES][FILLS] ${w.name} ${lastErr?.message||'UNKNOWN_ERROR'}`);
+  return null;
+}
+
+async function scanFutures(w, mids){
   const now=Date.now();
   const cutoff=now-FUTURES_ACTIVITY_LOOKBACK_MIN*60000;
-  let fills=[];
-  try{
-    const r=await hl({type:'userFillsByTime',user:w.address,startTime:cutoff,endTime:now,aggregateByTime:true},`recentFills:${w.name}`);
-    fills=Array.isArray(r)?r:[];
-  }catch(e){
-    console.log(`[FUTURES][FILLS] ${w.name} ${e.message}`);
-  }
-
-  // One actionable candidate per wallet/coin/side: the newest real opening fill.
+  const fills=await fetchRecentFuturesFills(w,cutoff,now);
+  if(fills===null)return {wallet:w,signals:[],positions:[],scanned:0,error:'RECENT_FILLS_UNAVAILABLE_AFTER_RETRIES',rateLimited:true};
   const latest=new Map();
   for(const f of fills){
-    const coin=String(f?.coin||'').trim();
-    const dir=String(f?.dir||'');
-    const t=n(f?.time);
-    const px=n(f?.px);
-    const sz=n(f?.sz);
+    const coin=String(f?.coin||'').trim(), dir=String(f?.dir||''), t=n(f?.time), px=n(f?.px), sz=n(f?.sz);
     if(!coin||!t||t<cutoff||!(px>0)||!(sz>0))continue;
     let side=null;
-    if(dir==='Open Long')side='LONG';
-    else if(dir==='Open Short')side='SHORT';
-    else continue;
-
-    // startPosition protects against accidentally treating a closing fill as an opening event.
-    const sp=n(f?.startPosition);
-    if(side==='LONG' && sp<0)continue;
-    if(side==='SHORT' && sp>0)continue;
-
-    const key=`${coin}|${side}`;
-    const prev=latest.get(key);
-    if(!prev || t>n(prev.time))latest.set(key,f);
+    if(dir==='Open Long')side='LONG'; else if(dir==='Open Short')side='SHORT'; else continue;
+    const sp=Number(f?.startPosition);
+    if(Number.isFinite(sp)){if(side==='LONG'&&sp<0)continue;if(side==='SHORT'&&sp>0)continue;}
+    const key=`${coin}|${side}`, prev=latest.get(key);
+    if(!prev||t>n(prev.time))latest.set(key,f);
   }
-
   const signals=[];
   for(const f of [...latest.values()].sort((a,b)=>n(b?.time)-n(a?.time))){
-    const coin=String(f.coin);
-    const side=String(f.dir)==='Open Long'?'LONG':'SHORT';
-    const entry=n(f.px);
-    const mid=n(mids?.[coin]);
+    const coin=String(f.coin), side=String(f.dir)==='Open Long'?'LONG':'SHORT', entry=n(f.px), mid=n(mids?.[coin]);
     if(!(entry>0)||!(mid>0))continue;
-
-    // Distance is measured from the whale's actual fill, not the current position's VWAP.
     const dist=(mid/entry-1)*100*(side==='LONG'?1:-1);
     const sl=side==='LONG'?entry*(1-HL_SL_PCT/100):entry*(1+HL_SL_PCT/100);
     const tp=side==='LONG'?entry*(1+HL_TP_PCT/100):entry*(1-HL_TP_PCT/100);
     const R=normalizedRR(Math.abs(entry-sl),Math.abs(tp-entry));
-    const ageMin=Math.max(0,(now-n(f.time))/60000);
-    const size=n(f.sz);
-    const positionValue=size*entry;
-    const x={
-      wallet:w,coin,side,sourceEntry:entry,current:mid,distancePct:dist,sl,tp,rr:R,
-      size,positionValue,unrealized:null,leverage:null,liq:null,margin:null,
-      openedAt:n(f.time),ageMin,openFillPx:entry,openFillSize:size,openFillHash:f.hash||null,
-      activitySource:'RECENT_HYPERLIQUID_OPEN_FILL',
-      fillDir:f.dir,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR
-    };
-    signals.push(x);
+    const ageMin=Math.max(0,(now-n(f.time))/60000), size=n(f.sz);
+    signals.push({wallet:w,coin,side,sourceEntry:entry,current:mid,distancePct:dist,sl,tp,rr:R,size,positionValue:size*entry,unrealized:null,leverage:null,liq:null,margin:null,openedAt:n(f.time),ageMin,openFillPx:entry,openFillSize:size,openFillHash:f.hash||null,activitySource:'RECENT_HYPERLIQUID_OPEN_FILL',fillDir:f.dir,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR});
   }
-
-  return {wallet:w,signals,positions:signals,scanned:fills.length,health,activityLookbackMin:FUTURES_ACTIVITY_LOOKBACK_MIN};
+  return {wallet:w,signals,positions:signals,scanned:fills.length,rateLimited:false};
 }
+
 function signalLine(x,i){
   return `${i}. ${x.wallet.name} | ${x.coin} | ${x.side}\n   Source Entry ${priceFmt(x.sourceEntry)} | Now ${priceFmt(x.current)} | Dist ${pct(x.distancePct,2)}\n   SL ${priceFmt(x.sl)} | TP ${priceFmt(x.tp)} | RR ${fmt(x.rr,3)} | ${x.leverage?`Lev ${fmt(x.leverage,1)}x | `:''}${x.positionValue?`Pos ${money(x.positionValue)} | `:''}${x.ageMin!=null?`Age ${x.ageMin<1?Math.max(1,Math.round(x.ageMin*60))+'s':x.ageMin.toFixed(1)+'m'} | `:''}${x.liquidity?`Liq ${money(x.liquidity)}`:''}`;
 }
@@ -436,7 +422,15 @@ async function main(){
   const started=Date.now();
   console.log(`[SIGNAL-ENGINE ${VERSION}][START] spot=${SPOT_WALLETS.length} futures=${FUTURES_WALLETS.length}`);
   const spot=await Promise.all(SPOT_WALLETS.map(w=>scanSpot(w).catch(e=>({wallet:w,signals:[],positions:[],recentBuys:[],error:e.message,scanned:0,txs:0,health:spotHealth(w)}))));
-  const futures=await Promise.all(FUTURES_WALLETS.map(w=>scanFutures(w).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0,health:{health:'WATCH',reason:'HEALTH_DATA_ERROR',error:e.message}}))));
+  let mids={};
+  try{const m=await hl({type:'allMids'},'mids:shared');mids=(m&&typeof m==='object')?m:{};}catch(e){console.log(`[FUTURES][MIDS] ${e.message}`);}
+  const futures=[];
+  for(let i=0;i<FUTURES_WALLETS.length;i++){
+    const w=FUTURES_WALLETS[i];
+    const r=await scanFutures(w,mids).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0}));
+    futures.push(r);
+    if(i<FUTURES_WALLETS.length-1)await sleep(FUTURES_BETWEEN_WALLETS_MS);
+  }
 
   // Telegram is intentionally signal-only. Health, current holdings, diagnostics,
   // red/too-late candidates and decoder internals stay out of the user message.
@@ -465,7 +459,8 @@ async function main(){
     '',
     `⏱ ${((Date.now()-started)/1000).toFixed(1)}s | Red/too-late signals hidden`
   ];
-  console.log(`[SIGNAL-ENGINE ${VERSION}][DONE] green=${spotGreen.length+futuresGreen.length} yellow=${spotYellow.length+futuresYellow.length} red-hidden=${classified.filter(x=>x.status==='RED').length}`);
+  const rateLimited=futures.filter(x=>x.rateLimited).length;
+  console.log(`[SIGNAL-ENGINE ${VERSION}][DONE] green=${spotGreen.length+futuresGreen.length} yellow=${spotYellow.length+futuresYellow.length} red-hidden=${classified.filter(x=>x.status==='RED').length} futures-rate-limited=${rateLimited}`);
   await telegram(lines.join('\n'));
 }
 
