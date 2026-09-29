@@ -3,7 +3,7 @@
 // Exactly 10 fixed signal sources: 5 Spot + 5 Futures.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V2.1-WHALE-SIGNAL-TRUE-RECENT-ACTIVITY';
+const VERSION = 'V2.4-WHALE-SIGNAL-COMPACT-GREEN-YELLOW';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -20,9 +20,13 @@ const FETCH_TIMEOUT = Number(process.env.SIGNAL_REQUEST_TIMEOUT_MS || 18000);
 const RECENT_SIGS = Number(process.env.SIGNAL_SPOT_SIGNATURES || 80);
 const SPOT_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_SPOT_ACTIVITY_LOOKBACK_MIN || 15);
 const SPOT_MIN_BUY_USD = Number(process.env.SIGNAL_SPOT_MIN_BUY_USD || 25);
+const MAX_SIGNAL_LATENCY_MIN = Number(process.env.SIGNAL_MAX_LATENCY_MIN || 5);
 const SPOT_MAX_ACTIVITY_AGE_MIN = Number(process.env.SIGNAL_SPOT_MAX_ACTIVITY_AGE_MIN || SPOT_ACTIVITY_LOOKBACK_MIN);
 const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const WSOL_MINT = 'So11111111111111111111111111111111111111112';
+const FUNDING_MINTS = new Set([WSOL_MINT,USDC_MINT]);
+const KNOWN_NON_TRADE_MINTS = new Set([WSOL_MINT,USDC_MINT]);
+const SPOT_DIAGNOSTIC_MAX = Number(process.env.SIGNAL_SPOT_DIAGNOSTIC_MAX || 5);
 const MAX_SPOT_POSITIONS = Number(process.env.SIGNAL_MAX_SPOT_POSITIONS_PER_WALLET || 4);
 const TG_LIMIT = 3800;
 const HEALTH_LOOKBACK_DAYS = Number(process.env.SIGNAL_HEALTH_LOOKBACK_DAYS || 30);
@@ -33,7 +37,7 @@ const SPOT_WALLETS = [
   {name:'TRUNOEST', address:'ardinRsN1mNYVeoJWTBsWeYeXvuR9UUDGMsCDKpb6AT'},
   {name:'CENTED', address:'CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o'},
   {name:'MR_FROG', address:'4DdrfiDHpmx55i4SPssxVzS9ZaKLb8qr45NKY9Er9nNh'},
-  {name:'JIJO', address:'4BdKaxN8G6ka4GYtQQWk4G4dZRUTX2vQH9GcXdBREFUk'}
+  {name:'JIJO', address:'4BdKaxN8G6ka4GYtQQWk4GdZRUTX2vQH9GcXdBREFUk'}
 ];
 
 const SPOT_HEALTH_BASELINE = {
@@ -58,7 +62,23 @@ function n(v,d=0){const x=Number(v);return Number.isFinite(x)?x:d}
 function money(v){return Number.isFinite(Number(v))?`$${Number(v).toLocaleString('en-US',{maximumFractionDigits:2})}`:'N/A'}
 function pct(v,d=2){return Number.isFinite(Number(v))?`${Number(v).toFixed(d)}%`:'N/A'}
 function fmt(v,d=4){return Number.isFinite(Number(v))?Number(v).toFixed(d):'N/A'}
+function priceFmt(v){
+  const x=Number(v);
+  if(!Number.isFinite(x)||x<=0)return 'N/A';
+  if(x>=10000)return x.toFixed(2);
+  if(x>=1000)return x.toFixed(3);
+  if(x>=100)return x.toFixed(4);
+  if(x>=1)return x.toFixed(5);
+  if(x>=0.1)return x.toFixed(6);
+  if(x>=0.01)return x.toFixed(7);
+  if(x>=0.001)return x.toFixed(8);
+  if(x>=0.0001)return x.toFixed(9);
+  if(x>=0.000001)return x.toFixed(10);
+  if(x>=0.000000001)return x.toFixed(12);
+  return x.toExponential(6);
+}
 function rr(sl,tp){const a=Math.abs(Number(sl));return a>0?Math.abs(Number(tp))/a:0}
+function normalizedRR(sl,tp){const r=rr(sl,tp);return Number.isFinite(r)?Math.round(r*1000)/1000:0}
 function age(ms){if(!ms)return 'N/A';const h=(Date.now()-ms)/3600000;return h<1?`${Math.max(1,Math.round(h*60))}m`:`${h.toFixed(1)}h`}
 
 async function fetchJson(url, options={}, label='request'){
@@ -91,103 +111,145 @@ async function solTx(sig){
   const r=await sol({method:'getTransaction',params:[sig,{encoding:'jsonParsed',maxSupportedTransactionVersion:0}]},'getTransaction');
   return r?.result||null;
 }
-function ownerTokenDeltas(tx,wallet){
-  const pre=tx?.meta?.preTokenBalances||[], post=tx?.meta?.postTokenBalances||[];
-  const map=new Map();
-  for(const b of pre){if(String(b.owner||'').toLowerCase()!==wallet.toLowerCase())continue;const mint=b.mint;map.set(`${mint}|pre`,n(b.uiTokenAmount?.uiAmountString))}
-  for(const b of post){if(String(b.owner||'').toLowerCase()!==wallet.toLowerCase())continue;const mint=b.mint;map.set(`${mint}|post`,n(b.uiTokenAmount?.uiAmountString))}
-  const mints=new Set([...map.keys()].map(k=>k.split('|')[0]));
-  const out=[];
-  for(const mint of mints){const d=n(map.get(`${mint}|post`))-n(map.get(`${mint}|pre`));if(Math.abs(d)>0)out.push({mint,delta:d})}
-  return out;
+function accountKeyPubkey(k){return typeof k==='string'?k:(k?.pubkey||'');}
+function tokenUiAmount(balance){
+  const a=balance?.uiTokenAmount||{};
+  const ui=Number(a.uiAmountString);
+  if(Number.isFinite(ui))return ui;
+  const raw=Number(a.amount), dec=Number(a.decimals);
+  if(Number.isFinite(raw)&&Number.isFinite(dec))return raw/10**dec;
+  return 0;
 }
-function solDelta(tx){
+function tokenDeltaMap(tx,wallet,knownTokenAccounts=new Set()){
+  const pre=tx?.meta?.preTokenBalances||[], post=tx?.meta?.postTokenBalances||[];
   const keys=tx?.transaction?.message?.accountKeys||[];
-  const wallet=keys.find(k=>k?.signer);
-  const idx=keys.findIndex(k=>k?.pubkey===wallet?.pubkey);
+  const walletLc=wallet.toLowerCase();
+  const owns=(b)=>{
+    if(String(b?.owner||'').toLowerCase()===walletLc)return true;
+    const idx=n(b?.accountIndex,-1); const p=idx>=0?accountKeyPubkey(keys[idx]):'';
+    return !!p && knownTokenAccounts.has(p);
+  };
+  const map=new Map();
+  for(const b of pre){if(!owns(b))continue;const k=b.mint;map.set(k,(map.get(k)||0)-tokenUiAmount(b));}
+  for(const b of post){if(!owns(b))continue;const k=b.mint;map.set(k,(map.get(k)||0)+tokenUiAmount(b));}
+  return [...map.entries()].filter(([,d])=>Math.abs(d)>0).map(([mint,delta])=>({mint,delta}));
+}
+function walletAccountIndex(tx,wallet){
+  const keys=tx?.transaction?.message?.accountKeys||[];
+  return keys.findIndex(k=>accountKeyPubkey(k).toLowerCase()===wallet.toLowerCase());
+}
+function solDelta(tx,wallet){
+  const idx=walletAccountIndex(tx,wallet);
   if(idx<0)return 0;
   return (n(tx?.meta?.postBalances?.[idx])-n(tx?.meta?.preBalances?.[idx]))/1e9;
 }
-async function tokenPrice(mint){
-  const r=await fetchJson(`${GECKO}/simple/networks/solana/token_price/${mint}`); 
-  return n(r?.data?.attributes?.token_prices?.[mint]);
+function txFeeSol(tx){return n(tx?.meta?.fee)/1e9;}
+function transactionProgramHints(tx){
+  const text=[...(tx?.meta?.logMessages||[]),...((tx?.transaction?.message?.instructions||[]).map(i=>JSON.stringify(i)))].join(' ').toLowerCase();
+  return ['jupiter','raydium','orca','meteora','phoenix','lifinity','pump','pumpswap','whirlpool'].filter(x=>text.includes(x));
 }
+function swapDirection(tx,wallet,knownTokenAccounts=new Set()){
+  const ds=tokenDeltaMap(tx,wallet,knownTokenAccounts);
+  const positive=ds.filter(d=>d.delta>0 && !KNOWN_NON_TRADE_MINTS.has(d.mint));
+  const negative=ds.filter(d=>d.delta<0);
+  const fundingToken=negative.find(d=>FUNDING_MINTS.has(d.mint));
+  const nativeDelta=solDelta(tx,wallet);
+  const fee=txFeeSol(tx);
+  const nativeSpent=Math.max(0,-nativeDelta-fee);
+  const hints=transactionProgramHints(tx);
+  const hasTradeAsset=positive.length>0;
+  const hasFunding=fundingToken||nativeSpent>0;
+  if(hasTradeAsset&&hasFunding)return {direction:'BUY',positive,negative,fundingToken,nativeSpent,hints};
+  const sold=negative.filter(d=>!FUNDING_MINTS.has(d.mint));
+  const receivedFunding=ds.find(d=>d.delta>0&&FUNDING_MINTS.has(d.mint));
+  if(sold.length&&(receivedFunding||nativeDelta>0))return {direction:'SELL',positive,negative,fundingToken:null,nativeSpent:0,hints};
+  return {direction:'UNKNOWN',positive,negative,fundingToken,nativeSpent,hints};
+}
+function reconstructedBuy(tx,wallet,mint,delta,solUsd,knownTokenAccounts=new Set()){
+  const ds=tokenDeltaMap(tx,wallet,knownTokenAccounts);
+  const nativeDelta=solDelta(tx,wallet);
+  const fee=txFeeSol(tx);
+  const nativeSpent=Math.max(0,-nativeDelta-fee);
+  const wsolSpent=Math.max(0,-(ds.find(d=>d.mint===WSOL_MINT)?.delta||0));
+  const usdcSpent=Math.max(0,-(ds.find(d=>d.mint===USDC_MINT)?.delta||0));
+  let fundingUsd=0, fundingAsset='UNKNOWN';
+  if(usdcSpent>0){fundingUsd=usdcSpent;fundingAsset='USDC';}
+  else if(wsolSpent>0){fundingUsd=wsolSpent*solUsd;fundingAsset='WSOL';}
+  else if(nativeSpent>0){fundingUsd=nativeSpent*solUsd;fundingAsset='SOL';}
+  if(!(fundingUsd>=SPOT_MIN_BUY_USD)||!(delta>0))return null;
+  return {fundingUsd,fundingAsset,nativeSpent,wsolSpent,usdcSpent,feeSol:fee};
+}
+
 async function tokenInfo(mint){
   try{
     const r=await fetchJson(`${GECKO}/networks/solana/tokens/${mint}`);
     const a=r?.data?.attributes||{};return {symbol:a.symbol||mint.slice(0,6),name:a.name||'',price:n(a.price_usd),fdv:n(a.fdv_usd),volume24h:n(a.volume_usd?.h24),liquidity:n(a.total_reserve_in_usd)};
   }catch{return {symbol:mint.slice(0,6),name:'',price:0,fdv:0,volume24h:0,liquidity:0}}
 }
-async function solHoldings(address){
+async function walletTokenAccounts(address){
   const r=await sol({method:'getTokenAccountsByOwner',params:[address,{programId:'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'},{encoding:'jsonParsed'}]},'getTokenAccountsByOwner');
-  return (r?.result?.value||[]).map(x=>{const i=x?.account?.data?.parsed?.info||{};return {mint:i.mint,amount:n(i.tokenAmount?.uiAmount),decimals:n(i.tokenAmount?.decimals)}}).filter(x=>x.mint&&x.amount>0);
+  const set=new Set();
+  for(const x of (r?.result?.value||[])){if(x?.pubkey)set.add(x.pubkey);}
+  return set;
 }
-function tokenDeltaMap(tx,wallet){
-  const pre=tx?.meta?.preTokenBalances||[], post=tx?.meta?.postTokenBalances||[];
-  const m=new Map();
-  for(const b of pre){if(String(b.owner||'').toLowerCase()!==wallet.toLowerCase())continue;const k=b.mint;m.set(k,(m.get(k)||0)-n(b.uiTokenAmount?.uiAmountString));}
-  for(const b of post){if(String(b.owner||'').toLowerCase()!==wallet.toLowerCase())continue;const k=b.mint;m.set(k,(m.get(k)||0)+n(b.uiTokenAmount?.uiAmountString));}
-  return [...m.entries()].filter(([,d])=>Math.abs(d)>0).map(([mint,delta])=>({mint,delta}));
-}
-function looksLikeSwap(tx,wallet){
-  const ds=tokenDeltaMap(tx,wallet);
-  const positive=ds.some(d=>d.delta>0 && d.mint!==WSOL_MINT);
-  const funding=ds.some(d=>d.delta<0 && [WSOL_MINT,USDC_MINT].includes(d.mint));
-  const nativeOut=solDelta(tx)<-0.000001;
-  const logs=(tx?.meta?.logMessages||[]).join(' ').toLowerCase();
-  const dexHint=['jupiter','raydium','orca','meteora','phoenix','lifinity','pump'].some(k=>logs.includes(k));
-  return positive && (funding||nativeOut||dexHint);
-}
-function reconstructedBuy(tx,wallet,mint,delta,solUsd){
-  const ds=tokenDeltaMap(tx,wallet);
-  const nativeSpent=Math.max(0,-solDelta(tx));
-  const wsolSpent=Math.max(0,-(ds.find(d=>d.mint===WSOL_MINT)?.delta||0));
-  const usdcSpent=Math.max(0,-(ds.find(d=>d.mint===USDC_MINT)?.delta||0));
-  const fundingUsd=nativeSpent*solUsd+wsolSpent*solUsd+usdcSpent;
-  if(!(fundingUsd>=SPOT_MIN_BUY_USD)||!(delta>0))return null;
-  return {fundingUsd,nativeSpent,wsolSpent,usdcSpent};
-}
-async function spotPrice(mint){
+async function tokenMarketData(mint){
   try{
     const r=await fetchJson(`https://api.dexscreener.com/latest/dex/tokens/${mint}`,{},'dexscreener');
+    const p=(r?.pairs||[]).filter(x=>x?.priceUsd).sort((a,b)=>n(b?.liquidity?.usd)-n(a?.liquidity?.usd))[0];
+    if(p)return {price:n(p.priceUsd),symbol:p?.baseToken?.symbol||mint.slice(0,6),liquidity:n(p?.liquidity?.usd),volume24h:n(p?.volume?.h24),source:'DEXSCREENER'};
   }catch{}
-  try{return await tokenPrice(mint)}catch{return 0}
+  try{
+    const r=await fetchJson(`${GECKO}/networks/solana/tokens/${mint}`,{},'gecko-token');
+    const a=r?.data?.attributes||{};
+    return {price:n(a.price_usd),symbol:a.symbol||mint.slice(0,6),liquidity:n(a.total_reserve_in_usd),volume24h:n(a.volume_usd?.h24),source:'GECKO'};
+  }catch{return {price:0,symbol:mint.slice(0,6),liquidity:0,volume24h:0,source:'NONE'}}
 }
 async function scanSpot(w){
   const solInfo=await tokenInfo(WSOL_MINT);
   const solUsd=solInfo.price||await tokenPrice(WSOL_MINT);
+  if(!(solUsd>0))throw new Error('SOL_PRICE_UNAVAILABLE');
+  const tokenAccounts=await walletTokenAccounts(w.address);
   const sigs=await solSignatures(w.address);
   const cutoff=Date.now()-SPOT_MAX_ACTIVITY_AGE_MIN*60000;
   const txs=[];
+  const diagnostics=[];
   for(const s of sigs.slice(0,RECENT_SIGS)){
     const bt=n(s.blockTime)*1000;
     if(bt && bt<cutoff)break;
-    try{const tx=await solTx(s.signature);if(tx)txs.push({sig:s.signature,tx,blockTime:bt||Date.now()})}catch(e){console.log(`[SPOT][TX] ${w.name} ${e.message}`)}
+    try{
+      const tx=await solTx(s.signature);
+      if(tx)txs.push({sig:s.signature,tx,blockTime:bt||Date.now()});
+    }catch(e){diagnostics.push({sig:s.signature,reason:`TX_FETCH:${e.message}`});}
   }
   const candidates=[]; const seen=new Set();
   for(const row of txs){
-    if(row.blockTime<cutoff || !looksLikeSwap(row.tx,w.address))continue;
-    const ds=tokenDeltaMap(row.tx,w.address).filter(d=>d.delta>0 && d.mint!==WSOL_MINT);
-    for(const d of ds){
-      if(seen.has(d.mint))continue;
-      const funding=reconstructedBuy(row.tx,w.address,d.mint,d.delta,solUsd);
-      if(!funding)continue;
-      let info=await tokenInfo(d.mint);
-      let px=n(info.price);
-      if(!(px>0)){try{const r=await fetchJson(`https://api.dexscreener.com/latest/dex/tokens/${d.mint}`,{},'dex');px=n(r?.pairs?.[0]?.priceUsd);if(px>0)info={...info,price:px,symbol:info.symbol||r?.pairs?.[0]?.baseToken?.symbol||d.mint.slice(0,6),liquidity:n(r?.pairs?.[0]?.liquidity?.usd),volume24h:n(r?.pairs?.[0]?.volume?.h24)}}catch{}}
-      if(!(px>0))continue;
+    if(row.blockTime<cutoff)continue;
+    const ds=tokenDeltaMap(row.tx,w.address,tokenAccounts);
+    const direction=swapDirection(row.tx,w.address,tokenAccounts);
+    if(direction.direction!=='BUY'){
+      if(direction.positive.length||direction.negative.length)diagnostics.push({sig:row.sig,reason:`NOT_BUY:${direction.direction}`,deltas:ds.slice(0,8)});
+      continue;
+    }
+    const positives=direction.positive.filter(d=>!seen.has(d.mint));
+    if(!positives.length)continue;
+    for(const d of positives){
+      const funding=reconstructedBuy(row.tx,w.address,d.mint,d.delta,solUsd,tokenAccounts);
+      if(!funding){diagnostics.push({sig:row.sig,reason:`FUNDING_UNRESOLVED:${d.mint.slice(0,8)}`,delta:d.delta});continue;}
+      const info=await tokenMarketData(d.mint);
+      const px=n(info.price);
+      if(!(px>0)){diagnostics.push({sig:row.sig,reason:`PRICE_UNRESOLVED:${d.mint.slice(0,8)}`});continue;}
       const sourceEntry=funding.fundingUsd/d.delta;
-      if(!(sourceEntry>0))continue;
+      if(!(sourceEntry>0)){diagnostics.push({sig:row.sig,reason:'ENTRY_RECONSTRUCTION_INVALID'});continue;}
       const dist=(px/sourceEntry-1)*100;
-      const sl=sourceEntry*(1-SL_PCT/100),tp=sourceEntry*(1+TP_PCT/100),R=rr(sourceEntry-sl,tp-sourceEntry);
+      const sl=sourceEntry*(1-SL_PCT/100),tp=sourceEntry*(1+TP_PCT/100),R=normalizedRR(sourceEntry-sl,tp-sourceEntry);
       const ageMin=Math.max(0,(Date.now()-row.blockTime)/60000);
-      const x={wallet:w,coin:info.symbol||d.mint.slice(0,6),mint:d.mint,side:'LONG',sourceEntry,current:px,distancePct:dist,sl,tp,rr:R,age:row.blockTime,ageMin,liquidity:info.liquidity,volume24h:info.volume24h,tx:row.sig,buyNotionalUsd:funding.fundingUsd,activitySource:'RECENT_BUY',eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R>=MIN_RR};
+      const x={wallet:w,coin:info.symbol||d.mint.slice(0,6),mint:d.mint,side:'LONG',sourceEntry,current:px,distancePct:dist,sl,tp,rr:R,age:row.blockTime,ageMin,liquidity:info.liquidity,volume24h:info.volume24h,tx:row.sig,buyNotionalUsd:funding.fundingUsd,fundingAsset:funding.fundingAsset,activitySource:'RECENT_BUY',priceSource:info.source,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR};
       candidates.push(x);seen.add(d.mint);
       if(candidates.length>=MAX_SPOT_POSITIONS)break;
     }
     if(candidates.length>=MAX_SPOT_POSITIONS)break;
   }
-  return {wallet:w,signals:candidates.filter(x=>x.eligible),positions:candidates,scanned:sigs.length,txs:txs.length,holdings:0,health:spotHealth(w),recentBuys:candidates.length,activityLookbackMin:SPOT_MAX_ACTIVITY_AGE_MIN};
+  return {wallet:w,signals:candidates.filter(x=>x.eligible),positions:[],recentBuys:candidates,scanned:sigs.length,txs:txs.length,health:spotHealth(w),activityLookbackMin:SPOT_MAX_ACTIVITY_AGE_MIN,diagnostics:diagnostics.slice(0,SPOT_DIAGNOSTIC_MAX),tokenAccounts:tokenAccounts.size};
 }
 
 function hlPositions(state){
@@ -195,13 +257,16 @@ function hlPositions(state){
 }
 async function futuresHealth(w){
   try{
-    const startTime=Date.now()-HEALTH_LOOKBACK_DAYS*86400000;
-    const fills=await hl({type:'userFillsByTime',user:w.address,startTime},`fills:${w.name}`);
-    const rows=Array.isArray(fills)?fills:[];
-    const pnlRows=rows.map(f=>n(f.closedPnl)).filter(Number.isFinite);
+    const now=Date.now(), windowMs=5*86400000, all=new Map();
+    for(let endTime=now;endTime>now-HEALTH_LOOKBACK_DAYS*86400000;endTime-=windowMs){
+      const startTime=Math.max(now-HEALTH_LOOKBACK_DAYS*86400000,endTime-windowMs);
+      const rows=await hl({type:'userFillsByTime',user:w.address,startTime,endTime},`fills:${w.name}:${startTime}`);
+      for(const f of (Array.isArray(rows)?rows:[])){const key=f?.hash||`${f?.coin}|${f?.time}|${f?.px}|${f?.sz}|${f?.dir}`;all.set(key,f);}
+    }
+    const rows=[...all.values()].filter(f=>n(f?.time)>0);
+    const pnlRows=rows.map(f=>n(f.closedPnl)).filter(v=>Number.isFinite(v));
     const wins=pnlRows.filter(v=>v>0).length, losses=pnlRows.filter(v=>v<0).length;
-    const realized=pnlRows.reduce((a,b)=>a+b,0);
-    const count=pnlRows.length;
+    const realized=pnlRows.reduce((a,b)=>a+b,0), count=pnlRows.length;
     const wr=count?wins/count*100:null;
     const grossWin=pnlRows.filter(v=>v>0).reduce((a,b)=>a+b,0);
     const grossLoss=Math.abs(pnlRows.filter(v=>v<0).reduce((a,b)=>a+b,0));
@@ -212,7 +277,7 @@ async function futuresHealth(w){
       else if(realized>0 && wr>=45 && (pf===null||pf>=1.0)) {health='WATCH';reason='POSITIVE_BUT_MIXED_RECENT_STATS';}
       else {health='RISKY';reason='WEAK_RECENT_STATS';}
     }
-    return {health,reason,realized,count,wr,pf};
+    return {health,reason,realized,count,wr,pf,sampleWindowDays:HEALTH_LOOKBACK_DAYS};
   }catch(e){return {health:'WATCH',reason:'HEALTH_DATA_ERROR',error:e.message,realized:null,count:0,wr:null,pf:null};}
 }
 function spotHealth(w){
@@ -249,10 +314,10 @@ async function scanFutures(w){
     const dist=(mid/p.entry-1)*100*(p.side==='LONG'?1:-1);
     const sl=p.side==='LONG'?p.entry*(1-HL_SL_PCT/100):p.entry*(1+HL_SL_PCT/100);
     const tp=p.side==='LONG'?p.entry*(1+HL_TP_PCT/100):p.entry*(1-HL_TP_PCT/100);
-    const R=rr(Math.abs(p.entry-sl),Math.abs(tp-p.entry));
+    const R=normalizedRR(Math.abs(p.entry-sl),Math.abs(tp-p.entry));
     const openDir=p.side==='LONG'?'Open Long':'Open Short';
     const matching=fills.filter(f=>f?.coin===p.coin && String(f?.dir||'')===openDir && n(f?.time)>0).sort((a,b)=>n(b.time)-n(a.time));
-    const latestOpen=matching[0];
+    const latestOpen=matching.find(f=>{const sp=n(f?.startPosition);return p.side==='LONG'?sp<=0:sp>=0;})||matching[0];
     const openedAt=latestOpen?.time||null;
     const ageMin=openedAt?Math.max(0,(Date.now()-openedAt)/60000):null;
     const x={wallet:w,coin:p.coin,side:p.side,sourceEntry:p.entry,current:mid,distancePct:dist,sl,tp,rr:R,size:p.size,positionValue:p.positionValue,unrealized:p.unrealized,leverage:p.leverage,liq:p.liq,margin:p.margin,openedAt,ageMin,openFillPx:n(latestOpen?.px),openFillSize:n(latestOpen?.sz),openFillHash:latestOpen?.hash||null,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R>=MIN_RR};
@@ -262,126 +327,101 @@ async function scanFutures(w){
 }
 
 function signalLine(x,i){
-  return `${i}. ${x.wallet.name} | ${x.coin} | ${x.side}\n   Source Entry ${fmt(x.sourceEntry)} | Now ${fmt(x.current)} | Dist ${pct(x.distancePct,2)}\n   SL ${fmt(x.sl)} | TP ${fmt(x.tp)} | RR ${fmt(x.rr,3)} | ${x.leverage?`Lev ${fmt(x.leverage,1)}x | `:''}${x.positionValue?`Pos ${money(x.positionValue)} | `:''}${x.ageMin!=null?`Age ${x.ageMin<1?Math.max(1,Math.round(x.ageMin*60))+'s':x.ageMin.toFixed(1)+'m'} | `:''}${x.liquidity?`Liq ${money(x.liquidity)}`:''}`;
+  return `${i}. ${x.wallet.name} | ${x.coin} | ${x.side}\n   Source Entry ${priceFmt(x.sourceEntry)} | Now ${priceFmt(x.current)} | Dist ${pct(x.distancePct,2)}\n   SL ${priceFmt(x.sl)} | TP ${priceFmt(x.tp)} | RR ${fmt(x.rr,3)} | ${x.leverage?`Lev ${fmt(x.leverage,1)}x | `:''}${x.positionValue?`Pos ${money(x.positionValue)} | `:''}${x.ageMin!=null?`Age ${x.ageMin<1?Math.max(1,Math.round(x.ageMin*60))+'s':x.ageMin.toFixed(1)+'m'} | `:''}${x.liquidity?`Liq ${money(x.liquidity)}`:''}`;
 }
 function distanceAbs(x){return Math.abs(Number(x.distancePct));}
+function signalAgeMin(x){
+  if(Number.isFinite(Number(x.ageMin)))return Number(x.ageMin);
+  if(Number.isFinite(Number(x.age))){
+    const t=Number(x.age);
+    const ms=t>1e12?t*1:t*1000;
+    return Math.max(0,(Date.now()-ms)/60000);
+  }
+  if(Number.isFinite(Number(x.openedAt)))return Math.max(0,(Date.now()-Number(x.openedAt))/60000);
+  return null;
+}
 function setupReason(x){
   const why=[];
-  if(distanceAbs(x)>ENTRY_WINDOW_PCT)why.push(`DIST>${ENTRY_WINDOW_PCT}%`);
-  if(x.rr<MIN_RR)why.push(`RR<${MIN_RR}`);
+  const dist=distanceAbs(x);
+  const latency=signalAgeMin(x);
+  if(!Number.isFinite(Number(x.sourceEntry))||Number(x.sourceEntry)<=0)why.push('ENTRY_INVALID');
+  if(!Number.isFinite(Number(x.current))||Number(x.current)<=0)why.push('NOW_PRICE_INVALID');
+  if(!Number.isFinite(Number(x.rr))||Number(x.rr)+1e-9<MIN_RR)why.push(`RR<${MIN_RR}`);
+  if(Number.isFinite(dist)&&dist>ENTRY_WINDOW_PCT)why.push(`DIST>${ENTRY_WINDOW_PCT}%`);
+  if(Number.isFinite(latency)&&latency>MAX_SIGNAL_LATENCY_MIN)why.push(`LATENCY>${MAX_SIGNAL_LATENCY_MIN}m`);
   return why;
 }
 function classifyPosition(x){
   const dist=distanceAbs(x);
-  const why=setupReason(x);
-  if(dist<=ENTRY_WINDOW_PCT && why.length===0)return 'GREEN';
-  if(dist<=WATCH_WINDOW_PCT)return 'YELLOW';
+  const latency=signalAgeMin(x);
+  const invalid=!Number.isFinite(Number(x.sourceEntry))||Number(x.sourceEntry)<=0||!Number.isFinite(Number(x.current))||Number(x.current)<=0;
+  const rrOk=Number.isFinite(Number(x.rr))&&Number(x.rr)+1e-9>=MIN_RR;
+  const distGreen=Number.isFinite(dist)&&dist<=ENTRY_WINDOW_PCT;
+  const distYellow=Number.isFinite(dist)&&dist<=WATCH_WINDOW_PCT;
+  const latencyGreen=!Number.isFinite(latency)||latency<=MAX_SIGNAL_LATENCY_MIN;
+  if(!invalid&&distGreen&&rrOk&&latencyGreen)return 'GREEN';
+  if(!invalid&&distYellow&&rrOk)return 'YELLOW';
+  if(!invalid&&distGreen&&rrOk&&Number.isFinite(latency)&&latency>MAX_SIGNAL_LATENCY_MIN)return 'YELLOW';
   return 'RED';
 }
-function blockedLine(x){
-  const cls=classifyPosition(x);
-  const why=setupReason(x);
-  const reason=why.length?why.join(','):'NO_VALID_SETUP';
-  const icon=cls==='YELLOW'?'🟡':'🔴';
-  const label=cls==='YELLOW'?'NEAR ENTRY':'TOO LATE';
-  return `${icon} ${x.wallet.name} ${x.coin} ${x.side} | now=${fmt(x.current)} | entry=${fmt(x.sourceEntry)} | dist=${pct(x.distancePct,2)} | ${label} | BLOCK ${reason}`;
+function yellowReason(x){
+  const reasons=[];
+  const dist=distanceAbs(x);
+  const latency=signalAgeMin(x);
+  if(Number.isFinite(dist)&&dist>ENTRY_WINDOW_PCT)reasons.push(`DIST>${ENTRY_WINDOW_PCT}%`);
+  if(Number.isFinite(latency)&&latency>MAX_SIGNAL_LATENCY_MIN)reasons.push(`LATENCY>${MAX_SIGNAL_LATENCY_MIN}m`);
+  return reasons.length?reasons.join(' + '):'NEAR_ENTRY';
 }
-
-function healthIcon(h){return h?.health==='HEALTHY'?'🟢':h?.health==='WATCH'?'🟡':'🔴';}
-function compactHealth(h){
-  const p=[];
-  if(Number.isFinite(h?.realized))p.push(`30D ${money(h.realized)}`);
-  else if(Number.isFinite(h?.pnl30d))p.push(`30D ${h.pnl30d.toFixed(1)} SOL`);
-  if(Number.isFinite(h?.wr))p.push(`WR ${h.wr.toFixed(1)}%`);
-  else if(Number.isFinite(h?.wr30d))p.push(`WR ${h.wr30d.toFixed(1)}%`);
-  if(Number.isFinite(h?.pf))p.push(`PF ${h.pf.toFixed(2)}`);
-  if(Number.isFinite(h?.count))p.push(`fills ${h.count}`);
-  else if(Number.isFinite(h?.trades30d))p.push(`trades ${h.trades30d}`);
-  return p.join(' | ');
-}
-function positionDetailLine(x){
-  const cls=classifyPosition(x);
-  const icon=cls==='GREEN'?'🟢':cls==='YELLOW'?'🟡':'🔴';
-  const label=cls==='GREEN'?'ENTRY READY':cls==='YELLOW'?'NEAR / BLOCKED':'TOO LATE';
-  const why=setupReason(x);
-  const block=cls==='GREEN'?'VALID':(why.length?why.join(','):'NO_VALID_SETUP');
-  const lev=Number.isFinite(Number(x.leverage))?` | Lev ${fmt(x.leverage,1)}x`:'';
+function compactSignalLine(x,i){
+  const ageMin=signalAgeMin(x);
+  const ageText=Number.isFinite(ageMin)?` | Age ${ageMin<1?Math.max(1,Math.round(ageMin*60))+'s':ageMin.toFixed(1)+'m'}`:'';
+  const size=Number.isFinite(Number(x.buyNotionalUsd))?` | Size ${money(x.buyNotionalUsd)}`:'';
   const pos=Number.isFinite(Number(x.positionValue))?` | Pos ${money(x.positionValue)}`:'';
-  const up=Number.isFinite(Number(x.unrealized))?` | uPnL ${money(x.unrealized)}`:'';
-  return `${icon} ${x.coin} ${x.side} | Now ${fmt(x.current)} | Entry ${fmt(x.sourceEntry)} | Dist ${pct(x.distancePct,2)} | SL ${fmt(x.sl)} | TP ${fmt(x.tp)} | RR ${fmt(x.rr,3)}${lev}${pos}${up} | ${label}${cls==='GREEN'?'':' | '+block}`;
+  const lev=Number.isFinite(Number(x.leverage))?` | Lev ${fmt(x.leverage,1)}x`:'';
+  const reason=classifyPosition(x)==='YELLOW'?` | ${yellowReason(x)}`:'';
+  return `${i}. ${x.wallet.name} | ${x.coin} | ${x.side}\n   Entry ${priceFmt(x.sourceEntry)} | Now ${priceFmt(x.current)} | Dist ${pct(x.distancePct,2)} | SL ${priceFmt(x.sl)} | TP ${priceFmt(x.tp)} | RR ${fmt(x.rr,3)}${ageText}${size}${pos}${lev}${reason}`;
 }
-function traderBlock(result){
-  const h=result.health||{health:'WATCH',reason:'NO_HEALTH_DATA'};
-  const icon=healthIcon(h);
-  const header=`${icon} ${result.wallet.name} — ${h.health}${compactHealth(h)?' | '+compactHealth(h):''}`;
-  const ps=result.positions||[];
-  if(!ps.length)return [header+' | Position: NONE'];
-  return [header,...ps.map(x=>'   '+positionDetailLine(x))];
-}
-function marketSection(title,results){
-  const rows=[];
-  rows.push(title,'━━━━━━━━━━━━━━━━━━');
-  results.forEach(r=>rows.push(...traderBlock(r)));
+function marketSignals(title,items){
+  const rows=[title,'━━━━━━━━━━━━━━━━━━'];
+  if(items.length)items.forEach((x,i)=>rows.push(compactSignalLine(x,i+1)));
+  else rows.push('None');
   return rows;
 }
+
 async function main(){
   const started=Date.now();
   console.log(`[SIGNAL-ENGINE ${VERSION}][START] spot=${SPOT_WALLETS.length} futures=${FUTURES_WALLETS.length}`);
-  const spot=await Promise.all(SPOT_WALLETS.map(w=>scanSpot(w).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0,txs:0,health:spotHealth(w)}))));
+  const spot=await Promise.all(SPOT_WALLETS.map(w=>scanSpot(w).catch(e=>({wallet:w,signals:[],positions:[],recentBuys:[],error:e.message,scanned:0,txs:0,health:spotHealth(w)}))));
   const futures=await Promise.all(FUTURES_WALLETS.map(w=>scanFutures(w).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0,health:{health:'WATCH',reason:'HEALTH_DATA_ERROR',error:e.message}}))));
-  const allPositions=[...spot.flatMap(x=>x.positions),...futures.flatMap(x=>x.positions)];
-  const classified=allPositions.map(x=>({...x,status:classifyPosition(x)}));
-  const green=classified.filter(x=>x.status==='GREEN');
-  const yellow=classified.filter(x=>x.status==='YELLOW');
-  const red=classified.filter(x=>x.status==='RED');
-  const spotGreen=green.filter(x=>x.mint);
-  const futuresGreen=green.filter(x=>!x.mint);
+
+  // Telegram is intentionally signal-only. Health, current holdings, diagnostics,
+  // red/too-late candidates and decoder internals stay out of the user message.
+  const spotCandidates=spot.flatMap(x=>x.recentBuys||[]);
+  const futuresCandidates=futures.flatMap(x=>x.positions||[]);
+  const classified=[...spotCandidates,...futuresCandidates].map(x=>({...x,status:classifyPosition(x)}));
+  const spotGreen=classified.filter(x=>x.mint&&x.status==='GREEN');
+  const spotYellow=classified.filter(x=>x.mint&&x.status==='YELLOW');
+  const futuresGreen=classified.filter(x=>!x.mint&&x.status==='GREEN');
+  const futuresYellow=classified.filter(x=>!x.mint&&x.status==='YELLOW');
+
   const lines=[
     `🟣 CRYPTO WHALE SIGNAL ENGINE ${VERSION}`,
-    '📡 READ-ONLY | NO ORDERS | NO EXECUTION',
+    '📡 READ-ONLY | SIGNAL-ONLY | NO ORDERS',
     '━━━━━━━━━━━━━━━━━━',
-    `🕐 Cycle: ${new Date().toISOString()}`,
-    `🎯 Sources: SPOT ${SPOT_WALLETS.length}/5 | FUTURES ${FUTURES_WALLETS.length}/5`,
-    `🔎 Exact scans: ${spot.filter(x=>!x.error).length}/5 Spot | ${futures.filter(x=>!x.error).length}/5 Futures`,
-    `🟢 ENTRY READY: ${green.length} | 🟡 NEAR: ${yellow.length} | 🔴 TOO LATE: ${red.length}`,
-    `📏 Green ≤${ENTRY_WINDOW_PCT}% | Yellow ≤${WATCH_WINDOW_PCT}% | Min RR ${MIN_RR}`,
+    `🕐 ${new Date().toISOString()}`,
+    `📏 GREEN ≤${ENTRY_WINDOW_PCT}% + RR≥${MIN_RR} + Latency≤${MAX_SIGNAL_LATENCY_MIN}m | YELLOW = near/latency`,
     '',
-    '🟢 ENTRY READY — SPOT',
-    '━━━━━━━━━━━━━━━━━━'
+    ...marketSignals('🟢 SPOT — ENTRY READY',spotGreen),
+    '',
+    ...marketSignals('🟡 SPOT — NEAR / LATENCY',spotYellow),
+    '',
+    ...marketSignals('🟢 FUTURES — ENTRY READY',futuresGreen),
+    '',
+    ...marketSignals('🟡 FUTURES — NEAR / LATENCY',futuresYellow),
+    '',
+    `⏱ ${((Date.now()-started)/1000).toFixed(1)}s | Red/too-late signals hidden`
   ];
-  if(spotGreen.length)spotGreen.forEach((x,i)=>{lines.push(signalLine(x,i+1));if(x.mint)lines.push(`🔗 ${x.mint}`);});
-  else lines.push('No Spot entry opportunity right now.');
-
-  lines.push('','🟢 ENTRY READY — FUTURES','━━━━━━━━━━━━━━━━━━');
-  if(futuresGreen.length)futuresGreen.forEach((x,i)=>lines.push(signalLine(x,i+1)));
-  else lines.push('No Futures entry opportunity right now.');
-
-  lines.push('','🟡 NEAR ENTRY — SPOT');
-  const spotYellow=yellow.filter(x=>x.mint);
-  if(spotYellow.length)spotYellow.forEach(x=>lines.push('• '+blockedLine(x)));else lines.push('No Spot near-entry blocked positions.');
-
-  lines.push('','🟡 NEAR ENTRY — FUTURES');
-  const futuresYellow=yellow.filter(x=>!x.mint);
-  if(futuresYellow.length)futuresYellow.forEach(x=>lines.push('• '+blockedLine(x)));else lines.push('No Futures near-entry blocked positions.');
-
-  lines.push('','🔴 TOO LATE — SPOT');
-  const spotRed=red.filter(x=>x.mint);
-  if(spotRed.length)spotRed.forEach(x=>lines.push('• '+blockedLine(x)));else lines.push('No Spot positions are too far from source entry.');
-
-  lines.push('','🔴 TOO LATE — FUTURES');
-  const futuresRed=red.filter(x=>!x.mint);
-  if(futuresRed.length)futuresRed.forEach(x=>lines.push('• '+blockedLine(x)));else lines.push('No Futures positions are too far from source entry.');
-
-  // The key new section: each wallet is grouped under its own market and its
-  // Health is printed immediately above its CURRENT positions. This prevents
-  // a health status from becoming detached from the positions it describes.
-  lines.push('',...marketSection('🏥 SPOT TRADER HEALTH + CURRENT POSITIONS',spot));
-  lines.push('',...marketSection('🏥 FUTURES TRADER HEALTH + CURRENT POSITIONS',futures));
-
-  const errs=[...spot.filter(x=>x.error).map(x=>`SPOT ${x.wallet.name}: ${x.error}`),...futures.filter(x=>x.error).map(x=>`FUTURES ${x.wallet.name}: ${x.error}`)];
-  if(errs.length){lines.push('','⚠️ DATA ERRORS');errs.forEach(e=>lines.push(e));}
-  const spotActivity=spot.flatMap(x=>x.positions||[]); lines.push('','⚡ SPOT RECENT BUY ACTIVITY'); if(spotActivity.length) spotActivity.sort((a,b)=>(a.ageMin??999)-(b.ageMin??999)).forEach((x,i)=>lines.push(`${i+1}. ${x.wallet.name} | ${x.coin} LONG | BUY ${x.ageMin<1?Math.max(1,Math.round(x.ageMin*60))+'s':x.ageMin.toFixed(1)+'m'} ago | Entry ${fmt(x.sourceEntry)} | Now ${fmt(x.current)} | Dist ${pct(x.distancePct,2)} | RR ${fmt(x.rr,3)} | Size ${money(x.buyNotionalUsd)} | ${classifyPosition(x)==='GREEN'?'ENTRY READY':classifyPosition(x)==='YELLOW'?'NEAR / BLOCKED':'TOO LATE'}`)); else lines.push(`No valid recent BUY decoded in the last ${SPOT_MAX_ACTIVITY_AGE_MIN}m.`); lines.push(`📌 Spot authority: decoded recent swap BUY activity | Lookback ${SPOT_MAX_ACTIVITY_AGE_MIN}m | Funding: SOL/WSOL/USDC`,`📌 Futures entry timestamp: latest matching Hyperliquid Open Long/Open Short fill; current position entry remains the source price.`,`📌 No private keys, order placement, leverage changes, SL/TP orders, or execution handoff exist in this engine.`,`⏱ Runtime ${((Date.now()-started)/1000).toFixed(1)}s`);
-  console.log(`[SIGNAL-ENGINE ${VERSION}][DONE] signals=${green.length} positions=${allPositions.length} errors=${errs.length}`);
+  console.log(`[SIGNAL-ENGINE ${VERSION}][DONE] green=${spotGreen.length+futuresGreen.length} yellow=${spotYellow.length+futuresYellow.length} red-hidden=${classified.filter(x=>x.status==='RED').length}`);
   await telegram(lines.join('\n'));
 }
 
