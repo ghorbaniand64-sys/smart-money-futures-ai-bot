@@ -3,7 +3,7 @@
 // Exactly 10 fixed signal sources: 5 Spot + 5 Futures.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V1.8.2-WHALE-SIGNAL-FUTURES-DATA-FIX';
+const VERSION = 'V1.9-WHALE-SIGNAL-ULTRA-SHORT-SPOT-REPORT-FIX';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -17,25 +17,14 @@ const TP_PCT = Number(process.env.SIGNAL_SPOT_TP_PCT || 4.0);
 const HL_SL_PCT = Number(process.env.SIGNAL_FUTURES_SL_PCT || 1.5);
 const HL_TP_PCT = Number(process.env.SIGNAL_FUTURES_TP_PCT || 3.0);
 const FETCH_TIMEOUT = Number(process.env.SIGNAL_REQUEST_TIMEOUT_MS || 18000);
-const RECENT_SIGS = Number(process.env.SIGNAL_SPOT_SIGNATURES || 60);
-const SPOT_MIN_BUY_USD = Number(process.env.SIGNAL_SPOT_MIN_BUY_USD || 1000);
-const SPOT_STALE_HOURS = Number(process.env.SIGNAL_SPOT_STALE_HOURS || 48);
-const SPOT_BATCH_SIZE = Number(process.env.SIGNAL_SPOT_TX_BATCH || 1);
-const SPOT_BATCH_DELAY_MS = Number(process.env.SIGNAL_SPOT_BATCH_DELAY_MS || 650);
-const SPOT_RPC_RETRIES = Number(process.env.SIGNAL_SPOT_RPC_RETRIES || 2);
-const SPOT_429_COOLDOWN_MS = Number(process.env.SIGNAL_SPOT_429_COOLDOWN_MS || 5000);
-const SPOT_MAX_TX_REQUESTS = Number(process.env.SIGNAL_SPOT_MAX_TX_REQUESTS || 36);
-const FUTURES_FRESH_HOURS = Number(process.env.SIGNAL_FUTURES_FRESH_HOURS || 2);
-const FUTURES_WATCH_HOURS = Number(process.env.SIGNAL_FUTURES_WATCH_HOURS || 6);
-const FUTURES_MAX_SOURCE_DIST = Number(process.env.SIGNAL_FUTURES_COPY_MAX_SOURCE_DIST_PCT || 1.25);
-const FUTURES_MAX_FAVORABLE = Number(process.env.SIGNAL_FUTURES_COPY_MAX_FAVORABLE_PCT || 1.5);
-const FUTURES_MAX_ADVERSE = Number(process.env.SIGNAL_FUTURES_COPY_MAX_ADVERSE_PCT || 1);
-const FUTURES_MIN_LIQ_DIST = Number(process.env.SIGNAL_FUTURES_MIN_LIQ_DIST_PCT || 3);
-const FUTURES_FILL_LOOKBACK_HOURS = Number(process.env.SIGNAL_FUTURES_FILL_LOOKBACK_HOURS || 168);
+const RECENT_SIGS = Number(process.env.SIGNAL_SPOT_SIGNATURES || 30);
 const MAX_SPOT_POSITIONS = Number(process.env.SIGNAL_MAX_SPOT_POSITIONS_PER_WALLET || 4);
 const TG_LIMIT = 3800;
 const HEALTH_LOOKBACK_DAYS = Number(process.env.SIGNAL_HEALTH_LOOKBACK_DAYS || 30);
 const HEALTH_MIN_TRADES = Number(process.env.SIGNAL_HEALTH_MIN_TRADES || 20);
+const ULTRA_SHORT_ENABLED = true;
+const ULTRA_SHORT_MAX_AGE_SEC = Number(process.env.SIGNAL_ULTRA_SHORT_MAX_AGE_SEC || 120);
+const ULTRA_SHORT_MIN_VOLUME = Number(process.env.SIGNAL_ULTRA_SHORT_MIN_VOLUME || 0);
 
 const SPOT_WALLETS = [
   {name:'DECU', address:'4vw54BmAogeRV3vPKWyFet5yf8DTLcREzdSzx4rw9Ud9'},
@@ -69,43 +58,21 @@ function pct(v,d=2){return Number.isFinite(Number(v))?`${Number(v).toFixed(d)}%`
 function fmt(v,d=4){return Number.isFinite(Number(v))?Number(v).toFixed(d):'N/A'}
 function rr(sl,tp){const a=Math.abs(Number(sl));return a>0?Math.abs(Number(tp))/a:0}
 function age(ms){if(!ms)return 'N/A';const h=(Date.now()-ms)/3600000;return h<1?`${Math.max(1,Math.round(h*60))}m`:`${h.toFixed(1)}h`}
-function ageText(ms){return age(ms)}
-function finite(v){return Number.isFinite(Number(v))?Number(v):null}
 
-let solCooldownUntil = 0;
-async function fetchJson(url, options={}, label='request', retries=0){
-  let last;
-  for(let attempt=0;attempt<=retries;attempt++){
-    const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),FETCH_TIMEOUT);
-    try{
-      const r=await fetch(url,{...options,signal:ctl.signal,headers:{'accept':'application/json',...(options.headers||{})}});
-      const text=await r.text();
-      if(!r.ok){
-        const err=new Error(`${label}:HTTP_${r.status}:${text.slice(0,180)}`); err.status=r.status;
-        const retryAfter=Number(r.headers.get('retry-after'));
-        if(r.status===429 && retryAfter>0) err.retryAfterMs=Math.min(15000,retryAfter*1000);
-        throw err;
-      }
-      return text?JSON.parse(text):null;
-    }catch(e){
-      last=e;
-      if(attempt<retries){
-        const base=e.status===429 ? (e.retryAfterMs||SPOT_429_COOLDOWN_MS) : 500*Math.pow(2,attempt);
-        await sleep(Math.min(15000,base));
-      }
-    }finally{clearTimeout(timer)}
-  }
-  throw last;
-}
-async function hl(body,label='hl'){return fetchJson(HL_INFO,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)},label,2)}
-async function sol(body,label='solana'){
-  if(Date.now()<solCooldownUntil) await sleep(solCooldownUntil-Date.now());
+async function fetchJson(url, options={}, label='request'){
+  const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),FETCH_TIMEOUT);
   try{
-    return await fetchJson(SOL_RPC,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:Date.now(),...body})},label,SPOT_RPC_RETRIES);
-  }catch(e){
-    if(e?.status===429) solCooldownUntil=Date.now()+SPOT_429_COOLDOWN_MS;
-    throw e;
-  }
+    const r=await fetch(url,{...options,signal:ctl.signal,headers:{'accept':'application/json',...(options.headers||{})}});
+    const text=await r.text();
+    if(!r.ok)throw new Error(`${label}:HTTP_${r.status}:${text.slice(0,180)}`);
+    return text?JSON.parse(text):null;
+  }finally{clearTimeout(timer)}
+}
+async function hl(body,label='hl'){
+  return fetchJson(HL_INFO,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)},label);
+}
+async function sol(body,label='solana'){
+  return fetchJson(SOL_RPC,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:Date.now(),...body})},label);
 }
 async function telegram(text){
   if(!TG_TOKEN||!TG_CHAT){console.log('[TELEGRAM] credentials missing');return}
@@ -153,78 +120,28 @@ async function solHoldings(address){
   const r=await sol({method:'getTokenAccountsByOwner',params:[address,{programId:'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'},{encoding:'jsonParsed'}]},'getTokenAccountsByOwner');
   return (r?.result?.value||[]).map(x=>{const i=x?.account?.data?.parsed?.info||{};return {mint:i.mint,amount:n(i.tokenAmount?.uiAmount),decimals:n(i.tokenAmount?.decimals)}}).filter(x=>x.mint&&x.amount>0);
 }
-function quoteSpentFromTx(tx,wallet,solUsd){
-  const tokenD=ownerTokenDeltas(tx,wallet);
-  const keys=tx?.transaction?.message?.accountKeys||[];
-  const idx=keys.findIndex(k=>String(k?.pubkey||'').toLowerCase()===wallet.toLowerCase()&&k?.signer);
-  let best=0,quote='';
-  if(idx>=0){
-    const sd=(n(tx?.meta?.postBalances?.[idx])-n(tx?.meta?.preBalances?.[idx]))/1e9;
-    if(sd<0){best=Math.abs(sd)*solUsd;quote='SOL'}
-  }
-  for(const d of tokenD){
-    if(d.delta>=0)continue;
-    if(d.mint==='EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' ||
-       d.mint==='Es9vMFrzaCERmJfrF4H2FYD4G8xWm7hYq2m7Vx7s9m7'){
-      const usd=Math.abs(d.delta);
-      if(usd>best){best=usd;quote=d.mint}
-    }
-  }
-  return {usd:best,quote};
-}
 async function scanSpot(w){
-  const SOL='So11111111111111111111111111111111111111112';
-  const solInfo=await tokenInfo(SOL);
-  const solUsd=solInfo.price||await tokenPrice(SOL);
+  const solInfo=await tokenInfo('So11111111111111111111111111111111111111112');
+  const solUsd=solInfo.price||await tokenPrice('So11111111111111111111111111111111111111112');
   const [sigs,holdings]=await Promise.all([solSignatures(w.address),solHoldings(w.address)]);
-  const held=new Set(holdings.filter(x=>x.amount>0&&x.mint!==SOL).map(x=>x.mint));
-  const latestBuys=new Map();
-  const infoCache=new Map();
-  let txs=0, requests=0, partial=false, dataError=null;
-  for(let i=0;i<sigs.length && requests<Math.min(RECENT_SIGS,SPOT_MAX_TX_REQUESTS);i+=SPOT_BATCH_SIZE){
-    const batch=sigs.slice(i,i+SPOT_BATCH_SIZE);
-    for(const sig of batch){
-      if(requests>=SPOT_MAX_TX_REQUESTS)break;
-      requests++;
-      try{
-        const tx=await solTx(sig.signature);
-        if(!tx)continue;
-        txs++;
-        const blockTime=n(tx.blockTime||sig.blockTime)*1000;
-        if(blockTime && Date.now()-blockTime>SPOT_STALE_HOURS*3600000){ i=sigs.length; break; }
-        const deltas=ownerTokenDeltas(tx,w.address);
-        for(const d of deltas){
-          if(!held.has(d.mint)||d.delta<=0)continue;
-          const q=quoteSpentFromTx(tx,w.address,solUsd);
-          if(q.usd<SPOT_MIN_BUY_USD)continue;
-          const entry=q.usd/d.delta;
-          const prev=latestBuys.get(d.mint);
-          if(!prev || blockTime>prev.blockTime) latestBuys.set(d.mint,{sig:sig.signature,tx,blockTime,delta:d.delta,q,entry});
-        }
-        if(latestBuys.size>=held.size) break;
-      }catch(e){
-        console.log(`[SPOT][TX] ${w.name} ${e.message}`);
-        if(e?.status===429){partial=true;dataError='SOLANA_RPC_429';break;}
-      }
-    }
-    if(partial || latestBuys.size>=held.size)break;
-    await sleep(SPOT_BATCH_DELAY_MS);
+  const txs=[];
+  for(const s of sigs.slice(0,Math.min(sigs.length,RECENT_SIGS))){try{const tx=await solTx(s.signature);if(tx)txs.push({sig:s.signature,tx,blockTime:n(tx.blockTime||s.blockTime)*1000})}catch(e){console.log(`[SPOT][TX] ${w.name} ${e.message}`)}}
+  const candidates=[];
+  for(const h of holdings.slice(0,20)){
+    const row=txs.find(r=>ownerTokenDeltas(r.tx,w.address).some(d=>d.mint===h.mint&&d.delta>0));
+    if(!row)continue;
+    const d=ownerTokenDeltas(row.tx,w.address).find(x=>x.mint===h.mint&&x.delta>0);
+    const sd=solDelta(row.tx);
+    const info=await tokenInfo(h.mint); const px=info.price||await tokenPrice(h.mint); if(!(px>0)||!(d?.delta>0))continue;
+    const sourceEntry=Math.abs(sd)*solUsd/d.delta; if(!(sourceEntry>0))continue;
+    const dist=(px/sourceEntry-1)*100;
+    const sl=sourceEntry*(1-SL_PCT/100),tp=sourceEntry*(1+TP_PCT/100),R=rr(sourceEntry-sl,tp-sourceEntry);
+    candidates.push({wallet:w,coin:info.symbol,mint:h.mint,side:'LONG',balance:h.amount,sourceEntry,current:px,distancePct:dist,sl,tp,rr:R,age:row.blockTime,liquidity:info.liquidity,volume24h:info.volume24h,tx:row.sig,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R>=MIN_RR,
+      ultraShort: ULTRA_SHORT_ENABLED && (Date.now()-row.blockTime)<=ULTRA_SHORT_MAX_AGE_SEC*1000,
+      signalMode: ULTRA_SHORT_ENABLED?'SPOT_ULTRA_SHORT':'SPOT_NORMAL'});
+    if(candidates.length>=MAX_SPOT_POSITIONS)break;
   }
-  if(requests>=SPOT_MAX_TX_REQUESTS && latestBuys.size<held.size) partial=true;
-  const getInfo=async mint=>{if(!infoCache.has(mint))infoCache.set(mint,tokenInfo(mint));return infoCache.get(mint)};
-  const positions=[];
-  for(const h of holdings.filter(x=>x.amount>0).slice(0,40)){
-    if(h.mint===SOL)continue;
-    const buy=latestBuys.get(h.mint); if(!buy)continue;
-    const buyAge=(Date.now()-buy.blockTime)/3600000;
-    if(buyAge<0||buyAge>SPOT_STALE_HOURS)continue;
-    const info=await getInfo(h.mint), px=info.price||await tokenPrice(h.mint); if(!(px>0))continue;
-    const dist=(px/buy.entry-1)*100;
-    const sl=buy.entry*(1-SL_PCT/100),tp=buy.entry*(1+TP_PCT/100),R=rr(buy.entry-sl,tp-buy.entry);
-    positions.push({wallet:w,market:'SPOT',coin:info.symbol,mint:h.mint,side:'LONG',sourceEntry:buy.entry,current:px,distancePct:dist,sl,tp,rr:R,buyTime:buy.blockTime,buyAgeHours:buyAge,quoteUsd:buy.q.usd,quote:buy.q.quote,tx:buy.sig,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R>=MIN_RR});
-    if(positions.length>=MAX_SPOT_POSITIONS)break;
-  }
-  return {wallet:w,signals:positions.filter(x=>x.eligible),positions,scanned:sigs.length,txs,holdings:holdings.length,health:spotHealth(w),partial,dataError,requests};
+  return {wallet:w,signals:candidates.filter(x=>x.eligible),positions:candidates,scanned:sigs.length,txs:txs.length,holdings:holdings.length,health:spotHealth(w)};
 }
 
 function hlPositions(state){
@@ -273,108 +190,143 @@ function healthLine(h,w){
   return parts.join(' | ');
 }
 
-async function openingTimes(w, positions){
-  const out=new Map();
-  try{
-    const startTime=Date.now()-FUTURES_FILL_LOOKBACK_HOURS*3600000;
-    const fills=await hl({type:'userFillsByTime',user:w.address,startTime},`fills:${w.name}`);
-    const rows=Array.isArray(fills)?fills:[];
-    for(const p of positions){
-      const want=p.side==='LONG'?'open long':'open short';
-      const ts=rows.filter(f=>String(f.coin||'').toUpperCase()===String(p.coin).toUpperCase() && String(f.dir||'').toLowerCase().includes(want)).map(f=>n(f.time)).filter(x=>x>0);
-      out.set(p.coin,ts.length?Math.max(...ts):null);
-    }
-    return {times:out,rows:rows.length,error:null};
-  }catch(e){
-    for(const p of positions) out.set(p.coin,null);
-    return {times:out,rows:0,error:e.message};
-  }
-}
 async function scanFutures(w){
-  let health={health:'WATCH',reason:'UNAVAILABLE'};
-  try{health=await futuresHealth(w);}catch(e){health={health:'WATCH',reason:'HEALTH_DATA_ERROR',error:e.message};}
-  let state,mids;
-  try{state=await hl({type:'clearinghouseState',user:w.address},`state:${w.name}`);}catch(e){return {wallet:w,signals:[],positions:[],scanned:0,health,error:`STATE_DATA_ERROR:${e.message}`,dataError:'HYPERLIQUID_STATE'};}
-  try{mids=await hl({type:'allMids'},`mids:${w.name}`);}catch(e){return {wallet:w,signals:[],positions:[],scanned:0,health,error:`MIDS_DATA_ERROR:${e.message}`,dataError:'HYPERLIQUID_MIDS'};}
-  const ps=hlPositions(state), positions=[], signals=[];
-  const ot=await openingTimes(w,ps);
+  const health=await futuresHealth(w);
+  const state=await hl({type:'clearinghouseState',user:w.address},`state:${w.name}`); const ps=hlPositions(state);
+  const mids=await hl({type:'allMids'},`mids:${w.name}`); const signals=[],positions=[];
   for(const p of ps){
-    const mid=n(mids?.[p.coin]);if(!(mid>0)||!(p.entry>0))continue;
+    const mid=n(mids?.[p.coin]); if(!(mid>0)||!(p.entry>0))continue;
     const dist=(mid/p.entry-1)*100*(p.side==='LONG'?1:-1);
-    const addTime=ot.times.get(p.coin)||null, addAgeHours=addTime?(Date.now()-addTime)/3600000:null;
-    const sl=p.side==='LONG'?p.entry*(1-HL_SL_PCT/100):p.entry*(1+HL_SL_PCT/100),tp=p.side==='LONG'?p.entry*(1+HL_TP_PCT/100):p.entry*(1-HL_TP_PCT/100);
-    const R=rr(Math.abs(p.entry-sl),Math.abs(tp-p.entry)),liqDist=finite(p.liq)?Math.abs(mid-p.liq)/mid*100:null,reasons=[];
-    if(addAgeHours===null)reasons.push(ot.error?'OPEN_TIME_DATA_ERROR':'OPEN_TIME_UNKNOWN');
-    else if(addAgeHours>FUTURES_WATCH_HOURS)reasons.push(`POSITION_OLD>${FUTURES_WATCH_HOURS}h`);
-    if(Math.abs(dist)>FUTURES_MAX_SOURCE_DIST)reasons.push(`SOURCE_DIST>${FUTURES_MAX_SOURCE_DIST}%`);
-    if(dist>FUTURES_MAX_FAVORABLE)reasons.push(`FAVORABLE_MOVE>${FUTURES_MAX_FAVORABLE}%`);
-    if(dist<-FUTURES_MAX_ADVERSE)reasons.push(`ADVERSE_MOVE>${FUTURES_MAX_ADVERSE}%`);
-    if(liqDist!==null&&liqDist<FUTURES_MIN_LIQ_DIST)reasons.push(`LIQ_DIST<${FUTURES_MIN_LIQ_DIST}%`);
-    if(R<MIN_RR)reasons.push(`RR<${MIN_RR}`);
-    const eligible=addAgeHours!==null&&addAgeHours<=FUTURES_FRESH_HOURS&&reasons.length===0;
-    const x={wallet:w,market:'FUTURES',coin:p.coin,side:p.side,sourceEntry:p.entry,current:mid,distancePct:dist,sl,tp,rr:R,liq:p.liq,liqDist,leverage:p.leverage,positionValue:p.positionValue,unrealized:p.unrealized,addTime,addAgeHours,reasons,eligible};
-    positions.push(x);if(eligible)signals.push(x);
+    const sl=p.side==='LONG'?p.entry*(1-HL_SL_PCT/100):p.entry*(1+HL_SL_PCT/100);
+    const tp=p.side==='LONG'?p.entry*(1+HL_TP_PCT/100):p.entry*(1-HL_TP_PCT/100);
+    const R=rr(Math.abs(p.entry-sl),Math.abs(tp-p.entry));
+    const x={wallet:w,coin:p.coin,side:p.side,sourceEntry:p.entry,current:mid,distancePct:dist,sl,tp,rr:R,size:p.size,positionValue:p.positionValue,unrealized:p.unrealized,leverage:p.leverage,liq:p.liq,margin:p.margin,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R>=MIN_RR};
+    positions.push(x);if(x.eligible)signals.push(x);
   }
-  return {wallet:w,signals,positions,scanned:1,health,dataError:ot.error?'HYPERLIQUID_FILL_DATA':null,openingRows:ot.rows};
+  return {wallet:w,signals,positions,scanned:1,health};
+}
+function signalLine(x,i){
+  return `${i}. ${x.wallet.name} | ${x.coin} | ${x.side}\n   Source Entry ${fmt(x.sourceEntry)} | Now ${fmt(x.current)} | Dist ${pct(x.distancePct,2)}\n   SL ${fmt(x.sl)} | TP ${fmt(x.tp)} | RR ${fmt(x.rr,2)} | ${x.leverage?`Lev ${fmt(x.leverage,1)}x | `:''}${x.positionValue?`Pos ${money(x.positionValue)} | `:''}${x.liquidity?`Liq ${money(x.liquidity)}`:''}`;
+}
+function distanceAbs(x){return Math.abs(Number(x.distancePct));}
+function setupReason(x){
+  const why=[];
+  if(distanceAbs(x)>ENTRY_WINDOW_PCT)why.push(`DIST>${ENTRY_WINDOW_PCT}%`);
+  if(x.rr<MIN_RR)why.push(`RR<${MIN_RR}`);
+  return why;
+}
+function classifyPosition(x){
+  const dist=distanceAbs(x);
+  const why=setupReason(x);
+  if(dist<=ENTRY_WINDOW_PCT && why.length===0)return 'GREEN';
+  if(dist<=WATCH_WINDOW_PCT)return 'YELLOW';
+  return 'RED';
+}
+function blockedLine(x){
+  const cls=classifyPosition(x);
+  const why=setupReason(x);
+  const reason=why.length?why.join(','):'NO_VALID_SETUP';
+  const icon=cls==='YELLOW'?'🟡':'🔴';
+  const label=cls==='YELLOW'?'NEAR ENTRY':'TOO LATE';
+  return `${icon} ${x.wallet.name} ${x.coin} ${x.side} | now=${fmt(x.current)} | entry=${fmt(x.sourceEntry)} | dist=${pct(x.distancePct,2)} | ${label} | BLOCK ${reason}`;
 }
 
-function compactSignal(x){
-  const age=x.market==='SPOT'?ageText(x.buyTime):ageText(x.addTime);
-  return [
-    `${x.wallet.name} — ${x.coin} ${x.side}`,
-    `Entry ${fmt(x.sourceEntry)} | Now ${fmt(x.current)} | Dist ${pct(x.distancePct)}`,
-    `SL ${fmt(x.sl)} | TP ${fmt(x.tp)} | RR ${fmt(x.rr,2)} | Age ${age}`,
-    x.market==='SPOT'?`BUY ${money(x.quoteUsd)}`:''
-  ].filter(Boolean);
+function healthIcon(h){return h?.health==='HEALTHY'?'🟢':h?.health==='WATCH'?'🟡':'🔴';}
+function compactHealth(h){
+  const p=[];
+  if(Number.isFinite(h?.realized))p.push(`30D ${money(h.realized)}`);
+  else if(Number.isFinite(h?.pnl30d))p.push(`30D ${h.pnl30d.toFixed(1)} SOL`);
+  if(Number.isFinite(h?.wr))p.push(`WR ${h.wr.toFixed(1)}%`);
+  else if(Number.isFinite(h?.wr30d))p.push(`WR ${h.wr30d.toFixed(1)}%`);
+  if(Number.isFinite(h?.pf))p.push(`PF ${h.pf.toFixed(2)}`);
+  if(Number.isFinite(h?.count))p.push(`fills ${h.count}`);
+  else if(Number.isFinite(h?.trades30d))p.push(`trades ${h.trades30d}`);
+  return p.join(' | ');
 }
-function watchLine(x){
-  const why=x.reasons?.length?x.reasons.join(','):'WAIT_FOR_VALID_FRESH_ENTRY';
-  return `${x.wallet.name} ${x.coin} ${x.side} | Dist ${pct(x.distancePct)} | ${why}`;
+function positionDetailLine(x){
+  const cls=classifyPosition(x);
+  const icon=cls==='GREEN'?'🟢':cls==='YELLOW'?'🟡':'🔴';
+  const label=cls==='GREEN'?'ENTRY READY':cls==='YELLOW'?'NEAR / BLOCKED':'TOO LATE';
+  const why=setupReason(x);
+  const block=cls==='GREEN'?'VALID':(why.length?why.join(','):'NO_VALID_SETUP');
+  const lev=Number.isFinite(Number(x.leverage))?` | Lev ${fmt(x.leverage,1)}x`:'';
+  const pos=Number.isFinite(Number(x.positionValue))?` | Pos ${money(x.positionValue)}`:'';
+  const up=Number.isFinite(Number(x.unrealized))?` | uPnL ${money(x.unrealized)}`:'';
+  return `${icon} ${x.coin} ${x.side} | Now ${fmt(x.current)} | Entry ${fmt(x.sourceEntry)} | Dist ${pct(x.distancePct,2)} | SL ${fmt(x.sl)} | TP ${fmt(x.tp)} | RR ${fmt(x.rr,2)}${lev}${pos}${up} | ${label}${cls==='GREEN'?'':' | '+block}`;
 }
-function traderHealthShort(r){
-  const h=r.health||{},icon=h.health==='HEALTHY'?'🟢':h.health==='WATCH'?'🟡':'🔴';
-  return `${icon}${r.wallet.name}`;
+function traderBlock(result){
+  const h=result.health||{health:'WATCH',reason:'NO_HEALTH_DATA'};
+  const icon=healthIcon(h);
+  const header=`${icon} ${result.wallet.name} — ${h.health}${compactHealth(h)?' | '+compactHealth(h):''}`;
+  const ps=result.positions||[];
+  if(!ps.length)return [header+' | Position: NONE'];
+  return [header,...ps.map(x=>'   '+positionDetailLine(x))];
+}
+function marketSection(title,results){
+  const rows=[];
+  rows.push(title,'━━━━━━━━━━━━━━━━━━');
+  results.forEach(r=>rows.push(...traderBlock(r)));
+  return rows;
 }
 async function main(){
   const started=Date.now();
-  const spot=await Promise.all(SPOT_WALLETS.map(w=>scanSpot(w).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0,health:spotHealth(w)}))));
-  const futures=await Promise.all(FUTURES_WALLETS.map(w=>scanFutures(w).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0,health:{health:'WATCH'}}))));
-  const all=[...spot.flatMap(x=>x.positions),...futures.flatMap(x=>x.positions)];
-  const green=all.filter(x=>x.eligible);
-  const yellow=all.filter(x=>!x.eligible&&Math.abs(Number(x.distancePct))<=WATCH_WINDOW_PCT);
-  const red=all.filter(x=>!x.eligible&&Math.abs(Number(x.distancePct))>WATCH_WINDOW_PCT);
-  const sg=green.filter(x=>x.market==='SPOT'),fg=green.filter(x=>x.market==='FUTURES');
-  const sy=yellow.filter(x=>x.market==='SPOT').slice(0,3),fy=yellow.filter(x=>x.market==='FUTURES').slice(0,3);
+  console.log(`[SIGNAL-ENGINE ${VERSION}][START] spot=${SPOT_WALLETS.length} futures=${FUTURES_WALLETS.length}`);
+  const spot=await Promise.all(SPOT_WALLETS.map(w=>scanSpot(w).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0,txs:0,health:spotHealth(w)}))));
+  const futures=await Promise.all(FUTURES_WALLETS.map(w=>scanFutures(w).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0,health:{health:'WATCH',reason:'HEALTH_DATA_ERROR',error:e.message}}))));
+  const allPositions=[...spot.flatMap(x=>x.positions),...futures.flatMap(x=>x.positions)];
+  const classified=allPositions.map(x=>({...x,status:classifyPosition(x)}));
+  const green=classified.filter(x=>x.status==='GREEN');
+  const yellow=classified.filter(x=>x.status==='YELLOW');
+  const red=classified.filter(x=>x.status==='RED');
+  const spotGreen=green.filter(x=>x.mint);
+  const futuresGreen=green.filter(x=>!x.mint);
   const lines=[
     `🟣 CRYPTO WHALE SIGNAL ENGINE ${VERSION}`,
-    '📡 READ-ONLY | 5 SPOT + 5 FUTURES',
+    '📡 READ-ONLY | NO ORDERS | NO EXECUTION',
     '━━━━━━━━━━━━━━━━━━',
-    `🕐 ${new Date().toISOString()}`,
-    `🟢 COPY NOW: ${green.length} | 🟡 WATCH: ${yellow.length} | 🔴 NO ENTRY: ${red.length}`,
+    `🕐 Cycle: ${new Date().toISOString()}`,
+    `🎯 Sources: SPOT ${SPOT_WALLETS.length}/5 | FUTURES ${FUTURES_WALLETS.length}/5`,
+    `🔎 Exact scans: ${spot.filter(x=>!x.error).length}/5 Spot | ${futures.filter(x=>!x.error).length}/5 Futures`,
+    `🟢 ENTRY READY: ${green.length} | 🟡 NEAR: ${yellow.length} | 🔴 TOO LATE: ${red.length}`,
+    `📏 Green ≤${ENTRY_WINDOW_PCT}% | Yellow ≤${WATCH_WINDOW_PCT}% | Min RR ${MIN_RR}`,
     '',
-    '🟢 COPY NOW','━━━━━━━━━━━━━━━━━━'
+    '🟢 ENTRY READY — SPOT',
+    '━━━━━━━━━━━━━━━━━━'
   ];
-  if(green.length){
-    if(sg.length){lines.push('SPOT');sg.slice(0,5).forEach(x=>{lines.push(...compactSignal(x),'')})}
-    if(fg.length){lines.push('FUTURES');fg.slice(0,5).forEach(x=>{lines.push(...compactSignal(x),'')})}
-  }else lines.push('No valid fresh copy opportunity.');
-  lines.push('🟡 WATCH','━━━━━━━━━━━━━━━━━━');
-  if(sy.length){lines.push('SPOT');sy.forEach(x=>lines.push(watchLine(x)))}
-  if(fy.length){lines.push('FUTURES');fy.forEach(x=>lines.push(watchLine(x)))}
-  if(!sy.length&&!fy.length)lines.push('No near-entry setups.');
-  lines.push('','🏥 TRADERS','━━━━━━━━━━━━━━━━━━',
-    'SPOT  '+spot.map(traderHealthShort).join('  '),
-    'FUT    '+futures.map(traderHealthShort).join('  '));
-  const errs=[...spot.filter(x=>x.error||x.partial||x.dataError).map(x=>`SPOT ${x.wallet.name}${x.dataError?` (${x.dataError})`:''}`),...futures.filter(x=>x.error||x.dataError).map(x=>`FUTURES ${x.wallet.name}${x.dataError?` (${x.dataError})`:''}`)];
-  if(errs.length)lines.push('',`⚠️ DATA INCOMPLETE: ${errs.join(', ')}`);
-  const spotOk=spot.filter(x=>!x.error&&!x.partial).length, futOk=futures.filter(x=>!x.error&&!x.dataError).length;
-  lines.splice(4,0,`📊 DATA: Spot ${spotOk}/5 complete | Futures ${futOk}/5 complete`);
-  lines.push('',`⏱ Runtime ${((Date.now()-started)/1000).toFixed(1)}s`);
-  console.log(`[SIGNAL-ENGINE ${VERSION}][DONE] green=${green.length} watch=${yellow.length} red=${red.length}`);
-  await telegram(lines.join('\\n'));
+  if(spotGreen.length)spotGreen.forEach((x,i)=>{lines.push(signalLine(x,i+1));if(x.mint)lines.push(`🔗 ${x.mint}`);});
+  else lines.push('No Spot entry opportunity right now.');
+
+  lines.push('','🟢 ENTRY READY — FUTURES','━━━━━━━━━━━━━━━━━━');
+  if(futuresGreen.length)futuresGreen.forEach((x,i)=>lines.push(signalLine(x,i+1)));
+  else lines.push('No Futures entry opportunity right now.');
+
+  lines.push('','🟡 NEAR ENTRY — SPOT');
+  const spotYellow=yellow.filter(x=>x.mint);
+  if(spotYellow.length)spotYellow.forEach(x=>lines.push('• '+blockedLine(x)));else lines.push('No Spot near-entry blocked positions.');
+
+  lines.push('','🟡 NEAR ENTRY — FUTURES');
+  const futuresYellow=yellow.filter(x=>!x.mint);
+  if(futuresYellow.length)futuresYellow.forEach(x=>lines.push('• '+blockedLine(x)));else lines.push('No Futures near-entry blocked positions.');
+
+  lines.push('','🔴 TOO LATE — SPOT');
+  const spotRed=red.filter(x=>x.mint);
+  if(spotRed.length)spotRed.forEach(x=>lines.push('• '+blockedLine(x)));else lines.push('No Spot positions are too far from source entry.');
+
+  lines.push('','🔴 TOO LATE — FUTURES');
+  const futuresRed=red.filter(x=>!x.mint);
+  if(futuresRed.length)futuresRed.forEach(x=>lines.push('• '+blockedLine(x)));else lines.push('No Futures positions are too far from source entry.');
+
+  // The key new section: each wallet is grouped under its own market and its
+  // Health is printed immediately above its CURRENT positions. This prevents
+  // a health status from becoming detached from the positions it describes.
+  lines.push('',...marketSection('🏥 SPOT TRADER HEALTH + CURRENT POSITIONS',spot));
+  lines.push('',...marketSection('🏥 FUTURES TRADER HEALTH + CURRENT POSITIONS',futures));
+
+  const errs=[...spot.filter(x=>x.error).map(x=>`SPOT ${x.wallet.name}: ${x.error}`),...futures.filter(x=>x.error).map(x=>`FUTURES ${x.wallet.name}: ${x.error}`)];
+  if(errs.length){lines.push('','⚠️ DATA ERRORS');errs.forEach(e=>lines.push(e));}
+  lines.push('','📌 Mode: Spot Ultra-Short enabled | Futures standard','📌 Health is monitoring only.','📌 Spot entry uses reconstructed source entry data.','📌 No private keys, order placement, leverage changes, SL/TP orders, or execution handoff exist in this engine.',`⏱ Runtime ${((Date.now()-started)/1000).toFixed(1)}s`);
+  console.log(`[SIGNAL-ENGINE ${VERSION}][DONE] signals=${green.length} positions=${allPositions.length} errors=${errs.length}`);
+  await telegram(lines.join('\n'));
 }
-main().catch(async e=>{
-  console.error(`[SIGNAL-ENGINE][FATAL] ${e.stack||e}`);
-  await telegram(`🟣 CRYPTO WHALE SIGNAL ENGINE ${VERSION}\\n💥 FATAL\\n${String(e.message||e).slice(0,1000)}`);
-  process.exitCode=1;
-});
+
+main().catch(async e=>{console.error(`[SIGNAL-ENGINE][FATAL] ${e.stack||e}`);await telegram(`🟣 CRYPTO WHALE SIGNAL ENGINE ${VERSION}\n📡 READ-ONLY | NO EXECUTION\n💥 FATAL\n${String(e.message||e).slice(0,1200)}`);process.exitCode=1});
