@@ -3,7 +3,7 @@
 // Exactly 10 fixed signal sources: 5 Spot + 5 Futures.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V2.8-WHALE-SIGNAL-TRUE-OPEN-FILL-DETECTION';
+const VERSION = 'V2.9-WHALE-SIGNAL-CANDIDATE-DIAGNOSTICS';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -332,25 +332,32 @@ async function scanFutures(w,mids,now){
   console.log(`[FUTURES][OPEN-DETECT] ${w.name} fills=${fills.length} dirOpen=${dirOpen} derivedOpen=${derivedOpen} closes/reduces=${rejectedClose} invalid=${invalid} candidates=${latest.size}`);
 
   const signals=[];
-  for(const f of [...latest.values()].sort((a,b)=>n(b?.time)-n(a?.time))){
+  const sortedCandidates=[...latest.values()].sort((a,b)=>n(b?.time)-n(a?.time));
+  console.log(`[FUTURES][CANDIDATE-AUDIT] ${w.name} evaluating=${sortedCandidates.length}`);
+  for(const f of sortedCandidates){
     const coin=String(f.coin);
     const side=f._derivedSide || (f.dir==='Open Long'?'LONG':'SHORT');
     const entry=n(f.px);
     const mid=n(mids?.[coin]);
-    if(!(entry>0)||!(mid>0)){ console.log(`[FUTURES][DROP] ${w.name} ${coin} side=${side} entry=${entry} mid=${mid}`); continue; }
+    const ageMin=Math.max(0,(now-n(f.time))/60000);
+    if(!(entry>0)||!(mid>0)){
+      console.log(`[FUTURES][DROP] ${w.name} | ${coin} | ${side} | Fill ${priceFmt(entry)} | Now ${priceFmt(mid)} | Age ${ageMin.toFixed(1)}m | REASON=PRICE_UNAVAILABLE`);
+      continue;
+    }
     const dist=(mid/entry-1)*100*(side==='LONG'?1:-1);
     const sl=side==='LONG'?entry*(1-HL_SL_PCT/100):entry*(1+HL_SL_PCT/100);
     const tp=side==='LONG'?entry*(1+HL_TP_PCT/100):entry*(1-HL_TP_PCT/100);
     const R=normalizedRR(Math.abs(entry-sl),Math.abs(tp-entry));
-    const ageMin=Math.max(0,(now-n(f.time))/60000);
-    const size=n(f.sz);
-    signals.push({
-      wallet:w,coin,side,sourceEntry:entry,current:mid,distancePct:dist,sl,tp,rr:R,
-      size,positionValue:size*entry,unrealized:null,leverage:null,liq:null,margin:null,
-      openedAt:n(f.time),ageMin,openFillPx:entry,openFillSize:size,openFillHash:f.hash||null,
+    const x={wallet:w,coin,side,sourceEntry:entry,current:mid,distancePct:dist,sl,tp,rr:R,
+      size:n(f.sz),positionValue:n(f.sz)*entry,unrealized:null,leverage:null,liq:null,margin:null,
+      openedAt:n(f.time),ageMin,openFillPx:entry,openFillSize:n(f.sz),openFillHash:f.hash||null,
       activitySource:'RECENT_HYPERLIQUID_OPEN_FILL',fillDir:f.dir,
-      eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR
-    });
+      eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR};
+    const auditStatus=classifyPosition(x);
+    const reasons=setupReason(x);
+    const reason=auditStatus==='YELLOW'?yellowReason(x):(reasons.length?reasons.join(' + '):'READY');
+    console.log(`[FUTURES][CANDIDATE] ${w.name} | ${coin} | ${side} | Fill ${priceFmt(entry)} | Now ${priceFmt(mid)} | Dist ${pct(dist,2)} | Age ${ageMin.toFixed(1)}m | RR ${fmt(R,3)} | STATUS=${auditStatus} | REASON=${reason}`);
+    signals.push(x);
   }
   return {wallet:w,signals,positions:signals,scanned:fills.length,health:{health:'SIGNAL_ONLY',reason:'HEALTH_NOT_QUERIED_IN_SIGNAL_CYCLE'},activityLookbackMin:FUTURES_ACTIVITY_LOOKBACK_MIN};
 }
@@ -456,6 +463,11 @@ async function main(){
   // Telegram is intentionally signal-only. Health, current holdings, diagnostics,
   // red/too-late candidates and decoder internals stay out of the user message.
   const spotCandidates=spot.flatMap(x=>x.recentBuys||[]);
+  for(const x of spotCandidates){
+    const st=classifyPosition(x);
+    const reasons=setupReason(x);
+    console.log(`[SPOT][CANDIDATE] ${x.wallet?.name||'?'} | ${x.coin||'?'} | ${x.side||'LONG'} | Entry ${priceFmt(x.sourceEntry)} | Now ${priceFmt(x.current)} | Dist ${pct(x.distancePct,2)} | Age ${Number(x.ageMin||0).toFixed(1)}m | RR ${fmt(x.rr,3)} | STATUS=${st} | REASON=${st==='YELLOW'?yellowReason(x):(reasons.length?reasons.join(' + '):'READY')}`);
+  }
   const futuresCandidates=futures.flatMap(x=>x.positions||[]);
   const classified=[...spotCandidates,...futuresCandidates].map(x=>({...x,status:classifyPosition(x)}));
   const spotGreen=classified.filter(x=>x.mint&&x.status==='GREEN');
