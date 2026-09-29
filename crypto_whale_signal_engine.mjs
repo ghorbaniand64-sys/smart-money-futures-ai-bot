@@ -3,7 +3,7 @@
 // Exactly 10 fixed signal sources: 5 Spot + 5 Futures.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V2.6-WHALE-SIGNAL-RATE-LIMIT-RESILIENT-RECENT-ENTRY';
+const VERSION = 'V2.7-WHALE-SIGNAL-ACTIVITY-FIRST-FUTURES-ENTRY';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -21,10 +21,11 @@ const RECENT_SIGS = Number(process.env.SIGNAL_SPOT_SIGNATURES || 80);
 const SPOT_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_SPOT_ACTIVITY_LOOKBACK_MIN || 15);
 const SPOT_MIN_BUY_USD = Number(process.env.SIGNAL_SPOT_MIN_BUY_USD || 25);
 const MAX_SIGNAL_LATENCY_MIN = Number(process.env.SIGNAL_MAX_LATENCY_MIN || 5);
-const FUTURES_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_FUTURES_ACTIVITY_LOOKBACK_MIN || 15);
-const FUTURES_FETCH_RETRY = Number(process.env.SIGNAL_FUTURES_FETCH_RETRY || 4);
-const FUTURES_BETWEEN_WALLETS_MS = Number(process.env.SIGNAL_FUTURES_BETWEEN_WALLETS_MS || 900);
-const FUTURES_RETRY_BASE_MS = Number(process.env.SIGNAL_FUTURES_RETRY_BASE_MS || 1200);
+const FUTURES_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_FUTURES_ACTIVITY_LOOKBACK_MIN || 60);
+const FUTURES_GREEN_LATENCY_MIN = Number(process.env.SIGNAL_FUTURES_GREEN_LATENCY_MIN || MAX_SIGNAL_LATENCY_MIN);
+const FUTURES_BETWEEN_WALLETS_MS = Number(process.env.SIGNAL_FUTURES_BETWEEN_WALLETS_MS || 1200);
+const FUTURES_RETRY_BASE_MS = Number(process.env.SIGNAL_FUTURES_RETRY_BASE_MS || 1500);
+const FUTURES_FETCH_RETRY = Number(process.env.SIGNAL_FUTURES_FETCH_RETRY || 5);
 const SPOT_MAX_ACTIVITY_AGE_MIN = Number(process.env.SIGNAL_SPOT_MAX_ACTIVITY_AGE_MIN || SPOT_ACTIVITY_LOOKBACK_MIN);
 const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const WSOL_MINT = 'So11111111111111111111111111111111111111112';
@@ -260,29 +261,83 @@ function hlPositions(state){
   return (state?.assetPositions||[]).map(x=>x?.position||x).filter(p=>p&&Math.abs(n(p.szi))>0).map(p=>({coin:p.coin,side:n(p.szi)>0?'LONG':'SHORT',size:Math.abs(n(p.szi)),entry:n(p.entryPx),positionValue:Math.abs(n(p.positionValue)),unrealized:n(p.unrealizedPnl),leverage:n(p.leverage?.value||p.leverage),liq:n(p.liquidationPx),margin:n(p.marginUsed)}));
 }
 async function futuresHealth(w){
-  try{
-    const now=Date.now(), windowMs=5*86400000, all=new Map();
-    for(let endTime=now;endTime>now-HEALTH_LOOKBACK_DAYS*86400000;endTime-=windowMs){
-      const startTime=Math.max(now-HEALTH_LOOKBACK_DAYS*86400000,endTime-windowMs);
-      const rows=await hl({type:'userFillsByTime',user:w.address,startTime,endTime},`fills:${w.name}:${startTime}`);
-      for(const f of (Array.isArray(rows)?rows:[])){const key=f?.hash||`${f?.coin}|${f?.time}|${f?.px}|${f?.sz}|${f?.dir}`;all.set(key,f);}
+  // Health is intentionally NOT on the signal path. The Telegram engine is
+  // activity-first and must not spend the rate-limit budget on historical stats.
+  return {health:'SIGNAL_ONLY',reason:'HEALTH_NOT_QUERIED_IN_SIGNAL_CYCLE'};
+}
+
+async function fetchRecentFuturesFills(w,startTime,endTime){
+  let lastErr=null;
+  for(let attempt=1;attempt<=FUTURES_FETCH_RETRY;attempt++){
+    try{
+      const rows=await hl({type:'userFillsByTime',user:w.address,startTime,endTime},`recentFills:${w.name}:a${attempt}`);
+      if(!Array.isArray(rows)) throw new Error('FILLS_RESPONSE_NOT_ARRAY');
+      console.log(`[FUTURES][FILLS] ${w.name} recent=${rows.length} attempt=${attempt}`);
+      return rows;
+    }catch(e){
+      lastErr=e;
+      const msg=String(e?.message||e);
+      const is429=/429|rate.?limit|too many requests/i.test(msg);
+      if(attempt>=FUTURES_FETCH_RETRY)break;
+      const wait=FUTURES_RETRY_BASE_MS*Math.pow(2,attempt-1)+(is429?500:0);
+      console.log(`[FUTURES][RETRY] ${w.name} attempt=${attempt} reason=${msg.slice(0,120)} wait=${wait}ms`);
+      await sleep(wait);
     }
-    const rows=[...all.values()].filter(f=>n(f?.time)>0);
-    const pnlRows=rows.map(f=>n(f.closedPnl)).filter(v=>Number.isFinite(v));
-    const wins=pnlRows.filter(v=>v>0).length, losses=pnlRows.filter(v=>v<0).length;
-    const realized=pnlRows.reduce((a,b)=>a+b,0), count=pnlRows.length;
-    const wr=count?wins/count*100:null;
-    const grossWin=pnlRows.filter(v=>v>0).reduce((a,b)=>a+b,0);
-    const grossLoss=Math.abs(pnlRows.filter(v=>v<0).reduce((a,b)=>a+b,0));
-    const pf=grossLoss>0?grossWin/grossLoss:null;
-    let health='WATCH', reason='INSUFFICIENT_RECENT_DATA';
-    if(count>=HEALTH_MIN_TRADES){
-      if(realized>0 && wr>=55 && (pf===null||pf>=1.5)) {health='HEALTHY';reason='POSITIVE_PNL+WIN_RATE+PROFIT_FACTOR';}
-      else if(realized>0 && wr>=45 && (pf===null||pf>=1.0)) {health='WATCH';reason='POSITIVE_BUT_MIXED_RECENT_STATS';}
-      else {health='RISKY';reason='WEAK_RECENT_STATS';}
+  }
+  console.log(`[FUTURES][FILLS] ${w.name} ERROR ${String(lastErr?.message||lastErr||'UNKNOWN').slice(0,180)}`);
+  return [];
+}
+
+async function scanFutures(w,mids,now){
+  // IMPORTANT: current positions are never converted into entry signals.
+  // A signal must originate from an actual recent Hyperliquid Open Long/Open Short fill.
+  const cutoff=now-FUTURES_ACTIVITY_LOOKBACK_MIN*60000;
+  const fills=await fetchRecentFuturesFills(w,cutoff,now);
+  const latest=new Map();
+  for(const f of fills){
+    const coin=String(f?.coin||'').trim();
+    const dir=String(f?.dir||'');
+    const t=n(f?.time);
+    const px=n(f?.px);
+    const sz=n(f?.sz);
+    if(!coin||t<cutoff||!(px>0)||!(sz>0))continue;
+    let side=null;
+    if(dir==='Open Long')side='LONG';
+    else if(dir==='Open Short')side='SHORT';
+    else continue;
+    // A close/reduce fill must never become a new entry signal.
+    const sp=Number(f?.startPosition);
+    if(Number.isFinite(sp)){
+      if(side==='LONG' && sp<0)continue;
+      if(side==='SHORT' && sp>0)continue;
     }
-    return {health,reason,realized,count,wr,pf,sampleWindowDays:HEALTH_LOOKBACK_DAYS};
-  }catch(e){return {health:'WATCH',reason:'HEALTH_DATA_ERROR',error:e.message,realized:null,count:0,wr:null,pf:null};}
+    const key=`${coin}|${side}`;
+    const prev=latest.get(key);
+    if(!prev||t>n(prev.time))latest.set(key,f);
+  }
+
+  const signals=[];
+  for(const f of [...latest.values()].sort((a,b)=>n(b?.time)-n(a?.time))){
+    const coin=String(f.coin);
+    const side=f.dir==='Open Long'?'LONG':'SHORT';
+    const entry=n(f.px);
+    const mid=n(mids?.[coin]);
+    if(!(entry>0)||!(mid>0))continue;
+    const dist=(mid/entry-1)*100*(side==='LONG'?1:-1);
+    const sl=side==='LONG'?entry*(1-HL_SL_PCT/100):entry*(1+HL_SL_PCT/100);
+    const tp=side==='LONG'?entry*(1+HL_TP_PCT/100):entry*(1-HL_TP_PCT/100);
+    const R=normalizedRR(Math.abs(entry-sl),Math.abs(tp-entry));
+    const ageMin=Math.max(0,(now-n(f.time))/60000);
+    const size=n(f.sz);
+    signals.push({
+      wallet:w,coin,side,sourceEntry:entry,current:mid,distancePct:dist,sl,tp,rr:R,
+      size,positionValue:size*entry,unrealized:null,leverage:null,liq:null,margin:null,
+      openedAt:n(f.time),ageMin,openFillPx:entry,openFillSize:size,openFillHash:f.hash||null,
+      activitySource:'RECENT_HYPERLIQUID_OPEN_FILL',fillDir:f.dir,
+      eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR
+    });
+  }
+  return {wallet:w,signals,positions:signals,scanned:fills.length,health:{health:'SIGNAL_ONLY',reason:'HEALTH_NOT_QUERIED_IN_SIGNAL_CYCLE'},activityLookbackMin:FUTURES_ACTIVITY_LOOKBACK_MIN};
 }
 function spotHealth(w){
   const b=SPOT_HEALTH_BASELINE[w.name]||{};
@@ -303,57 +358,6 @@ function healthLine(h,w){
   if(Number.isFinite(h.trades30d))parts.push(`trades ${h.trades30d}`);
   parts.push(`Reason: ${h.reason}`);
   return parts.join(' | ');
-}
-
-async function fetchRecentFuturesFills(w, cutoff, now){
-  let lastErr=null;
-  for(let attempt=1; attempt<=FUTURES_FETCH_RETRY; attempt++){
-    try{
-      const r=await hl({type:'userFillsByTime',user:w.address,startTime:cutoff,endTime:now,aggregateByTime:true},`recentFills:${w.name}:a${attempt}`);
-      const rows=Array.isArray(r)?r:[];
-      console.log(`[FUTURES][FILLS] ${w.name} recent=${rows.length}`);
-      return rows;
-    }catch(e){
-      lastErr=e;
-      const is429=String(e?.message||e).includes('HTTP_429');
-      if(!is429 || attempt>=FUTURES_FETCH_RETRY)break;
-      const wait=FUTURES_RETRY_BASE_MS*Math.pow(2,attempt-1)+Math.floor(Math.random()*350);
-      console.log(`[FUTURES][429] ${w.name} attempt=${attempt}/${FUTURES_FETCH_RETRY} retry=${wait}ms`);
-      await sleep(wait);
-    }
-  }
-  console.log(`[FUTURES][FILLS] ${w.name} ${lastErr?.message||'UNKNOWN_ERROR'}`);
-  return null;
-}
-
-async function scanFutures(w, mids){
-  const now=Date.now();
-  const cutoff=now-FUTURES_ACTIVITY_LOOKBACK_MIN*60000;
-  const fills=await fetchRecentFuturesFills(w,cutoff,now);
-  if(fills===null)return {wallet:w,signals:[],positions:[],scanned:0,error:'RECENT_FILLS_UNAVAILABLE_AFTER_RETRIES',rateLimited:true};
-  const latest=new Map();
-  for(const f of fills){
-    const coin=String(f?.coin||'').trim(), dir=String(f?.dir||''), t=n(f?.time), px=n(f?.px), sz=n(f?.sz);
-    if(!coin||!t||t<cutoff||!(px>0)||!(sz>0))continue;
-    let side=null;
-    if(dir==='Open Long')side='LONG'; else if(dir==='Open Short')side='SHORT'; else continue;
-    const sp=Number(f?.startPosition);
-    if(Number.isFinite(sp)){if(side==='LONG'&&sp<0)continue;if(side==='SHORT'&&sp>0)continue;}
-    const key=`${coin}|${side}`, prev=latest.get(key);
-    if(!prev||t>n(prev.time))latest.set(key,f);
-  }
-  const signals=[];
-  for(const f of [...latest.values()].sort((a,b)=>n(b?.time)-n(a?.time))){
-    const coin=String(f.coin), side=String(f.dir)==='Open Long'?'LONG':'SHORT', entry=n(f.px), mid=n(mids?.[coin]);
-    if(!(entry>0)||!(mid>0))continue;
-    const dist=(mid/entry-1)*100*(side==='LONG'?1:-1);
-    const sl=side==='LONG'?entry*(1-HL_SL_PCT/100):entry*(1+HL_SL_PCT/100);
-    const tp=side==='LONG'?entry*(1+HL_TP_PCT/100):entry*(1-HL_TP_PCT/100);
-    const R=normalizedRR(Math.abs(entry-sl),Math.abs(tp-entry));
-    const ageMin=Math.max(0,(now-n(f.time))/60000), size=n(f.sz);
-    signals.push({wallet:w,coin,side,sourceEntry:entry,current:mid,distancePct:dist,sl,tp,rr:R,size,positionValue:size*entry,unrealized:null,leverage:null,liq:null,margin:null,openedAt:n(f.time),ageMin,openFillPx:entry,openFillSize:size,openFillHash:f.hash||null,activitySource:'RECENT_HYPERLIQUID_OPEN_FILL',fillDir:f.dir,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR});
-  }
-  return {wallet:w,signals,positions:signals,scanned:fills.length,rateLimited:false};
 }
 
 function signalLine(x,i){
@@ -388,7 +392,7 @@ function classifyPosition(x){
   const rrOk=Number.isFinite(Number(x.rr))&&Number(x.rr)+1e-9>=MIN_RR;
   const distGreen=Number.isFinite(dist)&&dist<=ENTRY_WINDOW_PCT;
   const distYellow=Number.isFinite(dist)&&dist<=WATCH_WINDOW_PCT;
-  const latencyGreen=!Number.isFinite(latency)||latency<=MAX_SIGNAL_LATENCY_MIN;
+  const latencyGreen=!Number.isFinite(latency)||latency<=FUTURES_GREEN_LATENCY_MIN;
   if(!invalid&&distGreen&&rrOk&&latencyGreen)return 'GREEN';
   if(!invalid&&distYellow&&rrOk)return 'YELLOW';
   if(!invalid&&distGreen&&rrOk&&Number.isFinite(latency)&&latency>MAX_SIGNAL_LATENCY_MIN)return 'YELLOW';
@@ -399,7 +403,7 @@ function yellowReason(x){
   const dist=distanceAbs(x);
   const latency=signalAgeMin(x);
   if(Number.isFinite(dist)&&dist>ENTRY_WINDOW_PCT)reasons.push(`DIST>${ENTRY_WINDOW_PCT}%`);
-  if(Number.isFinite(latency)&&latency>MAX_SIGNAL_LATENCY_MIN)reasons.push(`LATENCY>${MAX_SIGNAL_LATENCY_MIN}m`);
+  if(Number.isFinite(latency)&&latency>FUTURES_GREEN_LATENCY_MIN)reasons.push(`LATENCY>${FUTURES_GREEN_LATENCY_MIN}m`);
   return reasons.length?reasons.join(' + '):'NEAR_ENTRY';
 }
 function compactSignalLine(x,i){
@@ -423,13 +427,15 @@ async function main(){
   console.log(`[SIGNAL-ENGINE ${VERSION}][START] spot=${SPOT_WALLETS.length} futures=${FUTURES_WALLETS.length}`);
   const spot=await Promise.all(SPOT_WALLETS.map(w=>scanSpot(w).catch(e=>({wallet:w,signals:[],positions:[],recentBuys:[],error:e.message,scanned:0,txs:0,health:spotHealth(w)}))));
   let mids={};
-  try{const m=await hl({type:'allMids'},'mids:shared');mids=(m&&typeof m==='object')?m:{};}catch(e){console.log(`[FUTURES][MIDS] ${e.message}`);}
+  try{
+    mids=await hl({type:'allMids'},'mids:cycle');
+  }catch(e){
+    console.log(`[FUTURES][MIDS] ERROR ${String(e?.message||e).slice(0,180)}`);
+  }
   const futures=[];
-  for(let i=0;i<FUTURES_WALLETS.length;i++){
-    const w=FUTURES_WALLETS[i];
-    const r=await scanFutures(w,mids).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0}));
-    futures.push(r);
-    if(i<FUTURES_WALLETS.length-1)await sleep(FUTURES_BETWEEN_WALLETS_MS);
+  for(const w of FUTURES_WALLETS){
+    futures.push(await scanFutures(w,mids,Date.now()).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0,health:{health:'SIGNAL_ONLY',reason:'FUTURES_SCAN_ERROR',error:e.message}})));
+    await sleep(FUTURES_BETWEEN_WALLETS_MS);
   }
 
   // Telegram is intentionally signal-only. Health, current holdings, diagnostics,
@@ -447,7 +453,7 @@ async function main(){
     '📡 READ-ONLY | SIGNAL-ONLY | NO ORDERS',
     '━━━━━━━━━━━━━━━━━━',
     `🕐 ${new Date().toISOString()}`,
-    `📏 GREEN ≤${ENTRY_WINDOW_PCT}% + RR≥${MIN_RR} + Latency≤${MAX_SIGNAL_LATENCY_MIN}m | YELLOW = near/latency`,
+    `📏 GREEN ≤${ENTRY_WINDOW_PCT}% + RR≥${MIN_RR} + Latency≤${FUTURES_GREEN_LATENCY_MIN}m | YELLOW = near/latency | Lookback ${FUTURES_ACTIVITY_LOOKBACK_MIN}m`,
     '',
     ...marketSignals('🟢 SPOT — ENTRY READY',spotGreen),
     '',
@@ -459,8 +465,7 @@ async function main(){
     '',
     `⏱ ${((Date.now()-started)/1000).toFixed(1)}s | Red/too-late signals hidden`
   ];
-  const rateLimited=futures.filter(x=>x.rateLimited).length;
-  console.log(`[SIGNAL-ENGINE ${VERSION}][DONE] green=${spotGreen.length+futuresGreen.length} yellow=${spotYellow.length+futuresYellow.length} red-hidden=${classified.filter(x=>x.status==='RED').length} futures-rate-limited=${rateLimited}`);
+  console.log(`[SIGNAL-ENGINE ${VERSION}][DONE] green=${spotGreen.length+futuresGreen.length} yellow=${spotYellow.length+futuresYellow.length} red-hidden=${classified.filter(x=>x.status==='RED').length}`);
   await telegram(lines.join('\n'));
 }
 
