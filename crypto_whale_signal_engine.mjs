@@ -3,7 +3,7 @@
 // Exactly 10 fixed signal sources: 5 Spot + 5 Futures.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V2.9-WHALE-SIGNAL-CANDIDATE-DIAGNOSTICS';
+const VERSION = 'V3.0-WHALE-SIGNAL-FRESH-REENTRY-AVERAGING';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -22,6 +22,7 @@ const SPOT_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_SPOT_ACTIVITY_LOOKB
 const SPOT_MIN_BUY_USD = Number(process.env.SIGNAL_SPOT_MIN_BUY_USD || 25);
 const MAX_SIGNAL_LATENCY_MIN = Number(process.env.SIGNAL_MAX_LATENCY_MIN || 5);
 const FUTURES_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_FUTURES_ACTIVITY_LOOKBACK_MIN || 120);
+const FUTURES_SIGNAL_FRESHNESS_MIN = Number(process.env.SIGNAL_FUTURES_SIGNAL_FRESHNESS_MIN || 15);
 const FUTURES_GREEN_LATENCY_MIN = Number(process.env.SIGNAL_FUTURES_GREEN_LATENCY_MIN || MAX_SIGNAL_LATENCY_MIN);
 const FUTURES_BETWEEN_WALLETS_MS = Number(process.env.SIGNAL_FUTURES_BETWEEN_WALLETS_MS || 1200);
 const FUTURES_RETRY_BASE_MS = Number(process.env.SIGNAL_FUTURES_RETRY_BASE_MS || 1500);
@@ -288,13 +289,46 @@ async function fetchRecentFuturesFills(w,startTime,endTime){
   return [];
 }
 
+async function fetchFuturesState(w){
+  let lastErr=null;
+  for(let attempt=1;attempt<=3;attempt++){
+    try{
+      const state=await hl({type:'clearinghouseState',user:w.address},`state:${w.name}:a${attempt}`);
+      return state||null;
+    }catch(e){
+      lastErr=e;
+      const msg=String(e?.message||e);
+      const is429=/429|rate.?limit|too many requests/i.test(msg);
+      if(attempt>=3)break;
+      const wait=1200*Math.pow(2,attempt-1)+(is429?500:0);
+      console.log(`[FUTURES][STATE-RETRY] ${w.name} attempt=${attempt} reason=${msg.slice(0,100)} wait=${wait}ms`);
+      await sleep(wait);
+    }
+  }
+  console.log(`[FUTURES][STATE] ${w.name} ERROR ${String(lastErr?.message||lastErr||'UNKNOWN').slice(0,160)}`);
+  return null;
+}
+
+function statePositionMap(state){
+  const map=new Map();
+  for(const p of hlPositions(state)){
+    if(p?.coin)map.set(String(p.coin),p);
+  }
+  return map;
+}
+
 async function scanFutures(w,mids,now){
   // IMPORTANT: current positions are never converted into entry signals.
-  // A signal must originate from an actual recent Hyperliquid Open Long/Open Short fill.
+  // A signal must originate from a recent Hyperliquid position increase.
+  // Every same-side increase is an add/re-entry; this catches averaging-in,
+  // instead of treating only the first position-opening fill as an entry.
   const cutoff=now-FUTURES_ACTIVITY_LOOKBACK_MIN*60000;
   const fills=await fetchRecentFuturesFills(w,cutoff,now);
-  const latest=new Map();
+  const state=await fetchFuturesState(w);
+  const currentPositions=statePositionMap(state);
+  const additionsByKey=new Map();
   let dirOpen=0, derivedOpen=0, rejectedClose=0, invalid=0;
+
   for(const f of fills){
     const coin=String(f?.coin||'').trim();
     const dir=String(f?.dir||'');
@@ -305,61 +339,107 @@ async function scanFutures(w,mids,now){
     const sp=Number(f?.startPosition);
     if(!coin||t<cutoff||!(px>0)||!(sz>0)||!Number.isFinite(sp)){invalid++;continue;}
 
-    // Hyperliquid defines an opening trade by an increase in absolute position.
-    // Reconstruct the post-fill signed position from startPosition + fill side.
-    // This also correctly detects a flip, e.g. -5 -> +5, where the fill both
-    // closes the short and opens a new long.
     const delta = aggressor==='B' ? sz : aggressor==='A' ? -sz : 0;
     const after = sp + delta;
     let side=null;
-    if(delta!==0 && Math.abs(after) > Math.abs(sp) && Math.abs(after)>0){
+    let addedSize=0;
+
+    // Primary detection: the fill increases absolute position.
+    // For a flip, only the residual on the new side is an opening amount.
+    if(delta!==0 && Math.abs(after)>Math.abs(sp) && Math.abs(after)>0){
       side=after>0?'LONG':'SHORT';
+      addedSize=Math.abs(after)-Math.abs(sp);
       derivedOpen++;
-    }else if(dir==='Open Long' || dir==='Open Short'){
-      // Fallback only when the API's frontend dir explicitly says Open.
+    }else if(delta!==0 && sp*after<0){
+      // Defensive flip handling: a single fill crossed through zero.
+      side=after>0?'LONG':'SHORT';
+      addedSize=Math.abs(after);
+      if(addedSize>0)derivedOpen++;
+    }else if(dir==='Open Long'||dir==='Open Short'){
       side=dir==='Open Long'?'LONG':'SHORT';
+      addedSize=sz;
       derivedOpen++;
     }else{
       rejectedClose++;
       continue;
     }
     if(dir==='Open Long'||dir==='Open Short')dirOpen++;
+    if(!(addedSize>0))continue;
 
     const key=`${coin}|${side}`;
-    const prev=latest.get(key);
-    if(!prev||t>n(prev.time))latest.set(key,{...f,_derivedSide:side,_startPosition:sp,_postPosition:after});
+    const list=additionsByKey.get(key)||[];
+    list.push({...f,_derivedSide:side,_startPosition:sp,_postPosition:after,_addedSize:addedSize});
+    additionsByKey.set(key,list);
   }
-  console.log(`[FUTURES][OPEN-DETECT] ${w.name} fills=${fills.length} dirOpen=${dirOpen} derivedOpen=${derivedOpen} closes/reduces=${rejectedClose} invalid=${invalid} candidates=${latest.size}`);
+
+  let recentAdds=0;
+  let averagingKeys=0;
+  const latest=[];
+  for(const [key,list0] of additionsByKey.entries()){
+    const list=list0.sort((a,b)=>n(a.time)-n(b.time));
+    recentAdds+=list.length;
+    const averaging=list.length>=2;
+    if(averaging)averagingKeys++;
+    const latestAdd=list[list.length-1];
+    let totalAdded=0, weighted=0;
+    for(const f of list){
+      const q=n(f._addedSize);
+      totalAdded+=q;
+      weighted+=q*n(f.px);
+    }
+    latestAdd._recentAddCount=list.length;
+    latestAdd._recentAddedSize=totalAdded;
+    latestAdd._recentAvgPx=totalAdded>0?weighted/totalAdded:n(latestAdd.px);
+    latestAdd._isAveraging=averaging;
+    latest.push(latestAdd);
+  }
+
+  console.log(`[FUTURES][OPEN-DETECT] ${w.name} fills=${fills.length} dirOpen=${dirOpen} derivedOpen=${derivedOpen} closes/reduces=${rejectedClose} invalid=${invalid} addEvents=${recentAdds} averagingSymbols=${averagingKeys}`);
 
   const signals=[];
-  const sortedCandidates=[...latest.values()].sort((a,b)=>n(b?.time)-n(a?.time));
-  console.log(`[FUTURES][CANDIDATE-AUDIT] ${w.name} evaluating=${sortedCandidates.length}`);
+  const sortedCandidates=latest.sort((a,b)=>n(b?.time)-n(a?.time));
+  console.log(`[FUTURES][CANDIDATE-AUDIT] ${w.name} evaluating=${sortedCandidates.length} freshness<=${FUTURES_SIGNAL_FRESHNESS_MIN}m`);
   for(const f of sortedCandidates){
     const coin=String(f.coin);
     const side=f._derivedSide || (f.dir==='Open Long'?'LONG':'SHORT');
     const entry=n(f.px);
     const mid=n(mids?.[coin]);
     const ageMin=Math.max(0,(now-n(f.time))/60000);
+    const pos=currentPositions.get(coin);
+    const currentSide=pos?.side||side;
+    const avgEntry=Number.isFinite(Number(pos?.entry))&&Number(pos.entry)>0?Number(pos.entry):n(f._recentAvgPx,entry);
+    const recentAvg=f._recentAvgPx;
+    const addCount=n(f._recentAddCount,1);
+    const addedSize=n(f._recentAddedSize,n(f.sz));
+    const averaging=f._isAveraging===true;
+
     if(!(entry>0)||!(mid>0)){
-      console.log(`[FUTURES][DROP] ${w.name} | ${coin} | ${side} | Fill ${priceFmt(entry)} | Now ${priceFmt(mid)} | Age ${ageMin.toFixed(1)}m | REASON=PRICE_UNAVAILABLE`);
+      console.log(`[FUTURES][DROP] ${w.name} | ${coin} | ${side} | Add ${priceFmt(entry)} | Now ${priceFmt(mid)} | Age ${ageMin.toFixed(1)}m | REASON=PRICE_UNAVAILABLE`);
       continue;
     }
+
+    // Signal distance is based on the latest actual add. The current AVG is
+    // shown separately so a trader averaging down/up is visible to the user.
     const dist=(mid/entry-1)*100*(side==='LONG'?1:-1);
+    const avgDist=(mid/avgEntry-1)*100*(currentSide==='LONG'?1:-1);
     const sl=side==='LONG'?entry*(1-HL_SL_PCT/100):entry*(1+HL_SL_PCT/100);
     const tp=side==='LONG'?entry*(1+HL_TP_PCT/100):entry*(1-HL_TP_PCT/100);
     const R=normalizedRR(Math.abs(entry-sl),Math.abs(tp-entry));
-    const x={wallet:w,coin,side,sourceEntry:entry,current:mid,distancePct:dist,sl,tp,rr:R,
-      size:n(f.sz),positionValue:n(f.sz)*entry,unrealized:null,leverage:null,liq:null,margin:null,
-      openedAt:n(f.time),ageMin,openFillPx:entry,openFillSize:n(f.sz),openFillHash:f.hash||null,
-      activitySource:'RECENT_HYPERLIQUID_OPEN_FILL',fillDir:f.dir,
-      eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR};
+    const x={wallet:w,coin,side:currentSide,sourceEntry:entry,current:mid,distancePct:dist,sl,tp,rr:R,
+      size:addedSize,positionValue:pos?.positionValue??addedSize*entry,unrealized:pos?.unrealized??null,
+      leverage:pos?.leverage??null,liq:pos?.liq??null,margin:pos?.margin??null,
+      openedAt:n(f.time),ageMin,openFillPx:entry,openFillSize:addedSize,openFillHash:f.hash||null,
+      activitySource:'RECENT_HYPERLIQUID_POSITION_ADD',fillDir:f.dir,
+      avgEntry,avgDistancePct:avgDist,recentAvgPx:recentAvg,addCount,averaging,
+      totalRecentAddedSize:addedSize,currentPositionSize:pos?.size??null,
+      eligible:ageMin<=FUTURES_SIGNAL_FRESHNESS_MIN&&Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR};
     const auditStatus=classifyPosition(x);
     const reasons=setupReason(x);
     const reason=auditStatus==='YELLOW'?yellowReason(x):(reasons.length?reasons.join(' + '):'READY');
-    console.log(`[FUTURES][CANDIDATE] ${w.name} | ${coin} | ${side} | Fill ${priceFmt(entry)} | Now ${priceFmt(mid)} | Dist ${pct(dist,2)} | Age ${ageMin.toFixed(1)}m | RR ${fmt(R,3)} | STATUS=${auditStatus} | REASON=${reason}`);
+    console.log(`[FUTURES][CANDIDATE] ${w.name} | ${coin} | ${currentSide} | ADD ${priceFmt(entry)} | AVG ${priceFmt(avgEntry)} | adds=${addCount} | Now ${priceFmt(mid)} | Dist ${pct(dist,2)} | Age ${ageMin.toFixed(1)}m | RR ${fmt(R,3)} | STATUS=${auditStatus} | REASON=${reason}`);
     signals.push(x);
   }
-  return {wallet:w,signals,positions:signals,scanned:fills.length,health:{health:'SIGNAL_ONLY',reason:'HEALTH_NOT_QUERIED_IN_SIGNAL_CYCLE'},activityLookbackMin:FUTURES_ACTIVITY_LOOKBACK_MIN};
+  return {wallet:w,signals,positions:signals,scanned:fills.length,health:{health:'SIGNAL_ONLY',reason:'HEALTH_NOT_QUERIED_IN_SIGNAL_CYCLE'},activityLookbackMin:FUTURES_ACTIVITY_LOOKBACK_MIN,addEvents:recentAdds,averagingSymbols:averagingKeys};
 }
 function spotHealth(w){
   const b=SPOT_HEALTH_BASELINE[w.name]||{};
@@ -415,8 +495,9 @@ function classifyPosition(x){
   const distGreen=Number.isFinite(dist)&&dist<=ENTRY_WINDOW_PCT;
   const distYellow=Number.isFinite(dist)&&dist<=WATCH_WINDOW_PCT;
   const latencyGreen=!Number.isFinite(latency)||latency<=FUTURES_GREEN_LATENCY_MIN;
-  if(!invalid&&distGreen&&rrOk&&latencyGreen)return 'GREEN';
-  if(!invalid&&distYellow&&rrOk)return 'YELLOW';
+  const freshnessOk=!Number.isFinite(latency)||latency<=FUTURES_SIGNAL_FRESHNESS_MIN;
+  if(!invalid&&freshnessOk&&distGreen&&rrOk&&latencyGreen)return 'GREEN';
+  if(!invalid&&freshnessOk&&distYellow&&rrOk)return 'YELLOW';
   if(!invalid&&distGreen&&rrOk&&Number.isFinite(latency)&&latency>MAX_SIGNAL_LATENCY_MIN)return 'YELLOW';
   return 'RED';
 }
@@ -426,6 +507,8 @@ function yellowReason(x){
   const latency=signalAgeMin(x);
   if(Number.isFinite(dist)&&dist>ENTRY_WINDOW_PCT)reasons.push(`DIST>${ENTRY_WINDOW_PCT}%`);
   if(Number.isFinite(latency)&&latency>FUTURES_GREEN_LATENCY_MIN)reasons.push(`LATENCY>${FUTURES_GREEN_LATENCY_MIN}m`);
+  if(Number.isFinite(latency)&&latency>FUTURES_SIGNAL_FRESHNESS_MIN)reasons.push(`STALE>${FUTURES_SIGNAL_FRESHNESS_MIN}m`);
+  if(x.averaging)reasons.push(`AVERAGING x${x.addCount}`);
   return reasons.length?reasons.join(' + '):'NEAR_ENTRY';
 }
 function compactSignalLine(x,i){
@@ -434,8 +517,10 @@ function compactSignalLine(x,i){
   const size=Number.isFinite(Number(x.buyNotionalUsd))?` | Size ${money(x.buyNotionalUsd)}`:'';
   const pos=Number.isFinite(Number(x.positionValue))?` | Pos ${money(x.positionValue)}`:'';
   const lev=Number.isFinite(Number(x.leverage))?` | Lev ${fmt(x.leverage,1)}x`:'';
+  const avg=Number.isFinite(Number(x.avgEntry))?` | AVG ${priceFmt(x.avgEntry)}`:'';
+  const avgTag=x.averaging?` | AVERAGING x${x.addCount}`:'';
   const reason=classifyPosition(x)==='YELLOW'?` | ${yellowReason(x)}`:'';
-  return `${i}. ${x.wallet.name} | ${x.coin} | ${x.side}\n   Entry ${priceFmt(x.sourceEntry)} | Now ${priceFmt(x.current)} | Dist ${pct(x.distancePct,2)} | SL ${priceFmt(x.sl)} | TP ${priceFmt(x.tp)} | RR ${fmt(x.rr,3)}${ageText}${size}${pos}${lev}${reason}`;
+  return `${i}. ${x.wallet.name} | ${x.coin} | ${x.side}\n   ADD ${priceFmt(x.sourceEntry)} | AVG ${priceFmt(x.avgEntry)} | Now ${priceFmt(x.current)} | Dist ${pct(x.distancePct,2)} | SL ${priceFmt(x.sl)} | TP ${priceFmt(x.tp)} | RR ${fmt(x.rr,3)}${ageText}${avgTag}${size}${pos}${lev}${reason}`;
 }
 function marketSignals(title,items){
   const rows=[title,'━━━━━━━━━━━━━━━━━━'];
@@ -480,7 +565,7 @@ async function main(){
     '📡 READ-ONLY | SIGNAL-ONLY | NO ORDERS',
     '━━━━━━━━━━━━━━━━━━',
     `🕐 ${new Date().toISOString()}`,
-    `📏 GREEN ≤${ENTRY_WINDOW_PCT}% + RR≥${MIN_RR} + Latency≤${FUTURES_GREEN_LATENCY_MIN}m | YELLOW = near/latency | Lookback ${FUTURES_ACTIVITY_LOOKBACK_MIN}m`,
+    `📏 GREEN ≤${ENTRY_WINDOW_PCT}% + RR≥${MIN_RR} + Age≤${FUTURES_GREEN_LATENCY_MIN}m | Fresh signal≤${FUTURES_SIGNAL_FRESHNESS_MIN}m | ADD=latest increase, AVG=current position average`,
     '',
     ...marketSignals('🟢 SPOT — ENTRY READY',spotGreen),
     '',
