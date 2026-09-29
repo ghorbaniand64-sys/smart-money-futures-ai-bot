@@ -3,7 +3,7 @@
 // Exactly 10 fixed signal sources: 5 Spot + 5 Futures.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V1.9-WHALE-SIGNAL-ULTRA-SHORT-SPOT-ACTIVITY';
+const VERSION = 'V2.0-WHALE-SIGNAL-SPOT-RECENT-BUY';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -17,9 +17,9 @@ const TP_PCT = Number(process.env.SIGNAL_SPOT_TP_PCT || 4.0);
 const HL_SL_PCT = Number(process.env.SIGNAL_FUTURES_SL_PCT || 1.5);
 const HL_TP_PCT = Number(process.env.SIGNAL_FUTURES_TP_PCT || 3.0);
 const FETCH_TIMEOUT = Number(process.env.SIGNAL_REQUEST_TIMEOUT_MS || 18000);
-const RECENT_SIGS = Number(process.env.SIGNAL_SPOT_SIGNATURES || 30);
+const RECENT_SIGS = Number(process.env.SIGNAL_SPOT_SIGNATURES || 60);
 const MAX_SPOT_POSITIONS = Number(process.env.SIGNAL_MAX_SPOT_POSITIONS_PER_WALLET || 4);
-const SPOT_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_SPOT_ACTIVITY_LOOKBACK_MIN || 10);
+const SPOT_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_SPOT_ACTIVITY_LOOKBACK_MIN || 15);
 const SPOT_ULTRA_SHORT_ENABLED = String(process.env.SIGNAL_SPOT_ULTRA_SHORT_ENABLED || 'true').toLowerCase() !== 'false';
 const SPOT_MIN_BUY_USD = Number(process.env.SIGNAL_SPOT_MIN_BUY_USD || 25);
 const SPOT_MAX_ACTIVITY_AGE_MIN = Number(process.env.SIGNAL_SPOT_MAX_ACTIVITY_AGE_MIN || SPOT_ACTIVITY_LOOKBACK_MIN);
@@ -101,12 +101,30 @@ function ownerTokenDeltas(tx,wallet){
   for(const mint of mints){const d=n(map.get(`${mint}|post`))-n(map.get(`${mint}|pre`));if(Math.abs(d)>0)out.push({mint,delta:d})}
   return out;
 }
+function walletNativeDelta(tx,wallet){
+  const keys=tx?.transaction?.message?.accountKeys||[];
+  const idx=keys.findIndex(k=>String(k?.pubkey||'').toLowerCase()===String(wallet||'').toLowerCase());
+  if(idx<0)return 0;
+  return (n(tx?.meta?.postBalances?.[idx])-n(tx?.meta?.preBalances?.[idx]))/1e9;
+}
+function walletWsolDelta(tx,wallet){
+  const WSOL='So11111111111111111111111111111111111111112';
+  const ds=ownerTokenDeltas(tx,wallet);
+  return n(ds.find(x=>x.mint===WSOL)?.delta);
+}
 function solDelta(tx){
   const keys=tx?.transaction?.message?.accountKeys||[];
   const wallet=keys.find(k=>k?.signer);
-  const idx=keys.findIndex(k=>k?.pubkey===wallet?.pubkey);
-  if(idx<0)return 0;
-  return (n(tx?.meta?.postBalances?.[idx])-n(tx?.meta?.preBalances?.[idx]))/1e9;
+  return walletNativeDelta(tx,wallet?.pubkey);
+}
+function swapFunding(tx,wallet){
+  const native=walletNativeDelta(tx,wallet);
+  const wsol=walletWsolDelta(tx,wallet);
+  // For a SOL/USDC/etc spot buy, either native SOL or wrapped SOL can be the
+  // funding leg. Prefer the larger negative funding leg and ignore tiny fees.
+  const candidates=[native<0?Math.abs(native):0,wsol<0?Math.abs(wsol):0];
+  const fundedSol=Math.max(...candidates,0);
+  return {nativeDelta:native,wsolDelta:wsol,fundedSol,isBuy:fundedSol>0};
 }
 async function tokenPrice(mint){
   const r=await fetchJson(`${GECKO}/simple/networks/solana/token_price/${mint}`); 
@@ -127,73 +145,80 @@ async function scanSpot(w){
   const solUsd=solInfo.price||await tokenPrice('So11111111111111111111111111111111111111112');
   const [sigs,holdings]=await Promise.all([solSignatures(w.address),solHoldings(w.address)]);
   const txs=[];
-  for(const s of sigs.slice(0,Math.min(sigs.length,RECENT_SIGS))){
+  const now=Date.now(), maxAgeMs=SPOT_MAX_ACTIVITY_AGE_MIN*60000;
+
+  // Recent signatures are fetched newest-first. Stop parsing once the remaining
+  // signatures are older than the ultra-short activity window.
+  for(const s of sigs.slice(0,RECENT_SIGS)){
+    const bt=n(s.blockTime)*1000;
+    if(bt>0 && now-bt>maxAgeMs && txs.length>0) break;
     try{
       const tx=await solTx(s.signature);
-      if(tx)txs.push({sig:s.signature,tx,blockTime:n(tx.blockTime||s.blockTime)*1000});
+      if(tx){
+        const blockTime=n(tx.blockTime||s.blockTime)*1000;
+        if(!blockTime || now-blockTime<=maxAgeMs)txs.push({sig:s.signature,tx,blockTime});
+      }
     }catch(e){console.log(`[SPOT][TX] ${w.name} ${e.message}`)}
   }
 
-  // V1.9 core fix: do NOT require a current token holding. Ultra-short traders
-  // can buy and close a position in seconds, so the wallet may legitimately
-  // show Position:NONE by the time our 5-minute cycle runs. We therefore scan
-  // recent BUY activity directly and use the latest valid buy as the signal source.
   const candidates=[];
   const seen=new Set();
-  const now=Date.now();
-  const maxAgeMs=SPOT_MAX_ACTIVITY_AGE_MIN*60000;
 
+  // V2.0: Spot signal authority is RECENT BUY ACTIVITY, not current holdings.
+  // This is essential for ultra-short wallets that buy and close before the
+  // next 5-minute cycle. Funding may be native SOL or wrapped SOL (WSOL).
   if(SPOT_ULTRA_SHORT_ENABLED){
     for(const row of txs){
       if(!(row.blockTime>0) || now-row.blockTime>maxAgeMs)continue;
-      const deltas=ownerTokenDeltas(row.tx,w.address).filter(d=>d.delta>0);
-      if(!deltas.length)continue;
-      const sd=solDelta(row.tx);
-      // A normal SOL-funded spot buy should reduce the wallet's SOL balance.
-      // Reject transfers/refunds that do not look like a buy.
-      if(!(sd<0))continue;
+      const funding=swapFunding(row.tx,w.address);
+      if(!funding.isBuy)continue;
 
-      for(const d of deltas){
+      const received=ownerTokenDeltas(row.tx,w.address).filter(d=>d.delta>0 && d.mint!=='So11111111111111111111111111111111111111112');
+      if(!received.length)continue;
+
+      for(const d of received){
         if(seen.has(d.mint))continue;
         const info=await tokenInfo(d.mint);
         const px=info.price||await tokenPrice(d.mint);
-        if(!(px>0)||!(d.delta>0))continue;
-        const sourceEntry=Math.abs(sd)*solUsd/d.delta;
+        if(!(px>0)||!(d.delta>0)||!(solUsd>0))continue;
+
+        const sourceEntry=(funding.fundedSol*solUsd)/d.delta;
         if(!(sourceEntry>0))continue;
         const notional=sourceEntry*d.delta;
         if(notional<SPOT_MIN_BUY_USD)continue;
+
         const dist=(px/sourceEntry-1)*100;
         const sl=sourceEntry*(1-SL_PCT/100);
         const tp=sourceEntry*(1+TP_PCT/100);
         const R=rr(sourceEntry-sl,tp-sourceEntry);
-        const ageMin=(now-row.blockTime)/60000;
+        const ageMin=Math.max(0,(now-row.blockTime)/60000);
         const x={
           wallet:w,coin:info.symbol,mint:d.mint,side:'LONG',
           balance:holdings.find(h=>h.mint===d.mint)?.amount||0,
           sourceEntry,current:px,distancePct:dist,sl,tp,rr:R,
           age:row.blockTime,ageMin,liquidity:info.liquidity,volume24h:info.volume24h,
           tx:row.sig,buyNotionalUsd:notional,activitySource:'RECENT_BUY',
-          ultraShort:true,
+          fundingSol:funding.fundedSol,nativeSolDelta:funding.nativeDelta,wsolDelta:funding.wsolDelta,
           eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R>=MIN_RR
         };
-        candidates.push(x);seen.add(d.mint);
+        candidates.push(x); seen.add(d.mint);
         if(candidates.length>=MAX_SPOT_POSITIONS)break;
       }
       if(candidates.length>=MAX_SPOT_POSITIONS)break;
     }
   }
 
-  // Fallback for non-ultra-short/current holders: retain the previous holding
-  // reconstruction path, but only when no recent buy candidate was found.
+  // Fallback: if no recent BUY was decoded, inspect current holdings so the
+  // engine still has a diagnostic signal for slower spot traders.
   if(!candidates.length){
     for(const h of holdings.slice(0,20)){
       const row=txs.find(r=>ownerTokenDeltas(r.tx,w.address).some(d=>d.mint===h.mint&&d.delta>0));
       if(!row)continue;
       const d=ownerTokenDeltas(row.tx,w.address).find(x=>x.mint===h.mint&&x.delta>0);
-      const sd=solDelta(row.tx);
-      const info=await tokenInfo(h.mint); const px=info.price||await tokenPrice(h.mint);
-      if(!(px>0)||!(d?.delta>0))continue;
-      const sourceEntry=Math.abs(sd)*solUsd/d.delta; if(!(sourceEntry>0))continue;
+      const funding=swapFunding(row.tx,w.address);
+      if(!funding.isBuy || !(d?.delta>0))continue;
+      const info=await tokenInfo(h.mint); const px=info.price||await tokenPrice(h.mint); if(!(px>0))continue;
+      const sourceEntry=(funding.fundedSol*solUsd)/d.delta; if(!(sourceEntry>0))continue;
       const dist=(px/sourceEntry-1)*100;
       const sl=sourceEntry*(1-SL_PCT/100),tp=sourceEntry*(1+TP_PCT/100),R=rr(sourceEntry-sl,tp-sourceEntry);
       candidates.push({wallet:w,coin:info.symbol,mint:h.mint,side:'LONG',balance:h.amount,sourceEntry,current:px,distancePct:dist,sl,tp,rr:R,age:row.blockTime,ageMin:(now-row.blockTime)/60000,liquidity:info.liquidity,volume24h:info.volume24h,tx:row.sig,activitySource:'CURRENT_HOLDING',eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R>=MIN_RR});
@@ -202,15 +227,7 @@ async function scanSpot(w){
   }
 
   const fresh=candidates.filter(x=>x.ageMin<=SPOT_MAX_ACTIVITY_AGE_MIN);
-  return {
-    wallet:w,
-    signals:fresh.filter(x=>x.eligible),
-    positions:fresh,
-    scanned:sigs.length,txs:txs.length,holdings:holdings.length,
-    health:spotHealth(w),
-    ultraShort:SPOT_ULTRA_SHORT_ENABLED,
-    recentBuys:fresh.length
-  };
+  return {wallet:w,signals:fresh.filter(x=>x.eligible),positions:fresh,scanned:sigs.length,txs:txs.length,holdings:holdings.length,health:spotHealth(w),ultraShort:SPOT_ULTRA_SHORT_ENABLED,recentBuys:fresh.filter(x=>x.activitySource==='RECENT_BUY').length};
 }
 
 function hlPositions(state){
@@ -275,13 +292,13 @@ async function scanFutures(w){
   return {wallet:w,signals,positions,scanned:1,health};
 }
 function signalLine(x,i){
-  return `${i}. ${x.wallet.name} | ${x.coin} | ${x.side}\n   Source Entry ${fmt(x.sourceEntry)} | Now ${fmt(x.current)} | Dist ${pct(x.distancePct,2)}${x.ultraShort?` | Age ${x.ageMin<1?'<1m':x.ageMin.toFixed(1)+'m'}`:''}\n   SL ${fmt(x.sl)} | TP ${fmt(x.tp)} | RR ${fmt(x.rr,2)} | ${x.leverage?`Lev ${fmt(x.leverage,1)}x | `:''}${x.positionValue?`Pos ${money(x.positionValue)} | `:''}${x.liquidity?`Liq ${money(x.liquidity)}`:''}`;
+  return `${i}. ${x.wallet.name} | ${x.coin} | ${x.side}\n   Source Entry ${fmt(x.sourceEntry)} | Now ${fmt(x.current)} | Dist ${pct(x.distancePct,2)}${x.ultraShort?` | Age ${x.ageMin<1?'<1m':x.ageMin.toFixed(1)+'m'}`:''}\n   SL ${fmt(x.sl)} | TP ${fmt(x.tp)} | RR ${fmt(x.rr,3)} | ${x.leverage?`Lev ${fmt(x.leverage,1)}x | `:''}${x.positionValue?`Pos ${money(x.positionValue)} | `:''}${x.liquidity?`Liq ${money(x.liquidity)}`:''}`;
 }
 function distanceAbs(x){return Math.abs(Number(x.distancePct));}
 function setupReason(x){
   const why=[];
   if(distanceAbs(x)>ENTRY_WINDOW_PCT)why.push(`DIST>${ENTRY_WINDOW_PCT}%`);
-  if(x.rr<MIN_RR)why.push(`RR<${MIN_RR}`);
+  if(Number(x.rr)+1e-9<MIN_RR)why.push(`RR<${MIN_RR}`);
   return why;
 }
 function classifyPosition(x){
@@ -321,7 +338,7 @@ function positionDetailLine(x){
   const lev=Number.isFinite(Number(x.leverage))?` | Lev ${fmt(x.leverage,1)}x`:'';
   const pos=Number.isFinite(Number(x.positionValue))?` | Pos ${money(x.positionValue)}`:'';
   const up=Number.isFinite(Number(x.unrealized))?` | uPnL ${money(x.unrealized)}`:'';
-  return `${icon} ${x.coin} ${x.side} | Now ${fmt(x.current)} | Entry ${fmt(x.sourceEntry)} | Dist ${pct(x.distancePct,2)} | SL ${fmt(x.sl)} | TP ${fmt(x.tp)} | RR ${fmt(x.rr,2)}${lev}${pos}${up} | ${label}${cls==='GREEN'?'':' | '+block}`;
+  return `${icon} ${x.coin} ${x.side} | Now ${fmt(x.current)} | Entry ${fmt(x.sourceEntry)} | Dist ${pct(x.distancePct,2)} | SL ${fmt(x.sl)} | TP ${fmt(x.tp)} | RR ${fmt(x.rr,3)}${lev}${pos}${up} | ${label}${cls==='GREEN'?'':' | '+block}`;
 }
 function traderBlock(result){
   const h=result.health||{health:'WATCH',reason:'NO_HEALTH_DATA'};
@@ -393,7 +410,15 @@ async function main(){
 
   const errs=[...spot.filter(x=>x.error).map(x=>`SPOT ${x.wallet.name}: ${x.error}`),...futures.filter(x=>x.error).map(x=>`FUTURES ${x.wallet.name}: ${x.error}`)];
   if(errs.length){lines.push('','⚠️ DATA ERRORS');errs.forEach(e=>lines.push(e));}
-  lines.push('',`📌 Spot mode: ${SPOT_ULTRA_SHORT_ENABLED?'ULTRA-SHORT recent BUY activity':'CURRENT POSITION'} | Lookback ${SPOT_MAX_ACTIVITY_AGE_MIN}m`,`⏱ Runtime ${((Date.now()-started)/1000).toFixed(1)}s`);
+  const spotActivity=spot.flatMap(r=>(r.positions||[]).filter(x=>x.activitySource==='RECENT_BUY').map(x=>({x,name:r.wallet.name})));
+  lines.push('','⚡ SPOT RECENT BUY ACTIVITY');
+  if(spotActivity.length){
+    spotActivity.forEach(({x,name})=>{
+      const cls=classifyPosition(x), icon=cls==='GREEN'?'🟢':cls==='YELLOW'?'🟡':'🔴';
+      lines.push(`${icon} ${name} | ${x.coin} | BUY ${x.ageMin<1?'<1m':x.ageMin.toFixed(1)+'m'} ago | Entry ${fmt(x.sourceEntry)} | Now ${fmt(x.current)} | Dist ${pct(x.distancePct,2)} | RR ${fmt(x.rr,3)} | ${cls}${cls==='GREEN'?'':' | '+setupReason(x).join(',')}`);
+    });
+  }else lines.push(`No valid recent BUY decoded in the last ${SPOT_MAX_ACTIVITY_AGE_MIN}m.`);
+  lines.push('',`📌 Spot authority: recent BUY activity | Lookback ${SPOT_MAX_ACTIVITY_AGE_MIN}m | Funding: SOL/WSOL`,`📌 Futures authority unchanged: live Hyperliquid position entry + mid price`,`⏱ Runtime ${((Date.now()-started)/1000).toFixed(1)}s`);
   console.log(`[SIGNAL-ENGINE ${VERSION}][DONE] signals=${green.length} positions=${allPositions.length} errors=${errs.length}`);
   await telegram(lines.join('\n'));
 }
