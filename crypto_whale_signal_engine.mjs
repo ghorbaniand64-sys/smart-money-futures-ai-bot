@@ -3,7 +3,7 @@
 // Exactly 10 fixed signal sources: 5 Spot + 5 Futures.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V1.8-WHALE-SIGNAL-SPOT-BUY-FUTURES-FRESHNESS';
+const VERSION = 'V1.8.1-WHALE-SIGNAL-RPC-RESILIENCE-DATA-INTEGRITY';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -20,9 +20,11 @@ const FETCH_TIMEOUT = Number(process.env.SIGNAL_REQUEST_TIMEOUT_MS || 18000);
 const RECENT_SIGS = Number(process.env.SIGNAL_SPOT_SIGNATURES || 60);
 const SPOT_MIN_BUY_USD = Number(process.env.SIGNAL_SPOT_MIN_BUY_USD || 1000);
 const SPOT_STALE_HOURS = Number(process.env.SIGNAL_SPOT_STALE_HOURS || 48);
-const SPOT_BATCH_SIZE = Number(process.env.SIGNAL_SPOT_TX_BATCH || 5);
-const SPOT_BATCH_DELAY_MS = Number(process.env.SIGNAL_SPOT_BATCH_DELAY_MS || 350);
-const SPOT_RPC_RETRIES = Number(process.env.SIGNAL_SPOT_RPC_RETRIES || 4);
+const SPOT_BATCH_SIZE = Number(process.env.SIGNAL_SPOT_TX_BATCH || 1);
+const SPOT_BATCH_DELAY_MS = Number(process.env.SIGNAL_SPOT_BATCH_DELAY_MS || 650);
+const SPOT_RPC_RETRIES = Number(process.env.SIGNAL_SPOT_RPC_RETRIES || 2);
+const SPOT_429_COOLDOWN_MS = Number(process.env.SIGNAL_SPOT_429_COOLDOWN_MS || 5000);
+const SPOT_MAX_TX_REQUESTS = Number(process.env.SIGNAL_SPOT_MAX_TX_REQUESTS || 36);
 const FUTURES_FRESH_HOURS = Number(process.env.SIGNAL_FUTURES_FRESH_HOURS || 2);
 const FUTURES_WATCH_HOURS = Number(process.env.SIGNAL_FUTURES_WATCH_HOURS || 6);
 const FUTURES_MAX_SOURCE_DIST = Number(process.env.SIGNAL_FUTURES_COPY_MAX_SOURCE_DIST_PCT || 1.25);
@@ -68,6 +70,7 @@ function fmt(v,d=4){return Number.isFinite(Number(v))?Number(v).toFixed(d):'N/A'
 function rr(sl,tp){const a=Math.abs(Number(sl));return a>0?Math.abs(Number(tp))/a:0}
 function age(ms){if(!ms)return 'N/A';const h=(Date.now()-ms)/3600000;return h<1?`${Math.max(1,Math.round(h*60))}m`:`${h.toFixed(1)}h`}
 
+let solCooldownUntil = 0;
 async function fetchJson(url, options={}, label='request', retries=0){
   let last;
   for(let attempt=0;attempt<=retries;attempt++){
@@ -75,17 +78,33 @@ async function fetchJson(url, options={}, label='request', retries=0){
     try{
       const r=await fetch(url,{...options,signal:ctl.signal,headers:{'accept':'application/json',...(options.headers||{})}});
       const text=await r.text();
-      if(!r.ok)throw new Error(`${label}:HTTP_${r.status}:${text.slice(0,180)}`);
+      if(!r.ok){
+        const err=new Error(`${label}:HTTP_${r.status}:${text.slice(0,180)}`); err.status=r.status;
+        const retryAfter=Number(r.headers.get('retry-after'));
+        if(r.status===429 && retryAfter>0) err.retryAfterMs=Math.min(15000,retryAfter*1000);
+        throw err;
+      }
       return text?JSON.parse(text):null;
     }catch(e){
       last=e;
-      if(attempt<retries)await sleep(Math.min(5000,500*Math.pow(2,attempt)));
+      if(attempt<retries){
+        const base=e.status===429 ? (e.retryAfterMs||SPOT_429_COOLDOWN_MS) : 500*Math.pow(2,attempt);
+        await sleep(Math.min(15000,base));
+      }
     }finally{clearTimeout(timer)}
   }
   throw last;
 }
 async function hl(body,label='hl'){return fetchJson(HL_INFO,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)},label,2)}
-async function sol(body,label='solana'){return fetchJson(SOL_RPC,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:Date.now(),...body})},label,SPOT_RPC_RETRIES)}
+async function sol(body,label='solana'){
+  if(Date.now()<solCooldownUntil) await sleep(solCooldownUntil-Date.now());
+  try{
+    return await fetchJson(SOL_RPC,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:Date.now(),...body})},label,SPOT_RPC_RETRIES);
+  }catch(e){
+    if(e?.status===429) solCooldownUntil=Date.now()+SPOT_429_COOLDOWN_MS;
+    throw e;
+  }
+}
 async function telegram(text){
   if(!TG_TOKEN||!TG_CHAT){console.log('[TELEGRAM] credentials missing');return}
   for(let i=0;i<text.length;i+=TG_LIMIT){
@@ -156,47 +175,54 @@ async function scanSpot(w){
   const solInfo=await tokenInfo(SOL);
   const solUsd=solInfo.price||await tokenPrice(SOL);
   const [sigs,holdings]=await Promise.all([solSignatures(w.address),solHoldings(w.address)]);
-  const txs=[];
-  for(let i=0;i<sigs.length;i+=SPOT_BATCH_SIZE){
-    const batch=sigs.slice(i,i+SPOT_BATCH_SIZE);
-    const rows=await Promise.all(batch.map(async s=>{
-      try{const tx=await solTx(s.signature);return tx?{sig:s.signature,tx,blockTime:n(tx.blockTime||s.blockTime)*1000}:null}
-      catch(e){console.log(`[SPOT][TX] ${w.name} ${e.message}`);return null}
-    }));
-    rows.filter(Boolean).forEach(x=>txs.push(x));
-    if(i+SPOT_BATCH_SIZE<sigs.length)await sleep(SPOT_BATCH_DELAY_MS);
-  }
+  const held=new Set(holdings.filter(x=>x.amount>0&&x.mint!==SOL).map(x=>x.mint));
+  const latestBuys=new Map();
   const infoCache=new Map();
-  const getInfo=async mint=>{
-    if(!infoCache.has(mint))infoCache.set(mint,tokenInfo(mint));
-    return infoCache.get(mint);
-  };
+  let txs=0, requests=0, partial=false, dataError=null;
+  for(let i=0;i<sigs.length && requests<Math.min(RECENT_SIGS,SPOT_MAX_TX_REQUESTS);i+=SPOT_BATCH_SIZE){
+    const batch=sigs.slice(i,i+SPOT_BATCH_SIZE);
+    for(const sig of batch){
+      if(requests>=SPOT_MAX_TX_REQUESTS)break;
+      requests++;
+      try{
+        const tx=await solTx(sig.signature);
+        if(!tx)continue;
+        txs++;
+        const blockTime=n(tx.blockTime||sig.blockTime)*1000;
+        if(blockTime && Date.now()-blockTime>SPOT_STALE_HOURS*3600000){ i=sigs.length; break; }
+        const deltas=ownerTokenDeltas(tx,w.address);
+        for(const d of deltas){
+          if(!held.has(d.mint)||d.delta<=0)continue;
+          const q=quoteSpentFromTx(tx,w.address,solUsd);
+          if(q.usd<SPOT_MIN_BUY_USD)continue;
+          const entry=q.usd/d.delta;
+          const prev=latestBuys.get(d.mint);
+          if(!prev || blockTime>prev.blockTime) latestBuys.set(d.mint,{sig:sig.signature,tx,blockTime,delta:d.delta,q,entry});
+        }
+        if(latestBuys.size>=held.size) break;
+      }catch(e){
+        console.log(`[SPOT][TX] ${w.name} ${e.message}`);
+        if(e?.status===429){partial=true;dataError='SOLANA_RPC_429';break;}
+      }
+    }
+    if(partial || latestBuys.size>=held.size)break;
+    await sleep(SPOT_BATCH_DELAY_MS);
+  }
+  if(requests>=SPOT_MAX_TX_REQUESTS && latestBuys.size<held.size) partial=true;
+  const getInfo=async mint=>{if(!infoCache.has(mint))infoCache.set(mint,tokenInfo(mint));return infoCache.get(mint)};
   const positions=[];
   for(const h of holdings.filter(x=>x.amount>0).slice(0,40)){
     if(h.mint===SOL)continue;
-    const buys=[];
-    for(const row of txs){
-      const d=ownerTokenDeltas(row.tx,w.address).find(x=>x.mint===h.mint&&x.delta>0);
-      if(!d)continue;
-      const q=quoteSpentFromTx(row.tx,w.address,solUsd);
-      if(q.usd<SPOT_MIN_BUY_USD)continue;
-      buys.push({row,d,q,entry:q.usd/d.delta});
-    }
-    buys.sort((a,b)=>b.row.blockTime-a.row.blockTime);
-    if(!buys.length)continue;
-    const buy=buys[0], buyAge=(Date.now()-buy.row.blockTime)/3600000;
+    const buy=latestBuys.get(h.mint); if(!buy)continue;
+    const buyAge=(Date.now()-buy.blockTime)/3600000;
     if(buyAge<0||buyAge>SPOT_STALE_HOURS)continue;
-    const info=await getInfo(h.mint), px=info.price||await tokenPrice(h.mint);
-    if(!(px>0))continue;
+    const info=await getInfo(h.mint), px=info.price||await tokenPrice(h.mint); if(!(px>0))continue;
     const dist=(px/buy.entry-1)*100;
     const sl=buy.entry*(1-SL_PCT/100),tp=buy.entry*(1+TP_PCT/100),R=rr(buy.entry-sl,tp-buy.entry);
-    positions.push({wallet:w,market:'SPOT',coin:info.symbol,mint:h.mint,side:'LONG',
-      sourceEntry:buy.entry,current:px,distancePct:dist,sl,tp,rr:R,buyTime:buy.row.blockTime,
-      buyAgeHours:buyAge,quoteUsd:buy.q.usd,quote:buy.q.quote,tx:buy.row.sig,
-      eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R>=MIN_RR});
+    positions.push({wallet:w,market:'SPOT',coin:info.symbol,mint:h.mint,side:'LONG',sourceEntry:buy.entry,current:px,distancePct:dist,sl,tp,rr:R,buyTime:buy.blockTime,buyAgeHours:buyAge,quoteUsd:buy.q.usd,quote:buy.q.quote,tx:buy.sig,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R>=MIN_RR});
     if(positions.length>=MAX_SPOT_POSITIONS)break;
   }
-  return {wallet:w,signals:positions.filter(x=>x.eligible),positions,scanned:sigs.length,txs:txs.length,holdings:holdings.length,health:spotHealth(w)};
+  return {wallet:w,signals:positions.filter(x=>x.eligible),positions,scanned:sigs.length,txs,holdings:holdings.length,health:spotHealth(w),partial,dataError,requests};
 }
 
 function hlPositions(state){
@@ -245,32 +271,38 @@ function healthLine(h,w){
   return parts.join(' | ');
 }
 
-async function openingTime(w,coin,side){
+async function openingTimes(w, positions){
+  const out=new Map();
   try{
     const startTime=Date.now()-FUTURES_FILL_LOOKBACK_HOURS*3600000;
-    const fills=await hl({type:'userFillsByTime',user:w.address,startTime},`fills:${w.name}:${coin}`);
+    const fills=await hl({type:'userFillsByTime',user:w.address,startTime},`fills:${w.name}`);
     const rows=Array.isArray(fills)?fills:[];
-    const want=side==='LONG'?'open long':'open short';
-    const ts=rows.filter(f=>String(f.coin||'').toUpperCase()===String(coin).toUpperCase() &&
-      String(f.dir||'').toLowerCase().includes(want)).map(f=>n(f.time)).filter(x=>x>0);
-    return ts.length?Math.max(...ts):null;
-  }catch{return null}
+    for(const p of positions){
+      const want=p.side==='LONG'?'open long':'open short';
+      const ts=rows.filter(f=>String(f.coin||'').toUpperCase()===String(p.coin).toUpperCase() && String(f.dir||'').toLowerCase().includes(want)).map(f=>n(f.time)).filter(x=>x>0);
+      out.set(p.coin,ts.length?Math.max(...ts):null);
+    }
+    return {times:out,rows:rows.length,error:null};
+  }catch(e){
+    for(const p of positions) out.set(p.coin,null);
+    return {times:out,rows:0,error:e.message};
+  }
 }
 async function scanFutures(w){
-  const health=await futuresHealth(w);
-  const state=await hl({type:'clearinghouseState',user:w.address}),ps=hlPositions(state);
-  const mids=await hl({type:'allMids'}),positions=[],signals=[];
+  let health={health:'WATCH',reason:'UNAVAILABLE'};
+  try{health=await futuresHealth(w);}catch(e){health={health:'WATCH',reason:'HEALTH_DATA_ERROR',error:e.message};}
+  let state,mids;
+  try{state=await hl({type:'clearinghouseState',user:w.address},`state:${w.name}`);}catch(e){return {wallet:w,signals:[],positions:[],scanned:0,health,error:`STATE_DATA_ERROR:${e.message}`,dataError:'HYPERLIQUID_STATE'};}
+  try{mids=await hl({type:'allMids'},`mids:${w.name}`);}catch(e){return {wallet:w,signals:[],positions:[],scanned:0,health,error:`MIDS_DATA_ERROR:${e.message}`,dataError:'HYPERLIQUID_MIDS'};}
+  const ps=hlPositions(state), positions=[], signals=[];
+  const ot=await openingTimes(w,ps);
   for(const p of ps){
     const mid=n(mids?.[p.coin]);if(!(mid>0)||!(p.entry>0))continue;
     const dist=(mid/p.entry-1)*100*(p.side==='LONG'?1:-1);
-    const addTime=await openingTime(w,p.coin,p.side);
-    const addAgeHours=addTime?(Date.now()-addTime)/3600000:null;
-    const sl=p.side==='LONG'?p.entry*(1-HL_SL_PCT/100):p.entry*(1+HL_SL_PCT/100);
-    const tp=p.side==='LONG'?p.entry*(1+HL_TP_PCT/100):p.entry*(1-HL_TP_PCT/100);
-    const R=rr(Math.abs(p.entry-sl),Math.abs(tp-p.entry));
-    const liqDist=finite(p.liq)?Math.abs(mid-p.liq)/mid*100:null;
-    const reasons=[];
-    if(addAgeHours===null)reasons.push('OPEN_TIME_UNKNOWN');
+    const addTime=ot.times.get(p.coin)||null, addAgeHours=addTime?(Date.now()-addTime)/3600000:null;
+    const sl=p.side==='LONG'?p.entry*(1-HL_SL_PCT/100):p.entry*(1+HL_SL_PCT/100),tp=p.side==='LONG'?p.entry*(1+HL_TP_PCT/100):p.entry*(1-HL_TP_PCT/100);
+    const R=rr(Math.abs(p.entry-sl),Math.abs(tp-p.entry)),liqDist=finite(p.liq)?Math.abs(mid-p.liq)/mid*100:null,reasons=[];
+    if(addAgeHours===null)reasons.push(ot.error?'OPEN_TIME_DATA_ERROR':'OPEN_TIME_UNKNOWN');
     else if(addAgeHours>FUTURES_WATCH_HOURS)reasons.push(`POSITION_OLD>${FUTURES_WATCH_HOURS}h`);
     if(Math.abs(dist)>FUTURES_MAX_SOURCE_DIST)reasons.push(`SOURCE_DIST>${FUTURES_MAX_SOURCE_DIST}%`);
     if(dist>FUTURES_MAX_FAVORABLE)reasons.push(`FAVORABLE_MOVE>${FUTURES_MAX_FAVORABLE}%`);
@@ -278,12 +310,10 @@ async function scanFutures(w){
     if(liqDist!==null&&liqDist<FUTURES_MIN_LIQ_DIST)reasons.push(`LIQ_DIST<${FUTURES_MIN_LIQ_DIST}%`);
     if(R<MIN_RR)reasons.push(`RR<${MIN_RR}`);
     const eligible=addAgeHours!==null&&addAgeHours<=FUTURES_FRESH_HOURS&&reasons.length===0;
-    const x={wallet:w,market:'FUTURES',coin:p.coin,side:p.side,sourceEntry:p.entry,current:mid,
-      distancePct:dist,sl,tp,rr:R,liq:p.liq,liqDist,leverage:p.leverage,positionValue:p.positionValue,
-      unrealized:p.unrealized,addTime,addAgeHours,reasons,eligible};
+    const x={wallet:w,market:'FUTURES',coin:p.coin,side:p.side,sourceEntry:p.entry,current:mid,distancePct:dist,sl,tp,rr:R,liq:p.liq,liqDist,leverage:p.leverage,positionValue:p.positionValue,unrealized:p.unrealized,addTime,addAgeHours,reasons,eligible};
     positions.push(x);if(eligible)signals.push(x);
   }
-  return {wallet:w,signals,positions,scanned:1,health};
+  return {wallet:w,signals,positions,scanned:1,health,dataError:ot.error?'HYPERLIQUID_FILL_DATA':null,openingRows:ot.rows};
 }
 
 function compactSignal(x){
@@ -333,8 +363,10 @@ async function main(){
   lines.push('','🏥 TRADERS','━━━━━━━━━━━━━━━━━━',
     'SPOT  '+spot.map(traderHealthShort).join('  '),
     'FUT    '+futures.map(traderHealthShort).join('  '));
-  const errs=[...spot.filter(x=>x.error).map(x=>`SPOT ${x.wallet.name}`),...futures.filter(x=>x.error).map(x=>`FUTURES ${x.wallet.name}`)];
-  if(errs.length)lines.push('',`⚠️ DATA: ${errs.join(', ')}`);
+  const errs=[...spot.filter(x=>x.error||x.partial||x.dataError).map(x=>`SPOT ${x.wallet.name}${x.dataError?` (${x.dataError})`:''}`),...futures.filter(x=>x.error||x.dataError).map(x=>`FUTURES ${x.wallet.name}${x.dataError?` (${x.dataError})`:''}`)];
+  if(errs.length)lines.push('',`⚠️ DATA INCOMPLETE: ${errs.join(', ')}`);
+  const spotOk=spot.filter(x=>!x.error&&!x.partial).length, futOk=futures.filter(x=>!x.error&&!x.dataError).length;
+  lines.splice(4,0,`📊 DATA: Spot ${spotOk}/5 complete | Futures ${futOk}/5 complete`);
   lines.push('',`⏱ Runtime ${((Date.now()-started)/1000).toFixed(1)}s`);
   console.log(`[SIGNAL-ENGINE ${VERSION}][DONE] green=${green.length} watch=${yellow.length} red=${red.length}`);
   await telegram(lines.join('\\n'));
