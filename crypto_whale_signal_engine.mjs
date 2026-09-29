@@ -3,7 +3,7 @@
 // Exactly 10 fixed signal sources: 5 Spot + 5 Futures.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V2.4-WHALE-SIGNAL-COMPACT-GREEN-YELLOW';
+const VERSION = 'V2.5-WHALE-SIGNAL-TRUE-RECENT-FUTURES-ENTRY';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -21,6 +21,7 @@ const RECENT_SIGS = Number(process.env.SIGNAL_SPOT_SIGNATURES || 80);
 const SPOT_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_SPOT_ACTIVITY_LOOKBACK_MIN || 15);
 const SPOT_MIN_BUY_USD = Number(process.env.SIGNAL_SPOT_MIN_BUY_USD || 25);
 const MAX_SIGNAL_LATENCY_MIN = Number(process.env.SIGNAL_MAX_LATENCY_MIN || 5);
+const FUTURES_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_FUTURES_ACTIVITY_LOOKBACK_MIN || 15);
 const SPOT_MAX_ACTIVITY_AGE_MIN = Number(process.env.SIGNAL_SPOT_MAX_ACTIVITY_AGE_MIN || SPOT_ACTIVITY_LOOKBACK_MIN);
 const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const WSOL_MINT = 'So11111111111111111111111111111111111111112';
@@ -302,30 +303,73 @@ function healthLine(h,w){
 }
 
 async function scanFutures(w){
+  // FUTURES SIGNALS ARE ACTIVITY-FIRST.
+  // Do NOT turn old open positions into new entry signals.
+  // A signal must originate from a recent Hyperliquid Open Long/Open Short fill.
   const health=await futuresHealth(w);
-  const state=await hl({type:'clearinghouseState',user:w.address},`state:${w.name}`);
-  const ps=hlPositions(state);
   const mids=await hl({type:'allMids'},`mids:${w.name}`);
-  const fillStart=Date.now()-7*86400000;
-  let fills=[];try{const r=await hl({type:'userFillsByTime',user:w.address,startTime:fillStart,aggregateByTime:true},`recentFills:${w.name}`);fills=Array.isArray(r)?r:[]}catch(e){console.log(`[FUTURES][FILLS] ${w.name} ${e.message}`)}
-  const signals=[],positions=[];
-  for(const p of ps){
-    const mid=n(mids?.[p.coin]); if(!(mid>0)||!(p.entry>0))continue;
-    const dist=(mid/p.entry-1)*100*(p.side==='LONG'?1:-1);
-    const sl=p.side==='LONG'?p.entry*(1-HL_SL_PCT/100):p.entry*(1+HL_SL_PCT/100);
-    const tp=p.side==='LONG'?p.entry*(1+HL_TP_PCT/100):p.entry*(1-HL_TP_PCT/100);
-    const R=normalizedRR(Math.abs(p.entry-sl),Math.abs(tp-p.entry));
-    const openDir=p.side==='LONG'?'Open Long':'Open Short';
-    const matching=fills.filter(f=>f?.coin===p.coin && String(f?.dir||'')===openDir && n(f?.time)>0).sort((a,b)=>n(b.time)-n(a.time));
-    const latestOpen=matching.find(f=>{const sp=n(f?.startPosition);return p.side==='LONG'?sp<=0:sp>=0;})||matching[0];
-    const openedAt=latestOpen?.time||null;
-    const ageMin=openedAt?Math.max(0,(Date.now()-openedAt)/60000):null;
-    const x={wallet:w,coin:p.coin,side:p.side,sourceEntry:p.entry,current:mid,distancePct:dist,sl,tp,rr:R,size:p.size,positionValue:p.positionValue,unrealized:p.unrealized,leverage:p.leverage,liq:p.liq,margin:p.margin,openedAt,ageMin,openFillPx:n(latestOpen?.px),openFillSize:n(latestOpen?.sz),openFillHash:latestOpen?.hash||null,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R>=MIN_RR};
-    positions.push(x);if(x.eligible)signals.push(x);
+  const now=Date.now();
+  const cutoff=now-FUTURES_ACTIVITY_LOOKBACK_MIN*60000;
+  let fills=[];
+  try{
+    const r=await hl({type:'userFillsByTime',user:w.address,startTime:cutoff,endTime:now,aggregateByTime:true},`recentFills:${w.name}`);
+    fills=Array.isArray(r)?r:[];
+  }catch(e){
+    console.log(`[FUTURES][FILLS] ${w.name} ${e.message}`);
   }
-  return {wallet:w,signals,positions,scanned:1,health};
-}
 
+  // One actionable candidate per wallet/coin/side: the newest real opening fill.
+  const latest=new Map();
+  for(const f of fills){
+    const coin=String(f?.coin||'').trim();
+    const dir=String(f?.dir||'');
+    const t=n(f?.time);
+    const px=n(f?.px);
+    const sz=n(f?.sz);
+    if(!coin||!t||t<cutoff||!(px>0)||!(sz>0))continue;
+    let side=null;
+    if(dir==='Open Long')side='LONG';
+    else if(dir==='Open Short')side='SHORT';
+    else continue;
+
+    // startPosition protects against accidentally treating a closing fill as an opening event.
+    const sp=n(f?.startPosition);
+    if(side==='LONG' && sp<0)continue;
+    if(side==='SHORT' && sp>0)continue;
+
+    const key=`${coin}|${side}`;
+    const prev=latest.get(key);
+    if(!prev || t>n(prev.time))latest.set(key,f);
+  }
+
+  const signals=[];
+  for(const f of [...latest.values()].sort((a,b)=>n(b?.time)-n(a?.time))){
+    const coin=String(f.coin);
+    const side=String(f.dir)==='Open Long'?'LONG':'SHORT';
+    const entry=n(f.px);
+    const mid=n(mids?.[coin]);
+    if(!(entry>0)||!(mid>0))continue;
+
+    // Distance is measured from the whale's actual fill, not the current position's VWAP.
+    const dist=(mid/entry-1)*100*(side==='LONG'?1:-1);
+    const sl=side==='LONG'?entry*(1-HL_SL_PCT/100):entry*(1+HL_SL_PCT/100);
+    const tp=side==='LONG'?entry*(1+HL_TP_PCT/100):entry*(1-HL_TP_PCT/100);
+    const R=normalizedRR(Math.abs(entry-sl),Math.abs(tp-entry));
+    const ageMin=Math.max(0,(now-n(f.time))/60000);
+    const size=n(f.sz);
+    const positionValue=size*entry;
+    const x={
+      wallet:w,coin,side,sourceEntry:entry,current:mid,distancePct:dist,sl,tp,rr:R,
+      size,positionValue,unrealized:null,leverage:null,liq:null,margin:null,
+      openedAt:n(f.time),ageMin,openFillPx:entry,openFillSize:size,openFillHash:f.hash||null,
+      activitySource:'RECENT_HYPERLIQUID_OPEN_FILL',
+      fillDir:f.dir,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR
+    };
+    signals.push(x);
+  }
+
+  return {wallet:w,signals,positions:signals,scanned:fills.length,health,activityLookbackMin:FUTURES_ACTIVITY_LOOKBACK_MIN};
+}
 function signalLine(x,i){
   return `${i}. ${x.wallet.name} | ${x.coin} | ${x.side}\n   Source Entry ${priceFmt(x.sourceEntry)} | Now ${priceFmt(x.current)} | Dist ${pct(x.distancePct,2)}\n   SL ${priceFmt(x.sl)} | TP ${priceFmt(x.tp)} | RR ${fmt(x.rr,3)} | ${x.leverage?`Lev ${fmt(x.leverage,1)}x | `:''}${x.positionValue?`Pos ${money(x.positionValue)} | `:''}${x.ageMin!=null?`Age ${x.ageMin<1?Math.max(1,Math.round(x.ageMin*60))+'s':x.ageMin.toFixed(1)+'m'} | `:''}${x.liquidity?`Liq ${money(x.liquidity)}`:''}`;
 }
