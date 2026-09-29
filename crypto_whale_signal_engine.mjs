@@ -3,7 +3,7 @@
 // Exactly 10 fixed signal sources: 5 Spot + 5 Futures.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V2.7-WHALE-SIGNAL-ACTIVITY-FIRST-FUTURES-ENTRY';
+const VERSION = 'V2.8-WHALE-SIGNAL-TRUE-OPEN-FILL-DETECTION';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -21,7 +21,7 @@ const RECENT_SIGS = Number(process.env.SIGNAL_SPOT_SIGNATURES || 80);
 const SPOT_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_SPOT_ACTIVITY_LOOKBACK_MIN || 15);
 const SPOT_MIN_BUY_USD = Number(process.env.SIGNAL_SPOT_MIN_BUY_USD || 25);
 const MAX_SIGNAL_LATENCY_MIN = Number(process.env.SIGNAL_MAX_LATENCY_MIN || 5);
-const FUTURES_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_FUTURES_ACTIVITY_LOOKBACK_MIN || 60);
+const FUTURES_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_FUTURES_ACTIVITY_LOOKBACK_MIN || 120);
 const FUTURES_GREEN_LATENCY_MIN = Number(process.env.SIGNAL_FUTURES_GREEN_LATENCY_MIN || MAX_SIGNAL_LATENCY_MIN);
 const FUTURES_BETWEEN_WALLETS_MS = Number(process.env.SIGNAL_FUTURES_BETWEEN_WALLETS_MS || 1200);
 const FUTURES_RETRY_BASE_MS = Number(process.env.SIGNAL_FUTURES_RETRY_BASE_MS || 1500);
@@ -39,7 +39,7 @@ const HEALTH_MIN_TRADES = Number(process.env.SIGNAL_HEALTH_MIN_TRADES || 20);
 
 const SPOT_WALLETS = [
   {name:'DECU', address:'4vw54BmAogeRV3vPKWyFet5yf8DTLcREzdSzx4rw9Ud9'},
-  {name:'TRUNOEST', address:'ardinRsN1mNYVeoJWTBsWeYeXvuR9UUDGMsCDKpb6AT'},
+  {name:'TRUNOEST', address:'ardinRsN1mNYVeoJWTBsWeXvuR9UUDGMsCDKpb6AT'},
   {name:'CENTED', address:'CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o'},
   {name:'MR_FROG', address:'4DdrfiDHpmx55i4SPssxVzS9ZaKLb8qr45NKY9Er9nNh'},
   {name:'JIJO', address:'4BdKaxN8G6ka4GYtQQWk4GdZRUTX2vQH9GcXdBREFUk'}
@@ -294,35 +294,50 @@ async function scanFutures(w,mids,now){
   const cutoff=now-FUTURES_ACTIVITY_LOOKBACK_MIN*60000;
   const fills=await fetchRecentFuturesFills(w,cutoff,now);
   const latest=new Map();
+  let dirOpen=0, derivedOpen=0, rejectedClose=0, invalid=0;
   for(const f of fills){
     const coin=String(f?.coin||'').trim();
     const dir=String(f?.dir||'');
+    const aggressor=String(f?.side||'').toUpperCase();
     const t=n(f?.time);
     const px=n(f?.px);
     const sz=n(f?.sz);
-    if(!coin||t<cutoff||!(px>0)||!(sz>0))continue;
-    let side=null;
-    if(dir==='Open Long')side='LONG';
-    else if(dir==='Open Short')side='SHORT';
-    else continue;
-    // A close/reduce fill must never become a new entry signal.
     const sp=Number(f?.startPosition);
-    if(Number.isFinite(sp)){
-      if(side==='LONG' && sp<0)continue;
-      if(side==='SHORT' && sp>0)continue;
+    if(!coin||t<cutoff||!(px>0)||!(sz>0)||!Number.isFinite(sp)){invalid++;continue;}
+
+    // Hyperliquid defines an opening trade by an increase in absolute position.
+    // Reconstruct the post-fill signed position from startPosition + fill side.
+    // This also correctly detects a flip, e.g. -5 -> +5, where the fill both
+    // closes the short and opens a new long.
+    const delta = aggressor==='B' ? sz : aggressor==='A' ? -sz : 0;
+    const after = sp + delta;
+    let side=null;
+    if(delta!==0 && Math.abs(after) > Math.abs(sp) && Math.abs(after)>0){
+      side=after>0?'LONG':'SHORT';
+      derivedOpen++;
+    }else if(dir==='Open Long' || dir==='Open Short'){
+      // Fallback only when the API's frontend dir explicitly says Open.
+      side=dir==='Open Long'?'LONG':'SHORT';
+      derivedOpen++;
+    }else{
+      rejectedClose++;
+      continue;
     }
+    if(dir==='Open Long'||dir==='Open Short')dirOpen++;
+
     const key=`${coin}|${side}`;
     const prev=latest.get(key);
-    if(!prev||t>n(prev.time))latest.set(key,f);
+    if(!prev||t>n(prev.time))latest.set(key,{...f,_derivedSide:side,_startPosition:sp,_postPosition:after});
   }
+  console.log(`[FUTURES][OPEN-DETECT] ${w.name} fills=${fills.length} dirOpen=${dirOpen} derivedOpen=${derivedOpen} closes/reduces=${rejectedClose} invalid=${invalid} candidates=${latest.size}`);
 
   const signals=[];
   for(const f of [...latest.values()].sort((a,b)=>n(b?.time)-n(a?.time))){
     const coin=String(f.coin);
-    const side=f.dir==='Open Long'?'LONG':'SHORT';
+    const side=f._derivedSide || (f.dir==='Open Long'?'LONG':'SHORT');
     const entry=n(f.px);
     const mid=n(mids?.[coin]);
-    if(!(entry>0)||!(mid>0))continue;
+    if(!(entry>0)||!(mid>0)){ console.log(`[FUTURES][DROP] ${w.name} ${coin} side=${side} entry=${entry} mid=${mid}`); continue; }
     const dist=(mid/entry-1)*100*(side==='LONG'?1:-1);
     const sl=side==='LONG'?entry*(1-HL_SL_PCT/100):entry*(1+HL_SL_PCT/100);
     const tp=side==='LONG'?entry*(1+HL_TP_PCT/100):entry*(1-HL_TP_PCT/100);
