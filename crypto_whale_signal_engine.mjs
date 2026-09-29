@@ -3,7 +3,7 @@
 // Exactly 10 fixed signal sources: 5 Spot + 5 Futures.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V1.8.1-WHALE-SIGNAL-RPC-RESILIENCE-DATA-INTEGRITY';
+const VERSION = 'V1.8.2-WHALE-SIGNAL-FUTURES-DATA-FIX';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -69,6 +69,8 @@ function pct(v,d=2){return Number.isFinite(Number(v))?`${Number(v).toFixed(d)}%`
 function fmt(v,d=4){return Number.isFinite(Number(v))?Number(v).toFixed(d):'N/A'}
 function rr(sl,tp){const a=Math.abs(Number(sl));return a>0?Math.abs(Number(tp))/a:0}
 function age(ms){if(!ms)return 'N/A';const h=(Date.now()-ms)/3600000;return h<1?`${Math.max(1,Math.round(h*60))}m`:`${h.toFixed(1)}h`}
+function ageText(ms){return age(ms)}
+function finite(v){return Number.isFinite(Number(v))?Number(v):null}
 
 let solCooldownUntil = 0;
 async function fetchJson(url, options={}, label='request', retries=0){
