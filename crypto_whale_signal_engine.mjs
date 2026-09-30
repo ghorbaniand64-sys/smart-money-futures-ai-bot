@@ -6,7 +6,7 @@ import path from 'node:path';
 // Dynamic whale discovery: 5 Spot + 5 Futures. READ ONLY.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V5.0-DYNAMIC-WATCHLIST-SIGNAL-FIRST';
+const VERSION = 'V5.1-SIGNAL-QUALITY-SIZE-AVG';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY || '';
@@ -77,7 +77,7 @@ const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TO
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 16);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
-const DISCOVERY_SCHEMA = 'V5.0-DYNAMIC-WATCHLIST-SIGNAL-FIRST';
+const DISCOVERY_SCHEMA = 'V5.1-SIGNAL-QUALITY-SIZE-AVG';
 const DISCOVERY_FILL_PAGE_SIZE = Number(process.env.WHALE_DISCOVERY_FILL_PAGE_SIZE || 2000);
 const DISCOVERY_FILL_MAX_PAGES = Number(process.env.WHALE_DISCOVERY_FILL_MAX_PAGES || 8);
 const DISCOVERY_RPC_DELAY_MS = Number(process.env.WHALE_DISCOVERY_RPC_DELAY_MS || 1800);
@@ -770,23 +770,66 @@ async function scanSpot(w){
   const solUsd=solInfo.price||await tokenPrice(WSOL_MINT);
   if(!(solUsd>0))throw new Error('SOL_PRICE_UNAVAILABLE');
   const cutoff=Date.now()-SPOT_MAX_ACTIVITY_AGE_MIN*60000;
-  const candidates=[]; const diagnostics=[]; const seen=new Set();
+  const candidates=[]; const diagnostics=[];
   if(HELIUS_ENHANCED_ENABLED){
     const txs=await heliusEnhancedTransactions(w.address,100,'',`signal:${w.name}`);
+    const recent=[];
     for(const tx of txs){
       const bt=n(tx?.timestamp)*1000; if(!bt||bt<cutoff)continue;
-      const sw=enhancedSwap(tx,w.address,solUsd); if(!sw||sw.direction!=='BUY'||seen.has(sw.mint))continue;
+      const sw=enhancedSwap(tx,w.address,solUsd);
+      if(!sw||sw.direction!=='BUY')continue;
+      if(!(sw.fundingUsd>=SPOT_MIN_BUY_USD)){
+        diagnostics.push({sig:tx.signature,reason:`BUY_NOTIONAL<$${SPOT_MIN_BUY_USD}`});
+        console.log(`[SPOT][DROP] ${w.name} | mint=${String(sw.mint).slice(0,8)} | BUY $${Number(sw.fundingUsd||0).toFixed(2)} < min $${SPOT_MIN_BUY_USD} | reason=SMALL_TRADE`);
+        continue;
+      }
+      if(!(sw.tokenAmount>0)){
+        diagnostics.push({sig:tx.signature,reason:'TOKEN_AMOUNT_INVALID'});
+        continue;
+      }
+      recent.push({...sw,time:bt,signature:tx.signature});
+    }
+
+    // Reconstruct the currently observable spot inventory with FIFO over the
+    // recent signal window. This prevents AVG=N/A and avoids pretending that a
+    // single latest BUY is the whole position when several adds are visible.
+    recent.sort((a,b)=>a.time-b.time);
+    const lots=new Map();
+    for(const r of recent){
+      if(r.direction==='BUY'){
+        if(!lots.has(r.mint))lots.set(r.mint,[]);
+        lots.get(r.mint).push({qty:r.tokenAmount,usd:r.fundingUsd,time:r.time});
+      }
+    }
+    const latestByMint=new Map();
+    for(const r of recent){
+      const q=lots.get(r.mint)||[];
+      // No SELL rows are accepted by the signal path, so the remaining lots
+      // represent the BUY inventory visible in this fresh window.
+      const qty=q.reduce((a,b)=>a+b.qty,0);
+      const usd=q.reduce((a,b)=>a+b.usd,0);
+      if(qty>0)latestByMint.set(r.mint,{avgEntry:usd/qty,observedBuyCount:q.length,observedQty:qty,observedUsd:usd});
+    }
+
+    const latest=[...recent].sort((a,b)=>b.time-a.time);
+    const seen=new Set();
+    for(const sw of latest){
+      if(seen.has(sw.mint))continue;
       const info=await tokenMarketData(sw.mint); const px=n(info.price);
-      if(!(px>0)){diagnostics.push({sig:tx.signature,reason:`PRICE_UNRESOLVED:${sw.mint.slice(0,8)}`});continue;}
-      const sourceEntry=sw.fundingUsd/sw.tokenAmount; if(!(sourceEntry>0)){diagnostics.push({sig:tx.signature,reason:'ENTRY_RECONSTRUCTION_INVALID'});continue;}
+      if(!(px>0)){diagnostics.push({sig:sw.signature,reason:`PRICE_UNRESOLVED:${sw.mint.slice(0,8)}`});continue;}
+      const sourceEntry=sw.fundingUsd/sw.tokenAmount;
+      if(!(sourceEntry>0)){diagnostics.push({sig:sw.signature,reason:'ENTRY_RECONSTRUCTION_INVALID'});continue;}
+      const observed=latestByMint.get(sw.mint);
+      const avgEntry=Number.isFinite(Number(observed?.avgEntry))&&Number(observed.avgEntry)>0?Number(observed.avgEntry):sourceEntry;
       const dist=(px/sourceEntry-1)*100;
       const sl=sourceEntry*(1-SL_PCT/100),tp=sourceEntry*(1+TP_PCT/100),R=normalizedRR(sourceEntry-sl,tp-sourceEntry);
-      const ageMin=Math.max(0,(Date.now()-bt)/60000);
-      const x={wallet:w,coin:info.symbol||sw.mint.slice(0,6),mint:sw.mint,side:'LONG',sourceEntry,current:px,distancePct:dist,sl,tp,rr:R,age:bt,ageMin,liquidity:info.liquidity,volume24h:info.volume24h,tx:tx.signature,buyNotionalUsd:sw.fundingUsd,fundingAsset:sw.fundingAsset,activitySource:'HELIUS_ENHANCED_SWAP',priceSource:info.source,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR};
+      const ageMin=Math.max(0,(Date.now()-sw.time)/60000);
+      const x={wallet:w,coin:info.symbol||sw.mint.slice(0,6),displaySymbol:info.symbol||sw.mint.slice(0,6),mint:sw.mint,side:'LONG',sourceEntry,current:px,avgEntry,avgEntryObserved:true,observedBuyCount:observed?.observedBuyCount||1,observedBuyNotionalUsd:observed?.observedUsd||sw.fundingUsd,distancePct:dist,sl,tp,rr:R,age:sw.time,ageMin,liquidity:info.liquidity,volume24h:info.volume24h,tx:sw.signature,buyNotionalUsd:sw.fundingUsd,fundingAsset:sw.fundingAsset,activitySource:'HELIUS_ENHANCED_SWAP',priceSource:info.source,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR};
       candidates.push(x); seen.add(sw.mint);
+      console.log(`[SPOT][CANDIDATE] ${w.name} | ${x.displaySymbol} | LONG | ADD ${priceFmt(sourceEntry)} | AVG ${priceFmt(avgEntry)} | Now ${priceFmt(px)} | Dist ${pct(dist,2)} | RR ${fmt(R,3)} | Age ${ageMin.toFixed(1)}m | Size ${money(sw.fundingUsd)} | observedBUYs=${x.observedBuyCount}`);
       if(candidates.length>=MAX_SPOT_POSITIONS)break;
     }
-    return {wallet:w,signals:candidates.filter(x=>x.eligible),positions:[],recentBuys:candidates,scanned:txs.length,txs:txs.filter(x=>n(x?.timestamp)*1000>=cutoff).length,health:spotHealth(w),activityLookbackMin:SPOT_MAX_ACTIVITY_AGE_MIN,diagnostics:diagnostics.slice(0,SPOT_DIAGNOSTIC_MAX),tokenAccounts:0};
+    return {wallet:w,signals:candidates.filter(x=>x.eligible),positions:candidates,recentBuys:candidates,scanned:txs.length,txs:txs.filter(x=>n(x?.timestamp)*1000>=cutoff).length,health:spotHealth(w),activityLookbackMin:SPOT_MAX_ACTIVITY_AGE_MIN,diagnostics:diagnostics.slice(0,SPOT_DIAGNOSTIC_MAX),tokenAccounts:0};
   }
   throw new Error('HELIUS_API_KEY_MISSING_SPOT_SIGNAL_PATH_DISABLED');
 }
