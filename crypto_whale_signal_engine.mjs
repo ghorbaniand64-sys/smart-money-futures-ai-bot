@@ -5,7 +5,7 @@ import path from 'node:path';
 // Dynamic whale discovery: 5 Spot + 5 Futures. READ ONLY.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V4.7-HELIUS-PARSED-SWAP-LIFECYCLE';
+const VERSION = 'V4.8-HELIUS-SWAP-LIFECYCLE-AUDIT';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY || '';
@@ -73,7 +73,7 @@ const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TO
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 16);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
-const DISCOVERY_SCHEMA = 'V4.5.1-HELIUS-SPOT-DIRECTION-FIX';
+const DISCOVERY_SCHEMA = 'V4.8-HELIUS-SWAP-LIFECYCLE-AUDIT';
 const DISCOVERY_FILL_PAGE_SIZE = Number(process.env.WHALE_DISCOVERY_FILL_PAGE_SIZE || 2000);
 const DISCOVERY_FILL_MAX_PAGES = Number(process.env.WHALE_DISCOVERY_FILL_MAX_PAGES || 8);
 const DISCOVERY_RPC_DELAY_MS = Number(process.env.WHALE_DISCOVERY_RPC_DELAY_MS || 1800);
@@ -355,6 +355,7 @@ async function discoverSpotCandidates(){
             if(h>=0)lifecycles.push({mint:sw.mint,openTime:lot.time,closeTime:bt,holdHours:h});
             lot.qty-=take; remain-=take; if(lot.qty<=1e-12)q.shift();
           }
+          if(remain>1e-9)unmatchedSells+=remain;
         }
       }
       unmatchedBuyLots=[...lots.values()].reduce((sum,q)=>sum+q.filter(x=>x.qty>0).length,0);
@@ -364,7 +365,7 @@ async function discoverSpotCandidates(){
       const roundTrips=lifecycles.length, holdRatio=roundTrips?inWindow.length/roundTrips:0;
       const recentLifecycles=inWindow.filter(x=>Date.now()-x.closeTime<=24*3600000).length;
       const qualificationReasons=spotQualificationReasons({roundTrips,inWindow:inWindow.length,holdRatio,medianHold,volumeUsd,lastTrade}); const qualifies=qualificationReasons.length===0;
-      console.log(`[DISCOVERY][SPOT][MATCH-AUDIT] ${short(address)} unmatchedSellQty=${unmatchedSells.toFixed(4)} openLots=${unmatchedBuyLots}`);
+      console.log(`[DISCOVERY][SPOT][MATCH-AUDIT] ${short(address)} unmatchedSellQty=${unmatchedSells.toFixed(6)} openLots=${unmatchedBuyLots} source=HELIUS_SWAP_EVENT_FIRST`);
       console.log(`[DISCOVERY][SPOT][HELIUS-LIFECYCLE] SOL_${address.slice(0,4).toUpperCase()} tx=${txs.length} buys=${buys} sells=${sells} roundTrips=${roundTrips} hold1-24=${inWindow.length} ratio=${(holdRatio*100).toFixed(0)}% median=${medianHold.toFixed(2)}h volume72h=${Math.round(volumeUsd)} recent=${recentLifecycles} programHits=${programHits} qualifies=${qualifies}${qualifies?'':' reason='+qualificationReasons.join(',')}`);
       if(qualifies)finals.push({name:`SOL_${address.slice(0,4).toUpperCase()}`,address,discovery:{programHits,recentTxs24h:txs.filter(x=>n(x?.timestamp)*1000>=Date.now()-24*3600000).length,buys,sells,roundTrips,inWindow:inWindow.length,holdRatio,medianHoldHours:medianHold,avgHoldHours:hs.length?hs.reduce((a,b)=>a+b,0)/hs.length:0,lastTrade,volumeUsd,recentLifecycles}});
     }catch(e){console.log(`[DISCOVERY][SPOT][HELIUS-FINAL] ${short(address)} ERROR ${String(e?.message||e).slice(0,120)}`)}
@@ -461,7 +462,7 @@ async function heliusEnhancedTransactions(address,limit=100,before='',label='hel
   }
   throw lastErr||new Error(`${label}:FAILED`);
 }
-async function heliusEnhancedHistory(address,maxPages=3,label='helius-history') {
+async function heliusEnhancedHistory(address,maxPages=8,label='helius-history') {
   const all=[]; const seen=new Set(); let before='';
   for(let page=1;page<=maxPages;page++){
     const rows=await heliusEnhancedTransactions(address,100,before,`${label}:p${page}`);
@@ -502,9 +503,9 @@ function enhancedSwap(tx,wallet,solUsd){
     user:enhancedUser(x,side).toLowerCase()
   });
 
-  // Helius documents swap event legs as tokenInputs/tokenOutputs with
-  // userAccount + rawTokenAmount. These are the actual swap legs and are the
-  // primary source. Do not reinterpret router/internal transfers here.
+  // IMPORTANT: Helius SWAP event legs are already the economic swap legs.
+  // Do NOT discard a leg merely because userAccount is missing/different;
+  // some routed swaps expose token-account/authority identities there.
   let inputs=Array.isArray(swap.tokenInputs)
     ? swap.tokenInputs.map(x=>normalizeToken(x,'from')).filter(x=>x.mint&&x.amount>0)
     : [];
@@ -512,13 +513,7 @@ function enhancedSwap(tx,wallet,solUsd){
     ? swap.tokenOutputs.map(x=>normalizeToken(x,'to')).filter(x=>x.mint&&x.amount>0)
     : [];
 
-  if(inputs.length||outputs.length){
-    inputs=inputs.filter(x=>!x.user||x.user===walletLc);
-    outputs=outputs.filter(x=>!x.user||x.user===walletLc);
-  }
-
-  // Fallback: Enhanced transaction-level tokenTransfers. These expose wallet
-  // ownership with fromUserAccount/toUserAccount and tokenAmount in UI units.
+  // Fallback to transaction-level transfers only when the swap event legs are absent.
   if(!inputs.length&&!outputs.length){
     inputs=tokenTransfers
       .filter(x=>String(x?.fromUserAccount||'').toLowerCase()===walletLc)
@@ -534,35 +529,40 @@ function enhancedSwap(tx,wallet,solUsd){
   const nonFundingOutputs=outputs.filter(x=>!FUNDING_MINTS.has(x.mint));
   const usdForFunding=x=>x.mint===USDC_MINT?x.amount:x.mint===WSOL_MINT?x.amount*solUsd:0;
 
-  // For native SOL, use ONLY the explicit swap event's nativeInput/nativeOutput
-  // when its account is this wallet. Generic nativeTransfers include fees/tips.
+  // Native SOL is used only from explicit swap-native legs first.
+  // Generic nativeTransfers are fallback only and use the largest wallet leg,
+  // because fees/tips are normally much smaller than the swap amount.
   const eventNativeInAccount=String(swap?.nativeInput?.account||'').toLowerCase();
   const eventNativeOutAccount=String(swap?.nativeOutput?.account||'').toLowerCase();
   const eventNativeIn=eventNativeInAccount===walletLc?n(swap?.nativeInput?.amount)/1e9:0;
   const eventNativeOut=eventNativeOutAccount===walletLc?n(swap?.nativeOutput?.amount)/1e9:0;
-
-  // Fallback native movement only when there is no explicit swap-native leg.
-  const transferNativeIn=Math.max(0,...nativeTransfers
-    .filter(x=>String(x?.toUserAccount||'').toLowerCase()===walletLc)
-    .map(x=>n(x?.amount)/1e9));
-  const transferNativeOut=Math.max(0,...nativeTransfers
-    .filter(x=>String(x?.fromUserAccount||'').toLowerCase()===walletLc)
-    .map(x=>n(x?.amount)/1e9));
+  const transferNativeIn=Math.max(0,...nativeTransfers.filter(x=>String(x?.toUserAccount||'').toLowerCase()===walletLc).map(x=>n(x?.amount)/1e9));
+  const transferNativeOut=Math.max(0,...nativeTransfers.filter(x=>String(x?.fromUserAccount||'').toLowerCase()===walletLc).map(x=>n(x?.amount)/1e9));
   const nativeIn=eventNativeIn>0?eventNativeIn:transferNativeIn;
   const nativeOut=eventNativeOut>0?eventNativeOut:transferNativeOut;
-
-  const fundingOutUsd=Math.max(0,...fundingInputs.map(usdForFunding),nativeOut*solUsd);
-  const fundingInUsd=Math.max(0,...fundingOutputs.map(usdForFunding),nativeIn*solUsd);
+  const fundingOutUsd=Math.max(...fundingInputs.map(usdForFunding),0,nativeOut*solUsd);
+  const fundingInUsd=Math.max(...fundingOutputs.map(usdForFunding),0,nativeIn*solUsd);
 
   if(nonFundingOutputs.length&&fundingOutUsd>0){
     const t=[...nonFundingOutputs].sort((a,b)=>b.amount-a.amount)[0];
-    const fundingAsset=fundingInputs.find(x=>Math.abs(usdForFunding(x)-fundingOutUsd)<1e-9)?.mint||(nativeOut*solUsd===fundingOutUsd?'SOL':null);
+    const fundingAsset=fundingInputs.find(x=>Math.abs(usdForFunding(x)-fundingOutUsd)<1e-6)?.mint||(nativeOut*solUsd===fundingOutUsd?'SOL':null);
     return {direction:'BUY',mint:t.mint,tokenAmount:t.amount,fundingUsd:fundingOutUsd,fundingAsset};
   }
   if(nonFundingInputs.length&&fundingInUsd>0){
     const t=[...nonFundingInputs].sort((a,b)=>b.amount-a.amount)[0];
-    const fundingAsset=fundingOutputs.find(x=>Math.abs(usdForFunding(x)-fundingInUsd)<1e-9)?.mint||(nativeIn*solUsd===fundingInUsd?'SOL':null);
+    const fundingAsset=fundingOutputs.find(x=>Math.abs(usdForFunding(x)-fundingInUsd)<1e-6)?.mint||(nativeIn*solUsd===fundingInUsd?'SOL':null);
     return {direction:'SELL',mint:t.mint,tokenAmount:t.amount,fundingUsd:fundingInUsd,fundingAsset};
+  }
+
+  // Last-resort direction inference from Helius's human-readable description.
+  // Only accept it when a non-funding transfer identifies the traded mint.
+  const desc=String(tx?.description||'').toLowerCase();
+  const tokenMint=(nonFundingOutputs[0]?.mint||nonFundingInputs[0]?.mint||'');
+  if(tokenMint){
+    if(/\bfor\b/.test(desc)&&/(swap|swapped)/.test(desc)&&nonFundingOutputs.length)
+      return {direction:'BUY',mint:tokenMint,tokenAmount:nonFundingOutputs[0].amount,fundingUsd:fundingOutUsd||0,fundingAsset:fundingInputs[0]?.mint||'SOL'};
+    if(/\bfor\b/.test(desc)&&/(swap|swapped)/.test(desc)&&nonFundingInputs.length)
+      return {direction:'SELL',mint:tokenMint,tokenAmount:nonFundingInputs[0].amount,fundingUsd:fundingInUsd||0,fundingAsset:fundingOutputs[0]?.mint||'SOL'};
   }
   return null;
 }
