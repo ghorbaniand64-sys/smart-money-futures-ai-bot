@@ -5,7 +5,7 @@ import path from 'node:path';
 // Dynamic whale discovery: 5 Spot + 5 Futures. READ ONLY.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V4.2-WHALE-PAGINATED-LIFECYCLE-SPOT-RESILIENT';
+const VERSION = 'V4.3-WHALE-BUDGETED-DISCOVERY-LIFECYCLE';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -56,12 +56,21 @@ const DISCOVERY_MIN_COMPLETED = Number(process.env.WHALE_DISCOVERY_MIN_COMPLETED
 const DISCOVERY_MIN_IN_WINDOW = Number(process.env.WHALE_DISCOVERY_MIN_IN_WINDOW || 5);
 const DISCOVERY_MIN_HOLD_RATIO = Number(process.env.WHALE_DISCOVERY_MIN_HOLD_RATIO || 0.5);
 const DISCOVERY_MIN_RECENT_LIFECYCLES = Number(process.env.WHALE_DISCOVERY_MIN_RECENT_LIFECYCLES || 1);
-const DISCOVERY_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_MAX_CANDIDATES || 60);
+const DISCOVERY_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_MAX_CANDIDATES || 30);
+const DISCOVERY_FUTURES_QUICK_LOOKBACK_HOURS = Number(process.env.WHALE_DISCOVERY_FUTURES_QUICK_LOOKBACK_HOURS || 12);
+const DISCOVERY_FUTURES_DEEP_CANDIDATES = Number(process.env.WHALE_DISCOVERY_FUTURES_DEEP_CANDIDATES || 15);
+const DISCOVERY_FUTURES_QUICK_MAX_PAGES = Number(process.env.WHALE_DISCOVERY_FUTURES_QUICK_MAX_PAGES || 1);
+const DISCOVERY_FUTURES_DEEP_MAX_PAGES = Number(process.env.WHALE_DISCOVERY_FUTURES_DEEP_MAX_PAGES || 8);
+const DISCOVERY_FUTURES_DEEP_DELAY_MS = Number(process.env.WHALE_DISCOVERY_FUTURES_DEEP_DELAY_MS || 350);
+const DISCOVERY_RPC_FAST_RETRIES = Number(process.env.WHALE_DISCOVERY_RPC_FAST_RETRIES || 2);
+const DISCOVERY_RPC_FAST_DELAY_MS = Number(process.env.WHALE_DISCOVERY_RPC_FAST_DELAY_MS || 700);
+const DISCOVERY_SPOT_PROGRAM_SIGS = Number(process.env.WHALE_DISCOVERY_SPOT_PROGRAM_SIGS || 8);
+const DISCOVERY_SPOT_PROGRAM_TXS = Number(process.env.WHALE_DISCOVERY_SPOT_PROGRAM_TXS || 4);
 const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TOKENS || 20);
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
-const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 18);
+const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 8);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
-const DISCOVERY_SCHEMA = 'V4.2-PAGINATED-LIFECYCLE-SPOT-RESILIENT';
+const DISCOVERY_SCHEMA = 'V4.3-BUDGETED-DISCOVERY-LIFECYCLE';
 const DISCOVERY_FILL_PAGE_SIZE = Number(process.env.WHALE_DISCOVERY_FILL_PAGE_SIZE || 2000);
 const DISCOVERY_FILL_MAX_PAGES = Number(process.env.WHALE_DISCOVERY_FILL_MAX_PAGES || 8);
 const DISCOVERY_RPC_DELAY_MS = Number(process.env.WHALE_DISCOVERY_RPC_DELAY_MS || 1800);
@@ -69,7 +78,7 @@ const DISCOVERY_RPC_RETRIES = Number(process.env.WHALE_DISCOVERY_RPC_RETRIES || 
 const DISCOVERY_SPOT_TOKEN_COUNT = Number(process.env.WHALE_DISCOVERY_SPOT_TOKEN_COUNT || 8);
 const DISCOVERY_SPOT_HOLDER_COUNT = Number(process.env.WHALE_DISCOVERY_SPOT_HOLDER_COUNT || 5);
 const DISCOVERY_SPOT_CANDIDATE_WALLETS = Number(process.env.WHALE_DISCOVERY_SPOT_CANDIDATE_WALLETS || 16);
-const DISCOVERY_SPOT_TX_LIMIT = Number(process.env.WHALE_DISCOVERY_SPOT_TX_LIMIT || 60);
+const DISCOVERY_SPOT_TX_LIMIT = Number(process.env.WHALE_DISCOVERY_SPOT_TX_LIMIT || 30);
 const DISCOVERY_SPOT_FINALISTS = Number(process.env.WHALE_DISCOVERY_SPOT_FINALISTS || 12);
 const HL_LEADERBOARD_URL = process.env.HL_LEADERBOARD_URL || 'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';
 
@@ -85,7 +94,7 @@ async function readDiscoveryCache(){
     const raw=await fs.readFile(DISCOVERY_STATE_FILE,'utf8');
     const x=JSON.parse(raw);
     const ageMin=(Date.now()-n(x?.generatedAt))/60000;
-    if(x?.schema===DISCOVERY_SCHEMA&&ageMin>=0&&ageMin<DISCOVERY_TTL_MIN&&Array.isArray(x?.spotWallets)&&Array.isArray(x?.futuresWallets)&&x.spotWallets.length>=TARGET_SPOT_WALLETS&&x.futuresWallets.length>=TARGET_FUTURES_WALLETS){
+    if(x?.schema===DISCOVERY_SCHEMA&&ageMin>=0&&ageMin<DISCOVERY_TTL_MIN&&Array.isArray(x?.spotWallets)&&Array.isArray(x?.futuresWallets)&&(x.spotWallets.length>0||x.futuresWallets.length>0)){
       console.log(`[DISCOVERY][CACHE] age=${ageMin.toFixed(1)}m spot=${x.spotWallets.length} futures=${x.futuresWallets.length}`);
       return x;
     }
@@ -103,23 +112,30 @@ async function writeDiscoveryCache(data){
 async function solDiscovery(body,label='sol-discovery'){
   let lastErr=null;
   for(let attempt=1;attempt<=DISCOVERY_RPC_RETRIES;attempt++){
-    try{
-      return await sol(body,label+`:a${attempt}`);
-    }catch(e){
-      lastErr=e;
-      const msg=String(e?.message||e);
-      const is429=/429|rate.?limit|too many requests/i.test(msg);
+    try{return await sol(body,label+`:a${attempt}`)}catch(e){
+      lastErr=e; const msg=String(e?.message||e); const is429=/429|rate.?limit|too many requests/i.test(msg);
       if(attempt>=DISCOVERY_RPC_RETRIES)break;
       const wait=DISCOVERY_RPC_DELAY_MS*Math.pow(2,attempt-1)+(is429?1000:0);
-      console.log(`[DISCOVERY][RPC-RETRY] ${label} attempt=${attempt} reason=${msg.slice(0,100)} wait=${wait}ms`);
+      console.log(`[DISCOVERY][RPC-RETRY] ${label} attempt=${attempt} reason=${msg.slice(0,100)} wait=${wait}ms`); await sleep(wait);
+    }
+  }
+  throw lastErr||new Error(`${label}:FAILED`);
+}
+async function solDiscoveryFast(body,label='sol-fast'){
+  let lastErr=null;
+  for(let attempt=1;attempt<=DISCOVERY_RPC_FAST_RETRIES;attempt++){
+    try{return await sol(body,label+`:a${attempt}`)}catch(e){
+      lastErr=e; const msg=String(e?.message||e);
+      if(attempt>=DISCOVERY_RPC_FAST_RETRIES)break;
+      const wait=DISCOVERY_RPC_FAST_DELAY_MS*Math.pow(2,attempt-1)+(/429|rate.?limit|too many requests/i.test(msg)?300:0);
       await sleep(wait);
     }
   }
   throw lastErr||new Error(`${label}:FAILED`);
 }
-async function fetchFillsPaginated(w,startTime,endTime,label='discover'){
+async function fetchFillsPaginated(w,startTime,endTime,label='discover',maxPages=DISCOVERY_FILL_MAX_PAGES,betweenMs=FUTURES_BETWEEN_WALLETS_MS){
   const all=[]; const seen=new Set(); let cursorEnd=endTime; let pages=0; let truncated=false;
-  while(pages<DISCOVERY_FILL_MAX_PAGES){
+  while(pages<maxPages){
     pages++;
     let rows=[]; let lastErr=null;
     for(let attempt=1;attempt<=FUTURES_FETCH_RETRY;attempt++){
@@ -145,9 +161,9 @@ async function fetchFillsPaginated(w,startTime,endTime,label='discover'){
     console.log(`[DISCOVERY][PAGINATION] ${w.name} page=${pages} rows=${rows.length} oldest=${oldest?new Date(oldest).toISOString():'NONE'} total=${all.length}`);
     if(rows.length<DISCOVERY_FILL_PAGE_SIZE || !oldest || oldest<=startTime){break;}
     cursorEnd=oldest-1;
-    await sleep(FUTURES_BETWEEN_WALLETS_MS);
+    await sleep(betweenMs);
   }
-  if(pages>=DISCOVERY_FILL_MAX_PAGES)truncated=true;
+  if(pages>=maxPages && all.length>0)truncated=true;
   return {fills:all,pages,truncated};
 }
 
@@ -230,26 +246,50 @@ async function discoverFutures(){
   const rows=await fetchLeaderboard();
   const candidates=rows.filter(r=>/^0x[a-fA-F0-9]{40}$/.test(String(r?.ethAddress||'')))
     .map(r=>{const d=lbMetric(r,'pnl'),w=lbMetric(r,'vlm'); return {...r,pnl7:d.week,pnl30:d.month,volume7:w.week,volume1d:w.day};})
-    .filter(r=>r.volume7>=DISCOVERY_MIN_VOLUME_USD && r.pnl7>0 && r.pnl30>0)
+    .filter(r=>r.volume7>=DISCOVERY_MIN_VOLUME_USD && r.pnl7>0)
     .sort((a,b)=>(b.volume1d-a.volume1d)+(b.pnl7-a.pnl7)*0.01)
     .slice(0,DISCOVERY_MAX_CANDIDATES);
-  console.log(`[DISCOVERY][FUTURES] prefilter=${candidates.length}`);
-  const scored=[];
+  console.log(`[DISCOVERY][FUTURES] prefilter=${candidates.length} quick=${DISCOVERY_FUTURES_QUICK_LOOKBACK_HOURS}h deep=${DISCOVERY_FUTURES_DEEP_CANDIDATES}`);
+
+  // Stage 1: cheap recent-activity screen. One page only; incomplete history is expected here.
+  const quick=[];
   for(const r of candidates){
     const w={name:`HL_${String(r.ethAddress).slice(2,6).toUpperCase()}`,address:r.ethAddress};
     try{
-      const start=Date.now()-DISCOVERY_LOOKBACK_HOURS*3600000, end=Date.now();
-      const pg=await fetchFillsPaginated(w,start,end,'discover');
-      const rawFills=pg.fills;
-      const st=holdStatsFromFills(rawFills);
-      const capped=pg.truncated;
-      const qualifies=!capped && st.completed>=DISCOVERY_MIN_COMPLETED && st.inWindow>=DISCOVERY_MIN_IN_WINDOW && st.holdRatio>=DISCOVERY_MIN_HOLD_RATIO && st.recentLifecycles>=DISCOVERY_MIN_RECENT_LIFECYCLES && st.totalVolume>=DISCOVERY_MIN_VOLUME_USD;
-      console.log(`[DISCOVERY][FUTURES][LIFECYCLE] ${w.name} fills=${rawFills.length} pages=${pg.pages} capped=${capped} volume48h=${Math.round(st.totalVolume)} lifecycle=${st.completed} hold1-24=${st.inWindow} ratio=${(st.holdRatio*100).toFixed(0)}% median=${st.medianHoldHours.toFixed(2)}h recentClosed24h=${st.recentLifecycles} adds=${st.additions} partialReductions=${st.partialReductions} qualifies=${qualifies}`);
-      if(qualifies) scored.push({...w,discovery:{volume48h:st.totalVolume,completedLifecycles:st.completed,inWindow:st.inWindow,holdRatio:st.holdRatio,medianHoldHours:st.medianHoldHours,avgHoldHours:st.avgHoldHours,recentLifecycles:st.recentLifecycles,observedAdds:st.additions,pnl7:r.pnl7,pnl30:r.pnl30,leaderboardVolume7:r.volume7,accountValue:n(r.accountValue)}});
-    }catch(e){console.log(`[DISCOVERY][FUTURES][LIFECYCLE] ${w.name} ERROR ${String(e?.message||e).slice(0,120)}`)}
-    await sleep(FUTURES_BETWEEN_WALLETS_MS);
+      const end=Date.now(), start=end-DISCOVERY_FUTURES_QUICK_LOOKBACK_HOURS*3600000;
+      const pg=await fetchFillsPaginated(w,start,end,'quick',DISCOVERY_FUTURES_QUICK_MAX_PAGES,0);
+      const st=holdStatsFromFills(pg.fills);
+      const recentVolume=st.totalVolume;
+      const recentFills=pg.fills.length;
+      if(recentFills<10 || recentVolume<DISCOVERY_MIN_VOLUME_USD/4)continue;
+      quick.push({...w,raw:r,quick:{recentFills,recentVolume,adds:st.additions}});
+    }catch(e){console.log(`[DISCOVERY][FUTURES][QUICK] ${w.name} ERROR ${String(e?.message||e).slice(0,100)}`)}
   }
-  for(const x of scored){ x.discovery.score=(x.discovery.inWindow*4)+(x.discovery.holdRatio*20)+Math.min(20,Math.log10(Math.max(1,x.discovery.volume48h)))*2+Math.min(10,x.discovery.recentLifecycles)+(x.discovery.pnl7>0?5:0); }
+  quick.sort((a,b)=>(b.quick.recentVolume-a.quick.recentVolume)+(b.quick.recentFills-a.quick.recentFills)*1000);
+  const deepPool=quick.slice(0,DISCOVERY_FUTURES_DEEP_CANDIDATES);
+  console.log(`[DISCOVERY][FUTURES][DEEP-POOL] ${deepPool.length}/${candidates.length}`);
+
+  const scored=[];
+  for(const x of deepPool){
+    const w=x, r=x.raw;
+    try{
+      const end=Date.now(), start=end-DISCOVERY_LOOKBACK_HOURS*3600000;
+      const pg=await fetchFillsPaginated(w,start,end,'deep',DISCOVERY_FUTURES_DEEP_MAX_PAGES,DISCOVERY_FUTURES_DEEP_DELAY_MS);
+      const st=holdStatsFromFills(pg.fills);
+      // A deep audit is valid only when the pagination reached the requested window or
+      // returned fewer than a full page. If the API still has a full page at the cap,
+      // we mark it incomplete and do not rank it as fully verified.
+      const complete=!pg.truncated;
+      const qualifies=complete && st.completed>=DISCOVERY_MIN_COMPLETED && st.inWindow>=DISCOVERY_MIN_IN_WINDOW && st.holdRatio>=DISCOVERY_MIN_HOLD_RATIO && st.recentLifecycles>=DISCOVERY_MIN_RECENT_LIFECYCLES && st.totalVolume>=DISCOVERY_MIN_VOLUME_USD;
+      console.log(`[DISCOVERY][FUTURES][LIFECYCLE] ${w.name} fills=${pg.fills.length} pages=${pg.pages} complete=${complete} volume48h=${Math.round(st.totalVolume)} lifecycle=${st.completed} hold1-24=${st.inWindow} ratio=${(st.holdRatio*100).toFixed(0)}% median=${st.medianHoldHours.toFixed(2)}h recentClosed24h=${st.recentLifecycles} adds=${st.additions} partialReductions=${st.partialReductions} qualifies=${qualifies}`);
+      if(qualifies){
+        const discovery={volume48h:st.totalVolume,completedLifecycles:st.completed,inWindow:st.inWindow,holdRatio:st.holdRatio,medianHoldHours:st.medianHoldHours,avgHoldHours:st.avgHoldHours,recentLifecycles:st.recentLifecycles,observedAdds:st.additions,pnl7:r.pnl7,pnl30:r.pnl30,leaderboardVolume7:r.volume7,accountValue:n(r.accountValue)};
+        discovery.score=(st.inWindow*4)+(st.holdRatio*20)+Math.min(20,Math.log10(Math.max(1,st.totalVolume)))*2+Math.min(10,st.recentLifecycles)+(r.pnl7>0?5:0);
+        scored.push({...w,discovery});
+      }
+    }catch(e){console.log(`[DISCOVERY][FUTURES][DEEP] ${w.name} ERROR ${String(e?.message||e).slice(0,120)}`)}
+    await sleep(DISCOVERY_FUTURES_DEEP_DELAY_MS);
+  }
   scored.sort((a,b)=>b.discovery.score-a.discovery.score);
   return scored.slice(0,TARGET_FUTURES_WALLETS);
 }
@@ -275,54 +315,49 @@ async function fetchSpotDiscoveryTokens(){
 }
 
 async function discoverSpotCandidates(){
-  const rows=await fetchSpotDiscoveryTokens();
-  const stable=new Set([USDC_MINT,'So11111111111111111111111111111111111111112']);
-  const tokens=rows.filter(t=>t?.address&&!stable.has(t.address)&&(n(t.daily_volume)>=DISCOVERY_MIN_VOLUME_USD || n(t?.liquidity?.usd)>=DISCOVERY_MIN_VOLUME_USD/2))
-    .sort((a,b)=>Math.max(n(b.daily_volume),n(b?.liquidity?.usd)*2)-Math.max(n(a.daily_volume),n(a?.liquidity?.usd)*2)).slice(0,Math.min(DISCOVERY_SPOT_TOP_TOKENS,DISCOVERY_SPOT_TOKEN_COUNT));
-  console.log(`[DISCOVERY][SPOT] liquidTokens=${tokens.length}`);
+  // Do not hammer getTokenLargestAccounts. Public Solana RPCs commonly rate-limit that
+  // method. Instead discover traders from recent DEX-program transactions, then perform
+  // the expensive wallet lifecycle audit only on the finalists.
+  const programs=[
+    ['JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4','JUPITER'],
+    ['675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8','RAYDIUM'],
+    ['6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P','PUMPFUN'],
+    ['whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc','ORCA']
+  ];
   const owners=new Map();
-  for(const t of tokens){
+  for(const [program,label] of programs){
     try{
-      const r=await solDiscovery({method:'getTokenLargestAccounts',params:[t.address]},`largest:${t.symbol||t.address.slice(0,6)}`);
-      const accounts=(r?.result?.value||[]).slice(0,Math.min(DISCOVERY_SPOT_TOP_HOLDERS,DISCOVERY_SPOT_HOLDER_COUNT)).map(x=>x.address).filter(Boolean);
-      if(!accounts.length)continue;
-      const rr=await solDiscovery({method:'getMultipleAccounts',params:[accounts,{encoding:'jsonParsed'}]},`owners:${t.symbol||t.address.slice(0,6)}`);
-      for(const a of (rr?.result?.value||[])){
-        const owner=a?.data?.parsed?.info?.owner;
-        if(owner)owners.set(owner,(owners.get(owner)||0)+1);
+      const r=await solDiscoveryFast({method:'getSignaturesForAddress',params:[program,{limit:DISCOVERY_SPOT_PROGRAM_SIGS}]},`spot-program:${label}`);
+      const sigs=Array.isArray(r?.result)?r.result.filter(x=>!x.err).slice(0,DISCOVERY_SPOT_PROGRAM_TXS):[];
+      for(const s of sigs){
+        try{
+          const txr=await solDiscoveryFast({method:'getTransaction',params:[s.signature,{encoding:'jsonParsed',maxSupportedTransactionVersion:0}]},`spot-tx:${label}`);
+          const keys=txr?.result?.transaction?.message?.accountKeys||[];
+          const payer=accountKeyPubkey(keys[0]);
+          const bt=n(s.blockTime)*1000;
+          if(payer && bt && Date.now()-bt<=48*3600000 && !payer.includes('111111')) owners.set(payer,(owners.get(payer)||0)+1);
+        }catch(e){/* skip individual tx */}
       }
-    }catch(e){console.log(`[DISCOVERY][SPOT][TOKEN] ${t.symbol||t.address.slice(0,6)} ERROR ${String(e?.message||e).slice(0,100)}`)}
+    }catch(e){console.log(`[DISCOVERY][SPOT][PROGRAM] ${label} ERROR ${String(e?.message||e).slice(0,100)}`)}
+    await sleep(300);
   }
-  const pool=[...owners.entries()].filter(([address])=>!address.includes('111111')).sort((a,b)=>b[1]-a[1]).slice(0,Math.min(DISCOVERY_SPOT_MAX_CANDIDATES,DISCOVERY_SPOT_CANDIDATE_WALLETS));
-  const scored=[];
-  for(const [address,holderHits] of pool){
+  const pool=[...owners.entries()].sort((a,b)=>b[1]-a[1]).slice(0,DISCOVERY_SPOT_MAX_CANDIDATES);
+  console.log(`[DISCOVERY][SPOT][PROGRAM-UNIVERSE] wallets=${pool.length}`);
+  const finals=[];
+  for(const [address,programHits] of pool){
     try{
       const sigs=await solSignaturesForDiscovery(address,Math.min(DISCOVERY_SPOT_TX_LIMIT,50));
       const times=sigs.map(s=>n(s.blockTime)*1000).filter(Boolean).sort((a,b)=>a-b);
       const recent=times.filter(t=>t>=Date.now()-24*3600000);
-      const span=recent.length>=2?(recent[recent.length-1]-recent[0])/3600000:0;
-      const activity=recent.length;
-      // Candidate gate: enough recent transactions to plausibly represent an active trader.
-      // Full 1-24h hold reconstruction is done only for the finalists to protect RPC limits.
-      if(activity<Math.max(DISCOVERY_MIN_COMPLETED,8))continue;
-      scored.push({name:`SOL_${address.slice(0,4).toUpperCase()}`,address,discovery:{holderHits,recentTxs24h:activity,activitySpanHours:span}});
-      if(scored.length>=DISCOVERY_SPOT_FINALISTS)break;
-    }catch(e){console.log(`[DISCOVERY][SPOT][WALLET] ${short(address)} ERROR ${String(e?.message||e).slice(0,100)}`)}
-    await sleep(180);
-  }
-  // Final spot quality gate: reuse the engine's activity parser on the finalists.
-  const finals=[];
-  for(const w of scored){
-    try{
-      const tokenAccounts=await walletTokenAccounts(w.address);
-      const sigs=await solSignaturesForDiscovery(w.address,Math.min(DISCOVERY_SPOT_TX_LIMIT,50));
+      if(recent.length<Math.max(8,DISCOVERY_MIN_COMPLETED))continue;
+      const tokenAccounts=await walletTokenAccounts(address);
       const cutoff=Date.now()-DISCOVERY_LOOKBACK_HOURS*3600000;
       const solUsd=await tokenPrice(WSOL_MINT);
-      const lots=new Map(); const lifecycles=[]; let buys=0,sells=0,volumeUsd=0,lastTrade=0;
+      const lots=new Map(), lifecycles=[]; let buys=0,sells=0,volumeUsd=0,lastTrade=0;
       for(const s of sigs){
         const bt=n(s.blockTime)*1000;if(bt&&bt<cutoff)break;
         const tx=await solTxDiscovery(s.signature); if(!tx)continue;
-        const d=swapDirection(tx,w.address,tokenAccounts); if(d.direction==='UNKNOWN')continue;
+        const d=swapDirection(tx,address,tokenAccounts); if(d.direction==='UNKNOWN')continue;
         lastTrade=Math.max(lastTrade,bt);
         if(d.direction==='BUY'){
           buys++;
@@ -331,38 +366,34 @@ async function discoverSpotCandidates(){
             const q=Math.abs(n(p.delta)); if(q<=0)continue;
             if(!lots.has(p.mint))lots.set(p.mint,[]);
             lots.get(p.mint).push({time:bt,qty:q,usd:0});
-            const usdc=d.fundingToken?.mint===USDC_MINT?Math.abs(n(d.fundingToken.delta)):0;
-            const wsol=d.fundingToken?.mint===WSOL_MINT?Math.abs(n(d.fundingToken.delta))*solUsd:0;
-            const native=Math.max(0,n(d.nativeSpent))*solUsd;
-            volumeUsd+=Math.max(usdc,wsol,native);
           }
+          const usdc=d.fundingToken?.mint===USDC_MINT?Math.abs(n(d.fundingToken.delta)):0;
+          const wsol=d.fundingToken?.mint===WSOL_MINT?Math.abs(n(d.fundingToken.delta))*solUsd:0;
+          const native=Math.max(0,n(d.nativeSpent))*solUsd;
+          volumeUsd+=Math.max(usdc,wsol,native);
         }else if(d.direction==='SELL'){
           sells++;
-          const sold=d.negative.filter(x=>!FUNDING_MINTS.has(x.mint));
-          for(const qd of sold){
-            let remain=Math.abs(n(qd.delta)); const q=lots.get(qd.mint)||[];
-            while(remain>0&&q.length){
-              const lot=q[0],take=Math.min(remain,lot.qty),h=(bt-lot.time)/3600000;
-              if(h>=0)lifecycles.push({mint:qd.mint,openTime:lot.time,closeTime:bt,holdHours:h});
-              lot.qty-=take; remain-=take; if(lot.qty<=1e-12)q.shift();
-            }
+          for(const qd of d.negative.filter(x=>!FUNDING_MINTS.has(x.mint))){
+            let remain=Math.abs(n(qd.delta)), q=lots.get(qd.mint)||[];
+            while(remain>0&&q.length){const lot=q[0],take=Math.min(remain,lot.qty),h=(bt-lot.time)/3600000;if(h>=0)lifecycles.push({mint:qd.mint,openTime:lot.time,closeTime:bt,holdHours:h});lot.qty-=take;remain-=take;if(lot.qty<=1e-12)q.shift();}
           }
         }
       }
       const inWindow=lifecycles.filter(x=>x.holdHours>=DISCOVERY_MIN_HOLD_HOURS&&x.holdHours<=DISCOVERY_MAX_HOLD_HOURS);
       const hs=inWindow.map(x=>x.holdHours).sort((a,b)=>a-b);
       const medianHold=hs.length?hs[Math.floor(hs.length/2)]:0;
-      const roundTrips=lifecycles.length;
-      const holdRatio=roundTrips?inWindow.length/roundTrips:0;
-      const qualifies=roundTrips>=DISCOVERY_MIN_COMPLETED && inWindow.length>=DISCOVERY_MIN_IN_WINDOW && holdRatio>=DISCOVERY_MIN_HOLD_RATIO && medianHold>=DISCOVERY_MIN_HOLD_HOURS && medianHold<=DISCOVERY_MAX_HOLD_HOURS && volumeUsd>=DISCOVERY_MIN_VOLUME_USD && lastTrade>=Date.now()-24*3600000;
-      console.log(`[DISCOVERY][SPOT][LIFECYCLE] ${w.name} tx24h=${sigs.length} buys=${buys} sells=${sells} roundTrips=${roundTrips} hold1-24=${inWindow.length} ratio=${(holdRatio*100).toFixed(0)}% median=${medianHold.toFixed(2)}h volume24h=${Math.round(volumeUsd)} lastTradeAge=${lastTrade?((Date.now()-lastTrade)/60000).toFixed(1):'NA'}m qualifies=${qualifies}`);
-      if(qualifies) finals.push({...w,discovery:{...w.discovery,buys,sells,roundTrips,inWindow:inWindow.length,holdRatio,medianHoldHours:medianHold,avgHoldHours:hs.length?hs.reduce((a,b)=>a+b,0)/hs.length:0,lastTrade,volumeUsd}});
-    }catch(e){console.log(`[DISCOVERY][SPOT][FINAL] ${w.name} ERROR ${String(e?.message||e).slice(0,120)}`)}
+      const roundTrips=lifecycles.length, holdRatio=roundTrips?inWindow.length/roundTrips:0;
+      const qualifies=roundTrips>=DISCOVERY_MIN_COMPLETED&&inWindow.length>=DISCOVERY_MIN_IN_WINDOW&&holdRatio>=DISCOVERY_MIN_HOLD_RATIO&&medianHold>=1&&medianHold<=24&&volumeUsd>=DISCOVERY_MIN_VOLUME_USD&&lastTrade>=Date.now()-24*3600000;
+      console.log(`[DISCOVERY][SPOT][LIFECYCLE] SOL_${address.slice(0,4).toUpperCase()} tx24h=${recent.length} buys=${buys} sells=${sells} roundTrips=${roundTrips} hold1-24=${inWindow.length} ratio=${(holdRatio*100).toFixed(0)}% median=${medianHold.toFixed(2)}h volume24h=${Math.round(volumeUsd)} programHits=${programHits} qualifies=${qualifies}`);
+      if(qualifies)finals.push({name:`SOL_${address.slice(0,4).toUpperCase()}`,address,discovery:{programHits,recentTxs24h:recent.length,buys,sells,roundTrips,inWindow:inWindow.length,holdRatio,medianHoldHours:medianHold,avgHoldHours:hs.length?hs.reduce((a,b)=>a+b,0)/hs.length:0,lastTrade,volumeUsd}});
+    }catch(e){console.log(`[DISCOVERY][SPOT][FINAL] ${short(address)} ERROR ${String(e?.message||e).slice(0,100)}`)}
     await sleep(250);
     if(finals.length>=TARGET_SPOT_WALLETS)break;
   }
+  finals.sort((a,b)=>(b.discovery.inWindow*4+b.discovery.holdRatio*20+Math.log10(Math.max(1,b.discovery.volumeUsd))*2)-(a.discovery.inWindow*4+a.discovery.holdRatio*20+Math.log10(Math.max(1,a.discovery.volumeUsd))*2));
   return finals.slice(0,TARGET_SPOT_WALLETS);
 }
+
 async function solSignaturesForDiscovery(address,limit=60){
   const r=await solDiscovery({method:'getSignaturesForAddress',params:[address,{limit}]},`discover:sigs:${String(address).slice(0,6)}`);
   return Array.isArray(r?.result)?r.result.filter(x=>!x.err):[];
