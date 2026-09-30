@@ -1,12 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-// CRYPTO WHALE SIGNAL ENGINE V5.0
-// BUILD: V5.0-DYNAMIC-WATCHLIST-SIGNAL-FIRST
+// CRYPTO WHALE SIGNAL ENGINE V5.3
+// BUILD: V5.3-ECONOMIC-AUDIT-DECISION-TRACE
 // READ ONLY: NO ORDERS, NO PRIVATE KEYS, NO EXECUTION ENGINE.
 // Dynamic whale discovery: 5 Spot + 5 Futures. READ ONLY.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V5.2-DYNAMIC-SIZE-FULL-AUDIT';
+const VERSION = 'V5.3-ECONOMIC-AUDIT-DECISION-TRACE';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY || '';
@@ -54,6 +54,9 @@ const HEALTH_MIN_TRADES = Number(process.env.SIGNAL_HEALTH_MIN_TRADES || 20);
 // V5: dynamic discovery owns the wallet set; no static spot health baseline is required.
 // Keep the health hook safe so missing historical baseline cannot abort signal generation.
 const SPOT_HEALTH_BASELINE = Object.freeze({});
+// V5.3: cache market metadata inside one cycle. The same mint can appear in multiple wallet scans.
+// This reduces duplicate DEX/Gecko calls without weakening price validation.
+const SPOT_MARKET_CACHE = new Map();
 
 const TARGET_SPOT_WALLETS = Number(process.env.WHALE_TARGET_SPOT_WALLETS || 5);
 const TARGET_FUTURES_WALLETS = Number(process.env.WHALE_TARGET_FUTURES_WALLETS || 5);
@@ -80,7 +83,7 @@ const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TO
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 16);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
-const DISCOVERY_SCHEMA = 'V5.2-DYNAMIC-SIZE-FULL-AUDIT';
+const DISCOVERY_SCHEMA = 'V5.3-ECONOMIC-AUDIT-DECISION-TRACE';
 const DISCOVERY_FILL_PAGE_SIZE = Number(process.env.WHALE_DISCOVERY_FILL_PAGE_SIZE || 2000);
 const DISCOVERY_FILL_MAX_PAGES = Number(process.env.WHALE_DISCOVERY_FILL_MAX_PAGES || 8);
 const DISCOVERY_RPC_DELAY_MS = Number(process.env.WHALE_DISCOVERY_RPC_DELAY_MS || 1800);
@@ -757,16 +760,18 @@ async function walletTokenAccounts(address){
   return set;
 }
 async function tokenMarketData(mint){
+  const key=String(mint||'');
+  if(SPOT_MARKET_CACHE.has(key)) return SPOT_MARKET_CACHE.get(key);
   try{
     const r=await fetchJson(`https://api.dexscreener.com/latest/dex/tokens/${mint}`,{},'dexscreener');
     const p=(r?.pairs||[]).filter(x=>x?.priceUsd).sort((a,b)=>n(b?.liquidity?.usd)-n(a?.liquidity?.usd))[0];
-    if(p)return {price:n(p.priceUsd),symbol:p?.baseToken?.symbol||mint.slice(0,6),liquidity:n(p?.liquidity?.usd),volume24h:n(p?.volume?.h24),source:'DEXSCREENER'};
+    if(p){const out={price:n(p.priceUsd),symbol:p?.baseToken?.symbol||mint.slice(0,6),liquidity:n(p?.liquidity?.usd),volume24h:n(p?.volume?.h24),source:'DEXSCREENER'};SPOT_MARKET_CACHE.set(key,out);return out;}
   }catch{}
   try{
     const r=await fetchJson(`${GECKO}/networks/solana/tokens/${mint}`,{},'gecko-token');
     const a=r?.data?.attributes||{};
-    return {price:n(a.price_usd),symbol:a.symbol||mint.slice(0,6),liquidity:n(a.total_reserve_in_usd),volume24h:n(a.volume_usd?.h24),source:'GECKO'};
-  }catch{return {price:0,symbol:mint.slice(0,6),liquidity:0,volume24h:0,source:'NONE'}}
+    const out={price:n(a.price_usd),symbol:a.symbol||mint.slice(0,6),liquidity:n(a.total_reserve_in_usd),volume24h:n(a.volume_usd?.h24),source:'GECKO'};SPOT_MARKET_CACHE.set(key,out);return out;
+  }catch{const out={price:0,symbol:mint.slice(0,6),liquidity:0,volume24h:0,source:'NONE'};SPOT_MARKET_CACHE.set(key,out);return out}
 }
 async function scanSpot(w){
   const solInfo=await tokenInfo(WSOL_MINT);
@@ -882,7 +887,8 @@ async function scanSpot(w){
       const dist=(px/sourceEntry-1)*100;
       const sl=sourceEntry*(1-SL_PCT/100),tp=sourceEntry*(1+TP_PCT/100),R=normalizedRR(sourceEntry-sl,tp-sourceEntry);
       const ageMin=Math.max(0,(now-sw.time)/60000);
-      const x={wallet:w,coin:info.symbol||sw.mint.slice(0,6),displaySymbol:info.symbol||sw.mint.slice(0,6),mint:sw.mint,side:'LONG',sourceEntry,current:px,avgEntry,avgEntryObserved:true,avgSource,observedBuyCount:observed?.observedBuyCount||1,observedBuyNotionalUsd:observed?.observedUsd||sw.fundingUsd,observedInventoryQty:observed?.observedQty||sw.tokenAmount,distancePct:dist,sl,tp,rr:R,age:sw.time,ageMin,liquidity:info.liquidity,volume24h:info.volume24h,tx:sw.signature,buyNotionalUsd:sw.fundingUsd,fundingAsset:sw.fundingAsset,activitySource:'HELIUS_ENHANCED_SWAP',priceSource:info.source,sizeBaselineMedianUsd:medianTradeUsd,sizeBaselineSamples:baselineSamples,sizeRatioToMedian:ratio,dynamicMinBuyUsd:dynamicMinUsd,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR};
+      const x={wallet:w,coin:info.symbol||sw.mint.slice(0,6),displaySymbol:info.symbol||sw.mint.slice(0,6),mint:sw.mint,side:'LONG',sourceEntry,current:px,avgEntry,avgEntryObserved:true,avgSource,observedBuyCount:observed?.observedBuyCount||1,observedBuyNotionalUsd:observed?.observedUsd||sw.fundingUsd,observedInventoryQty:observed?.observedQty||sw.tokenAmount,distancePct:dist,sl,tp,rr:R,age:sw.time,ageMin,liquidity:info.liquidity,volume24h:info.volume24h,tx:sw.signature,buyNotionalUsd:sw.fundingUsd,fundingAsset:sw.fundingAsset,activitySource:'HELIUS_ENHANCED_SWAP',economicTradeConfirmed:true,economicTradeSource:'HELIUS_SWAP_DECODER',economicFundingUsd:sw.fundingUsd,economicFundingAsset:sw.fundingAsset,economicTokenAmount:sw.tokenAmount,economicSignature:sw.signature,priceSource:info.source,sizeBaselineMedianUsd:medianTradeUsd,sizeBaselineSamples:baselineSamples,sizeRatioToMedian:ratio,dynamicMinBuyUsd:dynamicMinUsd,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR};
+      console.log(`[SPOT][ECONOMIC-AUDIT] ${w.name} | ${x.displaySymbol} | confirmed=${x.economicTradeConfirmed} | source=${x.economicTradeSource} | funding=${money(x.economicFundingUsd)} ${x.economicFundingAsset||''} | tokenQty=${x.economicTokenAmount} | sig=${String(x.economicSignature||'').slice(0,16)}`);
       candidates.push(x); seen.add(sw.mint);
       console.log(`[SPOT][CANDIDATE] ${w.name} | ${x.displaySymbol} | LONG | ADD ${priceFmt(sourceEntry)} | AVG ${priceFmt(avgEntry)} | Now ${priceFmt(px)} | Dist ${pct(dist,2)} | RR ${fmt(R,3)} | Age ${ageMin.toFixed(1)}m | Size ${money(sw.fundingUsd)} | medianBUY=${money(medianTradeUsd)} | sizeRatio=${ratio==null?'N/A':pct(ratio*100,1)} | AVG_SRC=${avgSource} | observedBUYs=${x.observedBuyCount}`);
       if(candidates.length>=MAX_SPOT_POSITIONS)break;
@@ -1060,12 +1066,15 @@ async function scanFutures(w,mids,now,symbolMap){
   console.log(`[FUTURES][AUDIT-SUMMARY] ${w.name} | recentFills=${fills.length} | rawOpen=${dirOpen} | derivedOpen=${derivedOpen} | reductions=${rejectedClose} | invalid=${invalid} | addEvents=${recentAdds} | averaging=${averagingKeys} | freshAdds=${latest.filter(f=>Math.max(0,(now-n(f.time))/60000)<=FUTURES_SIGNAL_FRESHNESS_MIN).length}`);
 
   const signals=[];
+  const decisionAudit={priceUnavailable:0,belowMeaningfulAdd:0,stale:0,fresh:0,tooFar:0,rrFail:0,lifecycleOld:0,avgAdverse:0,ready:0,yellow:0};
   const sortedCandidates=latest.sort((a,b)=>n(b?.time)-n(a?.time));
   const freshCandidates=sortedCandidates.filter(f=>{
     const a=Math.max(0,(now-n(f.time))/60000);
     return a<=FUTURES_SIGNAL_FRESHNESS_MIN;
   });
   const staleCandidates=sortedCandidates.length-freshCandidates.length;
+  decisionAudit.stale=staleCandidates;
+  decisionAudit.fresh=freshCandidates.length;
   console.log(`[FUTURES][CANDIDATE-AUDIT] ${w.name} addEvents=${sortedCandidates.length} fresh<=${FUTURES_SIGNAL_FRESHNESS_MIN}m=${freshCandidates.length} staleIgnored=${staleCandidates}`);
   if(!freshCandidates.length && sortedCandidates.length){
     const latestStale=sortedCandidates[0];
@@ -1090,6 +1099,7 @@ async function scanFutures(w,mids,now,symbolMap){
     const lifecycleAgeHours=pos?.entry&&Number(pos.entry)>0 ? Math.max(0,(now-n(f.time))/3600000) : ageMin/60;
 
     if(!(entry>0)||!(mid>0)){
+      decisionAudit.priceUnavailable++;
       console.log(`[FUTURES][DROP] ${w.name} | ${displaySymbol} | ${side} | Add ${priceFmt(entry)} | Now ${priceFmt(mid)} | Age ${ageMin.toFixed(1)}m | REASON=PRICE_UNAVAILABLE`);
       continue;
     }
@@ -1110,13 +1120,19 @@ async function scanFutures(w,mids,now,symbolMap){
       avgEntry,avgDistancePct:avgDist,recentAvgPx:recentAvg,addCount,averaging,
       totalRecentAddedSize:addedSize,currentPositionSize:pos?.size??null,addNotional,lifecycleAgeHours,adverseAvg,
       eligible:ageMin<=FUTURES_SIGNAL_FRESHNESS_MIN&&Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR&&addNotional>=FUTURES_MIN_MEANINGFUL_ADD_NOTIONAL_USD&&(lifecycleAgeHours<=FUTURES_MAX_ACTIVE_LIFECYCLE_AGE_HOURS)&&(!adverseAvg||Math.abs(avgDist)<=FUTURES_MAX_ADVERSE_AVG_PCT)};
+    if(addNotional<FUTURES_MIN_MEANINGFUL_ADD_NOTIONAL_USD)decisionAudit.belowMeaningfulAdd++;
+    if(Math.abs(dist)>ENTRY_WINDOW_PCT)decisionAudit.tooFar++;
+    if(R+1e-9<MIN_RR)decisionAudit.rrFail++;
+    if(lifecycleAgeHours>FUTURES_MAX_ACTIVE_LIFECYCLE_AGE_HOURS)decisionAudit.lifecycleOld++;
+    if(adverseAvg&&Math.abs(avgDist)>FUTURES_MAX_ADVERSE_AVG_PCT)decisionAudit.avgAdverse++;
     const auditStatus=classifyPosition(x);
+    if(auditStatus==='GREEN')decisionAudit.ready++; else if(auditStatus==='YELLOW')decisionAudit.yellow++;
     const reasons=setupReason(x);
     const reason=auditStatus==='YELLOW'?yellowReason(x):(reasons.length?reasons.join(' + '):'READY');
     console.log(`[FUTURES][CANDIDATE] ${w.name} | ${displaySymbol} | ${currentSide} | ADD ${priceFmt(entry)} | AVG ${priceFmt(avgEntry)} | observedAdds=${addCount} | Now ${priceFmt(mid)} | Dist ${pct(dist,2)} | Age ${ageMin.toFixed(1)}m | RR ${fmt(R,3)} | STATUS=${auditStatus} | REASON=${reason}`);
     signals.push(x);
   }
-  return {wallet:w,signals,positions:signals,scanned:fills.length,health:{health:'SIGNAL_ONLY',reason:'HEALTH_NOT_QUERIED_IN_SIGNAL_CYCLE'},activityLookbackMin:FUTURES_ACTIVITY_LOOKBACK_MIN,addEvents:recentAdds,averagingSymbols:averagingKeys,dataAudit:dataAudit?{status:dataAudit.status,audit24hCount:dataAudit.auditRows.length,detail:dataAudit.detail}:null};
+  return {wallet:w,signals,positions:signals,scanned:fills.length,health:{health:'SIGNAL_ONLY',reason:'HEALTH_NOT_QUERIED_IN_SIGNAL_CYCLE'},activityLookbackMin:FUTURES_ACTIVITY_LOOKBACK_MIN,addEvents:recentAdds,averagingSymbols:averagingKeys,dataAudit:dataAudit?{status:dataAudit.status,audit24hCount:dataAudit.auditRows.length,detail:dataAudit.detail}:null,decisionAudit};
 }
 function spotHealth(w){
   const b=SPOT_HEALTH_BASELINE[w.name]||{};
@@ -1176,10 +1192,10 @@ function classifyPosition(x){
   const distYellow=Number.isFinite(dist)&&dist<=WATCH_WINDOW_PCT;
   const latencyGreen=!Number.isFinite(latency)||latency<=FUTURES_GREEN_LATENCY_MIN;
   const freshnessOk=!Number.isFinite(latency)||latency<=FUTURES_SIGNAL_FRESHNESS_MIN;
+  const meaningfulAdd=Number.isFinite(Number(x.addNotional))&&Number(x.addNotional)>=FUTURES_MIN_MEANINGFUL_ADD_NOTIONAL_USD;
   const averagingGreen=Boolean(x.averaging)&&Number.isFinite(latency)&&latency<=FUTURES_AVERAGING_GREEN_LATENCY_MIN;
-  if(!invalid&&freshnessOk&&distGreen&&rrOk&&(latencyGreen||averagingGreen))return 'GREEN';
-  if(!invalid&&freshnessOk&&distYellow&&rrOk)return 'YELLOW';
-  if(!invalid&&distGreen&&rrOk&&Number.isFinite(latency)&&latency>MAX_SIGNAL_LATENCY_MIN)return 'YELLOW';
+  if(!invalid&&meaningfulAdd&&freshnessOk&&distGreen&&rrOk&&(latencyGreen||averagingGreen))return 'GREEN';
+  if(!invalid&&meaningfulAdd&&freshnessOk&&distYellow&&rrOk)return 'YELLOW';
   return 'RED';
 }
 function yellowReason(x){
@@ -1202,7 +1218,7 @@ function compactSignalLine(x,i){
   const avg=Number.isFinite(Number(x.avgEntry))?` | AVG ${priceFmt(x.avgEntry)}`:'';
   const avgTag=x.averaging?` | FRESH AVERAGING | Observed ADDs ${x.addCount}`:'';
   const reason=classifyPosition(x)==='YELLOW'?` | ${yellowReason(x)}`:'';
-  return `${i}. ${x.wallet.name} | ${x.displaySymbol||x.coin} | ${x.side}\n   ADD ${priceFmt(x.sourceEntry)} | AVG ${priceFmt(x.avgEntry)} | Now ${priceFmt(x.current)} | Dist ${pct(x.distancePct,2)} | SL ${priceFmt(x.sl)} | TP ${priceFmt(x.tp)} | RR ${fmt(x.rr,3)}${ageText}${avgTag}${size}${pos}${lev}${reason}`;
+  return `${i}. ${x.wallet.name} | ${x.displaySymbol||x.coin} | ${x.side} | ADD ${priceFmt(x.sourceEntry)} | AVG ${priceFmt(x.avgEntry)} | Now ${priceFmt(x.current)} | Dist ${pct(x.distancePct,2)} | SL ${priceFmt(x.sl)} | TP ${priceFmt(x.tp)} | RR ${fmt(x.rr,3)}${ageText}${avgTag}${size}${pos}${lev}${reason}`;
 }
 function marketSignals(title,items){
   const rows=[title,'━━━━━━━━━━━━━━━━━━'];
@@ -1239,8 +1255,8 @@ async function main(){
   }
   const futuresCandidates=futures.flatMap(x=>x.positions||[]);
   const classified=[...spotCandidates,...futuresCandidates].map(x=>({...x,status:classifyPosition(x)}));
-  const spotGreen=classified.filter(x=>x.mint&&x.status==='GREEN');
-  const spotYellow=classified.filter(x=>x.mint&&x.status==='YELLOW');
+  const spotGreen=classified.filter(x=>x.mint&&x.economicTradeConfirmed===true&&x.status==='GREEN');
+  const spotYellow=classified.filter(x=>x.mint&&x.economicTradeConfirmed===true&&x.status==='YELLOW');
   const futuresGreen=classified.filter(x=>!x.mint&&x.status==='GREEN');
   const futuresYellow=classified.filter(x=>!x.mint&&x.status==='YELLOW');
 
@@ -1264,6 +1280,8 @@ async function main(){
   ];
   const spotAudit=spot.map(x=>x.sizeAudit).filter(Boolean);
   const futuresAudit=futures.map(x=>x.dataAudit||null).filter(Boolean);
+  for(const x of spot){ if(x?.sizeAudit) console.log(`[SPOT][WALLET-DECISION] ${x.wallet?.name||'?'} | baseline=${x.sizeAudit.baselineReady?'READY':'FALLBACK'} | medianBUY=${money(x.sizeAudit.medianTradeUsd)} | dynamicMin=${money(x.sizeAudit.dynamicMinUsd)} | economic=${x.sizeAudit.economicRows} | unresolved=${x.sizeAudit.unresolved}`); }
+  for(const x of futures){ if(x?.decisionAudit) console.log(`[FUTURES][DECISION-AUDIT] ${x.wallet?.name||'?'} | adds=${x.decisionAudit.stale+x.decisionAudit.ready+x.decisionAudit.yellow} | fresh=${x.decisionAudit.fresh} | stale=${x.decisionAudit.stale} | ready=${x.decisionAudit.ready} | yellow=${x.decisionAudit.yellow} | belowAdd=${x.decisionAudit.belowMeaningfulAdd} | tooFar=${x.decisionAudit.tooFar} | rrFail=${x.decisionAudit.rrFail} | lifecycleOld=${x.decisionAudit.lifecycleOld} | avgAdverse=${x.decisionAudit.avgAdverse} | priceMissing=${x.decisionAudit.priceUnavailable}`); }
   console.log(`[SIGNAL-ENGINE ${VERSION}][DONE] green=${spotGreen.length+futuresGreen.length} yellow=${spotYellow.length+futuresYellow.length} red-hidden=${classified.filter(x=>x.status==='RED').length} | spotAuditWallets=${spotAudit.length} futuresDataAudits=${futuresAudit.length}`);
   await telegram(lines.join('\n'));
 }
