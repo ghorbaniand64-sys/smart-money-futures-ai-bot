@@ -3,7 +3,7 @@
 // Exactly 10 fixed signal sources: 5 Spot + 5 Futures.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V3.1-WHALE-SIGNAL-FRESH-REENTRY-AVERAGING-FILTERED';
+const VERSION = 'V3.2-WHALE-SIGNAL-DATA-AUDIT-24H';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -23,6 +23,7 @@ const SPOT_MIN_BUY_USD = Number(process.env.SIGNAL_SPOT_MIN_BUY_USD || 25);
 const MAX_SIGNAL_LATENCY_MIN = Number(process.env.SIGNAL_MAX_LATENCY_MIN || 5);
 const FUTURES_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_FUTURES_ACTIVITY_LOOKBACK_MIN || 120);
 const FUTURES_SIGNAL_FRESHNESS_MIN = Number(process.env.SIGNAL_FUTURES_SIGNAL_FRESHNESS_MIN || 15);
+const FUTURES_AUDIT_LOOKBACK_MIN = Number(process.env.SIGNAL_FUTURES_AUDIT_LOOKBACK_MIN || 1440);
 const FUTURES_GREEN_LATENCY_MIN = Number(process.env.SIGNAL_FUTURES_GREEN_LATENCY_MIN || MAX_SIGNAL_LATENCY_MIN);
 const FUTURES_BETWEEN_WALLETS_MS = Number(process.env.SIGNAL_FUTURES_BETWEEN_WALLETS_MS || 1200);
 const FUTURES_RETRY_BASE_MS = Number(process.env.SIGNAL_FUTURES_RETRY_BASE_MS || 1500);
@@ -289,6 +290,29 @@ async function fetchRecentFuturesFills(w,startTime,endTime){
   return [];
 }
 
+async function auditFuturesHistory(w,now,recentRows){
+  const auditCutoff=now-FUTURES_AUDIT_LOOKBACK_MIN*60000;
+  let auditRows=null;
+  let status='UNKNOWN';
+  let detail='';
+  try{
+    auditRows=await hl({type:'userFillsByTime',user:w.address,startTime:auditCutoff,endTime:now},`audit24h:${w.name}`);
+    if(!Array.isArray(auditRows))throw new Error('FILLS_RESPONSE_NOT_ARRAY');
+    status=auditRows.length>0?'OK_WITH_HISTORY':'EMPTY_VALID';
+    const times=auditRows.map(x=>n(x?.time)).filter(Boolean).sort((a,b)=>a-b);
+    const oldest=times.length?new Date(times[0]).toISOString():'NONE';
+    const newest=times.length?new Date(times[times.length-1]).toISOString():'NONE';
+    detail=`count=${auditRows.length} oldest=${oldest} newest=${newest}`;
+  }catch(e){
+    const msg=String(e?.message||e);
+    status=/429|rate.?limit|too many requests/i.test(msg)?'RATE_LIMITED':'ERROR';
+    detail=msg.slice(0,180);
+  }
+  const recentStatus=recentRows.length?'RECENT_DATA_PRESENT':'RECENT_WINDOW_EMPTY';
+  console.log(`[FUTURES][DATA-AUDIT] ${w.name} | recent120=${recentRows.length} | audit24h=${auditRows?auditRows.length:'ERR'} | status=${status} | ${recentStatus} | ${detail}`);
+  return {status,auditRows:auditRows||[],detail};
+}
+
 async function fetchFuturesState(w){
   let lastErr=null;
   for(let attempt=1;attempt<=3;attempt++){
@@ -324,6 +348,10 @@ async function scanFutures(w,mids,now){
   // instead of treating only the first position-opening fill as an entry.
   const cutoff=now-FUTURES_ACTIVITY_LOOKBACK_MIN*60000;
   const fills=await fetchRecentFuturesFills(w,cutoff,now);
+  // A zero-fill 120m response is not treated as proof of inactivity.
+  // Run a wider 24h audit only in that case, and NEVER use the 24h rows as
+  // signal candidates. This distinguishes valid inactivity from retrieval gaps.
+  const dataAudit=fills.length===0?await auditFuturesHistory(w,now,fills):null;
   const state=await fetchFuturesState(w);
   const currentPositions=statePositionMap(state);
   const additionsByKey=new Map();
@@ -449,7 +477,7 @@ async function scanFutures(w,mids,now){
     console.log(`[FUTURES][CANDIDATE] ${w.name} | ${coin} | ${currentSide} | ADD ${priceFmt(entry)} | AVG ${priceFmt(avgEntry)} | adds=${addCount} | Now ${priceFmt(mid)} | Dist ${pct(dist,2)} | Age ${ageMin.toFixed(1)}m | RR ${fmt(R,3)} | STATUS=${auditStatus} | REASON=${reason}`);
     signals.push(x);
   }
-  return {wallet:w,signals,positions:signals,scanned:fills.length,health:{health:'SIGNAL_ONLY',reason:'HEALTH_NOT_QUERIED_IN_SIGNAL_CYCLE'},activityLookbackMin:FUTURES_ACTIVITY_LOOKBACK_MIN,addEvents:recentAdds,averagingSymbols:averagingKeys};
+  return {wallet:w,signals,positions:signals,scanned:fills.length,health:{health:'SIGNAL_ONLY',reason:'HEALTH_NOT_QUERIED_IN_SIGNAL_CYCLE'},activityLookbackMin:FUTURES_ACTIVITY_LOOKBACK_MIN,addEvents:recentAdds,averagingSymbols:averagingKeys,dataAudit:dataAudit?{status:dataAudit.status,audit24hCount:dataAudit.auditRows.length,detail:dataAudit.detail}:null};
 }
 function spotHealth(w){
   const b=SPOT_HEALTH_BASELINE[w.name]||{};
