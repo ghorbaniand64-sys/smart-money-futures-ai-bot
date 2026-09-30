@@ -48,6 +48,9 @@ const MAX_SPOT_POSITIONS = Number(process.env.SIGNAL_MAX_SPOT_POSITIONS_PER_WALL
 const TG_LIMIT = 3800;
 const HEALTH_LOOKBACK_DAYS = Number(process.env.SIGNAL_HEALTH_LOOKBACK_DAYS || 30);
 const HEALTH_MIN_TRADES = Number(process.env.SIGNAL_HEALTH_MIN_TRADES || 20);
+// V5: dynamic discovery owns the wallet set; no static spot health baseline is required.
+// Keep the health hook safe so missing historical baseline cannot abort signal generation.
+const SPOT_HEALTH_BASELINE = Object.freeze({});
 
 const TARGET_SPOT_WALLETS = Number(process.env.WHALE_TARGET_SPOT_WALLETS || 5);
 const TARGET_FUTURES_WALLETS = Number(process.env.WHALE_TARGET_FUTURES_WALLETS || 5);
