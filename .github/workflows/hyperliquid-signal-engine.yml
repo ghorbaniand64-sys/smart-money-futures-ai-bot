@@ -1,111 +1,101 @@
-name: Crypto Whale Signal Engine
+name: CRYPTO WHALE SIGNAL ENGINE
 
 on:
-  schedule:
-    - cron: '1-59/5 * * * *'
   workflow_dispatch:
-
-permissions:
-  contents: read
+  schedule:
+    - cron: '*/5 * * * *'
 
 concurrency:
   group: crypto-whale-signal-engine
-  cancel-in-progress: true
+  cancel-in-progress: false
+
+permissions:
+  contents: write
 
 jobs:
-  signal-engine:
-    name: Run Crypto Whale Signal Engine
+  run:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     environment: production
+    timeout-minutes: 15
+
+    env:
+      HYPERLIQUID_API_URL: ${{ secrets.HYPERLIQUID_API_URL }}
+      SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
+      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      # V4.4 — Helius Spot discovery
+      HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+
+      # Discovery configuration
+      WHALE_DISCOVERY_MAX_CANDIDATES: '30'
+      WHALE_DISCOVERY_FUTURES_QUICK_LOOKBACK_HOURS: '12'
+      WHALE_DISCOVERY_FUTURES_DEEP_CANDIDATES: '15'
+      WHALE_DISCOVERY_FUTURES_QUICK_MAX_PAGES: '1'
+      WHALE_DISCOVERY_FUTURES_DEEP_MAX_PAGES: '8'
+      WHALE_DISCOVERY_FUTURES_DEEP_DELAY_MS: '350'
+      WHALE_DISCOVERY_RPC_FAST_RETRIES: '2'
+      WHALE_DISCOVERY_RPC_FAST_DELAY_MS: '700'
+
+      # Spot discovery
+      WHALE_DISCOVERY_SPOT_PROGRAM_SIGS: '8'
+      WHALE_DISCOVERY_SPOT_PROGRAM_TXS: '4'
+      WHALE_DISCOVERY_SPOT_TOP_TOKENS: '8'
+      WHALE_DISCOVERY_SPOT_CANDIDATE_WALLETS: '8'
+      WHALE_DISCOVERY_SPOT_TX_LIMIT: '30'
+      WHALE_DISCOVERY_SPOT_FINALISTS: '8'
+      WHALE_DISCOVERY_SPOT_MAX_CANDIDATES: '8'
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: Verify signal engine
+      - name: Validate worker
         run: |
           set -e
 
           test -f crypto_whale_signal_engine.mjs
 
-          echo "Checking Node.js syntax..."
           node --check crypto_whale_signal_engine.mjs
-
-          echo "Signal engine file:"
-          ls -lh crypto_whale_signal_engine.mjs
-
-          echo "Signal engine verification: OK"
-
-      - name: Verify old execution engine is absent
-        run: |
-          set -e
-
-          if [ -f hyperliquid_execution_engine.mjs ]; then
-            echo "ERROR: old execution engine exists"
-            echo "Remove hyperliquid_execution_engine.mjs from the repository."
-            exit 1
-          fi
-
-          echo "Old execution engine: ABSENT"
-
-      - name: Verify required secrets
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          set -e
-
-          if [ -z "$TELEGRAM_TOKEN" ]; then
-            echo "ERROR: TELEGRAM_TOKEN secret is missing"
-            exit 1
-          fi
-
-          if [ -z "$TELEGRAM_CHAT_ID" ]; then
-            echo "ERROR: TELEGRAM_CHAT_ID secret is missing"
-            exit 1
-          fi
-
-          echo "Telegram secrets: OK"
-
-      - name: Run signal engine
-        env:
-          HYPERLIQUID_API_URL: ${{ secrets.HYPERLIQUID_API_URL }}
-          SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
-
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-
-          SIGNAL_MAX_ENTRY_DISTANCE_PCT: "0.75"
-          SIGNAL_MIN_RR: "2.0"
-
-          SIGNAL_SPOT_SL_PCT: "2.0"
-          SIGNAL_SPOT_TP_PCT: "4.0"
-
-          SIGNAL_FUTURES_SL_PCT: "1.5"
-          SIGNAL_FUTURES_TP_PCT: "3.0"
-
-          SIGNAL_SPOT_SIGNATURES: "30"
-          SIGNAL_MAX_SPOT_POSITIONS_PER_WALLET: "5"
-
-          SIGNAL_REQUEST_TIMEOUT_MS: "20000"
-
-        run: |
-          set -e
 
           echo "========================================"
           echo "CRYPTO WHALE SIGNAL ENGINE"
           echo "========================================"
-          echo "Mode: READ-ONLY / SIGNAL-ONLY"
           echo "Worker: crypto_whale_signal_engine.mjs"
-          echo "No orders"
-          echo "No execution"
-          echo "No leverage changes"
+          echo "Node: $(node --version)"
+          echo "Helius: configured via production environment"
           echo "========================================"
 
+      - name: Run whale signal engine
+        run: |
+          set -e
+
           node crypto_whale_signal_engine.mjs
+
+      - name: Persist discovery cache
+        if: always()
+        run: |
+          set -e
+
+          if [ -f state/whale_watchlist.json ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+            git add state/whale_watchlist.json
+
+            if git diff --cached --quiet; then
+              echo "[CACHE] no changes"
+            else
+              git commit -m "chore: update whale discovery watchlist"
+              git push
+            fi
+          else
+            echo "[CACHE] state/whale_watchlist.json not created"
+          fi
