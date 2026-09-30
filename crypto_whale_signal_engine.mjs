@@ -3,7 +3,7 @@
 // Exactly 10 fixed signal sources: 5 Spot + 5 Futures.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V3.2-WHALE-SIGNAL-DATA-AUDIT-24H';
+const VERSION = 'V3.4-WHALE-SIGNAL-SPOT-SYMBOL-MAPPING';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -25,6 +25,7 @@ const FUTURES_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_FUTURES_ACTIVITY
 const FUTURES_SIGNAL_FRESHNESS_MIN = Number(process.env.SIGNAL_FUTURES_SIGNAL_FRESHNESS_MIN || 15);
 const FUTURES_AUDIT_LOOKBACK_MIN = Number(process.env.SIGNAL_FUTURES_AUDIT_LOOKBACK_MIN || 1440);
 const FUTURES_GREEN_LATENCY_MIN = Number(process.env.SIGNAL_FUTURES_GREEN_LATENCY_MIN || MAX_SIGNAL_LATENCY_MIN);
+const FUTURES_AVERAGING_GREEN_LATENCY_MIN = Number(process.env.SIGNAL_FUTURES_AVERAGING_GREEN_LATENCY_MIN || 10);
 const FUTURES_BETWEEN_WALLETS_MS = Number(process.env.SIGNAL_FUTURES_BETWEEN_WALLETS_MS || 1200);
 const FUTURES_RETRY_BASE_MS = Number(process.env.SIGNAL_FUTURES_RETRY_BASE_MS || 1500);
 const FUTURES_FETCH_RETRY = Number(process.env.SIGNAL_FUTURES_FETCH_RETRY || 5);
@@ -99,6 +100,34 @@ async function fetchJson(url, options={}, label='request'){
 }
 async function hl(body,label='hl'){
   return fetchJson(HL_INFO,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)},label);
+}
+
+async function fetchSpotSymbolMap(){
+  const map=new Map();
+  try{
+    const meta=await hl({type:'spotMeta'},'spotMeta:symbolMap');
+    const tokens=new Map((Array.isArray(meta?.tokens)?meta.tokens:[]).map(t=>[Number(t?.index),String(t?.name||'').trim()]));
+    for(const u of (Array.isArray(meta?.universe)?meta.universe:[])){
+      const idx=Number(u?.index);
+      const wire=String(u?.name||'').trim();
+      let display=wire;
+      if(Array.isArray(u?.tokens)&&u.tokens.length>=2){
+        const base=tokens.get(Number(u.tokens[0]))||'';
+        const quote=tokens.get(Number(u.tokens[1]))||'';
+        if(base&&quote) display=`${base}/${quote}`;
+      }
+      if(Number.isFinite(idx)) map.set(`@${idx}`,display);
+      if(wire) map.set(wire,display);
+    }
+    console.log(`[FUTURES][SYMBOL-MAP] loaded=${map.size} spotPairs=${Array.isArray(meta?.universe)?meta.universe.length:0}`);
+  }catch(e){
+    console.log(`[FUTURES][SYMBOL-MAP] ERROR ${String(e?.message||e).slice(0,180)}`);
+  }
+  return map;
+}
+function displayCoin(coin,symbolMap){
+  const raw=String(coin||'').trim();
+  return symbolMap?.get(raw)||raw;
 }
 async function sol(body,label='solana'){
   return fetchJson(SOL_RPC,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:Date.now(),...body})},label);
@@ -341,7 +370,7 @@ function statePositionMap(state){
   return map;
 }
 
-async function scanFutures(w,mids,now){
+async function scanFutures(w,mids,now,symbolMap){
   // IMPORTANT: current positions are never converted into entry signals.
   // A signal must originate from a recent Hyperliquid position increase.
   // Every same-side increase is an add/re-entry; this catches averaging-in,
@@ -435,10 +464,11 @@ async function scanFutures(w,mids,now){
   if(!freshCandidates.length && sortedCandidates.length){
     const latestStale=sortedCandidates[0];
     const staleAge=Math.max(0,(now-n(latestStale.time))/60000);
-    console.log(`[FUTURES][FRESHNESS-DROP] ${w.name} | ${String(latestStale.coin)} | latest ADD age=${staleAge.toFixed(1)}m > ${FUTURES_SIGNAL_FRESHNESS_MIN}m | hidden=STALE`);
+    console.log(`[FUTURES][FRESHNESS-DROP] ${w.name} | ${displayCoin(latestStale.coin,symbolMap)} | latest ADD age=${staleAge.toFixed(1)}m > ${FUTURES_SIGNAL_FRESHNESS_MIN}m | hidden=STALE`);
   }
   for(const f of freshCandidates){
     const coin=String(f.coin);
+    const displaySymbol=displayCoin(coin,symbolMap);
     const side=f._derivedSide || (f.dir==='Open Long'?'LONG':'SHORT');
     const entry=n(f.px);
     const mid=n(mids?.[coin]);
@@ -452,7 +482,7 @@ async function scanFutures(w,mids,now){
     const averaging=f._isAveraging===true;
 
     if(!(entry>0)||!(mid>0)){
-      console.log(`[FUTURES][DROP] ${w.name} | ${coin} | ${side} | Add ${priceFmt(entry)} | Now ${priceFmt(mid)} | Age ${ageMin.toFixed(1)}m | REASON=PRICE_UNAVAILABLE`);
+      console.log(`[FUTURES][DROP] ${w.name} | ${displaySymbol} | ${side} | Add ${priceFmt(entry)} | Now ${priceFmt(mid)} | Age ${ageMin.toFixed(1)}m | REASON=PRICE_UNAVAILABLE`);
       continue;
     }
 
@@ -463,7 +493,7 @@ async function scanFutures(w,mids,now){
     const sl=side==='LONG'?entry*(1-HL_SL_PCT/100):entry*(1+HL_SL_PCT/100);
     const tp=side==='LONG'?entry*(1+HL_TP_PCT/100):entry*(1-HL_TP_PCT/100);
     const R=normalizedRR(Math.abs(entry-sl),Math.abs(tp-entry));
-    const x={wallet:w,coin,side:currentSide,sourceEntry:entry,current:mid,distancePct:dist,sl,tp,rr:R,
+    const x={wallet:w,coin,displaySymbol,side:currentSide,sourceEntry:entry,current:mid,distancePct:dist,sl,tp,rr:R,
       size:addedSize,positionValue:pos?.positionValue??addedSize*entry,unrealized:pos?.unrealized??null,
       leverage:pos?.leverage??null,liq:pos?.liq??null,margin:pos?.margin??null,
       openedAt:n(f.time),ageMin,openFillPx:entry,openFillSize:addedSize,openFillHash:f.hash||null,
@@ -474,7 +504,7 @@ async function scanFutures(w,mids,now){
     const auditStatus=classifyPosition(x);
     const reasons=setupReason(x);
     const reason=auditStatus==='YELLOW'?yellowReason(x):(reasons.length?reasons.join(' + '):'READY');
-    console.log(`[FUTURES][CANDIDATE] ${w.name} | ${coin} | ${currentSide} | ADD ${priceFmt(entry)} | AVG ${priceFmt(avgEntry)} | adds=${addCount} | Now ${priceFmt(mid)} | Dist ${pct(dist,2)} | Age ${ageMin.toFixed(1)}m | RR ${fmt(R,3)} | STATUS=${auditStatus} | REASON=${reason}`);
+    console.log(`[FUTURES][CANDIDATE] ${w.name} | ${displaySymbol} | ${currentSide} | ADD ${priceFmt(entry)} | AVG ${priceFmt(avgEntry)} | observedAdds=${addCount} | Now ${priceFmt(mid)} | Dist ${pct(dist,2)} | Age ${ageMin.toFixed(1)}m | RR ${fmt(R,3)} | STATUS=${auditStatus} | REASON=${reason}`);
     signals.push(x);
   }
   return {wallet:w,signals,positions:signals,scanned:fills.length,health:{health:'SIGNAL_ONLY',reason:'HEALTH_NOT_QUERIED_IN_SIGNAL_CYCLE'},activityLookbackMin:FUTURES_ACTIVITY_LOOKBACK_MIN,addEvents:recentAdds,averagingSymbols:averagingKeys,dataAudit:dataAudit?{status:dataAudit.status,audit24hCount:dataAudit.auditRows.length,detail:dataAudit.detail}:null};
@@ -501,7 +531,7 @@ function healthLine(h,w){
 }
 
 function signalLine(x,i){
-  return `${i}. ${x.wallet.name} | ${x.coin} | ${x.side}\n   Source Entry ${priceFmt(x.sourceEntry)} | Now ${priceFmt(x.current)} | Dist ${pct(x.distancePct,2)}\n   SL ${priceFmt(x.sl)} | TP ${priceFmt(x.tp)} | RR ${fmt(x.rr,3)} | ${x.leverage?`Lev ${fmt(x.leverage,1)}x | `:''}${x.positionValue?`Pos ${money(x.positionValue)} | `:''}${x.ageMin!=null?`Age ${x.ageMin<1?Math.max(1,Math.round(x.ageMin*60))+'s':x.ageMin.toFixed(1)+'m'} | `:''}${x.liquidity?`Liq ${money(x.liquidity)}`:''}`;
+  return `${i}. ${x.wallet.name} | ${x.displaySymbol||x.coin} | ${x.side}\n   Source Entry ${priceFmt(x.sourceEntry)} | Now ${priceFmt(x.current)} | Dist ${pct(x.distancePct,2)}\n   SL ${priceFmt(x.sl)} | TP ${priceFmt(x.tp)} | RR ${fmt(x.rr,3)} | ${x.leverage?`Lev ${fmt(x.leverage,1)}x | `:''}${x.positionValue?`Pos ${money(x.positionValue)} | `:''}${x.ageMin!=null?`Age ${x.ageMin<1?Math.max(1,Math.round(x.ageMin*60))+'s':x.ageMin.toFixed(1)+'m'} | `:''}${x.liquidity?`Liq ${money(x.liquidity)}`:''}`;
 }
 function distanceAbs(x){return Math.abs(Number(x.distancePct));}
 function signalAgeMin(x){
@@ -534,7 +564,8 @@ function classifyPosition(x){
   const distYellow=Number.isFinite(dist)&&dist<=WATCH_WINDOW_PCT;
   const latencyGreen=!Number.isFinite(latency)||latency<=FUTURES_GREEN_LATENCY_MIN;
   const freshnessOk=!Number.isFinite(latency)||latency<=FUTURES_SIGNAL_FRESHNESS_MIN;
-  if(!invalid&&freshnessOk&&distGreen&&rrOk&&latencyGreen)return 'GREEN';
+  const averagingGreen=Boolean(x.averaging)&&Number.isFinite(latency)&&latency<=FUTURES_AVERAGING_GREEN_LATENCY_MIN;
+  if(!invalid&&freshnessOk&&distGreen&&rrOk&&(latencyGreen||averagingGreen))return 'GREEN';
   if(!invalid&&freshnessOk&&distYellow&&rrOk)return 'YELLOW';
   if(!invalid&&distGreen&&rrOk&&Number.isFinite(latency)&&latency>MAX_SIGNAL_LATENCY_MIN)return 'YELLOW';
   return 'RED';
@@ -544,9 +575,10 @@ function yellowReason(x){
   const dist=distanceAbs(x);
   const latency=signalAgeMin(x);
   if(Number.isFinite(dist)&&dist>ENTRY_WINDOW_PCT)reasons.push(`DIST>${ENTRY_WINDOW_PCT}%`);
-  if(Number.isFinite(latency)&&latency>FUTURES_GREEN_LATENCY_MIN)reasons.push(`LATENCY>${FUTURES_GREEN_LATENCY_MIN}m`);
+  const averagingGreen=Boolean(x.averaging)&&Number.isFinite(latency)&&latency<=FUTURES_AVERAGING_GREEN_LATENCY_MIN;
+  if(Number.isFinite(latency)&&latency>FUTURES_GREEN_LATENCY_MIN&&!averagingGreen)reasons.push(`LATENCY>${FUTURES_GREEN_LATENCY_MIN}m`);
   if(Number.isFinite(latency)&&latency>FUTURES_SIGNAL_FRESHNESS_MIN)reasons.push(`STALE>${FUTURES_SIGNAL_FRESHNESS_MIN}m`);
-  if(x.averaging)reasons.push(`AVERAGING x${x.addCount}`);
+  if(x.averaging)reasons.push(`FRESH_AVERAGING | OBSERVED_ADDs=${x.addCount}`);
   return reasons.length?reasons.join(' + '):'NEAR_ENTRY';
 }
 function compactSignalLine(x,i){
@@ -556,9 +588,9 @@ function compactSignalLine(x,i){
   const pos=Number.isFinite(Number(x.positionValue))?` | Pos ${money(x.positionValue)}`:'';
   const lev=Number.isFinite(Number(x.leverage))?` | Lev ${fmt(x.leverage,1)}x`:'';
   const avg=Number.isFinite(Number(x.avgEntry))?` | AVG ${priceFmt(x.avgEntry)}`:'';
-  const avgTag=x.averaging?` | AVERAGING x${x.addCount}`:'';
+  const avgTag=x.averaging?` | FRESH AVERAGING | Observed ADDs ${x.addCount}`:'';
   const reason=classifyPosition(x)==='YELLOW'?` | ${yellowReason(x)}`:'';
-  return `${i}. ${x.wallet.name} | ${x.coin} | ${x.side}\n   ADD ${priceFmt(x.sourceEntry)} | AVG ${priceFmt(x.avgEntry)} | Now ${priceFmt(x.current)} | Dist ${pct(x.distancePct,2)} | SL ${priceFmt(x.sl)} | TP ${priceFmt(x.tp)} | RR ${fmt(x.rr,3)}${ageText}${avgTag}${size}${pos}${lev}${reason}`;
+  return `${i}. ${x.wallet.name} | ${x.displaySymbol||x.coin} | ${x.side}\n   ADD ${priceFmt(x.sourceEntry)} | AVG ${priceFmt(x.avgEntry)} | Now ${priceFmt(x.current)} | Dist ${pct(x.distancePct,2)} | SL ${priceFmt(x.sl)} | TP ${priceFmt(x.tp)} | RR ${fmt(x.rr,3)}${ageText}${avgTag}${size}${pos}${lev}${reason}`;
 }
 function marketSignals(title,items){
   const rows=[title,'━━━━━━━━━━━━━━━━━━'];
@@ -571,6 +603,7 @@ async function main(){
   const started=Date.now();
   console.log(`[SIGNAL-ENGINE ${VERSION}][START] spot=${SPOT_WALLETS.length} futures=${FUTURES_WALLETS.length}`);
   const spot=await Promise.all(SPOT_WALLETS.map(w=>scanSpot(w).catch(e=>({wallet:w,signals:[],positions:[],recentBuys:[],error:e.message,scanned:0,txs:0,health:spotHealth(w)}))));
+  const symbolMap=await fetchSpotSymbolMap();
   let mids={};
   try{
     mids=await hl({type:'allMids'},'mids:cycle');
@@ -579,7 +612,7 @@ async function main(){
   }
   const futures=[];
   for(const w of FUTURES_WALLETS){
-    futures.push(await scanFutures(w,mids,Date.now()).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0,health:{health:'SIGNAL_ONLY',reason:'FUTURES_SCAN_ERROR',error:e.message}})));
+    futures.push(await scanFutures(w,mids,Date.now(),symbolMap).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0,health:{health:'SIGNAL_ONLY',reason:'FUTURES_SCAN_ERROR',error:e.message}})));
     await sleep(FUTURES_BETWEEN_WALLETS_MS);
   }
 
@@ -603,7 +636,7 @@ async function main(){
     '📡 READ-ONLY | SIGNAL-ONLY | NO ORDERS',
     '━━━━━━━━━━━━━━━━━━',
     `🕐 ${new Date().toISOString()}`,
-    `📏 GREEN ≤${ENTRY_WINDOW_PCT}% + RR≥${MIN_RR} + Age≤${FUTURES_GREEN_LATENCY_MIN}m | Fresh signal≤${FUTURES_SIGNAL_FRESHNESS_MIN}m | ADD=latest increase, AVG=current position average`,
+    `📏 Initial GREEN ≤${ENTRY_WINDOW_PCT}% + RR≥${MIN_RR} + Age≤${FUTURES_GREEN_LATENCY_MIN}m | Averaging GREEN ≤${FUTURES_AVERAGING_GREEN_LATENCY_MIN}m | Fresh signal≤${FUTURES_SIGNAL_FRESHNESS_MIN}m | ADD=latest increase, AVG=current position average`,
     '',
     ...marketSignals('🟢 SPOT — ENTRY READY',spotGreen),
     '',
