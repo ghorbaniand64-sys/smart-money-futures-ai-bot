@@ -5,7 +5,7 @@ import path from 'node:path';
 // Dynamic whale discovery: 5 Spot + 5 Futures. READ ONLY.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V4.5-HELIUS-SPOT-SWAP-DECODER';
+const VERSION = 'V4.5.1-HELIUS-SPOT-DIRECTION-FIX';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY || '';
@@ -73,7 +73,7 @@ const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TO
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 8);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
-const DISCOVERY_SCHEMA = 'V4.5-HELIUS-SPOT-SWAP-DECODER';
+const DISCOVERY_SCHEMA = 'V4.5.1-HELIUS-SPOT-DIRECTION-FIX';
 const DISCOVERY_FILL_PAGE_SIZE = Number(process.env.WHALE_DISCOVERY_FILL_PAGE_SIZE || 2000);
 const DISCOVERY_FILL_MAX_PAGES = Number(process.env.WHALE_DISCOVERY_FILL_MAX_PAGES || 8);
 const DISCOVERY_RPC_DELAY_MS = Number(process.env.WHALE_DISCOVERY_RPC_DELAY_MS || 1800);
@@ -467,91 +467,78 @@ function enhancedUser(x,side){ return String(x?.[side+'UserAccount']||''); }
 function enhancedSwap(tx,wallet,solUsd){
   if(String(tx?.type||'').toUpperCase()!=='SWAP')return null;
   const walletLc=String(wallet||'').toLowerCase();
-
-  // Enhanced API has changed shape across versions. Prefer the explicit swap event
-  // when present, but fall back to the stable transaction-level transfer objects.
-  // Helius Enhanced Transactions exposes tokenTransfers/nativeTransfers on SWAP rows.
   const swap=tx?.events?.swap||{};
-  const eventInputs=Array.isArray(swap.tokenInputs)?swap.tokenInputs:[];
-  const eventOutputs=Array.isArray(swap.tokenOutputs)?swap.tokenOutputs:[];
   const tokenTransfers=Array.isArray(tx?.tokenTransfers)?tx.tokenTransfers:[];
   const nativeTransfers=Array.isArray(tx?.nativeTransfers)?tx.nativeTransfers:[];
 
   const normalizeToken=(x,side)=>({
     mint:enhancedMint(x),
     amount:enhancedAmount(x),
-    user:String(x?.[side+'UserAccount']||x?.[side+'Owner']||x?.userAccount||'').toLowerCase()
+    user:String(x?.[side+'UserAccount']||x?.[side+'Owner']||'').toLowerCase()
   });
 
-  let tokenIns=eventInputs.map(x=>normalizeToken(x,'from')).filter(x=>x.mint&&x.amount>0);
-  let tokenOuts=eventOutputs.map(x=>normalizeToken(x,'to')).filter(x=>x.mint&&x.amount>0);
+  // Helius swap events describe the actual swap leg: tokenInputs = sent,
+  // tokenOutputs = received. Use this first because it avoids counting router
+  // fees/tips/internal transfers as trading capital.
+  let inputs=Array.isArray(swap.tokenInputs)?swap.tokenInputs.map(x=>normalizeToken(x,'from')).filter(x=>x.mint&&x.amount>0):[];
+  let outputs=Array.isArray(swap.tokenOutputs)?swap.tokenOutputs.map(x=>normalizeToken(x,'to')).filter(x=>x.mint&&x.amount>0):[];
 
-  // In the normal Enhanced API response, tokenTransfers are easier to reason about:
-  // fromUserAccount/toUserAccount identify the wallet owner rather than its ATA.
-  if(!tokenIns.length && !tokenOuts.length){
-    tokenIns=tokenTransfers
+  // Fallback to transaction-level token transfers. These are wallet-owned only;
+  // fee-payer/native transfers are deliberately NOT treated as swap funding.
+  if(!inputs.length&&!outputs.length){
+    inputs=tokenTransfers
       .filter(x=>String(x?.fromUserAccount||'').toLowerCase()===walletLc)
-      .map(x=>normalizeToken(x,'from'))
-      .filter(x=>x.mint&&x.amount>0);
-    tokenOuts=tokenTransfers
+      .map(x=>normalizeToken(x,'from')).filter(x=>x.mint&&x.amount>0);
+    outputs=tokenTransfers
       .filter(x=>String(x?.toUserAccount||'').toLowerCase()===walletLc)
-      .map(x=>normalizeToken(x,'to'))
-      .filter(x=>x.mint&&x.amount>0);
-  }else{
-    // Event payloads can omit user accounts. Do not discard them merely because the
-    // account field is absent; the transaction itself is already classified as SWAP.
-    tokenIns=tokenIns.filter(x=>!x.user||x.user===walletLc);
-    tokenOuts=tokenOuts.filter(x=>!x.user||x.user===walletLc);
+      .map(x=>normalizeToken(x,'to')).filter(x=>x.mint&&x.amount>0);
   }
 
-  const nativeFrom=nativeTransfers
-    .filter(x=>String(x?.fromUserAccount||'').toLowerCase()===walletLc)
-    .reduce((sum,x)=>sum+Math.max(0,n(x?.amount)/1e9),0);
-  const nativeTo=nativeTransfers
-    .filter(x=>String(x?.toUserAccount||'').toLowerCase()===walletLc)
-    .reduce((sum,x)=>sum+Math.max(0,n(x?.amount)/1e9),0);
+  // Only native SOL movement explicitly represented by the swap event is valid
+  // as swap funding. Generic nativeTransfers contain fees/tips and must not be
+  // used as BUY/SELL capital.
+  const eventNativeIn=n(swap?.nativeInput?.amount)/1e9;
+  const eventNativeOut=n(swap?.nativeOutput?.amount)/1e9;
+  const transferNativeIn=Math.max(0,...nativeTransfers.filter(x=>String(x?.toUserAccount||'').toLowerCase()===walletLc).map(x=>n(x?.amount)/1e9));
+  const transferNativeOut=Math.max(0,...nativeTransfers.filter(x=>String(x?.fromUserAccount||'').toLowerCase()===walletLc).map(x=>n(x?.amount)/1e9));
+  // If the swap event does not expose nativeInput/nativeOutput, use the largest
+  // wallet-owned native movement rather than the sum: fees/tips are usually
+  // additional small transfers and must not become the trade notional.
+  const nativeFundingIn=eventNativeIn>0?eventNativeIn:transferNativeIn;
+  const nativeFundingOut=eventNativeOut>0?eventNativeOut:transferNativeOut;
 
-  // Legacy/current events.swap native fields are still supported as a fallback.
-  const nativeInput=Math.max(nativeFrom,n(swap?.nativeInput?.amount)/1e9);
-  const nativeOutput=Math.max(nativeTo,n(swap?.nativeOutput?.amount)/1e9);
+  const fundingInputs=inputs.filter(x=>FUNDING_MINTS.has(x.mint));
+  const fundingOutputs=outputs.filter(x=>FUNDING_MINTS.has(x.mint));
+  const nonFundingInputs=inputs.filter(x=>!FUNDING_MINTS.has(x.mint));
+  const nonFundingOutputs=outputs.filter(x=>!FUNDING_MINTS.has(x.mint));
 
-  const fundingIn=[];
-  const fundingOut=[];
-  for(const x of tokenIns){
-    if(x.mint===USDC_MINT)fundingIn.push({mint:x.mint,amount:x.amount,usd:x.amount});
-    else if(x.mint===WSOL_MINT)fundingIn.push({mint:x.mint,amount:x.amount,usd:x.amount*solUsd});
-  }
-  for(const x of tokenOuts){
-    if(x.mint===USDC_MINT)fundingOut.push({mint:x.mint,amount:x.amount,usd:x.amount});
-    else if(x.mint===WSOL_MINT)fundingOut.push({mint:x.mint,amount:x.amount,usd:x.amount*solUsd});
-  }
+  const usdForFunding=(x)=>x.mint===USDC_MINT?x.amount:x.mint===WSOL_MINT?x.amount*solUsd:0;
+  const fundingOutUsd=Math.max(0,...fundingInputs.map(usdForFunding),nativeFundingOut*solUsd);
+  const fundingInUsd=Math.max(0,...fundingOutputs.map(usdForFunding),nativeFundingIn*solUsd);
 
-  const tokenReceived=tokenOuts
-    .filter(x=>!FUNDING_MINTS.has(x.mint))
-    .map(x=>({mint:x.mint,amount:x.amount}))
-    .filter(x=>x.mint&&x.amount>0);
-  const tokenSold=tokenIns
-    .filter(x=>!FUNDING_MINTS.has(x.mint))
-    .map(x=>({mint:x.mint,amount:x.amount}))
-    .filter(x=>x.mint&&x.amount>0);
-
-  const nativeInUsd=nativeInput*solUsd;
-  const nativeOutUsd=nativeOutput*solUsd;
-  const buyFunding=Math.max(0,...fundingOut.map(x=>x.usd),nativeInUsd);
-  const sellFunding=Math.max(0,...fundingIn.map(x=>x.usd),nativeOutUsd);
-
-  // BUY = quote/funding asset leaves the wallet and a non-funding token enters it.
-  if(tokenReceived.length&&buyFunding>0){
-    const t=tokenReceived.sort((a,b)=>b.amount-a.amount)[0];
-    const fundingAsset=fundingOut.find(x=>x.usd===buyFunding)?.mint||(nativeInUsd===buyFunding?'SOL':null);
-    return {direction:'BUY',mint:t.mint,tokenAmount:t.amount,fundingUsd:buyFunding,fundingAsset};
+  // BUY: funding leaves wallet + non-funding asset arrives.
+  if(nonFundingOutputs.length&&fundingOutUsd>0){
+    const t=nonFundingOutputs.sort((a,b)=>b.amount-a.amount)[0];
+    return {direction:'BUY',mint:t.mint,tokenAmount:t.amount,fundingUsd:fundingOutUsd,
+      fundingAsset:fundingInputs.find(x=>usdForFunding(x)===fundingOutUsd)?.mint||(nativeFundingOut*solUsd===fundingOutUsd?'SOL':null)};
   }
 
-  // SELL = a non-funding token leaves the wallet and quote/funding asset enters it.
-  if(tokenSold.length&&sellFunding>0){
-    const t=tokenSold.sort((a,b)=>b.amount-a.amount)[0];
-    const fundingAsset=fundingIn.find(x=>x.usd===sellFunding)?.mint||(nativeOutUsd===sellFunding?'SOL':null);
-    return {direction:'SELL',mint:t.mint,tokenAmount:t.amount,fundingUsd:sellFunding,fundingAsset};
+  // SELL: non-funding asset leaves wallet + funding arrives.
+  if(nonFundingInputs.length&&fundingInUsd>0){
+    const t=nonFundingInputs.sort((a,b)=>b.amount-a.amount)[0];
+    return {direction:'SELL',mint:t.mint,tokenAmount:t.amount,fundingUsd:fundingInUsd,
+      fundingAsset:fundingOutputs.find(x=>usdForFunding(x)===fundingInUsd)?.mint||(nativeFundingIn*solUsd===fundingInUsd?'SOL':null)};
+  }
+
+  // Last-resort direction fallback from Helius's human-readable description.
+  // This is only used when the transfer payload cannot expose a clean funding leg.
+  const desc=String(tx?.description||'').toLowerCase();
+  const nonFunding=nonFundingOutputs[0]||nonFundingInputs[0];
+  if(nonFunding&&/swap|swapped|trade|traded/.test(desc)){
+    if(/\bfor\b/.test(desc)&&nonFundingOutputs.length&&!nonFundingInputs.length)
+      return {direction:'BUY',mint:nonFunding.mint,tokenAmount:nonFunding.amount,fundingUsd:0,fundingAsset:null};
+    if(/\bfor\b/.test(desc)&&nonFundingInputs.length&&!nonFundingOutputs.length)
+      return {direction:'SELL',mint:nonFunding.mint,tokenAmount:nonFunding.amount,fundingUsd:0,fundingAsset:null};
   }
   return null;
 }
