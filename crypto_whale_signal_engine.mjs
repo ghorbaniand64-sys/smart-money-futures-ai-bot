@@ -6,7 +6,7 @@ import path from 'node:path';
 // Dynamic whale discovery: 5 Spot + 5 Futures. READ ONLY.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V5.1-SIGNAL-QUALITY-SIZE-AVG';
+const VERSION = 'V5.2-DYNAMIC-SIZE-FULL-AUDIT';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY || '';
@@ -26,6 +26,9 @@ const FETCH_TIMEOUT = Number(process.env.SIGNAL_REQUEST_TIMEOUT_MS || 18000);
 const RECENT_SIGS = Number(process.env.SIGNAL_SPOT_SIGNATURES || 80);
 const SPOT_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_SPOT_ACTIVITY_LOOKBACK_MIN || 15);
 const SPOT_MIN_BUY_USD = Number(process.env.SIGNAL_SPOT_MIN_BUY_USD || 25);
+const SPOT_SIZE_BASELINE_LOOKBACK_MIN = Number(process.env.SIGNAL_SPOT_SIZE_BASELINE_LOOKBACK_MIN || 1440);
+const SPOT_SIZE_BASELINE_MIN_SAMPLES = Number(process.env.SIGNAL_SPOT_SIZE_BASELINE_MIN_SAMPLES || 3);
+const SPOT_SIZE_MIN_MEDIAN_RATIO = Number(process.env.SIGNAL_SPOT_SIZE_MIN_MEDIAN_RATIO || 0.15);
 const MAX_SIGNAL_LATENCY_MIN = Number(process.env.SIGNAL_MAX_LATENCY_MIN || 5);
 const FUTURES_ACTIVITY_LOOKBACK_MIN = Number(process.env.SIGNAL_FUTURES_ACTIVITY_LOOKBACK_MIN || 120);
 const FUTURES_SIGNAL_FRESHNESS_MIN = Number(process.env.SIGNAL_FUTURES_SIGNAL_FRESHNESS_MIN || 15);
@@ -77,7 +80,7 @@ const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TO
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 16);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
-const DISCOVERY_SCHEMA = 'V5.1-SIGNAL-QUALITY-SIZE-AVG';
+const DISCOVERY_SCHEMA = 'V5.2-DYNAMIC-SIZE-FULL-AUDIT';
 const DISCOVERY_FILL_PAGE_SIZE = Number(process.env.WHALE_DISCOVERY_FILL_PAGE_SIZE || 2000);
 const DISCOVERY_FILL_MAX_PAGES = Number(process.env.WHALE_DISCOVERY_FILL_MAX_PAGES || 8);
 const DISCOVERY_RPC_DELAY_MS = Number(process.env.WHALE_DISCOVERY_RPC_DELAY_MS || 1800);
@@ -769,67 +772,123 @@ async function scanSpot(w){
   const solInfo=await tokenInfo(WSOL_MINT);
   const solUsd=solInfo.price||await tokenPrice(WSOL_MINT);
   if(!(solUsd>0))throw new Error('SOL_PRICE_UNAVAILABLE');
-  const cutoff=Date.now()-SPOT_MAX_ACTIVITY_AGE_MIN*60000;
+  const now=Date.now();
+  const cutoff=now-SPOT_MAX_ACTIVITY_AGE_MIN*60000;
+  const baselineCutoff=now-SPOT_SIZE_BASELINE_LOOKBACK_MIN*60000;
   const candidates=[]; const diagnostics=[];
   if(HELIUS_ENHANCED_ENABLED){
     const txs=await heliusEnhancedTransactions(w.address,100,'',`signal:${w.name}`);
+    const history=[];
     const recent=[];
+    let decodeSwaps=0, decodeBuys=0, decodeSells=0, invalidFunding=0;
+
+    // Decode the complete returned Helius window once. Recent rows are used for
+    // signals; the wider returned history is used only for wallet-relative size
+    // baseline and observed FIFO AVG. This avoids a second RPC call.
     for(const tx of txs){
-      const bt=n(tx?.timestamp)*1000; if(!bt||bt<cutoff)continue;
+      const bt=n(tx?.timestamp)*1000;
+      if(!bt||bt<baselineCutoff)continue;
       const sw=enhancedSwap(tx,w.address,solUsd);
-      if(!sw||sw.direction!=='BUY')continue;
-      if(!(sw.fundingUsd>=SPOT_MIN_BUY_USD)){
-        diagnostics.push({sig:tx.signature,reason:`BUY_NOTIONAL<$${SPOT_MIN_BUY_USD}`});
-        console.log(`[SPOT][DROP] ${w.name} | mint=${String(sw.mint).slice(0,8)} | BUY $${Number(sw.fundingUsd||0).toFixed(2)} < min $${SPOT_MIN_BUY_USD} | reason=SMALL_TRADE`);
+      if(!sw)continue;
+      decodeSwaps++;
+      if(sw.direction==='BUY')decodeBuys++;
+      if(sw.direction==='SELL')decodeSells++;
+      if(!(sw.fundingUsd>0)||!(sw.tokenAmount>0)){
+        invalidFunding++;
+        diagnostics.push({sig:tx.signature,reason:'ECONOMIC_VALUE_UNRESOLVED'});
         continue;
       }
-      if(!(sw.tokenAmount>0)){
-        diagnostics.push({sig:tx.signature,reason:'TOKEN_AMOUNT_INVALID'});
-        continue;
-      }
-      recent.push({...sw,time:bt,signature:tx.signature});
+      history.push({...sw,time:bt,signature:tx.signature});
+      if(sw.direction==='BUY'&&bt>=cutoff)recent.push({...sw,time:bt,signature:tx.signature});
     }
 
-    // Reconstruct the currently observable spot inventory with FIFO over the
-    // recent signal window. This prevents AVG=N/A and avoids pretending that a
-    // single latest BUY is the whole position when several adds are visible.
-    recent.sort((a,b)=>a.time-b.time);
+    const buySizes=history.filter(x=>x.direction==='BUY'&&x.fundingUsd>=SPOT_MIN_BUY_USD).map(x=>x.fundingUsd).sort((a,b)=>a-b);
+    const medianTradeUsd=buySizes.length?buySizes[Math.floor(buySizes.length/2)]:0;
+    const baselineSamples=buySizes.length;
+    const baselineReady=baselineSamples>=SPOT_SIZE_BASELINE_MIN_SAMPLES&&medianTradeUsd>0;
+    const dynamicMinUsd=baselineReady
+      ? Math.max(SPOT_MIN_BUY_USD,medianTradeUsd*SPOT_SIZE_MIN_MEDIAN_RATIO)
+      : SPOT_MIN_BUY_USD;
+
+    console.log(`[SPOT][SIZE-AUDIT] ${w.name} | decoded=${decodeSwaps} buys=${decodeBuys} sells=${decodeSells} economic=${history.length} baselineBuys=${baselineSamples} medianBUY=${money(medianTradeUsd)} dynamicMin=${money(dynamicMinUsd)} ratio=${(SPOT_SIZE_MIN_MEDIAN_RATIO*100).toFixed(0)}% baselineReady=${baselineReady} unresolved=${invalidFunding}`);
+
+    // FIFO inventory reconstruction over the observed Helius window. SELLs
+    // consume earlier BUY lots, so AVG represents remaining observable cost
+    // basis instead of merely averaging every BUY forever.
+    history.sort((a,b)=>a.time-b.time);
     const lots=new Map();
-    for(const r of recent){
+    const sellMatches=new Map();
+    for(const r of history){
+      const mint=String(r.mint);
       if(r.direction==='BUY'){
-        if(!lots.has(r.mint))lots.set(r.mint,[]);
-        lots.get(r.mint).push({qty:r.tokenAmount,usd:r.fundingUsd,time:r.time});
+        if(!lots.has(mint))lots.set(mint,[]);
+        lots.get(mint).push({qty:r.tokenAmount,usd:r.fundingUsd,time:r.time});
+      }else if(r.direction==='SELL'){
+        let remaining=r.tokenAmount;
+        const q=lots.get(mint)||[];
+        let matched=0;
+        while(remaining>1e-12&&q.length){
+          const lot=q[0];
+          const take=Math.min(remaining,lot.qty);
+          const unit=lot.qty>0?lot.usd/lot.qty:0;
+          lot.qty-=take;
+          lot.usd-=take*unit;
+          remaining-=take;
+          matched+=take;
+          if(lot.qty<=1e-12)q.shift();
+        }
+        sellMatches.set(mint,(sellMatches.get(mint)||0)+matched);
       }
     }
-    const latestByMint=new Map();
-    for(const r of recent){
-      const q=lots.get(r.mint)||[];
-      // No SELL rows are accepted by the signal path, so the remaining lots
-      // represent the BUY inventory visible in this fresh window.
+
+    const observedByMint=new Map();
+    for(const [mint,q] of lots.entries()){
       const qty=q.reduce((a,b)=>a+b.qty,0);
       const usd=q.reduce((a,b)=>a+b.usd,0);
-      if(qty>0)latestByMint.set(r.mint,{avgEntry:usd/qty,observedBuyCount:q.length,observedQty:qty,observedUsd:usd});
+      if(qty>0){
+        observedByMint.set(mint,{
+          avgEntry:usd/qty,
+          observedBuyCount:q.length,
+          observedQty:qty,
+          observedUsd:usd,
+          avgSource:'HELIUS_FIFO_OBSERVED_WINDOW',
+          observedHistoryComplete:false
+        });
+      }
     }
 
     const latest=[...recent].sort((a,b)=>b.time-a.time);
     const seen=new Set();
     for(const sw of latest){
       if(seen.has(sw.mint))continue;
+      const ratio=medianTradeUsd>0?sw.fundingUsd/medianTradeUsd:null;
+      if(!(sw.fundingUsd>=dynamicMinUsd)){
+        const reason=baselineReady?`BUY_NOTIONAL<$${dynamicMinUsd.toFixed(2)}_OR_<${(SPOT_SIZE_MIN_MEDIAN_RATIO*100).toFixed(0)}%_MEDIAN`:`BUY_NOTIONAL<$${SPOT_MIN_BUY_USD}`;
+        diagnostics.push({sig:sw.signature,reason});
+        console.log(`[SPOT][DROP] ${w.name} | ${String(sw.mint).slice(0,8)} | BUY ${money(sw.fundingUsd)} | median ${money(medianTradeUsd)} | ratio ${ratio==null?'N/A':(ratio*100).toFixed(1)+'%'} | min ${money(dynamicMinUsd)} | reason=${reason}`);
+        continue;
+      }
+      if(!(sw.tokenAmount>0)){
+        diagnostics.push({sig:sw.signature,reason:'TOKEN_AMOUNT_INVALID'});
+        continue;
+      }
       const info=await tokenMarketData(sw.mint); const px=n(info.price);
       if(!(px>0)){diagnostics.push({sig:sw.signature,reason:`PRICE_UNRESOLVED:${sw.mint.slice(0,8)}`});continue;}
       const sourceEntry=sw.fundingUsd/sw.tokenAmount;
       if(!(sourceEntry>0)){diagnostics.push({sig:sw.signature,reason:'ENTRY_RECONSTRUCTION_INVALID'});continue;}
-      const observed=latestByMint.get(sw.mint);
+      const observed=observedByMint.get(sw.mint);
       const avgEntry=Number.isFinite(Number(observed?.avgEntry))&&Number(observed.avgEntry)>0?Number(observed.avgEntry):sourceEntry;
+      const avgSource=observed?.avgSource||'LATEST_BUY_FALLBACK';
       const dist=(px/sourceEntry-1)*100;
       const sl=sourceEntry*(1-SL_PCT/100),tp=sourceEntry*(1+TP_PCT/100),R=normalizedRR(sourceEntry-sl,tp-sourceEntry);
-      const ageMin=Math.max(0,(Date.now()-sw.time)/60000);
-      const x={wallet:w,coin:info.symbol||sw.mint.slice(0,6),displaySymbol:info.symbol||sw.mint.slice(0,6),mint:sw.mint,side:'LONG',sourceEntry,current:px,avgEntry,avgEntryObserved:true,observedBuyCount:observed?.observedBuyCount||1,observedBuyNotionalUsd:observed?.observedUsd||sw.fundingUsd,distancePct:dist,sl,tp,rr:R,age:sw.time,ageMin,liquidity:info.liquidity,volume24h:info.volume24h,tx:sw.signature,buyNotionalUsd:sw.fundingUsd,fundingAsset:sw.fundingAsset,activitySource:'HELIUS_ENHANCED_SWAP',priceSource:info.source,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR};
+      const ageMin=Math.max(0,(now-sw.time)/60000);
+      const x={wallet:w,coin:info.symbol||sw.mint.slice(0,6),displaySymbol:info.symbol||sw.mint.slice(0,6),mint:sw.mint,side:'LONG',sourceEntry,current:px,avgEntry,avgEntryObserved:true,avgSource,observedBuyCount:observed?.observedBuyCount||1,observedBuyNotionalUsd:observed?.observedUsd||sw.fundingUsd,observedInventoryQty:observed?.observedQty||sw.tokenAmount,distancePct:dist,sl,tp,rr:R,age:sw.time,ageMin,liquidity:info.liquidity,volume24h:info.volume24h,tx:sw.signature,buyNotionalUsd:sw.fundingUsd,fundingAsset:sw.fundingAsset,activitySource:'HELIUS_ENHANCED_SWAP',priceSource:info.source,sizeBaselineMedianUsd:medianTradeUsd,sizeBaselineSamples:baselineSamples,sizeRatioToMedian:ratio,dynamicMinBuyUsd:dynamicMinUsd,eligible:Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR};
       candidates.push(x); seen.add(sw.mint);
-      console.log(`[SPOT][CANDIDATE] ${w.name} | ${x.displaySymbol} | LONG | ADD ${priceFmt(sourceEntry)} | AVG ${priceFmt(avgEntry)} | Now ${priceFmt(px)} | Dist ${pct(dist,2)} | RR ${fmt(R,3)} | Age ${ageMin.toFixed(1)}m | Size ${money(sw.fundingUsd)} | observedBUYs=${x.observedBuyCount}`);
+      console.log(`[SPOT][CANDIDATE] ${w.name} | ${x.displaySymbol} | LONG | ADD ${priceFmt(sourceEntry)} | AVG ${priceFmt(avgEntry)} | Now ${priceFmt(px)} | Dist ${pct(dist,2)} | RR ${fmt(R,3)} | Age ${ageMin.toFixed(1)}m | Size ${money(sw.fundingUsd)} | medianBUY=${money(medianTradeUsd)} | sizeRatio=${ratio==null?'N/A':pct(ratio*100,1)} | AVG_SRC=${avgSource} | observedBUYs=${x.observedBuyCount}`);
       if(candidates.length>=MAX_SPOT_POSITIONS)break;
     }
-    return {wallet:w,signals:candidates.filter(x=>x.eligible),positions:candidates,recentBuys:candidates,scanned:txs.length,txs:txs.filter(x=>n(x?.timestamp)*1000>=cutoff).length,health:spotHealth(w),activityLookbackMin:SPOT_MAX_ACTIVITY_AGE_MIN,diagnostics:diagnostics.slice(0,SPOT_DIAGNOSTIC_MAX),tokenAccounts:0};
+    console.log(`[SPOT][AUDIT-DONE] ${w.name} | txs=${txs.length} recentBuys=${recent.length} candidates=${candidates.length} eligible=${candidates.filter(x=>x.eligible).length} drops=${diagnostics.length} baseline=${baselineReady?'READY':'FALLBACK'} | minBuy=${money(dynamicMinUsd)}`);
+    return {wallet:w,signals:candidates.filter(x=>x.eligible),positions:candidates,recentBuys:candidates,scanned:txs.length,txs:txs.filter(x=>n(x?.timestamp)*1000>=cutoff).length,health:spotHealth(w),activityLookbackMin:SPOT_MAX_ACTIVITY_AGE_MIN,diagnostics:diagnostics.slice(0,SPOT_DIAGNOSTIC_MAX),tokenAccounts:0,sizeAudit:{baselineReady,baselineSamples,medianTradeUsd,dynamicMinUsd,medianRatio:SPOT_SIZE_MIN_MEDIAN_RATIO,decodedSwaps:decodeSwaps,decodedBuys:decodeBuys,decodedSells:decodeSells,economicRows:history.length,unresolved:invalidFunding}};
   }
   throw new Error('HELIUS_API_KEY_MISSING_SPOT_SIGNAL_PATH_DISABLED');
 }
@@ -998,6 +1057,7 @@ async function scanFutures(w,mids,now,symbolMap){
   }
 
   console.log(`[FUTURES][OPEN-DETECT] ${w.name} fills=${fills.length} dirOpen=${dirOpen} derivedOpen=${derivedOpen} closes/reduces=${rejectedClose} invalid=${invalid} addEvents=${recentAdds} averagingSymbols=${averagingKeys}`);
+  console.log(`[FUTURES][AUDIT-SUMMARY] ${w.name} | recentFills=${fills.length} | rawOpen=${dirOpen} | derivedOpen=${derivedOpen} | reductions=${rejectedClose} | invalid=${invalid} | addEvents=${recentAdds} | averaging=${averagingKeys} | freshAdds=${latest.filter(f=>Math.max(0,(now-n(f.time))/60000)<=FUTURES_SIGNAL_FRESHNESS_MIN).length}`);
 
   const signals=[];
   const sortedCandidates=latest.sort((a,b)=>n(b?.time)-n(a?.time));
@@ -1028,7 +1088,6 @@ async function scanFutures(w,mids,now,symbolMap){
     const averaging=f._isAveraging===true;
     const addNotional=addedSize*entry;
     const lifecycleAgeHours=pos?.entry&&Number(pos.entry)>0 ? Math.max(0,(now-n(f.time))/3600000) : ageMin/60;
-    const adverseAvg=avgDist<0;
 
     if(!(entry>0)||!(mid>0)){
       console.log(`[FUTURES][DROP] ${w.name} | ${displaySymbol} | ${side} | Add ${priceFmt(entry)} | Now ${priceFmt(mid)} | Age ${ageMin.toFixed(1)}m | REASON=PRICE_UNAVAILABLE`);
@@ -1039,6 +1098,7 @@ async function scanFutures(w,mids,now,symbolMap){
     // shown separately so a trader averaging down/up is visible to the user.
     const dist=(mid/entry-1)*100*(side==='LONG'?1:-1);
     const avgDist=(mid/avgEntry-1)*100*(currentSide==='LONG'?1:-1);
+    const adverseAvg=avgDist<0;
     const sl=side==='LONG'?entry*(1-HL_SL_PCT/100):entry*(1+HL_SL_PCT/100);
     const tp=side==='LONG'?entry*(1+HL_TP_PCT/100):entry*(1-HL_TP_PCT/100);
     const R=normalizedRR(Math.abs(entry-sl),Math.abs(tp-entry));
@@ -1202,7 +1262,9 @@ async function main(){
     '',
     `⏱ ${((Date.now()-started)/1000).toFixed(1)}s | Red/too-late signals hidden`
   ];
-  console.log(`[SIGNAL-ENGINE ${VERSION}][DONE] green=${spotGreen.length+futuresGreen.length} yellow=${spotYellow.length+futuresYellow.length} red-hidden=${classified.filter(x=>x.status==='RED').length}`);
+  const spotAudit=spot.map(x=>x.sizeAudit).filter(Boolean);
+  const futuresAudit=futures.map(x=>x.dataAudit||null).filter(Boolean);
+  console.log(`[SIGNAL-ENGINE ${VERSION}][DONE] green=${spotGreen.length+futuresGreen.length} yellow=${spotYellow.length+futuresYellow.length} red-hidden=${classified.filter(x=>x.status==='RED').length} | spotAuditWallets=${spotAudit.length} futuresDataAudits=${futuresAudit.length}`);
   await telegram(lines.join('\n'));
 }
 
