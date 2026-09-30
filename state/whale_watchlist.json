@@ -1,6 +1,6 @@
 {
-  "schema": "V4.5-HELIUS-SPOT-SWAP-DECODER",
-  "generatedAt": 1790791574825,
+  "schema": "V4.5.1-HELIUS-SPOT-DIRECTION-FIX",
+  "generatedAt": 1790791812852,
   "criteria": {
     "holdHours": [
       1,
