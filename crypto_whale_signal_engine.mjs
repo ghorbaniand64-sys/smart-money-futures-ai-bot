@@ -5,7 +5,7 @@ import path from 'node:path';
 // Dynamic whale discovery: 5 Spot + 5 Futures. READ ONLY.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V4.8-HELIUS-SWAP-LIFECYCLE-AUDIT';
+const VERSION = 'V4.9-HELIUS-SPOT-LIFECYCLE-ORDER-FIX';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY || '';
@@ -73,7 +73,7 @@ const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TO
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 16);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
-const DISCOVERY_SCHEMA = 'V4.8-HELIUS-SWAP-LIFECYCLE-AUDIT';
+const DISCOVERY_SCHEMA = 'V4.9-HELIUS-SPOT-LIFECYCLE-ORDER-FIX';
 const DISCOVERY_FILL_PAGE_SIZE = Number(process.env.WHALE_DISCOVERY_FILL_PAGE_SIZE || 2000);
 const DISCOVERY_FILL_MAX_PAGES = Number(process.env.WHALE_DISCOVERY_FILL_MAX_PAGES || 8);
 const DISCOVERY_RPC_DELAY_MS = Number(process.env.WHALE_DISCOVERY_RPC_DELAY_MS || 1800);
@@ -338,7 +338,10 @@ async function discoverSpotCandidates(){
       const txs=await heliusEnhancedHistory(address,3,`wallet:${address.slice(0,6)}`);
       const cutoff=Date.now()-DISCOVERY_LOOKBACK_HOURS*3600000;
       const lots=new Map(), lifecycles=[];
-      let buys=0,sells=0,volumeUsd=0,lastTrade=0, unmatchedSells=0, unmatchedBuyLots=0;
+      let buys=0,sells=0,volumeUsd=0,lastTrade=0, unmatchedSells=0,unmatchedBuyLots=0;
+      // Helius Enhanced Transactions are returned newest-first. Lifecycle matching must
+      // run oldest -> newest so BUY lots exist before their corresponding SELLs.
+      txs.sort((a,b)=>n(a?.timestamp)-n(b?.timestamp));
       for(const tx of txs){
         const bt=n(tx?.timestamp)*1000; if(!bt||bt<cutoff)continue;
         const sw=enhancedSwap(tx,address,solUsd); if(!sw)continue;
