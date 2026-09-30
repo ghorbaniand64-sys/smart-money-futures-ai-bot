@@ -5,7 +5,7 @@ import path from 'node:path';
 // Dynamic whale discovery: 5 Spot + 5 Futures. READ ONLY.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V4.0-WHALE-UNIVERSE-DYNAMIC-HOLD-1H-24H';
+const VERSION = 'V4.1-WHALE-TRUE-LIFECYCLE-DISCOVERY-1H-24H';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -50,12 +50,15 @@ const DISCOVERY_MIN_HOLD_HOURS = Number(process.env.WHALE_DISCOVERY_MIN_HOLD_HOU
 const DISCOVERY_MAX_HOLD_HOURS = Number(process.env.WHALE_DISCOVERY_MAX_HOLD_HOURS || 24);
 const DISCOVERY_MIN_VOLUME_USD = Number(process.env.WHALE_DISCOVERY_MIN_VOLUME_USD || 250000);
 const DISCOVERY_MIN_COMPLETED = Number(process.env.WHALE_DISCOVERY_MIN_COMPLETED || 3);
-const DISCOVERY_MIN_IN_WINDOW = Number(process.env.WHALE_DISCOVERY_MIN_IN_WINDOW || 2);
+const DISCOVERY_MIN_IN_WINDOW = Number(process.env.WHALE_DISCOVERY_MIN_IN_WINDOW || 5);
+const DISCOVERY_MIN_HOLD_RATIO = Number(process.env.WHALE_DISCOVERY_MIN_HOLD_RATIO || 0.5);
+const DISCOVERY_MIN_RECENT_LIFECYCLES = Number(process.env.WHALE_DISCOVERY_MIN_RECENT_LIFECYCLES || 1);
 const DISCOVERY_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_MAX_CANDIDATES || 60);
-const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TOKENS || 12);
+const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TOKENS || 20);
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
-const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 40);
+const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 18);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
+const DISCOVERY_SCHEMA = 'V4.1-TRUE-LIFECYCLE';
 const HL_LEADERBOARD_URL = process.env.HL_LEADERBOARD_URL || 'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';
 
 // V4 deliberately does not carry the old hard-coded wallet list forward.
@@ -70,11 +73,11 @@ async function readDiscoveryCache(){
     const raw=await fs.readFile(DISCOVERY_STATE_FILE,'utf8');
     const x=JSON.parse(raw);
     const ageMin=(Date.now()-n(x?.generatedAt))/60000;
-    if(ageMin>=0&&ageMin<DISCOVERY_TTL_MIN&&Array.isArray(x?.spotWallets)&&Array.isArray(x?.futuresWallets)){
+    if(x?.schema===DISCOVERY_SCHEMA&&ageMin>=0&&ageMin<DISCOVERY_TTL_MIN&&Array.isArray(x?.spotWallets)&&Array.isArray(x?.futuresWallets)&&x.spotWallets.length>=TARGET_SPOT_WALLETS&&x.futuresWallets.length>=TARGET_FUTURES_WALLETS){
       console.log(`[DISCOVERY][CACHE] age=${ageMin.toFixed(1)}m spot=${x.spotWallets.length} futures=${x.futuresWallets.length}`);
       return x;
     }
-    console.log(`[DISCOVERY][CACHE] stale-or-empty`);
+    console.log(`[DISCOVERY][CACHE] stale-schema-or-empty`);
   }catch(e){console.log(`[DISCOVERY][CACHE] miss ${String(e?.message||e).slice(0,100)}`)}
   return null;
 }
@@ -109,47 +112,62 @@ function positionPostFromFill(f){
 }
 function holdStatsFromFills(fills){
   const byCoin=new Map();
-  for(const f of fills||[]){if(f?.coin)byCoin.has(f.coin)?byCoin.get(f.coin).push(f):byCoin.set(f.coin,[f]);}
-  const holds=[]; let totalVolume=0; let additions=0; let freshAdds=0;
+  for(const f of fills||[]) if(f?.coin){ if(!byCoin.has(f.coin))byCoin.set(f.coin,[]); byCoin.get(f.coin).push(f); }
+  const lifecycles=[]; let totalVolume=0; let additions=0; let partialReductions=0;
   const now=Date.now(); const cutoff=now-DISCOVERY_LOOKBACK_HOURS*3600000;
   for(const [coin,list0] of byCoin){
     const list=list0.filter(f=>n(f.time)>=cutoff).sort((a,b)=>n(a.time)-n(b.time));
-    let open=null, prev=0;
+    let pos=0, lifecycle=null;
     for(const f of list){
-      const px=n(f.px), sz=Math.abs(n(f.sz)); totalVolume+=px*sz;
-      const post=positionPostFromFill(f); if(post===null)continue;
-      const start=n(f.startPosition); const absStart=Math.abs(start), absPost=Math.abs(post);
-      if(absPost>absStart+1e-12){
+      const px=n(f.px), sz=Math.abs(n(f.sz)), t=n(f.time);
+      if(!(px>0)||!(sz>0)||!Number.isFinite(t))continue;
+      totalVolume+=px*sz;
+      const sp=n(f.startPosition);
+      const dir=String(f.dir||'').toLowerCase();
+      let post=positionPostFromFill(f);
+      if(post===null){
+        const d=dir.includes('open long')||dir.includes('close short')?sz:dir.includes('open short')||dir.includes('close long')?-sz:0;
+        post=sp+d;
+      }
+      if(!Number.isFinite(post))continue;
+      const before=pos;
+      pos=post;
+      const beforeAbs=Math.abs(before), afterAbs=Math.abs(post);
+      if(afterAbs>beforeAbs+1e-12){
         additions++;
-        if(absStart>0)freshAdds++;
-        if(open===null)open={time:n(f.time),side:post>0?'LONG':'SHORT'};
-        if(prev!==0&&Math.sign(prev)!==Math.sign(post)){
-          if(open){holds.push({coin,side:open.side,openTime:open.time,closeTime:n(f.time),hours:(n(f.time)-open.time)/3600000});}
-          open={time:n(f.time),side:post>0?'LONG':'SHORT'};
+        if(!lifecycle || Math.sign(before)!==Math.sign(post)){
+          if(lifecycle && beforeAbs>0 && Math.sign(before)!==Math.sign(post)){
+            const h=(t-lifecycle.openTime)/3600000;
+            if(h>=0)lifecycles.push({...lifecycle,coin,closeTime:t,holdHours:h,closedBy:'FLIP'});
+          }
+          lifecycle={openTime:t,side:post>0?'LONG':'SHORT',adds:1,maxSize:afterAbs,volume:px*sz};
+        }else{
+          lifecycle.adds++; lifecycle.maxSize=Math.max(lifecycle.maxSize,afterAbs); lifecycle.volume+=px*sz;
         }
-      }else if(absPost<absStart-1e-12){
-        if(open){
-          const h=(n(f.time)-open.time)/3600000;
-          if(h>=0)holds.push({coin,side:open.side,openTime:open.time,closeTime:n(f.time),hours:h});
-          open=null;
+      }else if(afterAbs<beforeAbs-1e-12){
+        partialReductions++;
+        if(afterAbs<=1e-12 && lifecycle){
+          const h=(t-lifecycle.openTime)/3600000;
+          if(h>=0)lifecycles.push({...lifecycle,coin,closeTime:t,holdHours:h,closedBy:'FLAT'});
+          lifecycle=null;
         }
       }
-      prev=post;
     }
   }
-  const completed=holds.length;
-  const inWindow=holds.filter(h=>h.hours>=DISCOVERY_MIN_HOLD_HOURS&&h.hours<=DISCOVERY_MAX_HOLD_HOURS);
-  const hs=holds.map(h=>h.hours).sort((a,b)=>a-b);
+  const completed=lifecycles.length;
+  const inWindow=lifecycles.filter(h=>h.holdHours>=DISCOVERY_MIN_HOLD_HOURS&&h.holdHours<=DISCOVERY_MAX_HOLD_HOURS);
+  const hs=inWindow.map(h=>h.holdHours).sort((a,b)=>a-b);
   const median=hs.length?hs[Math.floor(hs.length/2)]:0;
   const avg=hs.length?hs.reduce((a,b)=>a+b,0)/hs.length:0;
-  const recentActivity=holds.some(h=>n(h.closeTime)>=now-24*3600000) || additions>0;
-  return {holds,completed,inWindow:inWindow.length,medianHoldHours:median,avgHoldHours:avg,totalVolume,additions,freshAdds,recentActivity};
+  const recentWindow=lifecycles.filter(h=>n(h.closeTime)>=now-24*3600000);
+  return {lifecycles,completed,inWindow:inWindow.length,holdRatio:completed?inWindow.length/completed:0,medianHoldHours:median,avgHoldHours:avg,totalVolume,additions,partialReductions,recentLifecycles:recentWindow.length,recentActivity:recentWindow.length>0};
 }
+
 async function discoverFutures(){
   const rows=await fetchLeaderboard();
   const candidates=rows.filter(r=>/^0x[a-fA-F0-9]{40}$/.test(String(r?.ethAddress||'')))
     .map(r=>{const d=lbMetric(r,'pnl'),w=lbMetric(r,'vlm'); return {...r,pnl7:d.week,pnl30:d.month,volume7:w.week,volume1d:w.day};})
-    .filter(r=>r.volume7>=DISCOVERY_MIN_VOLUME_USD && r.pnl7>0 && r.pnl30>0 && n(r.accountValue)>=50000)
+    .filter(r=>r.volume7>=DISCOVERY_MIN_VOLUME_USD && r.pnl7>0 && r.pnl30>0)
     .sort((a,b)=>(b.volume1d-a.volume1d)+(b.pnl7-a.pnl7)*0.01)
     .slice(0,DISCOVERY_MAX_CANDIDATES);
   console.log(`[DISCOVERY][FUTURES] prefilter=${candidates.length}`);
@@ -158,28 +176,44 @@ async function discoverFutures(){
     const w={name:`HL_${String(r.ethAddress).slice(2,6).toUpperCase()}`,address:r.ethAddress};
     try{
       const fills=await hl({type:'userFillsByTime',user:w.address,startTime:Date.now()-DISCOVERY_LOOKBACK_HOURS*3600000,endTime:Date.now()},`discover:${w.name}`);
-      const st=holdStatsFromFills(Array.isArray(fills)?fills:[]);
-      const ratio=st.completed?st.inWindow/st.completed:0;
-      const qualifies=st.inWindow>=DISCOVERY_MIN_IN_WINDOW && st.totalVolume>=DISCOVERY_MIN_VOLUME_USD && st.medianHoldHours>=DISCOVERY_MIN_HOLD_HOURS && st.medianHoldHours<=DISCOVERY_MAX_HOLD_HOURS && st.recentActivity;
-      console.log(`[DISCOVERY][FUTURES][AUDIT] ${w.name} fills=${Array.isArray(fills)?fills.length:0} volume48h=${Math.round(st.totalVolume)} completed=${st.completed} in1-24h=${st.inWindow} median=${st.medianHoldHours.toFixed(2)}h adds=${st.additions} qualifies=${qualifies}`);
-      if(qualifies)scored.push({...w,discovery:{volume48h:st.totalVolume,completed:st.completed,inWindow:st.inWindow,holdRatio:ratio,medianHoldHours:st.medianHoldHours,avgHoldHours:st.avgHoldHours,observedAdds:st.additions,pnl7:r.pnl7,pnl30:r.pnl30,leaderboardVolume7:r.volume7,accountValue:n(r.accountValue)}});
-    }catch(e){console.log(`[DISCOVERY][FUTURES][AUDIT] ${w.name} ERROR ${String(e?.message||e).slice(0,120)}`)}
+      const rawFills=Array.isArray(fills)?fills:[];
+      const st=holdStatsFromFills(rawFills);
+      const capped=rawFills.length>=2000;
+      const qualifies=!capped && st.inWindow>=DISCOVERY_MIN_IN_WINDOW && st.holdRatio>=DISCOVERY_MIN_HOLD_RATIO && st.recentLifecycles>=DISCOVERY_MIN_RECENT_LIFECYCLES && st.totalVolume>=DISCOVERY_MIN_VOLUME_USD;
+      console.log(`[DISCOVERY][FUTURES][LIFECYCLE] ${w.name} fills=${rawFills.length} capped=${capped} volume48h=${Math.round(st.totalVolume)} lifecycle=${st.completed} hold1-24=${st.inWindow} ratio=${(st.holdRatio*100).toFixed(0)}% median=${st.medianHoldHours.toFixed(2)}h recentClosed24h=${st.recentLifecycles} adds=${st.additions} partialReductions=${st.partialReductions} qualifies=${qualifies}`);
+      if(qualifies) scored.push({...w,discovery:{volume48h:st.totalVolume,completedLifecycles:st.completed,inWindow:st.inWindow,holdRatio:st.holdRatio,medianHoldHours:st.medianHoldHours,avgHoldHours:st.avgHoldHours,recentLifecycles:st.recentLifecycles,observedAdds:st.additions,pnl7:r.pnl7,pnl30:r.pnl30,leaderboardVolume7:r.volume7,accountValue:n(r.accountValue)}});
+    }catch(e){console.log(`[DISCOVERY][FUTURES][LIFECYCLE] ${w.name} ERROR ${String(e?.message||e).slice(0,120)}`)}
     await sleep(FUTURES_BETWEEN_WALLETS_MS);
-    if(scored.length>=TARGET_FUTURES_WALLETS)break;
   }
-  scored.sort((a,b)=>b.discovery.holdRatio-a.discovery.holdRatio || b.discovery.volume48h-a.discovery.volume48h);
+  scored.sort((a,b)=>b.discovery.inWindow-a.discovery.inWindow || b.discovery.holdRatio-a.discovery.holdRatio || b.discovery.volume48h-a.discovery.volume48h);
   return scored.slice(0,TARGET_FUTURES_WALLETS);
 }
-async function fetchJupiterVerifiedTokens(){
+
+async function fetchSpotDiscoveryTokens(){
+  const out=new Map();
   const urls=['https://tokens.jup.ag/tokens?tags=verified','https://tokens.jup.ag/tokens_with_markets'];
-  for(const u of urls){try{const rows=await fetchJson(u,{},'jupiter:tokens');if(Array.isArray(rows)&&rows.length)return rows;}catch(e){console.log(`[DISCOVERY][SPOT][TOKENS] ${String(e?.message||e).slice(0,120)}`)}}
-  return [];
+  for(const u of urls){
+    try{const rows=await fetchJson(u,{},'jupiter:tokens'); if(Array.isArray(rows)) for(const t of rows){ if(t?.address)out.set(t.address,t); } if(out.size)break;}
+    catch(e){console.log(`[DISCOVERY][SPOT][TOKENS] Jupiter failed ${String(e?.message||e).slice(0,120)}`)}
+  }
+  if(out.size)return [...out.values()];
+  const queries=['SOL','USDC','WIF','BONK','JUP','PYTH','RAY','JTO','POPCAT','MEW'];
+  for(const q of queries){
+    try{
+      const r=await fetchJson(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(q)}`,{},`dex-search:${q}`);
+      for(const p of (r?.pairs||[]).filter(x=>String(x?.chainId)==='solana')){
+        for(const t of [p?.baseToken,p?.quoteToken]) if(t?.address) out.set(t.address,{address:t.address,symbol:t.symbol||t.address.slice(0,6),name:t.name||'',daily_volume:n(p?.volume?.h24),liquidity:{usd:n(p?.liquidity?.usd)}});
+      }
+    }catch(e){console.log(`[DISCOVERY][SPOT][TOKENS] DexScreener ${q} failed ${String(e?.message||e).slice(0,100)}`)}
+  }
+  return [...out.values()];
 }
+
 async function discoverSpotCandidates(){
-  const rows=await fetchJupiterVerifiedTokens();
+  const rows=await fetchSpotDiscoveryTokens();
   const stable=new Set([USDC_MINT,'So11111111111111111111111111111111111111112']);
-  const tokens=rows.filter(t=>t?.address&&!stable.has(t.address)&&n(t.daily_volume)>=DISCOVERY_MIN_VOLUME_USD)
-    .sort((a,b)=>n(b.daily_volume)-n(a.daily_volume)).slice(0,DISCOVERY_SPOT_TOP_TOKENS);
+  const tokens=rows.filter(t=>t?.address&&!stable.has(t.address)&&(n(t.daily_volume)>=DISCOVERY_MIN_VOLUME_USD || n(t?.liquidity?.usd)>=DISCOVERY_MIN_VOLUME_USD/2))
+    .sort((a,b)=>Math.max(n(b.daily_volume),n(b?.liquidity?.usd)*2)-Math.max(n(a.daily_volume),n(a?.liquidity?.usd)*2)).slice(0,DISCOVERY_SPOT_TOP_TOKENS);
   console.log(`[DISCOVERY][SPOT] liquidTokens=${tokens.length}`);
   const owners=new Map();
   for(const t of tokens){
@@ -198,14 +232,14 @@ async function discoverSpotCandidates(){
   const scored=[];
   for(const [address,holderHits] of pool){
     try{
-      const sigs=await solSignaturesForDiscovery(address);
+      const sigs=await solSignaturesForDiscovery(address,Math.min(RECENT_SIGS,50));
       const times=sigs.map(s=>n(s.blockTime)*1000).filter(Boolean).sort((a,b)=>a-b);
       const recent=times.filter(t=>t>=Date.now()-24*3600000);
       const span=recent.length>=2?(recent[recent.length-1]-recent[0])/3600000:0;
       const activity=recent.length;
       // Candidate gate: enough recent transactions to plausibly represent an active trader.
       // Full 1-24h hold reconstruction is done only for the finalists to protect RPC limits.
-      if(activity<DISCOVERY_MIN_COMPLETED)continue;
+      if(activity<Math.max(DISCOVERY_MIN_COMPLETED,8))continue;
       scored.push({name:`SOL_${address.slice(0,4).toUpperCase()}`,address,discovery:{holderHits,recentTxs24h:activity,activitySpanHours:span}});
       if(scored.length>=TARGET_SPOT_WALLETS*3)break;
     }catch(e){console.log(`[DISCOVERY][SPOT][WALLET] ${short(address)} ERROR ${String(e?.message||e).slice(0,100)}`)}
@@ -216,46 +250,48 @@ async function discoverSpotCandidates(){
   for(const w of scored){
     try{
       const tokenAccounts=await walletTokenAccounts(w.address);
-      const sigs=await solSignaturesForDiscovery(w.address,40);
+      const sigs=await solSignaturesForDiscovery(w.address,Math.min(RECENT_SIGS,60));
       const cutoff=Date.now()-DISCOVERY_LOOKBACK_HOURS*3600000;
-      let buys=0, sells=0, lastTrade=0, volumeUsd=0;
-      const openLots=new Map(), holds=[];
+      const solUsd=await tokenPrice(WSOL_MINT);
+      const lots=new Map(); const lifecycles=[]; let buys=0,sells=0,volumeUsd=0,lastTrade=0;
       for(const s of sigs){
         const bt=n(s.blockTime)*1000;if(bt&&bt<cutoff)break;
-        try{
-          const tx=await solTx(s.signature);if(!tx)continue;
-          const d=swapDirection(tx,w.address,tokenAccounts);
-          if(d.direction!=='BUY'&&d.direction!=='SELL')continue;
-          lastTrade=Math.max(lastTrade,bt);
-          if(d.direction==='BUY'){
-            buys++;
-            for(const p of d.positive){
-              const q=Math.abs(n(p.delta));if(q<=0)continue;
-              if(!openLots.has(p.mint))openLots.set(p.mint,[]);
-              openLots.get(p.mint).push({time:bt,qty:q});
-            }
-            const f=d.fundingToken?.mint===USDC_MINT?Math.abs(n(d.fundingToken.delta)):(Math.abs(n(d.nativeSpent))+Math.abs(n(d.fundingToken?.delta||0)))*0;
-            volumeUsd+=Math.max(0,Number(f));
-          }else{
-            sells++;
-            const ds=tokenDeltaMap(tx,w.address,tokenAccounts).filter(x=>x.delta<0&&!FUNDING_MINTS.has(x.mint));
-            for(const qd of ds){
-              let remain=Math.abs(n(qd.delta)); const q=openLots.get(qd.mint)||[];
-              while(remain>0&&q.length){
-                const lot=q[0],take=Math.min(remain,lot.qty); const h=(bt-lot.time)/3600000;
-                if(h>=0)holds.push({mint:qd.mint,hours:h});
-                lot.qty-=take;remain-=take;if(lot.qty<=1e-12)q.shift();
-              }
+        const tx=await solTx(s.signature); if(!tx)continue;
+        const d=swapDirection(tx,w.address,tokenAccounts); if(d.direction==='UNKNOWN')continue;
+        lastTrade=Math.max(lastTrade,bt);
+        if(d.direction==='BUY'){
+          buys++;
+          for(const p of d.positive){
+            if(FUNDING_MINTS.has(p.mint))continue;
+            const q=Math.abs(n(p.delta)); if(q<=0)continue;
+            if(!lots.has(p.mint))lots.set(p.mint,[]);
+            lots.get(p.mint).push({time:bt,qty:q,usd:0});
+            const usdc=d.fundingToken?.mint===USDC_MINT?Math.abs(n(d.fundingToken.delta)):0;
+            const wsol=d.fundingToken?.mint===WSOL_MINT?Math.abs(n(d.fundingToken.delta))*solUsd:0;
+            const native=Math.max(0,n(d.nativeSpent))*solUsd;
+            volumeUsd+=Math.max(usdc,wsol,native);
+          }
+        }else if(d.direction==='SELL'){
+          sells++;
+          const sold=d.negative.filter(x=>!FUNDING_MINTS.has(x.mint));
+          for(const qd of sold){
+            let remain=Math.abs(n(qd.delta)); const q=lots.get(qd.mint)||[];
+            while(remain>0&&q.length){
+              const lot=q[0],take=Math.min(remain,lot.qty),h=(bt-lot.time)/3600000;
+              if(h>=0)lifecycles.push({mint:qd.mint,openTime:lot.time,closeTime:bt,holdHours:h});
+              lot.qty-=take; remain-=take; if(lot.qty<=1e-12)q.shift();
             }
           }
-        }catch{}
+        }
       }
-      const inWindow=holds.filter(h=>h.hours>=DISCOVERY_MIN_HOLD_HOURS&&h.hours<=DISCOVERY_MAX_HOLD_HOURS);
-      const hs=holds.map(h=>h.hours).sort((a,b)=>a-b);
+      const inWindow=lifecycles.filter(x=>x.holdHours>=DISCOVERY_MIN_HOLD_HOURS&&x.holdHours<=DISCOVERY_MAX_HOLD_HOURS);
+      const hs=inWindow.map(x=>x.holdHours).sort((a,b)=>a-b);
       const medianHold=hs.length?hs[Math.floor(hs.length/2)]:0;
-      const roundTrips=holds.length;
-      const qualifies=roundTrips>=DISCOVERY_MIN_COMPLETED && inWindow.length>=DISCOVERY_MIN_IN_WINDOW && medianHold>=DISCOVERY_MIN_HOLD_HOURS && medianHold<=DISCOVERY_MAX_HOLD_HOURS && lastTrade>=Date.now()-24*3600000;
-      if(qualifies)finals.push({...w,discovery:{...w.discovery,buys,sells,roundTrips,inWindow:inWindow.length,medianHoldHours:medianHold,avgHoldHours:hs.length?hs.reduce((a,b)=>a+b,0)/hs.length:0,lastTrade,volumeUsd}});
+      const roundTrips=lifecycles.length;
+      const holdRatio=roundTrips?inWindow.length/roundTrips:0;
+      const qualifies=roundTrips>=DISCOVERY_MIN_COMPLETED && inWindow.length>=DISCOVERY_MIN_IN_WINDOW && holdRatio>=DISCOVERY_MIN_HOLD_RATIO && medianHold>=DISCOVERY_MIN_HOLD_HOURS && medianHold<=DISCOVERY_MAX_HOLD_HOURS && lastTrade>=Date.now()-24*3600000;
+      console.log(`[DISCOVERY][SPOT][LIFECYCLE] ${w.name} tx24h=${sigs.length} buys=${buys} sells=${sells} roundTrips=${roundTrips} hold1-24=${inWindow.length} ratio=${(holdRatio*100).toFixed(0)}% median=${medianHold.toFixed(2)}h qualifies=${qualifies}`);
+      if(qualifies) finals.push({...w,discovery:{...w.discovery,buys,sells,roundTrips,inWindow:inWindow.length,holdRatio,medianHoldHours:medianHold,avgHoldHours:hs.length?hs.reduce((a,b)=>a+b,0)/hs.length:0,lastTrade,volumeUsd}});
     }catch(e){console.log(`[DISCOVERY][SPOT][FINAL] ${w.name} ERROR ${String(e?.message||e).slice(0,120)}`)}
     await sleep(250);
     if(finals.length>=TARGET_SPOT_WALLETS)break;
@@ -271,9 +307,11 @@ async function discoverWatchlist(){
   if(cached){SPOT_WALLETS=cached.spotWallets;FUTURES_WALLETS=cached.futuresWallets;return cached;}
   console.log(`[DISCOVERY][START] target spot=${TARGET_SPOT_WALLETS} futures=${TARGET_FUTURES_WALLETS} hold=${DISCOVERY_MIN_HOLD_HOURS}-${DISCOVERY_MAX_HOLD_HOURS}h`);
   const [spotWallets,futuresWallets]=await Promise.all([discoverSpotCandidates(),discoverFutures()]);
-  const data={generatedAt:Date.now(),criteria:{holdHours:[DISCOVERY_MIN_HOLD_HOURS,DISCOVERY_MAX_HOLD_HOURS],minVolumeUsd:DISCOVERY_MIN_VOLUME_USD},spotWallets,futuresWallets};
+  const data={schema:DISCOVERY_SCHEMA,generatedAt:Date.now(),criteria:{holdHours:[DISCOVERY_MIN_HOLD_HOURS,DISCOVERY_MAX_HOLD_HOURS],minVolumeUsd:DISCOVERY_MIN_VOLUME_USD,minInWindow:DISCOVERY_MIN_IN_WINDOW,minHoldRatio:DISCOVERY_MIN_HOLD_RATIO},spotWallets,futuresWallets};
   SPOT_WALLETS=spotWallets; FUTURES_WALLETS=futuresWallets;
   await writeDiscoveryCache(data);
+  if(SPOT_WALLETS.length<TARGET_SPOT_WALLETS) console.log(`[DISCOVERY][WARN] Spot qualified=${SPOT_WALLETS.length}/${TARGET_SPOT_WALLETS}; no weak wallets substituted`);
+  if(FUTURES_WALLETS.length<TARGET_FUTURES_WALLETS) console.log(`[DISCOVERY][WARN] Futures qualified=${FUTURES_WALLETS.length}/${TARGET_FUTURES_WALLETS}; no weak wallets substituted`);
   console.log(`[DISCOVERY][DONE] selected spot=${SPOT_WALLETS.length} futures=${FUTURES_WALLETS.length}`);
   return data;
 }
@@ -429,6 +467,17 @@ function reconstructedBuy(tx,wallet,mint,delta,solUsd,knownTokenAccounts=new Set
   return {fundingUsd,fundingAsset,nativeSpent,wsolSpent,usdcSpent,feeSol:fee};
 }
 
+async function tokenPrice(mint){
+  try{
+    const r=await fetchJson(`https://api.dexscreener.com/latest/dex/tokens/${mint}`,{},'dex-price');
+    const p=(r?.pairs||[]).filter(x=>x?.priceUsd).sort((a,b)=>n(b?.liquidity?.usd)-n(a?.liquidity?.usd))[0];
+    if(p)return n(p.priceUsd);
+  }catch{}
+  try{
+    const r=await fetchJson(`${GECKO}/networks/solana/tokens/${mint}`,{},'gecko-price');
+    return n(r?.data?.attributes?.price_usd);
+  }catch{return 0}
+}
 async function tokenInfo(mint){
   try{
     const r=await fetchJson(`${GECKO}/networks/solana/tokens/${mint}`);
@@ -850,7 +899,7 @@ async function main(){
     '📡 READ-ONLY | SIGNAL-ONLY | NO ORDERS',
     '━━━━━━━━━━━━━━━━━━',
     `🕐 ${new Date().toISOString()}`,
-    `🎯 WATCHLIST: ${SPOT_WALLETS.length} Spot + ${FUTURES_WALLETS.length} Futures | Hold target ${DISCOVERY_MIN_HOLD_HOURS}-${DISCOVERY_MAX_HOLD_HOURS}h`,
+    `🎯 WATCHLIST: ${SPOT_WALLETS.length} Spot + ${FUTURES_WALLETS.length} Futures | Qualified hold target ${DISCOVERY_MIN_HOLD_HOURS}-${DISCOVERY_MAX_HOLD_HOURS}h`,
     `📏 Initial GREEN ≤${ENTRY_WINDOW_PCT}% + RR≥${MIN_RR} + Age≤${FUTURES_GREEN_LATENCY_MIN}m | Averaging GREEN ≤${FUTURES_AVERAGING_GREEN_LATENCY_MIN}m | Fresh signal≤${FUTURES_SIGNAL_FRESHNESS_MIN}m | ADD=latest increase, AVG=current position average`,
     '',
     ...marketSignals('🟢 SPOT — ENTRY READY',spotGreen),
