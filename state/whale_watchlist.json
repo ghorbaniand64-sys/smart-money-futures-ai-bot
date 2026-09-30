@@ -1,6 +1,6 @@
 {
   "schema": "V4.4-HELIUS-SPOT-RATE-LIMIT-RESILIENT",
-  "generatedAt": 1790789529510,
+  "generatedAt": 1790790616336,
   "criteria": {
     "holdHours": [
       1,
