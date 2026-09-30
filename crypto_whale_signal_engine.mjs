@@ -5,7 +5,7 @@ import path from 'node:path';
 // Dynamic whale discovery: 5 Spot + 5 Futures. READ ONLY.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V4.1-WHALE-TRUE-LIFECYCLE-DISCOVERY-1H-24H';
+const VERSION = 'V4.2-WHALE-PAGINATED-LIFECYCLE-SPOT-RESILIENT';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const GECKO = 'https://api.geckoterminal.com/api/v2';
@@ -28,6 +28,9 @@ const FUTURES_SIGNAL_FRESHNESS_MIN = Number(process.env.SIGNAL_FUTURES_SIGNAL_FR
 const FUTURES_AUDIT_LOOKBACK_MIN = Number(process.env.SIGNAL_FUTURES_AUDIT_LOOKBACK_MIN || 1440);
 const FUTURES_GREEN_LATENCY_MIN = Number(process.env.SIGNAL_FUTURES_GREEN_LATENCY_MIN || MAX_SIGNAL_LATENCY_MIN);
 const FUTURES_AVERAGING_GREEN_LATENCY_MIN = Number(process.env.SIGNAL_FUTURES_AVERAGING_GREEN_LATENCY_MIN || 10);
+const FUTURES_MAX_ACTIVE_LIFECYCLE_AGE_HOURS = Number(process.env.SIGNAL_FUTURES_MAX_ACTIVE_LIFECYCLE_AGE_HOURS || 24);
+const FUTURES_MIN_MEANINGFUL_ADD_NOTIONAL_USD = Number(process.env.SIGNAL_FUTURES_MIN_MEANINGFUL_ADD_NOTIONAL_USD || 100);
+const FUTURES_MAX_ADVERSE_AVG_PCT = Number(process.env.SIGNAL_FUTURES_MAX_ADVERSE_AVG_PCT || 5);
 const FUTURES_BETWEEN_WALLETS_MS = Number(process.env.SIGNAL_FUTURES_BETWEEN_WALLETS_MS || 1200);
 const FUTURES_RETRY_BASE_MS = Number(process.env.SIGNAL_FUTURES_RETRY_BASE_MS || 1500);
 const FUTURES_FETCH_RETRY = Number(process.env.SIGNAL_FUTURES_FETCH_RETRY || 5);
@@ -58,7 +61,16 @@ const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TO
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 18);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
-const DISCOVERY_SCHEMA = 'V4.1-TRUE-LIFECYCLE';
+const DISCOVERY_SCHEMA = 'V4.2-PAGINATED-LIFECYCLE-SPOT-RESILIENT';
+const DISCOVERY_FILL_PAGE_SIZE = Number(process.env.WHALE_DISCOVERY_FILL_PAGE_SIZE || 2000);
+const DISCOVERY_FILL_MAX_PAGES = Number(process.env.WHALE_DISCOVERY_FILL_MAX_PAGES || 8);
+const DISCOVERY_RPC_DELAY_MS = Number(process.env.WHALE_DISCOVERY_RPC_DELAY_MS || 1800);
+const DISCOVERY_RPC_RETRIES = Number(process.env.WHALE_DISCOVERY_RPC_RETRIES || 5);
+const DISCOVERY_SPOT_TOKEN_COUNT = Number(process.env.WHALE_DISCOVERY_SPOT_TOKEN_COUNT || 8);
+const DISCOVERY_SPOT_HOLDER_COUNT = Number(process.env.WHALE_DISCOVERY_SPOT_HOLDER_COUNT || 5);
+const DISCOVERY_SPOT_CANDIDATE_WALLETS = Number(process.env.WHALE_DISCOVERY_SPOT_CANDIDATE_WALLETS || 16);
+const DISCOVERY_SPOT_TX_LIMIT = Number(process.env.WHALE_DISCOVERY_SPOT_TX_LIMIT || 60);
+const DISCOVERY_SPOT_FINALISTS = Number(process.env.WHALE_DISCOVERY_SPOT_FINALISTS || 12);
 const HL_LEADERBOARD_URL = process.env.HL_LEADERBOARD_URL || 'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';
 
 // V4 deliberately does not carry the old hard-coded wallet list forward.
@@ -88,6 +100,57 @@ async function writeDiscoveryCache(data){
     console.log(`[DISCOVERY][CACHE] saved ${DISCOVERY_STATE_FILE}`);
   }catch(e){console.log(`[DISCOVERY][CACHE] SAVE_ERROR ${String(e?.message||e).slice(0,160)}`)}
 }
+async function solDiscovery(body,label='sol-discovery'){
+  let lastErr=null;
+  for(let attempt=1;attempt<=DISCOVERY_RPC_RETRIES;attempt++){
+    try{
+      return await sol(body,label+`:a${attempt}`);
+    }catch(e){
+      lastErr=e;
+      const msg=String(e?.message||e);
+      const is429=/429|rate.?limit|too many requests/i.test(msg);
+      if(attempt>=DISCOVERY_RPC_RETRIES)break;
+      const wait=DISCOVERY_RPC_DELAY_MS*Math.pow(2,attempt-1)+(is429?1000:0);
+      console.log(`[DISCOVERY][RPC-RETRY] ${label} attempt=${attempt} reason=${msg.slice(0,100)} wait=${wait}ms`);
+      await sleep(wait);
+    }
+  }
+  throw lastErr||new Error(`${label}:FAILED`);
+}
+async function fetchFillsPaginated(w,startTime,endTime,label='discover'){
+  const all=[]; const seen=new Set(); let cursorEnd=endTime; let pages=0; let truncated=false;
+  while(pages<DISCOVERY_FILL_MAX_PAGES){
+    pages++;
+    let rows=[]; let lastErr=null;
+    for(let attempt=1;attempt<=FUTURES_FETCH_RETRY;attempt++){
+      try{
+        const r=await hl({type:'userFillsByTime',user:w.address,startTime,endTime:cursorEnd},`${label}:${w.name}:p${pages}:a${attempt}`);
+        if(!Array.isArray(r))throw new Error('FILLS_RESPONSE_NOT_ARRAY');
+        rows=r; break;
+      }catch(e){
+        lastErr=e; const msg=String(e?.message||e); const is429=/429|rate.?limit|too many requests/i.test(msg);
+        if(attempt>=FUTURES_FETCH_RETRY)break;
+        const wait=FUTURES_RETRY_BASE_MS*Math.pow(2,attempt-1)+(is429?700:0);
+        console.log(`[DISCOVERY][FILL-RETRY] ${w.name} page=${pages} attempt=${attempt} wait=${wait}ms reason=${msg.slice(0,100)}`);
+        await sleep(wait);
+      }
+    }
+    if(!rows.length){ if(lastErr) throw lastErr; break; }
+    for(const f of rows){
+      const key=String(f?.hash||'')+'|'+n(f?.time)+'|'+String(f?.coin||'')+'|'+String(f?.px||'')+'|'+String(f?.sz||'')+'|'+String(f?.dir||'');
+      if(!seen.has(key)){seen.add(key);all.push(f);}
+    }
+    const times=rows.map(x=>n(x?.time)).filter(Boolean);
+    const oldest=times.length?Math.min(...times):0;
+    console.log(`[DISCOVERY][PAGINATION] ${w.name} page=${pages} rows=${rows.length} oldest=${oldest?new Date(oldest).toISOString():'NONE'} total=${all.length}`);
+    if(rows.length<DISCOVERY_FILL_PAGE_SIZE || !oldest || oldest<=startTime){break;}
+    cursorEnd=oldest-1;
+    await sleep(FUTURES_BETWEEN_WALLETS_MS);
+  }
+  if(pages>=DISCOVERY_FILL_MAX_PAGES)truncated=true;
+  return {fills:all,pages,truncated};
+}
+
 async function fetchLeaderboard(){
   const rows=await fetchJson(HL_LEADERBOARD_URL,{},'hl:leaderboard');
   const list=Array.isArray(rows?.leaderboardRows)?rows.leaderboardRows:[];
@@ -175,17 +238,19 @@ async function discoverFutures(){
   for(const r of candidates){
     const w={name:`HL_${String(r.ethAddress).slice(2,6).toUpperCase()}`,address:r.ethAddress};
     try{
-      const fills=await hl({type:'userFillsByTime',user:w.address,startTime:Date.now()-DISCOVERY_LOOKBACK_HOURS*3600000,endTime:Date.now()},`discover:${w.name}`);
-      const rawFills=Array.isArray(fills)?fills:[];
+      const start=Date.now()-DISCOVERY_LOOKBACK_HOURS*3600000, end=Date.now();
+      const pg=await fetchFillsPaginated(w,start,end,'discover');
+      const rawFills=pg.fills;
       const st=holdStatsFromFills(rawFills);
-      const capped=rawFills.length>=2000;
-      const qualifies=!capped && st.inWindow>=DISCOVERY_MIN_IN_WINDOW && st.holdRatio>=DISCOVERY_MIN_HOLD_RATIO && st.recentLifecycles>=DISCOVERY_MIN_RECENT_LIFECYCLES && st.totalVolume>=DISCOVERY_MIN_VOLUME_USD;
-      console.log(`[DISCOVERY][FUTURES][LIFECYCLE] ${w.name} fills=${rawFills.length} capped=${capped} volume48h=${Math.round(st.totalVolume)} lifecycle=${st.completed} hold1-24=${st.inWindow} ratio=${(st.holdRatio*100).toFixed(0)}% median=${st.medianHoldHours.toFixed(2)}h recentClosed24h=${st.recentLifecycles} adds=${st.additions} partialReductions=${st.partialReductions} qualifies=${qualifies}`);
+      const capped=pg.truncated;
+      const qualifies=!capped && st.completed>=DISCOVERY_MIN_COMPLETED && st.inWindow>=DISCOVERY_MIN_IN_WINDOW && st.holdRatio>=DISCOVERY_MIN_HOLD_RATIO && st.recentLifecycles>=DISCOVERY_MIN_RECENT_LIFECYCLES && st.totalVolume>=DISCOVERY_MIN_VOLUME_USD;
+      console.log(`[DISCOVERY][FUTURES][LIFECYCLE] ${w.name} fills=${rawFills.length} pages=${pg.pages} capped=${capped} volume48h=${Math.round(st.totalVolume)} lifecycle=${st.completed} hold1-24=${st.inWindow} ratio=${(st.holdRatio*100).toFixed(0)}% median=${st.medianHoldHours.toFixed(2)}h recentClosed24h=${st.recentLifecycles} adds=${st.additions} partialReductions=${st.partialReductions} qualifies=${qualifies}`);
       if(qualifies) scored.push({...w,discovery:{volume48h:st.totalVolume,completedLifecycles:st.completed,inWindow:st.inWindow,holdRatio:st.holdRatio,medianHoldHours:st.medianHoldHours,avgHoldHours:st.avgHoldHours,recentLifecycles:st.recentLifecycles,observedAdds:st.additions,pnl7:r.pnl7,pnl30:r.pnl30,leaderboardVolume7:r.volume7,accountValue:n(r.accountValue)}});
     }catch(e){console.log(`[DISCOVERY][FUTURES][LIFECYCLE] ${w.name} ERROR ${String(e?.message||e).slice(0,120)}`)}
     await sleep(FUTURES_BETWEEN_WALLETS_MS);
   }
-  scored.sort((a,b)=>b.discovery.inWindow-a.discovery.inWindow || b.discovery.holdRatio-a.discovery.holdRatio || b.discovery.volume48h-a.discovery.volume48h);
+  for(const x of scored){ x.discovery.score=(x.discovery.inWindow*4)+(x.discovery.holdRatio*20)+Math.min(20,Math.log10(Math.max(1,x.discovery.volume48h)))*2+Math.min(10,x.discovery.recentLifecycles)+(x.discovery.pnl7>0?5:0); }
+  scored.sort((a,b)=>b.discovery.score-a.discovery.score);
   return scored.slice(0,TARGET_FUTURES_WALLETS);
 }
 
@@ -213,26 +278,26 @@ async function discoverSpotCandidates(){
   const rows=await fetchSpotDiscoveryTokens();
   const stable=new Set([USDC_MINT,'So11111111111111111111111111111111111111112']);
   const tokens=rows.filter(t=>t?.address&&!stable.has(t.address)&&(n(t.daily_volume)>=DISCOVERY_MIN_VOLUME_USD || n(t?.liquidity?.usd)>=DISCOVERY_MIN_VOLUME_USD/2))
-    .sort((a,b)=>Math.max(n(b.daily_volume),n(b?.liquidity?.usd)*2)-Math.max(n(a.daily_volume),n(a?.liquidity?.usd)*2)).slice(0,DISCOVERY_SPOT_TOP_TOKENS);
+    .sort((a,b)=>Math.max(n(b.daily_volume),n(b?.liquidity?.usd)*2)-Math.max(n(a.daily_volume),n(a?.liquidity?.usd)*2)).slice(0,Math.min(DISCOVERY_SPOT_TOP_TOKENS,DISCOVERY_SPOT_TOKEN_COUNT));
   console.log(`[DISCOVERY][SPOT] liquidTokens=${tokens.length}`);
   const owners=new Map();
   for(const t of tokens){
     try{
-      const r=await sol({method:'getTokenLargestAccounts',params:[t.address]},`largest:${t.symbol||t.address.slice(0,6)}`);
-      const accounts=(r?.result?.value||[]).slice(0,DISCOVERY_SPOT_TOP_HOLDERS).map(x=>x.address).filter(Boolean);
+      const r=await solDiscovery({method:'getTokenLargestAccounts',params:[t.address]},`largest:${t.symbol||t.address.slice(0,6)}`);
+      const accounts=(r?.result?.value||[]).slice(0,Math.min(DISCOVERY_SPOT_TOP_HOLDERS,DISCOVERY_SPOT_HOLDER_COUNT)).map(x=>x.address).filter(Boolean);
       if(!accounts.length)continue;
-      const rr=await sol({method:'getMultipleAccounts',params:[accounts,{encoding:'jsonParsed'}]},`owners:${t.symbol||t.address.slice(0,6)}`);
+      const rr=await solDiscovery({method:'getMultipleAccounts',params:[accounts,{encoding:'jsonParsed'}]},`owners:${t.symbol||t.address.slice(0,6)}`);
       for(const a of (rr?.result?.value||[])){
         const owner=a?.data?.parsed?.info?.owner;
         if(owner)owners.set(owner,(owners.get(owner)||0)+1);
       }
     }catch(e){console.log(`[DISCOVERY][SPOT][TOKEN] ${t.symbol||t.address.slice(0,6)} ERROR ${String(e?.message||e).slice(0,100)}`)}
   }
-  const pool=[...owners.entries()].sort((a,b)=>b[1]-a[1]).slice(0,DISCOVERY_SPOT_MAX_CANDIDATES);
+  const pool=[...owners.entries()].filter(([address])=>!address.includes('111111')).sort((a,b)=>b[1]-a[1]).slice(0,Math.min(DISCOVERY_SPOT_MAX_CANDIDATES,DISCOVERY_SPOT_CANDIDATE_WALLETS));
   const scored=[];
   for(const [address,holderHits] of pool){
     try{
-      const sigs=await solSignaturesForDiscovery(address,Math.min(RECENT_SIGS,50));
+      const sigs=await solSignaturesForDiscovery(address,Math.min(DISCOVERY_SPOT_TX_LIMIT,50));
       const times=sigs.map(s=>n(s.blockTime)*1000).filter(Boolean).sort((a,b)=>a-b);
       const recent=times.filter(t=>t>=Date.now()-24*3600000);
       const span=recent.length>=2?(recent[recent.length-1]-recent[0])/3600000:0;
@@ -241,7 +306,7 @@ async function discoverSpotCandidates(){
       // Full 1-24h hold reconstruction is done only for the finalists to protect RPC limits.
       if(activity<Math.max(DISCOVERY_MIN_COMPLETED,8))continue;
       scored.push({name:`SOL_${address.slice(0,4).toUpperCase()}`,address,discovery:{holderHits,recentTxs24h:activity,activitySpanHours:span}});
-      if(scored.length>=TARGET_SPOT_WALLETS*3)break;
+      if(scored.length>=DISCOVERY_SPOT_FINALISTS)break;
     }catch(e){console.log(`[DISCOVERY][SPOT][WALLET] ${short(address)} ERROR ${String(e?.message||e).slice(0,100)}`)}
     await sleep(180);
   }
@@ -250,13 +315,13 @@ async function discoverSpotCandidates(){
   for(const w of scored){
     try{
       const tokenAccounts=await walletTokenAccounts(w.address);
-      const sigs=await solSignaturesForDiscovery(w.address,Math.min(RECENT_SIGS,60));
+      const sigs=await solSignaturesForDiscovery(w.address,Math.min(DISCOVERY_SPOT_TX_LIMIT,50));
       const cutoff=Date.now()-DISCOVERY_LOOKBACK_HOURS*3600000;
       const solUsd=await tokenPrice(WSOL_MINT);
       const lots=new Map(); const lifecycles=[]; let buys=0,sells=0,volumeUsd=0,lastTrade=0;
       for(const s of sigs){
         const bt=n(s.blockTime)*1000;if(bt&&bt<cutoff)break;
-        const tx=await solTx(s.signature); if(!tx)continue;
+        const tx=await solTxDiscovery(s.signature); if(!tx)continue;
         const d=swapDirection(tx,w.address,tokenAccounts); if(d.direction==='UNKNOWN')continue;
         lastTrade=Math.max(lastTrade,bt);
         if(d.direction==='BUY'){
@@ -289,8 +354,8 @@ async function discoverSpotCandidates(){
       const medianHold=hs.length?hs[Math.floor(hs.length/2)]:0;
       const roundTrips=lifecycles.length;
       const holdRatio=roundTrips?inWindow.length/roundTrips:0;
-      const qualifies=roundTrips>=DISCOVERY_MIN_COMPLETED && inWindow.length>=DISCOVERY_MIN_IN_WINDOW && holdRatio>=DISCOVERY_MIN_HOLD_RATIO && medianHold>=DISCOVERY_MIN_HOLD_HOURS && medianHold<=DISCOVERY_MAX_HOLD_HOURS && lastTrade>=Date.now()-24*3600000;
-      console.log(`[DISCOVERY][SPOT][LIFECYCLE] ${w.name} tx24h=${sigs.length} buys=${buys} sells=${sells} roundTrips=${roundTrips} hold1-24=${inWindow.length} ratio=${(holdRatio*100).toFixed(0)}% median=${medianHold.toFixed(2)}h qualifies=${qualifies}`);
+      const qualifies=roundTrips>=DISCOVERY_MIN_COMPLETED && inWindow.length>=DISCOVERY_MIN_IN_WINDOW && holdRatio>=DISCOVERY_MIN_HOLD_RATIO && medianHold>=DISCOVERY_MIN_HOLD_HOURS && medianHold<=DISCOVERY_MAX_HOLD_HOURS && volumeUsd>=DISCOVERY_MIN_VOLUME_USD && lastTrade>=Date.now()-24*3600000;
+      console.log(`[DISCOVERY][SPOT][LIFECYCLE] ${w.name} tx24h=${sigs.length} buys=${buys} sells=${sells} roundTrips=${roundTrips} hold1-24=${inWindow.length} ratio=${(holdRatio*100).toFixed(0)}% median=${medianHold.toFixed(2)}h volume24h=${Math.round(volumeUsd)} lastTradeAge=${lastTrade?((Date.now()-lastTrade)/60000).toFixed(1):'NA'}m qualifies=${qualifies}`);
       if(qualifies) finals.push({...w,discovery:{...w.discovery,buys,sells,roundTrips,inWindow:inWindow.length,holdRatio,medianHoldHours:medianHold,avgHoldHours:hs.length?hs.reduce((a,b)=>a+b,0)/hs.length:0,lastTrade,volumeUsd}});
     }catch(e){console.log(`[DISCOVERY][SPOT][FINAL] ${w.name} ERROR ${String(e?.message||e).slice(0,120)}`)}
     await sleep(250);
@@ -299,14 +364,20 @@ async function discoverSpotCandidates(){
   return finals.slice(0,TARGET_SPOT_WALLETS);
 }
 async function solSignaturesForDiscovery(address,limit=60){
-  const r=await sol({method:'getSignaturesForAddress',params:[address,{limit}]},`discover:sigs:${String(address).slice(0,6)}`);
+  const r=await solDiscovery({method:'getSignaturesForAddress',params:[address,{limit}]},`discover:sigs:${String(address).slice(0,6)}`);
   return Array.isArray(r?.result)?r.result.filter(x=>!x.err):[];
 }
+async function solTxDiscovery(sig){
+  return solDiscovery({method:'getTransaction',params:[sig,{encoding:'jsonParsed',maxSupportedTransactionVersion:0}]},`discover:tx:${String(sig).slice(0,8)}`);
+}
+
 async function discoverWatchlist(){
   const cached=await readDiscoveryCache();
   if(cached){SPOT_WALLETS=cached.spotWallets;FUTURES_WALLETS=cached.futuresWallets;return cached;}
   console.log(`[DISCOVERY][START] target spot=${TARGET_SPOT_WALLETS} futures=${TARGET_FUTURES_WALLETS} hold=${DISCOVERY_MIN_HOLD_HOURS}-${DISCOVERY_MAX_HOLD_HOURS}h`);
-  const [spotWallets,futuresWallets]=await Promise.all([discoverSpotCandidates(),discoverFutures()]);
+  const spotWallets=await discoverSpotCandidates();
+  await sleep(1500);
+  const futuresWallets=await discoverFutures();
   const data={schema:DISCOVERY_SCHEMA,generatedAt:Date.now(),criteria:{holdHours:[DISCOVERY_MIN_HOLD_HOURS,DISCOVERY_MAX_HOLD_HOURS],minVolumeUsd:DISCOVERY_MIN_VOLUME_USD,minInWindow:DISCOVERY_MIN_IN_WINDOW,minHoldRatio:DISCOVERY_MIN_HOLD_RATIO},spotWallets,futuresWallets};
   SPOT_WALLETS=spotWallets; FUTURES_WALLETS=futuresWallets;
   await writeDiscoveryCache(data);
@@ -742,6 +813,9 @@ async function scanFutures(w,mids,now,symbolMap){
     const addCount=n(f._recentAddCount,1);
     const addedSize=n(f._recentAddedSize,n(f.sz));
     const averaging=f._isAveraging===true;
+    const addNotional=addedSize*entry;
+    const lifecycleAgeHours=pos?.entry&&Number(pos.entry)>0 ? Math.max(0,(now-n(f.time))/3600000) : ageMin/60;
+    const adverseAvg=avgDist<0;
 
     if(!(entry>0)||!(mid>0)){
       console.log(`[FUTURES][DROP] ${w.name} | ${displaySymbol} | ${side} | Add ${priceFmt(entry)} | Now ${priceFmt(mid)} | Age ${ageMin.toFixed(1)}m | REASON=PRICE_UNAVAILABLE`);
@@ -761,8 +835,8 @@ async function scanFutures(w,mids,now,symbolMap){
       openedAt:n(f.time),ageMin,openFillPx:entry,openFillSize:addedSize,openFillHash:f.hash||null,
       activitySource:'RECENT_HYPERLIQUID_POSITION_ADD',fillDir:f.dir,
       avgEntry,avgDistancePct:avgDist,recentAvgPx:recentAvg,addCount,averaging,
-      totalRecentAddedSize:addedSize,currentPositionSize:pos?.size??null,
-      eligible:ageMin<=FUTURES_SIGNAL_FRESHNESS_MIN&&Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR};
+      totalRecentAddedSize:addedSize,currentPositionSize:pos?.size??null,addNotional,lifecycleAgeHours,adverseAvg,
+      eligible:ageMin<=FUTURES_SIGNAL_FRESHNESS_MIN&&Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR&&addNotional>=FUTURES_MIN_MEANINGFUL_ADD_NOTIONAL_USD&&(lifecycleAgeHours<=FUTURES_MAX_ACTIVE_LIFECYCLE_AGE_HOURS)&&(!adverseAvg||Math.abs(avgDist)<=FUTURES_MAX_ADVERSE_AVG_PCT)};
     const auditStatus=classifyPosition(x);
     const reasons=setupReason(x);
     const reason=auditStatus==='YELLOW'?yellowReason(x):(reasons.length?reasons.join(' + '):'READY');
@@ -815,6 +889,9 @@ function setupReason(x){
   if(!Number.isFinite(Number(x.rr))||Number(x.rr)+1e-9<MIN_RR)why.push(`RR<${MIN_RR}`);
   if(Number.isFinite(dist)&&dist>ENTRY_WINDOW_PCT)why.push(`DIST>${ENTRY_WINDOW_PCT}%`);
   if(Number.isFinite(latency)&&latency>MAX_SIGNAL_LATENCY_MIN)why.push(`LATENCY>${MAX_SIGNAL_LATENCY_MIN}m`);
+  if(Number.isFinite(Number(x.addNotional))&&Number(x.addNotional)<FUTURES_MIN_MEANINGFUL_ADD_NOTIONAL_USD)why.push(`ADD_NOTIONAL<$${FUTURES_MIN_MEANINGFUL_ADD_NOTIONAL_USD}`);
+  if(Number.isFinite(Number(x.lifecycleAgeHours))&&Number(x.lifecycleAgeHours)>FUTURES_MAX_ACTIVE_LIFECYCLE_AGE_HOURS)why.push(`LIFECYCLE_AGE>${FUTURES_MAX_ACTIVE_LIFECYCLE_AGE_HOURS}h`);
+  if(x.adverseAvg&&Number.isFinite(Number(x.avgDistancePct))&&Math.abs(Number(x.avgDistancePct))>FUTURES_MAX_ADVERSE_AVG_PCT)why.push(`AVG_ADVERSE>${FUTURES_MAX_ADVERSE_AVG_PCT}%`);
   return why;
 }
 function classifyPosition(x){
