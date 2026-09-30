@@ -1,0 +1,15 @@
+{
+  "schema": "V4.4-HELIUS-SPOT-RATE-LIMIT-RESILIENT",
+  "generatedAt": 1790789529510,
+  "criteria": {
+    "holdHours": [
+      1,
+      24
+    ],
+    "minVolumeUsd": 250000,
+    "minInWindow": 5,
+    "minHoldRatio": 0.5
+  },
+  "spotWallets": [],
+  "futuresWallets": []
+}
