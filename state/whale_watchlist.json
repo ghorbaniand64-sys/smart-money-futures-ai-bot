@@ -1,6 +1,6 @@
 {
   "schema": "V4.9-HELIUS-SPOT-LIFECYCLE-ORDER-FIX",
-  "generatedAt": 1790796858667,
+  "generatedAt": 1790797867683,
   "criteria": {
     "holdHours": [
       1,
