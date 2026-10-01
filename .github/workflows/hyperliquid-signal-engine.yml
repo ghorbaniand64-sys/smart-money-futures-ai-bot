@@ -19,102 +19,108 @@ jobs:
     environment: production
 
     env:
-      # ============================================================
-      # GITHUB ENVIRONMENT: production
-      # ============================================================
+      # ========================================
+      # PRODUCTION SECRETS
+      # ========================================
       HYPERLIQUID_API_URL: ${{ secrets.HYPERLIQUID_API_URL }}
       SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
       TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
 
-      # ============================================================
-      # ENGINE MODE
-      # ============================================================
+      # ========================================
+      # RUNTIME
+      # ========================================
       NODE_OPTIONS: "--max-old-space-size=4096"
       SIGNAL_ENGINE_MODE: "READ_ONLY"
       EXECUTION_ENABLED: "false"
 
-      # ============================================================
-      # DISCOVERY TARGETS
-      # ============================================================
+      # ========================================
+      # WATCHLIST TARGETS
+      # ========================================
       SIGNAL_SPOT_TARGET: "5"
       SIGNAL_FUTURES_TARGET: "5"
 
       SIGNAL_HOLD_MIN_HOURS: "1"
       SIGNAL_HOLD_MAX_HOURS: "24"
 
-      # ============================================================
+      # ========================================
       # DISCOVERY
-      # ============================================================
+      # ========================================
       WHALE_DISCOVERY_TTL_MIN: "360"
       WHALE_DISCOVERY_LOOKBACK_HOURS: "48"
 
       WHALE_DISCOVERY_MIN_HOLD_HOURS: "1"
       WHALE_DISCOVERY_MAX_HOLD_HOURS: "24"
-
       WHALE_DISCOVERY_MIN_VOLUME_USD: "250000"
       WHALE_DISCOVERY_MIN_COMPLETED: "3"
       WHALE_DISCOVERY_MIN_IN_WINDOW: "5"
       WHALE_DISCOVERY_MIN_HOLD_RATIO: "0.5"
       WHALE_DISCOVERY_MIN_RECENT_LIFECYCLES: "1"
-
       WHALE_DISCOVERY_MAX_CANDIDATES: "30"
 
-      # ============================================================
+      # ========================================
+      # V5.8 / V5.9 SIGNAL-READY DISCOVERY
+      # ========================================
+      WHALE_DISCOVERY_SIGNAL_READY_ONLY: "true"
+
+      WHALE_DISCOVERY_FUTURES_SIGNAL_READY_MIN_AGE_MIN: "15"
+      WHALE_DISCOVERY_FUTURES_SIGNAL_READY_MIN_ADD_USD: "100"
+
+      WHALE_DISCOVERY_SPOT_SIGNAL_READY_LOOKBACK_MIN: "15"
+      WHALE_DISCOVERY_SPOT_SIGNAL_READY_MIN_BUY_USD: "25"
+
+      # ========================================
       # SPOT DISCOVERY
-      # ============================================================
+      # ========================================
       WHALE_DISCOVERY_SPOT_PROGRAM_SIGS: "8"
       WHALE_DISCOVERY_SPOT_PROGRAM_TXS: "4"
       WHALE_DISCOVERY_SPOT_TOP_TOKENS: "20"
       WHALE_DISCOVERY_SPOT_TOP_HOLDERS: "8"
       WHALE_DISCOVERY_SPOT_MAX_CANDIDATES: "8"
-
       WHALE_DISCOVERY_SPOT_TOKEN_COUNT: "8"
       WHALE_DISCOVERY_SPOT_HOLDER_COUNT: "5"
       WHALE_DISCOVERY_SPOT_CANDIDATE_WALLETS: "16"
       WHALE_DISCOVERY_SPOT_TX_LIMIT: "30"
       WHALE_DISCOVERY_SPOT_FINALISTS: "12"
 
-      # ============================================================
+      # ========================================
       # FUTURES DISCOVERY
-      # ============================================================
+      # ========================================
       WHALE_DISCOVERY_FUTURES_QUICK_LOOKBACK_HOURS: "12"
       WHALE_DISCOVERY_FUTURES_DEEP_CANDIDATES: "15"
       WHALE_DISCOVERY_FUTURES_QUICK_MAX_PAGES: "1"
       WHALE_DISCOVERY_FUTURES_DEEP_MAX_PAGES: "8"
       WHALE_DISCOVERY_FUTURES_DEEP_DELAY_MS: "350"
 
-      # ============================================================
-      # HISTORY / RPC
-      # ============================================================
+      # ========================================
+      # FILL / RPC
+      # ========================================
       WHALE_DISCOVERY_FILL_PAGE_SIZE: "2000"
       WHALE_DISCOVERY_FILL_MAX_PAGES: "8"
 
       WHALE_DISCOVERY_RPC_DELAY_MS: "1800"
       WHALE_DISCOVERY_RPC_RETRIES: "5"
-
       WHALE_DISCOVERY_RPC_FAST_RETRIES: "2"
       WHALE_DISCOVERY_RPC_FAST_DELAY_MS: "700"
 
       DISCOVERY_FILL_PAGE_SIZE: "2000"
       DISCOVERY_FILL_MAX_PAGES: "8"
 
-      # ============================================================
+      # ========================================
       # SIGNAL RULES
-      # ============================================================
+      # ========================================
       SIGNAL_ENTRY_WINDOW_PCT: "0.75"
       SIGNAL_WATCH_WINDOW_PCT: "3.0"
       SIGNAL_MIN_RR: "2.0"
       SIGNAL_MAX_LATENCY_MIN: "5"
 
-      # ============================================================
+      # ========================================
       # SPOT SIGNAL
-      # ============================================================
+      # ========================================
       SIGNAL_SPOT_ACTIVITY_LOOKBACK_MIN: "15"
       SIGNAL_SPOT_MAX_ACTIVITY_AGE_MIN: "15"
       SIGNAL_SPOT_SIGNATURES: "80"
-
       SIGNAL_SPOT_MIN_BUY_USD: "25"
 
       SIGNAL_SPOT_SL_PCT: "2.0"
@@ -123,9 +129,9 @@ jobs:
       SIGNAL_SPOT_DIAGNOSTIC_MAX: "5"
       SIGNAL_MAX_SPOT_POSITIONS_PER_WALLET: "4"
 
-      # ============================================================
+      # ========================================
       # FUTURES SIGNAL
-      # ============================================================
+      # ========================================
       SIGNAL_FUTURES_ACTIVITY_LOOKBACK_MIN: "120"
       SIGNAL_FUTURES_SIGNAL_FRESHNESS_MIN: "15"
 
@@ -146,9 +152,9 @@ jobs:
       SIGNAL_FUTURES_RETRY_BASE_MS: "1500"
       SIGNAL_FUTURES_FETCH_RETRY: "5"
 
-      # ============================================================
-      # PERFORMANCE
-      # ============================================================
+      # ========================================
+      # TELEGRAM / PERFORMANCE
+      # ========================================
       SIGNAL_MAX_TELEGRAM_WHALE_BLOCKS: "10"
 
       SIGNAL_PERFORMANCE_LOOKBACK_DAYS: "30"
@@ -158,37 +164,33 @@ jobs:
 
       SIGNAL_PERFORMANCE_STATE_FILE: "state/whale_performance_cache.json"
 
-      # ============================================================
+      # ========================================
       # STATE
-      # ============================================================
+      # ========================================
       SIGNAL_WATCHLIST_STATE_FILE: "state/whale_watchlist.json"
       WHALE_DISCOVERY_STATE_FILE: "state/whale_watchlist.json"
 
     steps:
 
-      # ============================================================
-      # 1. CHECKOUT
-      # ============================================================
+      # ========================================
+      # CHECKOUT
+      # ========================================
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # ============================================================
-      # 2. NODE 22
-      #
-      # IMPORTANT:
-      # No npm cache because repository has no lock file.
-      # No npm install is required by the standalone .mjs engine.
-      # ============================================================
+      # ========================================
+      # NODE 22
+      # ========================================
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      # ============================================================
-      # 3. ENVIRONMENT AUDIT
-      # ============================================================
+      # ========================================
+      # ENVIRONMENT AUDIT
+      # ========================================
       - name: Environment audit
         shell: bash
         run: |
@@ -236,9 +238,9 @@ jobs:
           echo
           echo "ENVIRONMENT AUDIT: PASS"
 
-      # ============================================================
-      # 4. VERIFY ENGINE VERSION
-      # ============================================================
+      # ========================================
+      # V5.9 VERSION VERIFICATION
+      # ========================================
       - name: VERIFY ENGINE VERSION
         shell: bash
         run: |
@@ -250,12 +252,13 @@ jobs:
 
           echo
           echo "VERSION declarations:"
+
           grep -nE "const VERSION|DISCOVERY_SCHEMA|V5\.[0-9]" \
             crypto_whale_signal_engine.mjs || true
 
           echo
           echo "Expected:"
-          echo "V5.9-SIGNAL-READY-DISCOVERY"
+          echo "V5.9"
 
           if ! grep -q "V5.9" crypto_whale_signal_engine.mjs; then
             echo
@@ -263,7 +266,7 @@ jobs:
             echo "FATAL: WRONG ENGINE VERSION"
             echo "========================================"
             echo
-            echo "The repository does not contain V5.8."
+            echo "The repository does not contain V5.9."
             echo "Execution stopped."
             echo
             exit 1
@@ -272,16 +275,16 @@ jobs:
           echo
           echo "VERSION CHECK: PASS"
 
-      # ============================================================
-      # 5. VERIFY V5.9 LOGIC
-      # ============================================================
-      - name: VERIFY V5.8 SIGNAL READY LOGIC
+      # ========================================
+      # V5.9 LOGIC AUDIT
+      # ========================================
+      - name: VERIFY V5.9 LOGIC
         shell: bash
         run: |
           set -e
 
           echo "========================================"
-          echo "V5.8 LOGIC AUDIT"
+          echo "V5.9 LOGIC AUDIT"
           echo "========================================"
 
           FAIL=0
@@ -298,13 +301,8 @@ jobs:
             fi
           }
 
-          check_pattern \
-            "V5.8 marker" \
-            "V5.8"
-
-          check_pattern \
-            "Discovery schema" \
-            "DISCOVERY_SCHEMA"
+          check_pattern "V5.9 marker" "V5.9"
+          check_pattern "Discovery schema" "DISCOVERY_SCHEMA"
 
           check_pattern \
             "Futures freshness rule" \
@@ -319,23 +317,43 @@ jobs:
             "SPOT_MIN_BUY_USD"
 
           check_pattern \
+            "Signal-ready discovery" \
+            "DISCOVERY_SIGNAL_READY_ONLY"
+
+          check_pattern \
+            "Futures signal-ready minimum ADD" \
+            "DISCOVERY_FUTURES_SIGNAL_READY_MIN_ADD_USD"
+
+          check_pattern \
+            "Spot signal-ready lookback" \
+            "DISCOVERY_SPOT_SIGNAL_READY_LOOKBACK_MIN"
+
+          check_pattern \
+            "Spot price validation" \
+            "baseToken"
+
+          check_pattern \
+            "Performance fallback" \
+            "userFills"
+
+          check_pattern \
             "Watchlist state" \
             "whale_watchlist.json"
 
           if [ "$FAIL" -ne 0 ]; then
             echo
             echo "========================================"
-            echo "FATAL: V5.8 LOGIC AUDIT FAILED"
+            echo "FATAL: V5.9 LOGIC AUDIT FAILED"
             echo "========================================"
             exit 1
           fi
 
           echo
-          echo "V5.8 LOGIC AUDIT: PASS"
+          echo "V5.9 LOGIC AUDIT: PASS"
 
-      # ============================================================
-      # 6. NODE SYNTAX CHECK
-      # ============================================================
+      # ========================================
+      # NODE SYNTAX
+      # ========================================
       - name: Node syntax check
         shell: bash
         run: |
@@ -350,16 +368,15 @@ jobs:
           echo
           echo "NODE CHECK: PASS"
 
-      # ============================================================
-      # 7. PREPARE STATE
-      # ============================================================
+      # ========================================
+      # STATE DIRECTORY
+      # ========================================
       - name: Prepare state directory
         shell: bash
         run: |
           set -e
 
           mkdir -p state
-
           touch state/.gitkeep
 
           echo "========================================"
@@ -368,18 +385,19 @@ jobs:
 
           echo
           echo "Existing state files:"
+
           find state -maxdepth 1 -type f -print 2>/dev/null || true
 
-      # ============================================================
-      # 8. RUN ENGINE
-      # ============================================================
-      - name: Run Crypto Whale Signal Engine
+      # ========================================
+      # RUN ENGINE
+      # ========================================
+      - name: Run Crypto Whale Signal Engine V5.9
         shell: bash
         run: |
           set -e
 
           echo "========================================"
-          echo "CRYPTO WHALE SIGNAL ENGINE V5.8"
+          echo "CRYPTO WHALE SIGNAL ENGINE V5.9"
           echo "========================================"
 
           echo "Mode: READ-ONLY / SIGNAL-ONLY"
@@ -392,6 +410,14 @@ jobs:
           echo "Futures target: 5"
 
           echo
+          echo "Discovery:"
+          echo "Signal-ready discovery: ENABLED"
+          echo "Futures fresh ADD minimum: \$100"
+          echo "Futures freshness: <= 15m"
+          echo "Spot BUY minimum: \$25"
+          echo "Spot freshness: <= 15m"
+
+          echo
           echo "Signal rules:"
           echo "Entry distance: <= 0.75%"
           echo "Watch distance: <= 3%"
@@ -399,17 +425,18 @@ jobs:
           echo "Freshness: <= 15m"
 
           echo
-          echo "Minimum activity:"
-          echo "Spot BUY: \$25"
-          echo "Futures ADD: \$100"
+          echo "Execution:"
+          echo "NO ORDERS"
+          echo "NO POSITION CHANGES"
+          echo "NO LEVERAGE CHANGES"
 
           echo "========================================"
 
           node crypto_whale_signal_engine.mjs
 
-      # ============================================================
-      # 9. POST-RUN AUDIT
-      # ============================================================
+      # ========================================
+      # POST RUN AUDIT
+      # ========================================
       - name: Post-run engine audit
         if: always()
         shell: bash
@@ -420,20 +447,23 @@ jobs:
 
           echo
           echo "Engine version:"
+
           grep -nE "const VERSION|DISCOVERY_SCHEMA" \
             crypto_whale_signal_engine.mjs || true
 
           echo
           echo "Git commit:"
+
           git rev-parse --short HEAD || true
 
           echo
           echo "State files:"
+
           find state -maxdepth 1 -type f -print 2>/dev/null || true
 
-      # ============================================================
-      # 10. COMMIT STATE
-      # ============================================================
+      # ========================================
+      # COMMIT STATE
+      # ========================================
       - name: Commit updated state
         if: success()
         shell: bash
@@ -455,5 +485,4 @@ jobs:
           fi
 
           git commit -m "chore: update whale signal engine state"
-
           git push
