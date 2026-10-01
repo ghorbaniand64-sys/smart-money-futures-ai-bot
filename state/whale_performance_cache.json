@@ -1066,5 +1066,97 @@
       },
       "updatedAt": 1790884769059
     }
+  },
+  "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:moodt1QXNtbmiheUJr9EGfch7h5mTxcWqCLyzXxWNu6": {
+    "updatedAt": 1790885136386,
+    "data": {
+      "schema": "V6.1-SPOT-FIFO-PERFORMANCE-V3",
+      "market": "SPOT",
+      "complete": false,
+      "pages": 12,
+      "txCount": 1200,
+      "closedTrades": 0,
+      "coverageStart": 1790882456000,
+      "coverageDays": 0.031022986111111112,
+      "rateLimited": false,
+      "coverage7d": false,
+      "coverage30d": false,
+      "w7": {
+        "roi": null,
+        "realizedPnl": 0,
+        "investedUsd": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": null,
+        "avgHoldHours": null,
+        "coinPnl": {},
+        "topCoin": null
+      },
+      "w30": {
+        "roi": null,
+        "realizedPnl": 0,
+        "investedUsd": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": null,
+        "avgHoldHours": null,
+        "coinPnl": {},
+        "topCoin": null
+      },
+      "updatedAt": 1790885136386,
+      "noClosedTrades": true
+    }
+  },
+  "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:4B8srvotmWddTZuMt4RrBQrnx1sQj2Z7FaXgLbWvpVdd": {
+    "updatedAt": 1790885152201,
+    "data": {
+      "schema": "V6.1-SPOT-FIFO-PERFORMANCE-V3",
+      "market": "SPOT",
+      "complete": false,
+      "pages": 12,
+      "txCount": 1194,
+      "closedTrades": 0,
+      "coverageStart": 1790883680000,
+      "coverageDays": 0.017039363425925925,
+      "rateLimited": false,
+      "coverage7d": false,
+      "coverage30d": false,
+      "w7": {
+        "roi": null,
+        "realizedPnl": 0,
+        "investedUsd": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": null,
+        "avgHoldHours": null,
+        "coinPnl": {},
+        "topCoin": null
+      },
+      "w30": {
+        "roi": null,
+        "realizedPnl": 0,
+        "investedUsd": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": null,
+        "avgHoldHours": null,
+        "coinPnl": {},
+        "topCoin": null
+      },
+      "updatedAt": 1790885152201,
+      "noClosedTrades": true
+    }
   }
 }
