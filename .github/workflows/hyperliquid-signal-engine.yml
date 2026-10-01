@@ -255,9 +255,9 @@ jobs:
 
           echo
           echo "Expected:"
-          echo "V5.8-SIGNAL-READY-DISCOVERY"
+          echo "V5.9-SIGNAL-READY-DISCOVERY"
 
-          if ! grep -q "V5.8" crypto_whale_signal_engine.mjs; then
+          if ! grep -q "V5.9" crypto_whale_signal_engine.mjs; then
             echo
             echo "========================================"
             echo "FATAL: WRONG ENGINE VERSION"
@@ -273,7 +273,7 @@ jobs:
           echo "VERSION CHECK: PASS"
 
       # ============================================================
-      # 5. VERIFY V5.8 LOGIC
+      # 5. VERIFY V5.9 LOGIC
       # ============================================================
       - name: VERIFY V5.8 SIGNAL READY LOGIC
         shell: bash
