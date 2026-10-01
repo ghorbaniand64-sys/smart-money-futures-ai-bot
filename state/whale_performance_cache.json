@@ -135,5 +135,261 @@
       },
       "updatedAt": 1790874014740
     }
+  },
+  "V6.0-FINAL-PERFORMANCE-V2:SPOT:3y5u6tGmYwoFpLgfRYcjxRLj6g4FYHfoG3Z3g4ChGas5": {
+    "updatedAt": 1790877561360,
+    "data": {
+      "schema": "V6.0-FINAL-PERFORMANCE-V2",
+      "market": "SPOT",
+      "complete": false,
+      "pages": 12,
+      "txCount": 1197,
+      "closedTrades": 106,
+      "w7": {
+        "roi": 0.9987649120298117,
+        "realizedPnl": 15.216829849449805,
+        "investedUsd": 1523.56472140419,
+        "closedTrades": 106,
+        "wins": 100,
+        "losses": 6,
+        "wr": 94.33962264150944,
+        "pf": 128.2010138160039,
+        "maxDrawdown": 0.00418473409364361,
+        "avgHoldHours": 0.32322327044025156,
+        "coinPnl": {
+          "3ZLekZYq2qkZiSpnSvabjit34tUkjSwD1JFuW9as9wBG": 4.090356915340817,
+          "DRAMjSWR7HRfJKjRkvQWYL2bcaejaVhuxEcjf4pAY4Cw": 0.6577238848025004,
+          "AymATz4TCL9sWNEEV9Kvyz45CHVhDZ6kUgjTJPzLpU9P": 0.006507261408668086,
+          "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn": 4.6708261349282,
+          "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS": 0.7121131917516603,
+          "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv": 1.4861759437409843,
+          "SNDKbwMUQvZhnLnxLduradgLHG5KrPuKwpnrkkGRhfH": 0.08029098230788989,
+          "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN": 2.6411146240391514,
+          "MUxEsUKSMACyw5fZf68wxf5FLnZVhtU9CwH8uNNGay1": 0.8547014011876293,
+          "WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp": 0.017019509942304722
+        },
+        "topCoin": {
+          "coin": "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn",
+          "pnl": 4.6708261349282
+        }
+      },
+      "w30": {
+        "roi": 0.9987649120298117,
+        "realizedPnl": 15.216829849449805,
+        "investedUsd": 1523.56472140419,
+        "closedTrades": 106,
+        "wins": 100,
+        "losses": 6,
+        "wr": 94.33962264150944,
+        "pf": 128.2010138160039,
+        "maxDrawdown": 0.00418473409364361,
+        "avgHoldHours": 0.32322327044025156,
+        "coinPnl": {
+          "3ZLekZYq2qkZiSpnSvabjit34tUkjSwD1JFuW9as9wBG": 4.090356915340817,
+          "DRAMjSWR7HRfJKjRkvQWYL2bcaejaVhuxEcjf4pAY4Cw": 0.6577238848025004,
+          "AymATz4TCL9sWNEEV9Kvyz45CHVhDZ6kUgjTJPzLpU9P": 0.006507261408668086,
+          "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn": 4.6708261349282,
+          "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS": 0.7121131917516603,
+          "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv": 1.4861759437409843,
+          "SNDKbwMUQvZhnLnxLduradgLHG5KrPuKwpnrkkGRhfH": 0.08029098230788989,
+          "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN": 2.6411146240391514,
+          "MUxEsUKSMACyw5fZf68wxf5FLnZVhtU9CwH8uNNGay1": 0.8547014011876293,
+          "WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp": 0.017019509942304722
+        },
+        "topCoin": {
+          "coin": "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn",
+          "pnl": 4.6708261349282
+        }
+      },
+      "updatedAt": 1790877561360
+    }
+  },
+  "V6.0-FINAL-PERFORMANCE-V2:SPOT:DcQNaByvstRZCERvb9UJHgHiQe8YX2FMdPptM86psQyz": {
+    "updatedAt": 1790877571799,
+    "data": {
+      "schema": "V6.0-FINAL-PERFORMANCE-V2",
+      "market": "SPOT",
+      "complete": false,
+      "pages": 12,
+      "txCount": 1198,
+      "closedTrades": 13,
+      "w7": {
+        "roi": 0.0470817282192265,
+        "realizedPnl": 0.06646654997052931,
+        "investedUsd": 141.17270645002947,
+        "closedTrades": 13,
+        "wins": 8,
+        "losses": 5,
+        "wr": 61.53846153846154,
+        "pf": 1.5606029048621934,
+        "maxDrawdown": 0.08398409607028358,
+        "avgHoldHours": 0.16215811965811963,
+        "coinPnl": {
+          "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB": 0.0019459984205907888,
+          "SKHYhSjuRWHgikq8eRKbtBbpABgJSkd7ytQV14i9EQ3": 0.13208947463198806,
+          "27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4": -0.009099885425497334,
+          "MSTRdWXMeZxdE8osAQy3fA4rvTY5rgummDSMEx6U7Nz": -0.08856953551927838,
+          "Xs3oZwbHvqis4NYcf4YKWmEia2eC84wSiVrcYcTqpH8": 0.030100497862726172
+        },
+        "topCoin": {
+          "coin": "SKHYhSjuRWHgikq8eRKbtBbpABgJSkd7ytQV14i9EQ3",
+          "pnl": 0.13208947463198806
+        }
+      },
+      "w30": {
+        "roi": 0.0470817282192265,
+        "realizedPnl": 0.06646654997052931,
+        "investedUsd": 141.17270645002947,
+        "closedTrades": 13,
+        "wins": 8,
+        "losses": 5,
+        "wr": 61.53846153846154,
+        "pf": 1.5606029048621934,
+        "maxDrawdown": 0.08398409607028358,
+        "avgHoldHours": 0.16215811965811963,
+        "coinPnl": {
+          "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB": 0.0019459984205907888,
+          "SKHYhSjuRWHgikq8eRKbtBbpABgJSkd7ytQV14i9EQ3": 0.13208947463198806,
+          "27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4": -0.009099885425497334,
+          "MSTRdWXMeZxdE8osAQy3fA4rvTY5rgummDSMEx6U7Nz": -0.08856953551927838,
+          "Xs3oZwbHvqis4NYcf4YKWmEia2eC84wSiVrcYcTqpH8": 0.030100497862726172
+        },
+        "topCoin": {
+          "coin": "SKHYhSjuRWHgikq8eRKbtBbpABgJSkd7ytQV14i9EQ3",
+          "pnl": 0.13208947463198806
+        }
+      },
+      "updatedAt": 1790877571799
+    }
+  },
+  "V6.0-FINAL-PERFORMANCE-V2:SPOT:77777nPhGvFUVAj6uq8MGyLneBt4SMwCScYZDzzztdsa": {
+    "updatedAt": 1790877584554,
+    "data": {
+      "schema": "V6.0-FINAL-PERFORMANCE-V2",
+      "market": "SPOT",
+      "complete": false,
+      "pages": 12,
+      "txCount": 1197,
+      "closedTrades": 26,
+      "w7": {
+        "roi": 0.6477412303730928,
+        "realizedPnl": 2.5941329142893004,
+        "investedUsd": 400.48908308571066,
+        "closedTrades": 26,
+        "wins": 21,
+        "losses": 5,
+        "wr": 80.76923076923077,
+        "pf": 48.02497172942086,
+        "maxDrawdown": 0.007032516364888626,
+        "avgHoldHours": 0.1639636752136752,
+        "coinPnl": {
+          "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv": 0.8434705015687411,
+          "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn": 1.771160938141068,
+          "6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx": -0.020498525420508784
+        },
+        "topCoin": {
+          "coin": "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn",
+          "pnl": 1.771160938141068
+        }
+      },
+      "w30": {
+        "roi": 0.6477412303730928,
+        "realizedPnl": 2.5941329142893004,
+        "investedUsd": 400.48908308571066,
+        "closedTrades": 26,
+        "wins": 21,
+        "losses": 5,
+        "wr": 80.76923076923077,
+        "pf": 48.02497172942086,
+        "maxDrawdown": 0.007032516364888626,
+        "avgHoldHours": 0.1639636752136752,
+        "coinPnl": {
+          "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv": 0.8434705015687411,
+          "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn": 1.771160938141068,
+          "6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx": -0.020498525420508784
+        },
+        "topCoin": {
+          "coin": "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn",
+          "pnl": 1.771160938141068
+        }
+      },
+      "updatedAt": 1790877584554
+    }
+  },
+  "V6.0-FINAL-PERFORMANCE-V2:SPOT:ETDYEnUHGssKoxaEWTr9qwRMeU4dRLEJGmYyEKBMu1UE": {
+    "updatedAt": 1790877594124,
+    "data": {
+      "schema": "V6.0-FINAL-PERFORMANCE-V2",
+      "market": "SPOT",
+      "complete": true,
+      "pages": 2,
+      "txCount": 148,
+      "closedTrades": 34,
+      "w7": {
+        "roi": -25.818854084039085,
+        "realizedPnl": -1316.2074132787284,
+        "investedUsd": 5097.853719590106,
+        "closedTrades": 34,
+        "wins": 9,
+        "losses": 25,
+        "wr": 26.47058823529412,
+        "pf": 0.17983473866848704,
+        "maxDrawdown": 25.818854084039085,
+        "avgHoldHours": 5.773235294117647,
+        "coinPnl": {
+          "LekVijLi3RFGWcsLFzcWAiDQjFxqcEZ21LDpGu22mhx": -9.11556781832541,
+          "B1ijqMiwux3qjzQX1Nm488RmTvV1ShXVUjpUKVB1c9Ud": -116.02981512206998,
+          "9ZxGN2xQJKZ6ff1NFj2bkXdTHgZwBEo4EAMRnDmeEjVk": -90.26940941019002,
+          "HHuTxdJ4z2R61xmKVG74eAPXHXVsdoQ47yxne4rFTV7U": -175.93261381322998,
+          "142a2hNXho7F2QTDJpVhvNfMZQyrCJPPong4s32Tpump": 69.5458071504,
+          "Fs5s6CM2B8Eym5deiB6jK3o6MXMsdaVVbgeLNM2Apump": -661.9965080341499,
+          "EnHrbkhScpdWTCL37XyPGsCJxms2gE66gkVZUGX3UVGR": 50.56804358672741,
+          "5xkgWmUh7bEKGKNS2EydXNQ6pZwQDmcn4WqL5xzpump": -244.07477896617002,
+          "6M8CWurfztGraRKK7y6Nz7pavLabYC2LwNsUzaEwpump": -19.734559804440025,
+          "2ThG2Dh3kbcS3v68gN3vEFuR2povbrnaVZsSKmM4hn7W": -41.1188729115041,
+          "6onqzDAoyj6fJmEuGQi5UErD1A6Za7AoBFLb1MEcpump": -225.84463692723003,
+          "PEPEqnuuCDbBC89p1u9vpnP1KQ2oj1xTcQBsjt9X55m": -5.5432140645932115,
+          "BGr923eSu3YeEWWcn491Kt92M7Cyo8hzR73kwowFBAGS": 54.442672912376764,
+          "7r1v5rZcGnyzVs1jei7FeMEiZVf4GhQgLYXjZHmMUDGQ": 98.89603994366996
+        },
+        "topCoin": {
+          "coin": "Fs5s6CM2B8Eym5deiB6jK3o6MXMsdaVVbgeLNM2Apump",
+          "pnl": -661.9965080341499
+        }
+      },
+      "w30": {
+        "roi": -25.818854084039085,
+        "realizedPnl": -1316.2074132787284,
+        "investedUsd": 5097.853719590106,
+        "closedTrades": 34,
+        "wins": 9,
+        "losses": 25,
+        "wr": 26.47058823529412,
+        "pf": 0.17983473866848704,
+        "maxDrawdown": 25.818854084039085,
+        "avgHoldHours": 5.773235294117647,
+        "coinPnl": {
+          "LekVijLi3RFGWcsLFzcWAiDQjFxqcEZ21LDpGu22mhx": -9.11556781832541,
+          "B1ijqMiwux3qjzQX1Nm488RmTvV1ShXVUjpUKVB1c9Ud": -116.02981512206998,
+          "9ZxGN2xQJKZ6ff1NFj2bkXdTHgZwBEo4EAMRnDmeEjVk": -90.26940941019002,
+          "HHuTxdJ4z2R61xmKVG74eAPXHXVsdoQ47yxne4rFTV7U": -175.93261381322998,
+          "142a2hNXho7F2QTDJpVhvNfMZQyrCJPPong4s32Tpump": 69.5458071504,
+          "Fs5s6CM2B8Eym5deiB6jK3o6MXMsdaVVbgeLNM2Apump": -661.9965080341499,
+          "EnHrbkhScpdWTCL37XyPGsCJxms2gE66gkVZUGX3UVGR": 50.56804358672741,
+          "5xkgWmUh7bEKGKNS2EydXNQ6pZwQDmcn4WqL5xzpump": -244.07477896617002,
+          "6M8CWurfztGraRKK7y6Nz7pavLabYC2LwNsUzaEwpump": -19.734559804440025,
+          "2ThG2Dh3kbcS3v68gN3vEFuR2povbrnaVZsSKmM4hn7W": -41.1188729115041,
+          "6onqzDAoyj6fJmEuGQi5UErD1A6Za7AoBFLb1MEcpump": -225.84463692723003,
+          "PEPEqnuuCDbBC89p1u9vpnP1KQ2oj1xTcQBsjt9X55m": -5.5432140645932115,
+          "BGr923eSu3YeEWWcn491Kt92M7Cyo8hzR73kwowFBAGS": 54.442672912376764,
+          "7r1v5rZcGnyzVs1jei7FeMEiZVf4GhQgLYXjZHmMUDGQ": 98.89603994366996
+        },
+        "topCoin": {
+          "coin": "Fs5s6CM2B8Eym5deiB6jK3o6MXMsdaVVbgeLNM2Apump",
+          "pnl": -661.9965080341499
+        }
+      },
+      "updatedAt": 1790877594124
+    }
   }
 }

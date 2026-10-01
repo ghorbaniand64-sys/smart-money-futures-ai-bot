@@ -1,6 +1,6 @@
 {
-  "schema": "V6.0-SPOT-PERFORMANCE-QUALITY-FIX",
-  "generatedAt": 1790869168618,
+  "schema": "V6.0-FINAL-AUDITED-SPOT-FUTURES",
+  "generatedAt": 1790877558753,
   "criteria": {
     "holdHours": [
       1,
@@ -12,22 +12,80 @@
   },
   "spotWallets": [
     {
-      "name": "SOL_MFDU",
-      "address": "MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa",
+      "name": "SOL_3Y5U",
+      "address": "3y5u6tGmYwoFpLgfRYcjxRLj6g4FYHfoG3Z3g4ChGas5",
       "discovery": {
         "programHits": 3,
         "recentTxs24h": 100,
-        "buys": 48,
+        "buys": 71,
+        "sells": 19,
+        "recentBuys": 71,
+        "recentBuyVolume": 94176.03757499995,
+        "roundTrips": 2,
+        "inWindow": 0,
+        "holdRatio": 0,
+        "medianHoldHours": 0,
+        "avgHoldHours": 0,
+        "lastTrade": 1790877507000,
+        "volumeUsd": 94474.31605526287,
+        "recentLifecycles": 0,
+        "quality": "ACTIVE_FALLBACK",
+        "qualificationReasons": [
+          "ROUND_TRIPS<3",
+          "HOLD_1_24H<5",
+          "HOLD_RATIO<50%",
+          "MEDIAN_HOLD_OUT_OF_RANGE",
+          "VOLUME<250000"
+        ],
+        "score": 9189.95062751307
+      }
+    },
+    {
+      "name": "SOL_DCQN",
+      "address": "DcQNaByvstRZCERvb9UJHgHiQe8YX2FMdPptM86psQyz",
+      "discovery": {
+        "programHits": 2,
+        "recentTxs24h": 100,
+        "buys": 14,
+        "sells": 17,
+        "recentBuys": 14,
+        "recentBuyVolume": 8015.010191000001,
+        "roundTrips": 0,
+        "inWindow": 0,
+        "holdRatio": 0,
+        "medianHoldHours": 0,
+        "avgHoldHours": 0,
+        "lastTrade": 1790877506000,
+        "volumeUsd": 8040.070665518508,
+        "recentLifecycles": 0,
+        "quality": "ACTIVE_FALLBACK",
+        "qualificationReasons": [
+          "ROUND_TRIPS<3",
+          "HOLD_1_24H<5",
+          "HOLD_RATIO<50%",
+          "MEDIAN_HOLD_OUT_OF_RANGE",
+          "VOLUME<250000"
+        ],
+        "score": 1887.8105197317034
+      }
+    },
+    {
+      "name": "SOL_7777",
+      "address": "77777nPhGvFUVAj6uq8MGyLneBt4SMwCScYZDzzztdsa",
+      "discovery": {
+        "programHits": 1,
+        "recentTxs24h": 100,
+        "buys": 14,
         "sells": 3,
-        "recentBuys": 18,
-        "recentBuyVolume": 3374.978603754816,
+        "recentBuys": 14,
+        "recentBuyVolume": 4083.64123164015,
         "roundTrips": 0,
         "inWindow": 0,
         "holdRatio": 0,
         "medianHoldHours": 0,
         "avgHoldHours": 0,
-        "lastTrade": 1790869091000,
-        "volumeUsd": 4504.9502382750425,
+        "lastTrade": 1790877504000,
+        "volumeUsd": 4137.774175640151,
         "recentLifecycles": 0,
         "quality": "ACTIVE_FALLBACK",
         "qualificationReasons": [
@@ -37,55 +95,26 @@
           "MEDIAN_HOLD_OUT_OF_RANGE",
           "VOLUME<250000"
         ],
-        "score": 2643.307379996241
+        "score": 1883.2335335695905
       }
     },
     {
-      "name": "SOL_SY88",
-      "address": "sy88tvipKfaCTuVVeU2PczPa88hqgPfKnYQyCHboHP8",
+      "name": "SOL_ETDY",
+      "address": "ETDYEnUHGssKoxaEWTr9qwRMeU4dRLEJGmYyEKBMu1UE",
       "discovery": {
-        "programHits": 2,
-        "recentTxs24h": 100,
-        "buys": 29,
-        "sells": 0,
-        "recentBuys": 4,
-        "recentBuyVolume": 7166.085088617979,
-        "roundTrips": 0,
-        "inWindow": 0,
-        "holdRatio": 0,
-        "medianHoldHours": 0,
-        "avgHoldHours": 0,
-        "lastTrade": 1790869082000,
-        "volumeUsd": 7272.290265417296,
-        "recentLifecycles": 0,
-        "quality": "ACTIVE_FALLBACK",
-        "qualificationReasons": [
-          "ROUND_TRIPS<3",
-          "HOLD_1_24H<5",
-          "HOLD_RATIO<50%",
-          "MEDIAN_HOLD_OUT_OF_RANGE",
-          "VOLUME<250000"
-        ],
-        "score": 807.7233424098869
-      }
-    },
-    {
-      "name": "SOL_RUST",
-      "address": "RustUSBDaDcRRbT8JRmJ8GpomiXiMdgt3iYwbA59xvB",
-      "discovery": {
-        "programHits": 2,
-        "recentTxs24h": 100,
-        "buys": 42,
-        "sells": 0,
+        "programHits": 1,
+        "recentTxs24h": 28,
+        "buys": 24,
+        "sells": 21,
         "recentBuys": 2,
-        "recentBuyVolume": 170.76770506686148,
+        "recentBuyVolume": 418.45026947588855,
         "roundTrips": 0,
         "inWindow": 0,
         "holdRatio": 0,
         "medianHoldHours": 0,
         "avgHoldHours": 0,
-        "lastTrade": 1790869092000,
-        "volumeUsd": 421.01521833196847,
+        "lastTrade": 1790877512000,
+        "volumeUsd": 8788.34583373531,
         "recentLifecycles": 0,
         "quality": "ACTIVE_FALLBACK",
         "qualificationReasons": [
@@ -95,7 +124,7 @@
           "MEDIAN_HOLD_OUT_OF_RANGE",
           "VOLUME<250000"
         ],
-        "score": 669.2485955889072
+        "score": 523.8878142773635
       }
     }
   ],
