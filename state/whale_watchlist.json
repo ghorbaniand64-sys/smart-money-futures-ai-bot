@@ -1,6 +1,6 @@
 {
-  "schema": "V6.0-FINAL-AUDITED-SPOT-FUTURES",
-  "generatedAt": 1790877558753,
+  "schema": "V6.1-SPOT-PERFORMANCE-FUTURES-RECON-AUDITED",
+  "generatedAt": 1790881152802,
   "criteria": {
     "holdHours": [
       1,
@@ -12,51 +12,22 @@
   },
   "spotWallets": [
     {
-      "name": "SOL_3Y5U",
-      "address": "3y5u6tGmYwoFpLgfRYcjxRLj6g4FYHfoG3Z3g4ChGas5",
-      "discovery": {
-        "programHits": 3,
-        "recentTxs24h": 100,
-        "buys": 71,
-        "sells": 19,
-        "recentBuys": 71,
-        "recentBuyVolume": 94176.03757499995,
-        "roundTrips": 2,
-        "inWindow": 0,
-        "holdRatio": 0,
-        "medianHoldHours": 0,
-        "avgHoldHours": 0,
-        "lastTrade": 1790877507000,
-        "volumeUsd": 94474.31605526287,
-        "recentLifecycles": 0,
-        "quality": "ACTIVE_FALLBACK",
-        "qualificationReasons": [
-          "ROUND_TRIPS<3",
-          "HOLD_1_24H<5",
-          "HOLD_RATIO<50%",
-          "MEDIAN_HOLD_OUT_OF_RANGE",
-          "VOLUME<250000"
-        ],
-        "score": 9189.95062751307
-      }
-    },
-    {
-      "name": "SOL_DCQN",
-      "address": "DcQNaByvstRZCERvb9UJHgHiQe8YX2FMdPptM86psQyz",
+      "name": "SOL_B4RR",
+      "address": "B4RRE8DrRRLAH3d6CAqmSixLdcurwnic1h83rEYmSY4s",
       "discovery": {
         "programHits": 2,
         "recentTxs24h": 100,
-        "buys": 14,
-        "sells": 17,
-        "recentBuys": 14,
-        "recentBuyVolume": 8015.010191000001,
+        "buys": 67,
+        "sells": 5,
+        "recentBuys": 67,
+        "recentBuyVolume": 37364.64930917396,
         "roundTrips": 0,
         "inWindow": 0,
         "holdRatio": 0,
         "medianHoldHours": 0,
         "avgHoldHours": 0,
-        "lastTrade": 1790877506000,
-        "volumeUsd": 8040.070665518508,
+        "lastTrade": 1790881104000,
+        "volumeUsd": 37445.07182132514,
         "recentLifecycles": 0,
         "quality": "ACTIVE_FALLBACK",
         "qualificationReasons": [
@@ -66,26 +37,26 @@
           "MEDIAN_HOLD_OUT_OF_RANGE",
           "VOLUME<250000"
         ],
-        "score": 1887.8105197317034
+        "score": 8673.146789335839
       }
     },
     {
-      "name": "SOL_7777",
-      "address": "77777nPhGvFUVAj6uq8MGyLneBt4SMwCScYZDzzztdsa",
+      "name": "SOL_H8BG",
+      "address": "H8bgvrbb1E6WWiyFtKSrWZomkuf54LPcNjVGwoH449bz",
       "discovery": {
-        "programHits": 1,
+        "programHits": 2,
         "recentTxs24h": 100,
-        "buys": 14,
-        "sells": 3,
-        "recentBuys": 14,
-        "recentBuyVolume": 4083.64123164015,
+        "buys": 30,
+        "sells": 8,
+        "recentBuys": 9,
+        "recentBuyVolume": 367.6734385901333,
         "roundTrips": 0,
         "inWindow": 0,
         "holdRatio": 0,
         "medianHoldHours": 0,
         "avgHoldHours": 0,
-        "lastTrade": 1790877504000,
-        "volumeUsd": 4137.774175640151,
+        "lastTrade": 1790881098000,
+        "volumeUsd": 1742.1013987756946,
         "recentLifecycles": 0,
         "quality": "ACTIVE_FALLBACK",
         "qualificationReasons": [
@@ -95,26 +66,26 @@
           "MEDIAN_HOLD_OUT_OF_RANGE",
           "VOLUME<250000"
         ],
-        "score": 1883.2335335695905
+        "score": 1414.4821468589175
       }
     },
     {
-      "name": "SOL_ETDY",
-      "address": "ETDYEnUHGssKoxaEWTr9qwRMeU4dRLEJGmYyEKBMu1UE",
+      "name": "SOL_8V6Y",
+      "address": "8V6YtHmyYz3wXKGAECqoxVii7N3AxJkv1P3DunZrEsw3",
       "discovery": {
         "programHits": 1,
-        "recentTxs24h": 28,
-        "buys": 24,
-        "sells": 21,
+        "recentTxs24h": 20,
+        "buys": 18,
+        "sells": 10,
         "recentBuys": 2,
-        "recentBuyVolume": 418.45026947588855,
+        "recentBuyVolume": 476.702802653916,
         "roundTrips": 0,
         "inWindow": 0,
         "holdRatio": 0,
         "medianHoldHours": 0,
         "avgHoldHours": 0,
-        "lastTrade": 1790877512000,
-        "volumeUsd": 8788.34583373531,
+        "lastTrade": 1790881099000,
+        "volumeUsd": 4378.3123211287,
         "recentLifecycles": 0,
         "quality": "ACTIVE_FALLBACK",
         "qualificationReasons": [
@@ -124,7 +95,7 @@
           "MEDIAN_HOLD_OUT_OF_RANGE",
           "VOLUME<250000"
         ],
-        "score": 523.8878142773635
+        "score": 475.28261347632076
       }
     }
   ],
