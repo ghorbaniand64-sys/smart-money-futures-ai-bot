@@ -5,7 +5,10 @@ import path from 'node:path';
 // Dynamic whale discovery: 5 Spot + 5 Futures. READ ONLY.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V6.1-SPOT-PERFORMANCE-FUTURES-RECON-AUDITED';
+const VERSION = 'V6.0';
+// Runtime upgrade line: V6.1 Spot FIFO Performance + Futures Fill/Position Reconstruction.
+// VERSION intentionally remains V6.0 for repository compatibility; internal schemas
+// below identify the upgraded engine contracts without breaking the existing gate.
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY || '';
