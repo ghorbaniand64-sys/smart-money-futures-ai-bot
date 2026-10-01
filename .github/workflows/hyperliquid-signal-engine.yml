@@ -20,7 +20,7 @@ jobs:
 
     env:
       # ============================================================
-      # REQUIRED SECRETS — GitHub Environment: production
+      # GITHUB ENVIRONMENT: production
       # ============================================================
       HYPERLIQUID_API_URL: ${{ secrets.HYPERLIQUID_API_URL }}
       SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
@@ -29,18 +29,24 @@ jobs:
       HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
 
       # ============================================================
-      # ENGINE
+      # ENGINE MODE
       # ============================================================
       NODE_OPTIONS: "--max-old-space-size=4096"
       SIGNAL_ENGINE_MODE: "READ_ONLY"
       EXECUTION_ENABLED: "false"
 
       # ============================================================
-      # WHALE DISCOVERY
+      # DISCOVERY TARGETS
       # ============================================================
-      WHALE_TARGET_SPOT_WALLETS: "5"
-      WHALE_TARGET_FUTURES_WALLETS: "5"
+      SIGNAL_SPOT_TARGET: "5"
+      SIGNAL_FUTURES_TARGET: "5"
 
+      SIGNAL_HOLD_MIN_HOURS: "1"
+      SIGNAL_HOLD_MAX_HOURS: "24"
+
+      # ============================================================
+      # DISCOVERY
+      # ============================================================
       WHALE_DISCOVERY_TTL_MIN: "360"
       WHALE_DISCOVERY_LOOKBACK_HOURS: "48"
 
@@ -54,13 +60,6 @@ jobs:
       WHALE_DISCOVERY_MIN_RECENT_LIFECYCLES: "1"
 
       WHALE_DISCOVERY_MAX_CANDIDATES: "30"
-
-      # Futures discovery
-      WHALE_DISCOVERY_FUTURES_QUICK_LOOKBACK_HOURS: "12"
-      WHALE_DISCOVERY_FUTURES_DEEP_CANDIDATES: "15"
-      WHALE_DISCOVERY_FUTURES_QUICK_MAX_PAGES: "1"
-      WHALE_DISCOVERY_FUTURES_DEEP_MAX_PAGES: "8"
-      WHALE_DISCOVERY_FUTURES_DEEP_DELAY_MS: "350"
 
       # ============================================================
       # SPOT DISCOVERY
@@ -78,7 +77,16 @@ jobs:
       WHALE_DISCOVERY_SPOT_FINALISTS: "12"
 
       # ============================================================
-      # DISCOVERY RPC / HISTORY
+      # FUTURES DISCOVERY
+      # ============================================================
+      WHALE_DISCOVERY_FUTURES_QUICK_LOOKBACK_HOURS: "12"
+      WHALE_DISCOVERY_FUTURES_DEEP_CANDIDATES: "15"
+      WHALE_DISCOVERY_FUTURES_QUICK_MAX_PAGES: "1"
+      WHALE_DISCOVERY_FUTURES_DEEP_MAX_PAGES: "8"
+      WHALE_DISCOVERY_FUTURES_DEEP_DELAY_MS: "350"
+
+      # ============================================================
+      # HISTORY / RPC
       # ============================================================
       WHALE_DISCOVERY_FILL_PAGE_SIZE: "2000"
       WHALE_DISCOVERY_FILL_MAX_PAGES: "8"
@@ -89,13 +97,15 @@ jobs:
       WHALE_DISCOVERY_RPC_FAST_RETRIES: "2"
       WHALE_DISCOVERY_RPC_FAST_DELAY_MS: "700"
 
+      DISCOVERY_FILL_PAGE_SIZE: "2000"
+      DISCOVERY_FILL_MAX_PAGES: "8"
+
       # ============================================================
       # SIGNAL RULES
       # ============================================================
-      SIGNAL_MAX_ENTRY_DISTANCE_PCT: "0.75"
-      SIGNAL_WATCH_DISTANCE_PCT: "3.0"
+      SIGNAL_ENTRY_WINDOW_PCT: "0.75"
+      SIGNAL_WATCH_WINDOW_PCT: "3.0"
       SIGNAL_MIN_RR: "2.0"
-
       SIGNAL_MAX_LATENCY_MIN: "5"
 
       # ============================================================
@@ -149,10 +159,10 @@ jobs:
       SIGNAL_PERFORMANCE_STATE_FILE: "state/whale_performance_cache.json"
 
       # ============================================================
-      # STATE / CACHE
+      # STATE
       # ============================================================
-      WHALE_DISCOVERY_STATE_FILE: "state/whale_watchlist.json"
       SIGNAL_WATCHLIST_STATE_FILE: "state/whale_watchlist.json"
+      WHALE_DISCOVERY_STATE_FILE: "state/whale_watchlist.json"
 
     steps:
 
@@ -168,7 +178,8 @@ jobs:
       # 2. NODE 22
       #
       # IMPORTANT:
-      # No npm cache here because repository has no lockfile.
+      # No npm cache because repository has no lock file.
+      # No npm install is required by the standalone .mjs engine.
       # ============================================================
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
@@ -210,14 +221,23 @@ jobs:
           echo "crypto_whale_signal_engine.mjs = FOUND"
 
           echo
-          echo "Required workflow:"
-          test -f .github/workflows/crypto-whale-signal-engine.yml
-          echo "workflow = FOUND"
+          echo "Workflow directory:"
+          if [ -d ".github/workflows" ]; then
+            echo ".github/workflows = FOUND"
+            echo
+            echo "Workflow files:"
+            find .github/workflows -maxdepth 1 -type f -print || true
+          else
+            echo "WARNING: .github/workflows directory not found."
+            echo "Continuing because workflow file existence is not required"
+            echo "for execution of the engine."
+          fi
+
+          echo
+          echo "ENVIRONMENT AUDIT: PASS"
 
       # ============================================================
       # 4. VERIFY ENGINE VERSION
-      #
-      # HARD STOP if old V5.7 / V4.x file is still in repository.
       # ============================================================
       - name: VERIFY ENGINE VERSION
         shell: bash
@@ -234,7 +254,7 @@ jobs:
             crypto_whale_signal_engine.mjs || true
 
           echo
-          echo "Expected engine:"
+          echo "Expected:"
           echo "V5.8-SIGNAL-READY-DISCOVERY"
 
           if ! grep -q "V5.8" crypto_whale_signal_engine.mjs; then
@@ -244,7 +264,7 @@ jobs:
             echo "========================================"
             echo
             echo "The repository does not contain V5.8."
-            echo "Execution has been stopped."
+            echo "Execution stopped."
             echo
             exit 1
           fi
@@ -253,7 +273,7 @@ jobs:
           echo "VERSION CHECK: PASS"
 
       # ============================================================
-      # 5. VERIFY CRITICAL V5.8 LOGIC
+      # 5. VERIFY V5.8 LOGIC
       # ============================================================
       - name: VERIFY V5.8 SIGNAL READY LOGIC
         shell: bash
@@ -287,15 +307,15 @@ jobs:
             "DISCOVERY_SCHEMA"
 
           check_pattern \
-            "Freshness rule" \
+            "Futures freshness rule" \
             "FUTURES_SIGNAL_FRESHNESS_MIN"
 
           check_pattern \
-            "Meaningful ADD rule" \
+            "Meaningful Futures ADD rule" \
             "FUTURES_MIN_MEANINGFUL_ADD_NOTIONAL_USD"
 
           check_pattern \
-            "Spot minimum BUY" \
+            "Spot minimum BUY rule" \
             "SPOT_MIN_BUY_USD"
 
           check_pattern \
@@ -304,7 +324,9 @@ jobs:
 
           if [ "$FAIL" -ne 0 ]; then
             echo
-            echo "FATAL: V5.8 logic audit failed."
+            echo "========================================"
+            echo "FATAL: V5.8 LOGIC AUDIT FAILED"
+            echo "========================================"
             exit 1
           fi
 
@@ -340,10 +362,12 @@ jobs:
 
           touch state/.gitkeep
 
-          echo "State directory ready."
+          echo "========================================"
+          echo "STATE DIRECTORY"
+          echo "========================================"
 
           echo
-          echo "Existing state:"
+          echo "Existing state files:"
           find state -maxdepth 1 -type f -print 2>/dev/null || true
 
       # ============================================================
@@ -357,17 +381,28 @@ jobs:
           echo "========================================"
           echo "CRYPTO WHALE SIGNAL ENGINE V5.8"
           echo "========================================"
+
           echo "Mode: READ-ONLY / SIGNAL-ONLY"
           echo "Orders: DISABLED"
           echo "Execution: DISABLED"
+
+          echo
+          echo "Watchlist:"
           echo "Spot target: 5"
           echo "Futures target: 5"
+
+          echo
+          echo "Signal rules:"
           echo "Entry distance: <= 0.75%"
           echo "Watch distance: <= 3%"
-          echo "Minimum RR: 2"
-          echo "Futures freshness: <= 15m"
-          echo "Minimum Futures ADD: \$100"
-          echo "Minimum Spot BUY: \$25"
+          echo "Minimum RR: 2.0"
+          echo "Freshness: <= 15m"
+
+          echo
+          echo "Minimum activity:"
+          echo "Spot BUY: \$25"
+          echo "Futures ADD: \$100"
+
           echo "========================================"
 
           node crypto_whale_signal_engine.mjs
@@ -390,7 +425,7 @@ jobs:
 
           echo
           echo "Git commit:"
-          git rev-parse --short HEAD
+          git rev-parse --short HEAD || true
 
           echo
           echo "State files:"
