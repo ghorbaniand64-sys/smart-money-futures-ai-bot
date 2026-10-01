@@ -56,14 +56,13 @@ jobs:
       # ============================================================
       # FUTURES DISCOVERY
       #
-      # IMPORTANT:
-      # Discovery selects ACTIVE Futures wallets.
+      # Discovery selects active Futures wallets.
       # It does NOT require a fresh ADD at discovery time.
       #
-      # scanFutures() is responsible for the final:
+      # scanFutures() makes the final signal decision:
       # - ADD >= $100
       # - freshness <= 15m
-      # - distance
+      # - entry distance
       # - RR
       # ============================================================
       WHALE_DISCOVERY_SIGNAL_READY_ONLY: "false"
@@ -91,6 +90,9 @@ jobs:
       SIGNAL_SPOT_SL_PCT: "2.0"
       SIGNAL_SPOT_TP_PCT: "4.0"
 
+      # ============================================================
+      # FUTURES SL / TP
+      # ============================================================
       SIGNAL_FUTURES_SL_PCT: "1.5"
       SIGNAL_FUTURES_TP_PCT: "3.0"
 
@@ -119,12 +121,14 @@ jobs:
 
       # ============================================================
       # NODE 22
+      #
+      # IMPORTANT:
+      # No npm cache because repository has no package-lock.json.
       # ============================================================
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: "npm"
 
       # ============================================================
       # STATE DIRECTORY
@@ -228,145 +232,4 @@ jobs:
         run: |
           set -e
 
-          node --check crypto_whale_signal_engine.mjs
-
-          echo "========================================"
-          echo "NODE SYNTAX CHECK PASSED"
-          echo "========================================"
-
-      # ============================================================
-      # V6.1 CONTRACT VERIFICATION
-      # ============================================================
-      - name: Verify critical V6.1 contracts
-        shell: bash
-        run: |
-          set -e
-
-          WORKER="crypto_whale_signal_engine.mjs"
-
-          echo "========================================"
-          echo "V6.1 CONTRACT VERIFICATION"
-          echo "========================================"
-
-          required_patterns=(
-            "V6.1-SPOT-FIFO-PERFORMANCE-V3"
-            "V6.1-SPOT-PERFORMANCE-FUTURES-RECON-AUDITED"
-            "DISCOVERY_FUTURES_ACTIVE_SELECTION"
-            "FUTURES_MIN_ACTIVE_FILLS"
-            "FUTURES_MIN_ACTIVE_VOLUME_USD"
-            "FUTURES_MIN_SIGNAL_ADD_USD"
-            "FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD"
-            "FUTURES_SIGNAL_FRESHNESS_MIN"
-            "SPOT_MIN_SIGNAL_BUY_USD"
-          )
-
-          for pattern in "${required_patterns[@]}"; do
-            if ! grep -q "$pattern" "$WORKER"; then
-              echo "FATAL: missing V6.1 contract: $pattern"
-              exit 1
-            fi
-
-            echo "PASS | $pattern"
-          done
-
-          echo
-          echo "========================================"
-          echo "V6.1 CONTRACTS VERIFIED"
-          echo "========================================"
-
-      # ============================================================
-      # RUNTIME CONFIGURATION
-      # ============================================================
-      - name: Print runtime configuration
-        shell: bash
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "CRYPTO WHALE SIGNAL ENGINE V6.1"
-          echo "========================================"
-
-          echo
-          echo "Mode: READ-ONLY / SIGNAL-ONLY"
-          echo "Orders: DISABLED"
-          echo "Execution: DISABLED"
-
-          echo
-          echo "Watchlist:"
-          echo "Spot target: 5"
-          echo "Futures target: 5"
-
-          echo
-          echo "Spot quality:"
-          echo "Minimum evidence trades: 10"
-          echo "Minimum recent BUYs: 2"
-          echo "Minimum recent BUY volume: \$100"
-
-          echo
-          echo "Futures:"
-          echo "Discovery: ACTIVE WALLET SELECTION"
-          echo "Fresh ADD minimum: \$100"
-          echo "Freshness: <= 15m"
-
-          echo
-          echo "Signal rules:"
-          echo "Entry distance: <= 0.75%"
-          echo "Watch distance: <= 3%"
-          echo "Minimum RR: 2.0"
-          echo "Freshness: <= 15m"
-
-          echo
-          echo "Execution:"
-          echo "NO ORDERS"
-          echo "NO POSITION CHANGES"
-          echo "NO LEVERAGE CHANGES"
-
-          echo
-          echo "Engine: V6.1"
-
-          echo "========================================"
-
-      # ============================================================
-      # RUN ENGINE
-      # ============================================================
-      - name: Run Crypto Whale Signal Engine V6.1
-        shell: bash
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "STARTING CRYPTO WHALE SIGNAL ENGINE V6.1"
-          echo "========================================"
-
-          node crypto_whale_signal_engine.mjs
-
-          echo "========================================"
-          echo "CRYPTO WHALE SIGNAL ENGINE V6.1 FINISHED"
-          echo "========================================"
-
-      # ============================================================
-      # PERSIST STATE
-      # ============================================================
-      - name: Persist state changes
-        if: always()
-        shell: bash
-        run: |
-          set -e
-
-          if [ -n "$(git status --porcelain)" ]; then
-
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-            git add state/
-
-            if ! git diff --cached --quiet; then
-              git commit -m "chore: update whale signal engine state"
-              git push
-            fi
-
-          else
-
-            echo "No state changes to commit."
-
-          fi
+          node --check crypto_whale
