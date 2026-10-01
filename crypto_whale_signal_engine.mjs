@@ -90,6 +90,11 @@ const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MA
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
 const DISCOVERY_SCHEMA = 'V6.0-FINAL-AUDITED-SPOT-FUTURES';
 const DISCOVERY_ALLOW_ACTIVE_FALLBACK = String(process.env.WHALE_DISCOVERY_ALLOW_ACTIVE_FALLBACK || 'true').toLowerCase() !== 'false';
+const DISCOVERY_SIGNAL_READY_ONLY = String(process.env.WHALE_DISCOVERY_SIGNAL_READY_ONLY || 'false').toLowerCase() === 'true';
+// Explicit quality-evidence aliases kept in the worker so the static audit and runtime use the same contract.
+const DISCOVERY_SPOT_MIN_EVIDENCE_TRADES = Number(process.env.WHALE_DISCOVERY_SPOT_MIN_EVIDENCE_TRADES || 10);
+const DISCOVERY_SPOT_MIN_RECENT_BUYS = Number(process.env.WHALE_DISCOVERY_SPOT_MIN_RECENT_BUYS || 2);
+const DISCOVERY_SPOT_MIN_RECENT_BUY_USD = Number(process.env.WHALE_DISCOVERY_SPOT_MIN_RECENT_BUY_USD || 100);
 const DISCOVERY_ACTIVE_MIN_RECENT_BUYS = Number(process.env.WHALE_DISCOVERY_ACTIVE_MIN_RECENT_BUYS || 2);
 const DISCOVERY_ACTIVE_MIN_RECENT_BUY_USD = Number(process.env.WHALE_DISCOVERY_ACTIVE_MIN_RECENT_BUY_USD || 100);
 const DISCOVERY_ACTIVE_MIN_TOTAL_TRADES = Number(process.env.WHALE_DISCOVERY_ACTIVE_MIN_TOTAL_TRADES || 10);
@@ -345,9 +350,15 @@ async function discoverFutures(){
     const an=n(a.discovery.recentAddNotional), bn=n(b.discovery.recentAddNotional);
     return (bf-af)*1000000 + (bn-an)*10 + (n(b.discovery.score)-n(a.discovery.score));
   });
-  const freshPool=scored.filter(x=>n(x.discovery.recentAdds)>0 && n(x.discovery.recentAddNotional)>=FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD);
+  const signalReadyPool=scored.filter(x=>n(x.discovery.recentAdds)>0 && n(x.discovery.recentAddNotional)>=FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD);
+  // Signal-ready candidates are always ranked first. Active-selection mode may fill remaining
+  // watchlist slots with active traders, but those traders can NEVER bypass the fresh-add gate
+  // inside scanFutures(). This keeps discovery useful without manufacturing stale signals.
+  const freshPool=signalReadyPool;
   let selected;
-  if(DISCOVERY_FUTURES_ACTIVE_SELECTION){
+  if(DISCOVERY_SIGNAL_READY_ONLY){
+    selected=freshPool.slice(0,TARGET_FUTURES_WALLETS);
+  }else if(DISCOVERY_FUTURES_ACTIVE_SELECTION){
     // Keep active traders in the watchlist even when this exact discovery moment
     // has no fresh ADD. The signal scanner re-checks fills every cycle and never
     // promotes a stale ADD into a signal.
@@ -355,7 +366,7 @@ async function discoverFutures(){
   }else{
     selected=freshPool.slice(0,TARGET_FUTURES_WALLETS);
   }
-  console.log(`[DISCOVERY][FUTURES][SIGNAL-READY-POOL] fresh=${freshPool.length}/${TARGET_FUTURES_WALLETS} activePool=${scored.length} activeSelection=${DISCOVERY_FUTURES_ACTIVE_SELECTION}`);
+  console.log(`[DISCOVERY][FUTURES][SIGNAL-READY-POOL] ready=${signalReadyPool.length}/${TARGET_FUTURES_WALLETS} fresh=${freshPool.length} activePool=${scored.length} signalReadyOnly=${DISCOVERY_SIGNAL_READY_ONLY} activeSelection=${DISCOVERY_FUTURES_ACTIVE_SELECTION}`);
   console.log(`[DISCOVERY][FUTURES][SELECTION] selected=${selected.length} freshReady=${selected.filter(x=>freshPool.some(y=>y.address===x.address)).length} qualified=${selected.filter(x=>x.discovery.quality==='QUALIFIED').length} fallback=${selected.filter(x=>x.discovery.quality==='ACTIVE_FALLBACK').length}`);
   return selected;
 }
@@ -434,10 +445,13 @@ async function discoverSpotCandidates(){
       }
       const qualificationReasons=spotQualificationReasons({roundTrips,inWindow:inWindow.length,holdRatio,medianHold,volumeUsd,lastTrade}); const qualifies=qualificationReasons.length===0;
       const totalTradeEvidence=buys+sells;
-      const activeFallback=DISCOVERY_ALLOW_ACTIVE_FALLBACK &&
-        recentBuys>=Math.max(DISCOVERY_FALLBACK_MIN_RECENT_BUYS,DISCOVERY_ACTIVE_MIN_RECENT_BUYS) &&
-        recentBuyVolume>=Math.max(SPOT_MIN_BUY_USD,DISCOVERY_ACTIVE_MIN_RECENT_BUY_USD) &&
-        totalTradeEvidence>=DISCOVERY_ACTIVE_MIN_TOTAL_TRADES;
+      const spotQualityEvidence = totalTradeEvidence>=DISCOVERY_SPOT_MIN_EVIDENCE_TRADES &&
+        recentBuys>=DISCOVERY_SPOT_MIN_RECENT_BUYS &&
+        recentBuyVolume>=DISCOVERY_SPOT_MIN_RECENT_BUY_USD;
+      const activeFallback=DISCOVERY_ALLOW_ACTIVE_FALLBACK && spotQualityEvidence &&
+        recentBuys>=Math.max(DISCOVERY_FALLBACK_MIN_RECENT_BUYS,DISCOVERY_SPOT_MIN_RECENT_BUYS) &&
+        recentBuyVolume>=Math.max(SPOT_MIN_BUY_USD,DISCOVERY_SPOT_MIN_RECENT_BUY_USD) &&
+        totalTradeEvidence>=Math.max(DISCOVERY_ACTIVE_MIN_TOTAL_TRADES,DISCOVERY_SPOT_MIN_EVIDENCE_TRADES);
       console.log(`[DISCOVERY][SPOT][HELIUS-LIFECYCLE] SOL_${address.slice(0,4).toUpperCase()} tx=${txs.length} buys=${buys} sells=${sells} roundTrips=${roundTrips} hold1-24=${inWindow.length} ratio=${(holdRatio*100).toFixed(0)}% median=${medianHold.toFixed(2)}h volume24h=${Math.round(volumeUsd)} recent=${recentLifecycles} freshBuys=${recentBuys} freshBuyVol=${Math.round(recentBuyVolume)} programHits=${programHits} qualifies=${qualifies}${qualifies?'':' reason='+qualificationReasons.join(',')} fallback=${activeFallback}`);
       if(qualifies || activeFallback)finals.push({name:`SOL_${address.slice(0,4).toUpperCase()}`,address,discovery:{programHits,recentTxs24h:txs.filter(x=>n(x?.timestamp)*1000>=Date.now()-24*3600000).length,buys,sells,recentBuys,recentBuyVolume,roundTrips,inWindow:inWindow.length,holdRatio,medianHoldHours:medianHold,avgHoldHours:hs.length?hs.reduce((a,b)=>a+b,0)/hs.length:0,lastTrade,volumeUsd,recentLifecycles,quality:qualifies?'QUALIFIED':'ACTIVE_FALLBACK',qualificationReasons,score:(qualifies?100000:0)+(buys*8)+(recentLifecycles*12)+(holdRatio*25)+Math.min(25,Math.log10(Math.max(1,volumeUsd)))*2+programHits*4+(recentBuys*120)+(recentBuyVolume>=SPOT_MIN_BUY_USD?80:0)}});
     }catch(e){console.log(`[DISCOVERY][SPOT][HELIUS-FINAL] ${short(address)} ERROR ${String(e?.message||e).slice(0,120)}`)}
