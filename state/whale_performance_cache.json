@@ -35,12 +35,12 @@
     }
   },
   "SPOT:RustUSBDaDcRRbT8JRmJ8GpomiXiMdgt3iYwbA59xvB": {
-    "updatedAt": 1790871004181,
+    "updatedAt": 1790872440531,
     "data": {
       "market": "SPOT",
       "complete": false,
       "pages": 12,
-      "txCount": 1199,
+      "txCount": 1200,
       "closedTrades": 0,
       "w7": {
         "roi": 0,
@@ -66,7 +66,7 @@
         "coinPnl": {},
         "topCoin": null
       },
-      "updatedAt": 1790871004181
+      "updatedAt": 1790872440531
     }
   },
   "SPOT:MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa": {
