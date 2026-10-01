@@ -818,14 +818,14 @@
     }
   },
   "FUTURES:0x7b7f72a28fe109fa703eeed7984f2a8a68fedee2": {
-    "updatedAt": 1790884767991,
+    "updatedAt": 1790886402646,
     "data": {
       "market": "FUTURES",
       "complete": false,
       "pages": 2,
       "fillCount": 1959,
       "coverageStart": 1790828569567,
-      "coverageDays": 0.6504447222222223,
+      "coverageDays": 0.6693643402777778,
       "coverage7d": false,
       "coverage30d": false,
       "w7": {
@@ -892,7 +892,7 @@
         },
         "fillCount": 1959
       },
-      "updatedAt": 1790884767991
+      "updatedAt": 1790886402646
     }
   },
   "FUTURES:0xfc27136e42af1732ddc9ce2605ea9bff1b959d9d": {
@@ -1157,6 +1157,191 @@
       },
       "updatedAt": 1790885152201,
       "noClosedTrades": true
+    }
+  },
+  "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:C5EMTGGE87SqLyuvhShLDMj2jUBwqBLJAZF6ybK8Jyqw": {
+    "updatedAt": 1790886350140,
+    "data": {
+      "schema": "V6.1-SPOT-FIFO-PERFORMANCE-V3",
+      "market": "SPOT",
+      "complete": false,
+      "pages": 12,
+      "txCount": 1200,
+      "closedTrades": 3,
+      "coverageStart": 1790863460000,
+      "coverageDays": 0.26493217592592594,
+      "rateLimited": false,
+      "coverage7d": false,
+      "coverage30d": false,
+      "w7": {
+        "roi": 15.840432726392493,
+        "realizedPnl": 17.647842516252844,
+        "investedUsd": 111.41010363213715,
+        "closedTrades": 3,
+        "wins": 3,
+        "losses": 0,
+        "wr": 100,
+        "pf": null,
+        "maxDrawdown": 0,
+        "avgHoldHours": 2.9760185185185186,
+        "coinPnl": {
+          "DoQ9oSRqN9WGAGBQZ8bHXTg4qs18PSQKcGbEMppUEMVj": 13.214489071990002,
+          "Pren1FvFX6J3E4kXhJuCiAD5aDmGEb7qJRncwA8Lkhw": 4.433353444262842
+        },
+        "topCoin": {
+          "coin": "DoQ9oSRqN9WGAGBQZ8bHXTg4qs18PSQKcGbEMppUEMVj",
+          "pnl": 13.214489071990002
+        }
+      },
+      "w30": {
+        "roi": 15.840432726392493,
+        "realizedPnl": 17.647842516252844,
+        "investedUsd": 111.41010363213715,
+        "closedTrades": 3,
+        "wins": 3,
+        "losses": 0,
+        "wr": 100,
+        "pf": null,
+        "maxDrawdown": 0,
+        "avgHoldHours": 2.9760185185185186,
+        "coinPnl": {
+          "DoQ9oSRqN9WGAGBQZ8bHXTg4qs18PSQKcGbEMppUEMVj": 13.214489071990002,
+          "Pren1FvFX6J3E4kXhJuCiAD5aDmGEb7qJRncwA8Lkhw": 4.433353444262842
+        },
+        "topCoin": {
+          "coin": "DoQ9oSRqN9WGAGBQZ8bHXTg4qs18PSQKcGbEMppUEMVj",
+          "pnl": 13.214489071990002
+        }
+      },
+      "updatedAt": 1790886350140
+    }
+  },
+  "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:52Xv94zeTfMhnv9Ns88bWkhpYQdDpKinmJkQYZwkBaiR": {
+    "updatedAt": 1790886368561,
+    "data": {
+      "schema": "V6.1-SPOT-FIFO-PERFORMANCE-V3",
+      "market": "SPOT",
+      "complete": false,
+      "pages": 12,
+      "txCount": 1200,
+      "closedTrades": 62,
+      "coverageStart": 1790841998000,
+      "coverageDays": 0.5135481597222222,
+      "rateLimited": false,
+      "coverage7d": false,
+      "coverage30d": false,
+      "w7": {
+        "roi": -54.51143193774066,
+        "realizedPnl": -7376.050164782903,
+        "investedUsd": 13531.19869095961,
+        "closedTrades": 62,
+        "wins": 17,
+        "losses": 45,
+        "wr": 27.419354838709676,
+        "pf": 0.2155659758643044,
+        "maxDrawdown": 54.51869606595837,
+        "avgHoldHours": 2.3542025089605736,
+        "coinPnl": {
+          "85VBFQZC9TZkfaptBWjvUw7YbZjy52A6mjtPGjstQAmQ": -9282.102930484985,
+          "6AJcP7wuLwmRYLBNbi825wgguaPsWzPBEHcHndpRpump": -1.0516750306893528,
+          "AymATz4TCL9sWNEEV9Kvyz45CHVhDZ6kUgjTJPzLpU9P": 80.53072529234858,
+          "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij": 1261.8966436884546,
+          "avaxGHCq3T7hoxd73oY2KY9hJSTaeMibXvHy5KNzh5D": 563.6941481296659,
+          "suifhC9gU1VbJAPYPTBkHJyyyStKGLLYPVDTmPoqbvA": 0.9829236223040709
+        },
+        "topCoin": {
+          "coin": "85VBFQZC9TZkfaptBWjvUw7YbZjy52A6mjtPGjstQAmQ",
+          "pnl": -9282.102930484985
+        }
+      },
+      "w30": {
+        "roi": -54.51143193774066,
+        "realizedPnl": -7376.050164782903,
+        "investedUsd": 13531.19869095961,
+        "closedTrades": 62,
+        "wins": 17,
+        "losses": 45,
+        "wr": 27.419354838709676,
+        "pf": 0.2155659758643044,
+        "maxDrawdown": 54.51869606595837,
+        "avgHoldHours": 2.3542025089605736,
+        "coinPnl": {
+          "85VBFQZC9TZkfaptBWjvUw7YbZjy52A6mjtPGjstQAmQ": -9282.102930484985,
+          "6AJcP7wuLwmRYLBNbi825wgguaPsWzPBEHcHndpRpump": -1.0516750306893528,
+          "AymATz4TCL9sWNEEV9Kvyz45CHVhDZ6kUgjTJPzLpU9P": 80.53072529234858,
+          "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij": 1261.8966436884546,
+          "avaxGHCq3T7hoxd73oY2KY9hJSTaeMibXvHy5KNzh5D": 563.6941481296659,
+          "suifhC9gU1VbJAPYPTBkHJyyyStKGLLYPVDTmPoqbvA": 0.9829236223040709
+        },
+        "topCoin": {
+          "coin": "85VBFQZC9TZkfaptBWjvUw7YbZjy52A6mjtPGjstQAmQ",
+          "pnl": -9282.102930484985
+        }
+      },
+      "updatedAt": 1790886368561
+    }
+  },
+  "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:9su3UPQW3txjtKDZAkf2Kdimp5tEb9TM6hnJrGC1U7pY": {
+    "updatedAt": 1790886382369,
+    "data": {
+      "schema": "V6.1-SPOT-FIFO-PERFORMANCE-V3",
+      "market": "SPOT",
+      "complete": false,
+      "pages": 12,
+      "txCount": 1200,
+      "closedTrades": 8,
+      "coverageStart": 1790859874000,
+      "coverageDays": 0.3068098263888889,
+      "rateLimited": false,
+      "coverage7d": false,
+      "coverage30d": false,
+      "w7": {
+        "roi": -2.8131432932724505,
+        "realizedPnl": -8.825177974278366,
+        "investedUsd": 313.712351424953,
+        "closedTrades": 8,
+        "wins": 5,
+        "losses": 3,
+        "wr": 62.5,
+        "pf": 0.4339179803881481,
+        "maxDrawdown": 4.969497697880162,
+        "avgHoldHours": 0.9081944444444444,
+        "coinPnl": {
+          "oPAiAikWTaFj9RYoRFD35ccfwhnMcB3ThgBZRHSkjTZ": 1.3548578043426271,
+          "DJTu7vi8norVzdVAffgvb39VP7wjKeTsgaMBJrzfxvoF": -1.634363114518223,
+          "3xzN5FWK5uwBb2KTajD7tqrAH7UdvvaiqxWUrgj7GbLt": -12.671668318175037,
+          "DoQ9oSRqN9WGAGBQZ8bHXTg4qs18PSQKcGbEMppUEMVj": -1.283896649335503,
+          "Pren1FvFX6J3E4kXhJuCiAD5aDmGEb7qJRncwA8Lkhw": 5.409892303407769
+        },
+        "topCoin": {
+          "coin": "3xzN5FWK5uwBb2KTajD7tqrAH7UdvvaiqxWUrgj7GbLt",
+          "pnl": -12.671668318175037
+        }
+      },
+      "w30": {
+        "roi": -2.8131432932724505,
+        "realizedPnl": -8.825177974278366,
+        "investedUsd": 313.712351424953,
+        "closedTrades": 8,
+        "wins": 5,
+        "losses": 3,
+        "wr": 62.5,
+        "pf": 0.4339179803881481,
+        "maxDrawdown": 4.969497697880162,
+        "avgHoldHours": 0.9081944444444444,
+        "coinPnl": {
+          "oPAiAikWTaFj9RYoRFD35ccfwhnMcB3ThgBZRHSkjTZ": 1.3548578043426271,
+          "DJTu7vi8norVzdVAffgvb39VP7wjKeTsgaMBJrzfxvoF": -1.634363114518223,
+          "3xzN5FWK5uwBb2KTajD7tqrAH7UdvvaiqxWUrgj7GbLt": -12.671668318175037,
+          "DoQ9oSRqN9WGAGBQZ8bHXTg4qs18PSQKcGbEMppUEMVj": -1.283896649335503,
+          "Pren1FvFX6J3E4kXhJuCiAD5aDmGEb7qJRncwA8Lkhw": 5.409892303407769
+        },
+        "topCoin": {
+          "coin": "3xzN5FWK5uwBb2KTajD7tqrAH7UdvvaiqxWUrgj7GbLt",
+          "pnl": -12.671668318175037
+        }
+      },
+      "updatedAt": 1790886382369
     }
   }
 }
