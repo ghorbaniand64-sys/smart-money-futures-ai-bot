@@ -1468,5 +1468,54 @@
       },
       "updatedAt": 1790887423272
     }
+  },
+  "FUTURES:0x020ca66c30bec2c4fe3861a94e4db4a498a35872": {
+    "updatedAt": 1790888249537,
+    "data": {
+      "market": "FUTURES",
+      "complete": false,
+      "pages": 2,
+      "fillCount": 1905,
+      "coverageStart": 1790129562581,
+      "coverageDays": 8.781099027777778,
+      "coverage7d": true,
+      "coverage30d": false,
+      "w7": {
+        "pnl": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "grossProfit": 0,
+        "grossLoss": 0,
+        "coinPnl": {},
+        "topCoin": null,
+        "fillCount": 0
+      },
+      "w30": {
+        "pnl": 474660.2594420006,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "grossProfit": 0,
+        "grossLoss": 0,
+        "coinPnl": {
+          "ETH": 314418.76612399984,
+          "HYPE": 40022.436288000004,
+          "BTC": 120219.05703
+        },
+        "topCoin": {
+          "coin": "ETH",
+          "pnl": 314418.76612399984
+        },
+        "fillCount": 1905
+      },
+      "updatedAt": 1790888249537
+    }
   }
 }
