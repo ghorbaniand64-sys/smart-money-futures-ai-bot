@@ -1,41 +1,6 @@
 {
   "SPOT:sy88tvipKfaCTuVVeU2PczPa88hqgPfKnYQyCHboHP8": {
-    "updatedAt": 1790873170530,
-    "data": {
-      "market": "SPOT",
-      "complete": false,
-      "pages": 12,
-      "txCount": 1197,
-      "closedTrades": 0,
-      "w7": {
-        "roi": 0,
-        "closedTrades": 0,
-        "wins": 0,
-        "losses": 0,
-        "wr": null,
-        "pf": null,
-        "maxDrawdown": 0,
-        "avgHoldHours": null,
-        "coinPnl": {},
-        "topCoin": null
-      },
-      "w30": {
-        "roi": 0,
-        "closedTrades": 0,
-        "wins": 0,
-        "losses": 0,
-        "wr": null,
-        "pf": null,
-        "maxDrawdown": 0,
-        "avgHoldHours": null,
-        "coinPnl": {},
-        "topCoin": null
-      },
-      "updatedAt": 1790873170530
-    }
-  },
-  "SPOT:RustUSBDaDcRRbT8JRmJ8GpomiXiMdgt3iYwbA59xvB": {
-    "updatedAt": 1790874025445,
+    "updatedAt": 1790875209624,
     "data": {
       "market": "SPOT",
       "complete": false,
@@ -66,7 +31,42 @@
         "coinPnl": {},
         "topCoin": null
       },
-      "updatedAt": 1790874025445
+      "updatedAt": 1790875209624
+    }
+  },
+  "SPOT:RustUSBDaDcRRbT8JRmJ8GpomiXiMdgt3iYwbA59xvB": {
+    "updatedAt": 1790875225836,
+    "data": {
+      "market": "SPOT",
+      "complete": false,
+      "pages": 12,
+      "txCount": 1200,
+      "closedTrades": 0,
+      "w7": {
+        "roi": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "avgHoldHours": null,
+        "coinPnl": {},
+        "topCoin": null
+      },
+      "w30": {
+        "roi": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "avgHoldHours": null,
+        "coinPnl": {},
+        "topCoin": null
+      },
+      "updatedAt": 1790875225836
     }
   },
   "SPOT:MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa": {
