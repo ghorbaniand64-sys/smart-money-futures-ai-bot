@@ -80,10 +80,19 @@ const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_H
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 8);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
 const DISCOVERY_SCHEMA = 'V6.0-SPOT-PERFORMANCE-QUALITY-FIX';
+
+// V6.0 discovery policy: never substitute a stale/non-ready Futures whale.
+// Spot fallback is allowed only when minimum evidence + fresh BUY quality gates pass.
+const DISCOVERY_SIGNAL_READY_ONLY = String(process.env.WHALE_DISCOVERY_SIGNAL_READY_ONLY || 'true').toLowerCase() !== 'false';
 const DISCOVERY_ALLOW_ACTIVE_FALLBACK = String(process.env.WHALE_DISCOVERY_ALLOW_ACTIVE_FALLBACK || 'true').toLowerCase() !== 'false';
-const DISCOVERY_ACTIVE_MIN_RECENT_BUYS = Number(process.env.WHALE_DISCOVERY_ACTIVE_MIN_RECENT_BUYS || 2);
-const DISCOVERY_ACTIVE_MIN_RECENT_BUY_USD = Number(process.env.WHALE_DISCOVERY_ACTIVE_MIN_RECENT_BUY_USD || 100);
-const DISCOVERY_ACTIVE_MIN_TOTAL_TRADES = Number(process.env.WHALE_DISCOVERY_ACTIVE_MIN_TOTAL_TRADES || 10);
+const DISCOVERY_SPOT_MIN_EVIDENCE_TRADES = Number(process.env.WHALE_DISCOVERY_SPOT_MIN_EVIDENCE_TRADES || process.env.WHALE_DISCOVERY_ACTIVE_MIN_TOTAL_TRADES || 10);
+const DISCOVERY_SPOT_MIN_RECENT_BUYS = Number(process.env.WHALE_DISCOVERY_SPOT_MIN_RECENT_BUYS || process.env.WHALE_DISCOVERY_ACTIVE_MIN_RECENT_BUYS || 2);
+const DISCOVERY_SPOT_MIN_RECENT_BUY_USD = Number(process.env.WHALE_DISCOVERY_SPOT_MIN_RECENT_BUY_USD || process.env.WHALE_DISCOVERY_ACTIVE_MIN_RECENT_BUY_USD || 100);
+
+// Backward-compatible aliases for existing environments.
+const DISCOVERY_ACTIVE_MIN_RECENT_BUYS = DISCOVERY_SPOT_MIN_RECENT_BUYS;
+const DISCOVERY_ACTIVE_MIN_RECENT_BUY_USD = DISCOVERY_SPOT_MIN_RECENT_BUY_USD;
+const DISCOVERY_ACTIVE_MIN_TOTAL_TRADES = DISCOVERY_SPOT_MIN_EVIDENCE_TRADES;
 const SPOT_PERFORMANCE_MAX_PAGES = Number(process.env.SIGNAL_SPOT_PERFORMANCE_MAX_PAGES || 12);
 const SPOT_PERFORMANCE_PAGE_DELAY_MS = Number(process.env.SIGNAL_SPOT_PERFORMANCE_PAGE_DELAY_MS || 250);
 const DISCOVERY_FALLBACK_MIN_RECENT_ADDS = Number(process.env.WHALE_DISCOVERY_FALLBACK_MIN_RECENT_ADDS || 1);
@@ -327,10 +336,22 @@ async function discoverFutures(){
     await sleep(DISCOVERY_FUTURES_DEEP_DELAY_MS);
   }
   scored.sort((a,b)=>b.discovery.score-a.discovery.score);
-  const freshPool=scored.filter(x=>n(x.discovery.recentAdds)>0 && n(x.discovery.recentAddNotional)>=FUTURES_MIN_MEANINGFUL_ADD_NOTIONAL_USD);
-  const selected=(freshPool.length>=TARGET_FUTURES_WALLETS?freshPool:scored).slice(0,TARGET_FUTURES_WALLETS);
-  if(freshPool.length<TARGET_FUTURES_WALLETS) console.log(`[DISCOVERY][FUTURES][SIGNAL-READY-POOL] fresh=${freshPool.length}/${TARGET_FUTURES_WALLETS} — using best available active candidates`);
-  console.log(`[DISCOVERY][FUTURES][SELECTION] selected=${selected.length} qualified=${selected.filter(x=>x.discovery.quality==='QUALIFIED').length} fallback=${selected.filter(x=>x.discovery.quality==='ACTIVE_FALLBACK').length}`);
+  const freshPool=scored.filter(x=>
+    n(x.discovery.recentAdds)>0 &&
+    n(x.discovery.recentAddNotional)>=FUTURES_MIN_MEANINGFUL_ADD_NOTIONAL_USD
+  );
+
+  let selected;
+  if(DISCOVERY_SIGNAL_READY_ONLY){
+    // STRICT: stale/non-ready whales are never substituted to fill the target.
+    selected=freshPool.slice(0,TARGET_FUTURES_WALLETS);
+    console.log(`[DISCOVERY][FUTURES][SIGNAL-READY-POOL] ready=${freshPool.length}/${TARGET_FUTURES_WALLETS} | strict=true | stale-substitution=DISABLED`);
+  }else{
+    selected=[...freshPool,...scored.filter(x=>!freshPool.some(y=>y.address===x.address))]
+      .slice(0,TARGET_FUTURES_WALLETS);
+    console.log(`[DISCOVERY][FUTURES][SIGNAL-READY-POOL] ready=${freshPool.length}/${TARGET_FUTURES_WALLETS} | strict=false | active-substitution=ENABLED`);
+  }
+  console.log(`[DISCOVERY][FUTURES][SELECTION] selected=${selected.length} signalReady=${selected.filter(x=>freshPool.some(y=>y.address===x.address)).length} qualified=${selected.filter(x=>x.discovery.quality==='QUALIFIED').length} fallback=${selected.filter(x=>x.discovery.quality==='ACTIVE_FALLBACK').length}`);
   return selected;
 }
 
@@ -409,9 +430,9 @@ async function discoverSpotCandidates(){
       const qualificationReasons=spotQualificationReasons({roundTrips,inWindow:inWindow.length,holdRatio,medianHold,volumeUsd,lastTrade}); const qualifies=qualificationReasons.length===0;
       const totalTradeEvidence=buys+sells;
       const activeFallback=DISCOVERY_ALLOW_ACTIVE_FALLBACK &&
-        recentBuys>=Math.max(DISCOVERY_FALLBACK_MIN_RECENT_BUYS,DISCOVERY_ACTIVE_MIN_RECENT_BUYS) &&
-        recentBuyVolume>=Math.max(SPOT_MIN_BUY_USD,DISCOVERY_ACTIVE_MIN_RECENT_BUY_USD) &&
-        totalTradeEvidence>=DISCOVERY_ACTIVE_MIN_TOTAL_TRADES;
+        recentBuys>=Math.max(DISCOVERY_FALLBACK_MIN_RECENT_BUYS,DISCOVERY_SPOT_MIN_RECENT_BUYS) &&
+        recentBuyVolume>=Math.max(SPOT_MIN_BUY_USD,DISCOVERY_SPOT_MIN_RECENT_BUY_USD) &&
+        totalTradeEvidence>=DISCOVERY_SPOT_MIN_EVIDENCE_TRADES;
       console.log(`[DISCOVERY][SPOT][HELIUS-LIFECYCLE] SOL_${address.slice(0,4).toUpperCase()} tx=${txs.length} buys=${buys} sells=${sells} roundTrips=${roundTrips} hold1-24=${inWindow.length} ratio=${(holdRatio*100).toFixed(0)}% median=${medianHold.toFixed(2)}h volume24h=${Math.round(volumeUsd)} recent=${recentLifecycles} freshBuys=${recentBuys} freshBuyVol=${Math.round(recentBuyVolume)} programHits=${programHits} qualifies=${qualifies}${qualifies?'':' reason='+qualificationReasons.join(',')} fallback=${activeFallback}`);
       if(qualifies || activeFallback)finals.push({name:`SOL_${address.slice(0,4).toUpperCase()}`,address,discovery:{programHits,recentTxs24h:txs.filter(x=>n(x?.timestamp)*1000>=Date.now()-24*3600000).length,buys,sells,recentBuys,recentBuyVolume,roundTrips,inWindow:inWindow.length,holdRatio,medianHoldHours:medianHold,avgHoldHours:hs.length?hs.reduce((a,b)=>a+b,0)/hs.length:0,lastTrade,volumeUsd,recentLifecycles,quality:qualifies?'QUALIFIED':'ACTIVE_FALLBACK',qualificationReasons,score:(qualifies?100000:0)+(buys*8)+(recentLifecycles*12)+(holdRatio*25)+Math.min(25,Math.log10(Math.max(1,volumeUsd)))*2+programHits*4+(recentBuys*120)+(recentBuyVolume>=SPOT_MIN_BUY_USD?80:0)}});
     }catch(e){console.log(`[DISCOVERY][SPOT][HELIUS-FINAL] ${short(address)} ERROR ${String(e?.message||e).slice(0,120)}`)}
