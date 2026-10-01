@@ -1,255 +1,178 @@
-name: Crypto Whale Signal Engine
+name: CRYPTO WHALE SIGNAL ENGINE
 
 on:
-  workflow_dispatch:
   schedule:
     - cron: "*/5 * * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: crypto-whale-signal-engine
+  group: crypto-whale-signal-engine-production
   cancel-in-progress: false
 
 jobs:
-  signal-engine:
+  whale-signal-engine:
+    name: Crypto Whale Signal Engine V6.1
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production
 
     env:
-      # ========================================
+      NODE_ENV: production
+
+      # ============================================================
       # PRODUCTION SECRETS
-      # ========================================
+      # ============================================================
       HYPERLIQUID_API_URL: ${{ secrets.HYPERLIQUID_API_URL }}
       SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
       TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
 
-      # ========================================
-      # RUNTIME
-      # ========================================
-      NODE_OPTIONS: "--max-old-space-size=4096"
-      SIGNAL_ENGINE_MODE: "READ_ONLY"
-      EXECUTION_ENABLED: "false"
+      # ============================================================
+      # ENGINE VERSION
+      # MUST MATCH:
+      # const VERSION = 'V6.1';
+      # ============================================================
+      EXPECTED_ENGINE_VERSION: "V6.1"
 
-      # ========================================
-      # WATCHLIST TARGETS
-      # ========================================
-      SIGNAL_SPOT_TARGET: "5"
-      SIGNAL_FUTURES_TARGET: "5"
+      # ============================================================
+      # DISCOVERY / WATCHLIST
+      # ============================================================
+      TARGET_SPOT_WALLETS: "5"
+      TARGET_FUTURES_WALLETS: "5"
+      DISCOVERY_TTL_MIN: "45"
 
-      SIGNAL_HOLD_MIN_HOURS: "1"
-      SIGNAL_HOLD_MAX_HOURS: "24"
-
-      # ========================================
-      # DISCOVERY
-      # ========================================
-      WHALE_DISCOVERY_TTL_MIN: "360"
-      WHALE_DISCOVERY_LOOKBACK_HOURS: "48"
-
-      WHALE_DISCOVERY_MIN_HOLD_HOURS: "1"
-      WHALE_DISCOVERY_MAX_HOLD_HOURS: "24"
-      WHALE_DISCOVERY_MIN_VOLUME_USD: "250000"
-      WHALE_DISCOVERY_MIN_COMPLETED: "3"
-      WHALE_DISCOVERY_MIN_IN_WINDOW: "5"
-      WHALE_DISCOVERY_MIN_HOLD_RATIO: "0.5"
-      WHALE_DISCOVERY_MIN_RECENT_LIFECYCLES: "1"
-      WHALE_DISCOVERY_MAX_CANDIDATES: "30"
-
-      # ========================================
-      # SIGNAL-READY DISCOVERY
-      # ========================================
-      WHALE_DISCOVERY_SIGNAL_READY_ONLY: "true"
-
-      WHALE_DISCOVERY_FUTURES_SIGNAL_READY_MIN_AGE_MIN: "15"
-      WHALE_DISCOVERY_FUTURES_SIGNAL_READY_MIN_ADD_USD: "100"
-
-      WHALE_DISCOVERY_SPOT_SIGNAL_READY_LOOKBACK_MIN: "15"
-      WHALE_DISCOVERY_SPOT_SIGNAL_READY_MIN_BUY_USD: "25"
-
-      # ========================================
-      # V6.0 SPOT QUALITY
-      # ========================================
+      # ============================================================
+      # SPOT QUALITY
+      # ============================================================
       WHALE_DISCOVERY_SPOT_MIN_EVIDENCE_TRADES: "10"
       WHALE_DISCOVERY_SPOT_MIN_RECENT_BUYS: "2"
       WHALE_DISCOVERY_SPOT_MIN_RECENT_BUY_USD: "100"
+      WHALE_DISCOVERY_ALLOW_ACTIVE_FALLBACK: "true"
 
-      # ========================================
-      # SPOT DISCOVERY
-      # ========================================
-      WHALE_DISCOVERY_SPOT_PROGRAM_SIGS: "8"
-      WHALE_DISCOVERY_SPOT_PROGRAM_TXS: "4"
-      WHALE_DISCOVERY_SPOT_TOP_TOKENS: "20"
-      WHALE_DISCOVERY_SPOT_TOP_HOLDERS: "8"
-      WHALE_DISCOVERY_SPOT_MAX_CANDIDATES: "8"
-      WHALE_DISCOVERY_SPOT_TOKEN_COUNT: "8"
-      WHALE_DISCOVERY_SPOT_HOLDER_COUNT: "5"
-      WHALE_DISCOVERY_SPOT_CANDIDATE_WALLETS: "16"
-      WHALE_DISCOVERY_SPOT_TX_LIMIT: "30"
-      WHALE_DISCOVERY_SPOT_FINALISTS: "12"
-
-      # ========================================
+      # ============================================================
       # FUTURES DISCOVERY
-      # ========================================
-      WHALE_DISCOVERY_FUTURES_QUICK_LOOKBACK_HOURS: "12"
-      WHALE_DISCOVERY_FUTURES_DEEP_CANDIDATES: "15"
-      WHALE_DISCOVERY_FUTURES_QUICK_MAX_PAGES: "1"
-      WHALE_DISCOVERY_FUTURES_DEEP_MAX_PAGES: "8"
-      WHALE_DISCOVERY_FUTURES_DEEP_DELAY_MS: "350"
+      #
+      # IMPORTANT:
+      # Discovery selects ACTIVE Futures wallets.
+      # It does NOT require a fresh ADD at discovery time.
+      #
+      # scanFutures() is responsible for the final:
+      # - ADD >= $100
+      # - freshness <= 15m
+      # - distance
+      # - RR
+      # ============================================================
+      WHALE_DISCOVERY_SIGNAL_READY_ONLY: "false"
+      WHALE_DISCOVERY_FUTURES_ACTIVE_SELECTION: "true"
+      WHALE_DISCOVERY_FUTURES_MIN_ACTIVE_FILLS: "5"
+      WHALE_DISCOVERY_FUTURES_MIN_ACTIVE_VOLUME_USD: "25000"
+      WHALE_DISCOVERY_FUTURES_MIN_FRESH_ADD_USD: "100"
 
-      # ========================================
-      # FILL / RPC
-      # ========================================
-      WHALE_DISCOVERY_FILL_PAGE_SIZE: "2000"
-      WHALE_DISCOVERY_FILL_MAX_PAGES: "8"
+      # ============================================================
+      # FUTURES SIGNAL RULES
+      # ============================================================
+      SIGNAL_FUTURES_MIN_ADD_USD: "100"
+      SIGNAL_FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD: "100"
+      SIGNAL_FUTURES_SIGNAL_FRESHNESS_MIN: "15"
+      SIGNAL_FUTURES_ACTIVITY_LOOKBACK_MIN: "120"
 
-      WHALE_DISCOVERY_RPC_DELAY_MS: "1800"
-      WHALE_DISCOVERY_RPC_RETRIES: "5"
-      WHALE_DISCOVERY_RPC_FAST_RETRIES: "2"
-      WHALE_DISCOVERY_RPC_FAST_DELAY_MS: "700"
-
-      DISCOVERY_FILL_PAGE_SIZE: "2000"
-      DISCOVERY_FILL_MAX_PAGES: "8"
-
-      # ========================================
-      # SIGNAL RULES
-      # ========================================
-      SIGNAL_ENTRY_WINDOW_PCT: "0.75"
-      SIGNAL_WATCH_WINDOW_PCT: "3.0"
-      SIGNAL_MIN_RR: "2.0"
-      SIGNAL_MAX_LATENCY_MIN: "5"
-
-      # ========================================
-      # SPOT SIGNAL
-      # ========================================
+      # ============================================================
+      # SPOT SIGNAL RULES
+      # ============================================================
+      SIGNAL_SPOT_MIN_BUY_USD: "25"
       SIGNAL_SPOT_ACTIVITY_LOOKBACK_MIN: "15"
       SIGNAL_SPOT_MAX_ACTIVITY_AGE_MIN: "15"
-      SIGNAL_SPOT_SIGNATURES: "80"
-      SIGNAL_SPOT_MIN_BUY_USD: "25"
+      SIGNAL_MAX_SIGNAL_LATENCY_MIN: "5"
 
       SIGNAL_SPOT_SL_PCT: "2.0"
       SIGNAL_SPOT_TP_PCT: "4.0"
 
-      SIGNAL_SPOT_DIAGNOSTIC_MAX: "5"
-      SIGNAL_MAX_SPOT_POSITIONS_PER_WALLET: "4"
-
-      # ========================================
-      # FUTURES SIGNAL
-      # ========================================
-      SIGNAL_FUTURES_ACTIVITY_LOOKBACK_MIN: "120"
-      SIGNAL_FUTURES_SIGNAL_FRESHNESS_MIN: "15"
-
-      SIGNAL_FUTURES_GREEN_LATENCY_MIN: "5"
-      SIGNAL_FUTURES_AVERAGING_GREEN_LATENCY_MIN: "10"
-
-      SIGNAL_FUTURES_MIN_MEANINGFUL_ADD_NOTIONAL_USD: "100"
-
       SIGNAL_FUTURES_SL_PCT: "1.5"
       SIGNAL_FUTURES_TP_PCT: "3.0"
 
-      SIGNAL_FUTURES_MAX_ACTIVE_LIFECYCLE_AGE_HOURS: "24"
-      SIGNAL_FUTURES_MAX_ADVERSE_AVG_PCT: "5"
-
-      SIGNAL_FUTURES_AUDIT_LOOKBACK_MIN: "1440"
-
-      SIGNAL_FUTURES_BETWEEN_WALLETS_MS: "1200"
-      SIGNAL_FUTURES_RETRY_BASE_MS: "1500"
-      SIGNAL_FUTURES_FETCH_RETRY: "5"
-
-      # ========================================
+      # ============================================================
       # PERFORMANCE
-      # ========================================
-      SIGNAL_MAX_TELEGRAM_WHALE_BLOCKS: "10"
+      # ============================================================
+      PERFORMANCE_LOOKBACK_DAYS: "30"
+      PERFORMANCE_CACHE_MIN: "15"
+      PERFORMANCE_MIN_CLOSED_TRADE_USD: "1"
 
-      SIGNAL_PERFORMANCE_LOOKBACK_DAYS: "30"
-      SIGNAL_PERFORMANCE_CACHE_MIN: "15"
-      SIGNAL_PERFORMANCE_MAX_PAGES: "8"
-      SIGNAL_PERFORMANCE_PAGE_DELAY_MS: "250"
-
-      SIGNAL_PERFORMANCE_STATE_FILE: "state/whale_performance_cache.json"
-
-      # ========================================
-      # STATE
-      # ========================================
-      SIGNAL_WATCHLIST_STATE_FILE: "state/whale_watchlist.json"
-      WHALE_DISCOVERY_STATE_FILE: "state/whale_watchlist.json"
+      # ============================================================
+      # SAFETY
+      # ============================================================
+      EXECUTION_ENABLED: "false"
+      DRY_RUN: "true"
 
     steps:
 
-      # ========================================
+      # ============================================================
       # CHECKOUT
-      # ========================================
+      # ============================================================
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
-      # ========================================
+      # ============================================================
       # NODE 22
-      # ========================================
+      # ============================================================
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: "npm"
 
-      # ========================================
-      # ENVIRONMENT AUDIT
-      # ========================================
-      - name: Environment audit
+      # ============================================================
+      # STATE DIRECTORY
+      # ============================================================
+      - name: Prepare state directory
         shell: bash
         run: |
           set -e
 
+          mkdir -p state
+
+      # ============================================================
+      # WORKER FILE CHECK
+      # ============================================================
+      - name: Verify required worker exists
+        shell: bash
+        run: |
+          set -e
+
+          WORKER="crypto_whale_signal_engine.mjs"
+
           echo "========================================"
-          echo "CRYPTO WHALE SIGNAL ENGINE V6.0"
-          echo "ENVIRONMENT AUDIT"
+          echo "WORKER FILE VERIFICATION"
           echo "========================================"
 
-          echo
-          echo "Node:"
-          node --version
-
-          echo
-          echo "npm:"
-          npm --version
-
-          echo
-          echo "Repository:"
-          pwd
-
-          echo
-          echo "Git:"
-          git rev-parse --short HEAD
-
-          echo
-          echo "Required engine:"
-          test -f crypto_whale_signal_engine.mjs
-          echo "crypto_whale_signal_engine.mjs = FOUND"
-
-          echo
-          echo "Workflow directory:"
-          if [ -d ".github/workflows" ]; then
-            echo ".github/workflows = FOUND"
+          if [ ! -f "$WORKER" ]; then
+            echo "FATAL: $WORKER not found"
             echo
-            echo "Workflow files:"
-            find .github/workflows -maxdepth 1 -type f -print || true
-          else
-            echo "WARNING: .github/workflows directory not found."
+            echo "Repository root:"
+            ls -la
+            exit 1
           fi
 
-          echo
-          echo "ENVIRONMENT AUDIT: PASS"
+          echo "Worker: $WORKER"
+          echo "Size:"
+          wc -c "$WORKER"
 
-      # ========================================
-      # V6.0 VERSION VERIFICATION
-      # ========================================
-      - name: VERIFY ENGINE VERSION
+      # ============================================================
+      # V6.1 VERSION GATE
+      # ============================================================
+      - name: Verify engine version V6.1
         shell: bash
+        env:
+          EXPECTED_ENGINE_VERSION: "V6.1"
         run: |
           set -e
+
+          WORKER="crypto_whale_signal_engine.mjs"
 
           echo "========================================"
           echo "ENGINE VERSION VERIFICATION"
@@ -257,153 +180,110 @@ jobs:
 
           echo
           echo "VERSION declarations:"
+          grep -n "const VERSION" "$WORKER" || true
 
-          grep -nE "const VERSION|DISCOVERY_SCHEMA|V6\.[0-9]" \
-            crypto_whale_signal_engine.mjs || true
+          ACTUAL_VERSION="$(node -e "
+            const fs = require('fs');
+
+            const file = process.argv[1];
+            const source = fs.readFileSync(file, 'utf8');
+
+            const match = source.match(
+              /const\\s+VERSION\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]/
+            );
+
+            if (!match) {
+              process.exit(2);
+            }
+
+            process.stdout.write(match[1]);
+          " "$WORKER")"
 
           echo
           echo "Expected:"
-          echo "V6.0"
+          echo "$EXPECTED_ENGINE_VERSION"
 
-          if ! grep -q "V6.0" crypto_whale_signal_engine.mjs; then
-            echo
+          echo
+
+          if [ "$ACTUAL_VERSION" != "$EXPECTED_ENGINE_VERSION" ]; then
             echo "========================================"
             echo "FATAL: WRONG ENGINE VERSION"
             echo "========================================"
             echo
-            echo "The repository does not contain V6.0."
-            echo "Execution stopped."
+            echo "Repository contains: $ACTUAL_VERSION"
+            echo "Workflow expects:     $EXPECTED_ENGINE_VERSION"
             echo
             exit 1
           fi
 
-          echo
-          echo "VERSION CHECK: PASS"
-
-      # ========================================
-      # V6.0 LOGIC AUDIT
-      # ========================================
-      - name: VERIFY V6.0 LOGIC
-        shell: bash
-        run: |
-          set -e
-
           echo "========================================"
-          echo "V6.0 LOGIC AUDIT"
+          echo "ENGINE VERSION VERIFIED: $ACTUAL_VERSION"
           echo "========================================"
 
-          FAIL=0
-
-          check_pattern() {
-            NAME="$1"
-            PATTERN="$2"
-
-            if grep -q "$PATTERN" crypto_whale_signal_engine.mjs; then
-              echo "PASS | $NAME"
-            else
-              echo "FAIL | $NAME"
-              FAIL=1
-            fi
-          }
-
-          check_pattern "V6.0 marker" "V6.0"
-          check_pattern "Discovery schema" "DISCOVERY_SCHEMA"
-
-          check_pattern \
-            "Signal-ready discovery" \
-            "DISCOVERY_SIGNAL_READY_ONLY"
-
-          check_pattern \
-            "Futures freshness rule" \
-            "FUTURES_SIGNAL_FRESHNESS_MIN"
-
-          check_pattern \
-            "Meaningful Futures ADD rule" \
-            "FUTURES_MIN_MEANINGFUL_ADD_NOTIONAL_USD"
-
-          check_pattern \
-            "Spot minimum BUY rule" \
-            "SPOT_MIN_BUY_USD"
-
-          check_pattern \
-            "Spot price validation" \
-            "baseToken"
-
-          check_pattern \
-            "Spot quality evidence" \
-            "MIN_EVIDENCE"
-
-          check_pattern \
-            "Spot recent BUY quality" \
-            "MIN_RECENT_BUYS"
-
-          check_pattern \
-            "Performance engine" \
-            "performance"
-
-          check_pattern \
-            "Helius" \
-            "HELIUS_API_KEY"
-
-          check_pattern \
-            "Watchlist state" \
-            "whale_watchlist.json"
-
-          if [ "$FAIL" -ne 0 ]; then
-            echo
-            echo "========================================"
-            echo "FATAL: V6.0 LOGIC AUDIT FAILED"
-            echo "========================================"
-            exit 1
-          fi
-
-          echo
-          echo "V6.0 LOGIC AUDIT: PASS"
-
-      # ========================================
-      # NODE SYNTAX CHECK
-      # ========================================
+      # ============================================================
+      # NODE SYNTAX
+      # ============================================================
       - name: Node syntax check
         shell: bash
         run: |
           set -e
 
-          echo "========================================"
-          echo "NODE SYNTAX CHECK"
-          echo "========================================"
-
           node --check crypto_whale_signal_engine.mjs
 
+          echo "========================================"
+          echo "NODE SYNTAX CHECK PASSED"
+          echo "========================================"
+
+      # ============================================================
+      # V6.1 CONTRACT VERIFICATION
+      # ============================================================
+      - name: Verify critical V6.1 contracts
+        shell: bash
+        run: |
+          set -e
+
+          WORKER="crypto_whale_signal_engine.mjs"
+
+          echo "========================================"
+          echo "V6.1 CONTRACT VERIFICATION"
+          echo "========================================"
+
+          required_patterns=(
+            "V6.1-SPOT-FIFO-PERFORMANCE-V3"
+            "V6.1-SPOT-PERFORMANCE-FUTURES-RECON-AUDITED"
+            "DISCOVERY_FUTURES_ACTIVE_SELECTION"
+            "FUTURES_MIN_ACTIVE_FILLS"
+            "FUTURES_MIN_ACTIVE_VOLUME_USD"
+            "FUTURES_MIN_SIGNAL_ADD_USD"
+            "FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD"
+            "FUTURES_SIGNAL_FRESHNESS_MIN"
+            "SPOT_MIN_SIGNAL_BUY_USD"
+          )
+
+          for pattern in "${required_patterns[@]}"; do
+            if ! grep -q "$pattern" "$WORKER"; then
+              echo "FATAL: missing V6.1 contract: $pattern"
+              exit 1
+            fi
+
+            echo "PASS | $pattern"
+          done
+
           echo
-          echo "NODE CHECK: PASS"
-
-      # ========================================
-      # PREPARE STATE
-      # ========================================
-      - name: Prepare state directory
-        shell: bash
-        run: |
-          set -e
-
-          mkdir -p state
-          touch state/.gitkeep
-
           echo "========================================"
-          echo "STATE DIRECTORY"
+          echo "V6.1 CONTRACTS VERIFIED"
           echo "========================================"
 
-          find state -maxdepth 1 -type f -print 2>/dev/null || true
-
-      # ========================================
-      # RUN V6.0
-      # ========================================
-      - name: Run Crypto Whale Signal Engine V6.0
+      # ============================================================
+      # RUNTIME CONFIGURATION
+      # ============================================================
+      - name: Print runtime configuration
         shell: bash
         run: |
           set -e
 
           echo "========================================"
-          echo "CRYPTO WHALE SIGNAL ENGINE V6.0"
+          echo "CRYPTO WHALE SIGNAL ENGINE V6.1"
           echo "========================================"
 
           echo
@@ -424,6 +304,7 @@ jobs:
 
           echo
           echo "Futures:"
+          echo "Discovery: ACTIVE WALLET SELECTION"
           echo "Fresh ADD minimum: \$100"
           echo "Freshness: <= 15m"
 
@@ -440,59 +321,52 @@ jobs:
           echo "NO POSITION CHANGES"
           echo "NO LEVERAGE CHANGES"
 
+          echo
+          echo "Engine: V6.1"
+
           echo "========================================"
 
-          node crypto_whale_signal_engine.mjs
-
-      # ========================================
-      # POST RUN AUDIT
-      # ========================================
-      - name: Post-run engine audit
-        if: always()
-        shell: bash
-        run: |
-          echo "========================================"
-          echo "POST-RUN AUDIT"
-          echo "========================================"
-
-          echo
-          echo "Engine version:"
-
-          grep -nE "const VERSION|DISCOVERY_SCHEMA" \
-            crypto_whale_signal_engine.mjs || true
-
-          echo
-          echo "Git commit:"
-
-          git rev-parse --short HEAD || true
-
-          echo
-          echo "State files:"
-
-          find state -maxdepth 1 -type f -print 2>/dev/null || true
-
-      # ========================================
-      # COMMIT STATE
-      # ========================================
-      - name: Commit updated state
-        if: success()
+      # ============================================================
+      # RUN ENGINE
+      # ============================================================
+      - name: Run Crypto Whale Signal Engine V6.1
         shell: bash
         run: |
           set -e
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          echo "========================================"
+          echo "STARTING CRYPTO WHALE SIGNAL ENGINE V6.1"
+          echo "========================================"
 
-          git add \
-            state/whale_watchlist.json \
-            state/whale_performance_cache.json \
-            state/.gitkeep \
-            2>/dev/null || true
+          node crypto_whale_signal_engine.mjs
 
-          if git diff --cached --quiet; then
+          echo "========================================"
+          echo "CRYPTO WHALE SIGNAL ENGINE V6.1 FINISHED"
+          echo "========================================"
+
+      # ============================================================
+      # PERSIST STATE
+      # ============================================================
+      - name: Persist state changes
+        if: always()
+        shell: bash
+        run: |
+          set -e
+
+          if [ -n "$(git status --porcelain)" ]; then
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+            git add state/
+
+            if ! git diff --cached --quiet; then
+              git commit -m "chore: update whale signal engine state"
+              git push
+            fi
+
+          else
+
             echo "No state changes to commit."
-            exit 0
-          fi
 
-          git commit -m "chore: update whale signal engine V6.0 state"
-          git push
+          fi
