@@ -5,12 +5,13 @@ import path from 'node:path';
 // Dynamic whale discovery: 5 Spot + 5 Futures. READ ONLY.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V5.7-DYNAMIC-WATCHLIST-PERFORMANCE';
+const VERSION = 'V5.8-SIGNAL-READY-DISCOVERY';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY || '';
 const HELIUS_ENHANCED_ENABLED = String(process.env.WHALE_HELIUS_ENHANCED_ENABLED || 'true').toLowerCase() === 'true' && Boolean(HELIUS_API_KEY);
 const HELIUS_ENHANCED_BASE = process.env.HELIUS_ENHANCED_BASE || 'https://api.helius.xyz/v0';
+const SPOT_HEALTH_BASELINE = Object.freeze({});
 const GECKO = 'https://api.geckoterminal.com/api/v2';
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
 const TG_CHAT = process.env.TELEGRAM_CHAT_ID || '';
@@ -79,10 +80,15 @@ const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TO
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 8);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
-const DISCOVERY_SCHEMA = 'V5.7-DYNAMIC-WATCHLIST-PERFORMANCE';
+const DISCOVERY_SCHEMA = 'V5.8-SIGNAL-READY-DISCOVERY';
 const DISCOVERY_ALLOW_ACTIVE_FALLBACK = String(process.env.WHALE_DISCOVERY_ALLOW_ACTIVE_FALLBACK || 'true').toLowerCase() !== 'false';
 const DISCOVERY_FALLBACK_MIN_RECENT_ADDS = Number(process.env.WHALE_DISCOVERY_FALLBACK_MIN_RECENT_ADDS || 1);
 const DISCOVERY_FALLBACK_MIN_RECENT_BUYS = Number(process.env.WHALE_DISCOVERY_FALLBACK_MIN_RECENT_BUYS || 1);
+const DISCOVERY_SIGNAL_READY_ONLY = String(process.env.WHALE_DISCOVERY_SIGNAL_READY_ONLY || 'true').toLowerCase() !== 'false';
+const DISCOVERY_FUTURES_SIGNAL_READY_MIN_AGE_MIN = Number(process.env.WHALE_DISCOVERY_FUTURES_SIGNAL_READY_MIN_AGE_MIN || 15);
+const DISCOVERY_FUTURES_SIGNAL_READY_MIN_ADD_USD = Number(process.env.WHALE_DISCOVERY_FUTURES_SIGNAL_READY_MIN_ADD_USD || 100);
+const DISCOVERY_SPOT_SIGNAL_READY_LOOKBACK_MIN = Number(process.env.WHALE_DISCOVERY_SPOT_SIGNAL_READY_LOOKBACK_MIN || 15);
+const DISCOVERY_SPOT_SIGNAL_READY_MIN_BUY_USD = Number(process.env.WHALE_DISCOVERY_SPOT_SIGNAL_READY_MIN_BUY_USD || 25);
 const DISCOVERY_FILL_PAGE_SIZE = Number(process.env.WHALE_DISCOVERY_FILL_PAGE_SIZE || 2000);
 const DISCOVERY_FILL_MAX_PAGES = Number(process.env.WHALE_DISCOVERY_FILL_MAX_PAGES || 8);
 const DISCOVERY_RPC_DELAY_MS = Number(process.env.WHALE_DISCOVERY_RPC_DELAY_MS || 1800);
@@ -322,10 +328,28 @@ async function discoverFutures(){
     await sleep(DISCOVERY_FUTURES_DEEP_DELAY_MS);
   }
   scored.sort((a,b)=>b.discovery.score-a.discovery.score);
-  const freshPool=scored.filter(x=>n(x.discovery.recentAdds)>0 && n(x.discovery.recentAddNotional)>=FUTURES_MIN_MEANINGFUL_ADD_NOTIONAL_USD);
-  const selected=(freshPool.length>=TARGET_FUTURES_WALLETS?freshPool:scored).slice(0,TARGET_FUTURES_WALLETS);
-  if(freshPool.length<TARGET_FUTURES_WALLETS) console.log(`[DISCOVERY][FUTURES][SIGNAL-READY-POOL] fresh=${freshPool.length}/${TARGET_FUTURES_WALLETS} — using best available active candidates`);
-  console.log(`[DISCOVERY][FUTURES][SELECTION] selected=${selected.length} qualified=${selected.filter(x=>x.discovery.quality==='QUALIFIED').length} fallback=${selected.filter(x=>x.discovery.quality==='ACTIVE_FALLBACK').length}`);
+  const signalReadyPool=scored.filter(x=>
+    n(x.discovery.recentAdds)>0 &&
+    n(x.discovery.recentAddNotional)>=DISCOVERY_FUTURES_SIGNAL_READY_MIN_ADD_USD
+  );
+  const qualifiedPool=scored.filter(x=>
+    x.discovery.quality==='QUALIFIED' &&
+    !signalReadyPool.some(y=>y.address===x.address)
+  );
+  const fallbackPool=scored.filter(x=>
+    x.discovery.quality==='ACTIVE_FALLBACK' &&
+    !signalReadyPool.some(y=>y.address===x.address) &&
+    !qualifiedPool.some(y=>y.address===x.address)
+  );
+  let selected=[];
+  if(DISCOVERY_SIGNAL_READY_ONLY){
+    selected=signalReadyPool.slice(0,TARGET_FUTURES_WALLETS);
+  }else{
+    selected=[...signalReadyPool,...qualifiedPool,...fallbackPool].slice(0,TARGET_FUTURES_WALLETS);
+  }
+  console.log(`[DISCOVERY][FUTURES][SIGNAL-READY-POOL] ready=${signalReadyPool.length} target=${TARGET_FUTURES_WALLETS}`);
+  if(selected.length<TARGET_FUTURES_WALLETS) console.log(`[DISCOVERY][FUTURES][WARN] signal-ready selected=${selected.length}/${TARGET_FUTURES_WALLETS}; stale/non-ready whales are not substituted`);
+  console.log(`[DISCOVERY][FUTURES][SELECTION] selected=${selected.length} signalReady=${selected.filter(x=>signalReadyPool.some(y=>y.address===x.address)).length} qualified=${selected.filter(x=>x.discovery.quality==='QUALIFIED').length} fallback=${selected.filter(x=>x.discovery.quality==='ACTIVE_FALLBACK').length}`);
   return selected;
 }
 
@@ -402,7 +426,7 @@ async function discoverSpotCandidates(){
         if(sw?.direction==='BUY' && n(sw.fundingUsd)>=SPOT_MIN_BUY_USD){recentBuys++;recentBuyVolume+=n(sw.fundingUsd);}
       }
       const qualificationReasons=spotQualificationReasons({roundTrips,inWindow:inWindow.length,holdRatio,medianHold,volumeUsd,lastTrade}); const qualifies=qualificationReasons.length===0;
-      const activeFallback=DISCOVERY_ALLOW_ACTIVE_FALLBACK && recentBuys>=DISCOVERY_FALLBACK_MIN_RECENT_BUYS && recentBuyVolume>=SPOT_MIN_BUY_USD;
+      const activeFallback=DISCOVERY_ALLOW_ACTIVE_FALLBACK && recentBuys>=DISCOVERY_FALLBACK_MIN_RECENT_BUYS && recentBuyVolume>=DISCOVERY_SPOT_SIGNAL_READY_MIN_BUY_USD;
       console.log(`[DISCOVERY][SPOT][HELIUS-LIFECYCLE] SOL_${address.slice(0,4).toUpperCase()} tx=${txs.length} buys=${buys} sells=${sells} roundTrips=${roundTrips} hold1-24=${inWindow.length} ratio=${(holdRatio*100).toFixed(0)}% median=${medianHold.toFixed(2)}h volume24h=${Math.round(volumeUsd)} recent=${recentLifecycles} freshBuys=${recentBuys} freshBuyVol=${Math.round(recentBuyVolume)} programHits=${programHits} qualifies=${qualifies}${qualifies?'':' reason='+qualificationReasons.join(',')} fallback=${activeFallback}`);
       if(qualifies || activeFallback)finals.push({name:`SOL_${address.slice(0,4).toUpperCase()}`,address,discovery:{programHits,recentTxs24h:txs.filter(x=>n(x?.timestamp)*1000>=Date.now()-24*3600000).length,buys,sells,recentBuys,recentBuyVolume,roundTrips,inWindow:inWindow.length,holdRatio,medianHoldHours:medianHold,avgHoldHours:hs.length?hs.reduce((a,b)=>a+b,0)/hs.length:0,lastTrade,volumeUsd,recentLifecycles,quality:qualifies?'QUALIFIED':'ACTIVE_FALLBACK',qualificationReasons,score:(qualifies?100000:0)+(buys*8)+(recentLifecycles*12)+(holdRatio*25)+Math.min(25,Math.log10(Math.max(1,volumeUsd)))*2+programHits*4+(recentBuys*120)+(recentBuyVolume>=SPOT_MIN_BUY_USD?80:0)}});
     }catch(e){console.log(`[DISCOVERY][SPOT][HELIUS-FINAL] ${short(address)} ERROR ${String(e?.message||e).slice(0,120)}`)}
@@ -1112,8 +1136,6 @@ async function scanFutures(w,mids,now,symbolMap){
     const addNotional=latestAddedSize*entry;
     if(pos?.side && f._derivedSide && f._derivedSide!==pos.side){console.log(`[FUTURES][DROP] ${w.name} | ${displaySymbol} | REASON=SIDE_MISMATCH fill=${f._derivedSide} current=${pos.side}`);continue;}
     const lifecycleAgeHours=pos?.entry&&Number(pos.entry)>0 ? Math.max(0,(now-n(f.time))/3600000) : ageMin/60;
-    const adverseAvg=avgDist<0;
-
     if(!(entry>0)||!(mid>0)){
       console.log(`[FUTURES][DROP] ${w.name} | ${displaySymbol} | ${side} | Add ${priceFmt(entry)} | Now ${priceFmt(mid)} | Age ${ageMin.toFixed(1)}m | REASON=PRICE_UNAVAILABLE`);
       continue;
@@ -1123,6 +1145,7 @@ async function scanFutures(w,mids,now,symbolMap){
     // shown separately so a trader averaging down/up is visible to the user.
     const dist=(mid/entry-1)*100*(side==='LONG'?1:-1);
     const avgDist=(mid/avgEntry-1)*100*(currentSide==='LONG'?1:-1);
+    const adverseAvg=avgDist<0;
     const sl=side==='LONG'?entry*(1-HL_SL_PCT/100):entry*(1+HL_SL_PCT/100);
     const tp=side==='LONG'?entry*(1+HL_TP_PCT/100):entry*(1-HL_TP_PCT/100);
     const R=normalizedRR(Math.abs(entry-sl),Math.abs(tp-entry));
@@ -1214,7 +1237,10 @@ function yellowReason(x){
   const averagingGreen=Boolean(x.averaging)&&Number.isFinite(latency)&&latency<=FUTURES_AVERAGING_GREEN_LATENCY_MIN;
   if(Number.isFinite(latency)&&latency>FUTURES_GREEN_LATENCY_MIN&&!averagingGreen)reasons.push(`LATENCY>${FUTURES_GREEN_LATENCY_MIN}m`);
   if(Number.isFinite(latency)&&latency>FUTURES_SIGNAL_FRESHNESS_MIN)reasons.push(`STALE>${FUTURES_SIGNAL_FRESHNESS_MIN}m`);
-  if(x.averaging)reasons.push(`FRESH_AVERAGING | OBSERVED_ADDs=${x.addCount}`);
+  if(x.averaging){
+    const freshAvg=Number.isFinite(latency)&&latency<=FUTURES_AVERAGING_GREEN_LATENCY_MIN;
+    reasons.push(`${freshAvg?'FRESH_AVERAGING':'AVERAGING'} | OBSERVED_ADDs=${x.addCount}`);
+  }
   return reasons.length?reasons.join(' + '):'NEAR_ENTRY';
 }
 function compactSignalLine(x,i){
