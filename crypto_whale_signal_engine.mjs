@@ -576,6 +576,23 @@ function enhancedSwap(tx,wallet,solUsd){
     tokenOuts=tokenOuts.filter(x=>!x.user||x.user===walletLc);
   }
 
+  // Helius payload variants can omit the quote/funding leg from events.swap.
+  // Supplement missing funding legs from transaction-level tokenTransfers.
+  const hasFundingIn=tokenIns.some(x=>FUNDING_MINTS.has(x.mint));
+  const hasFundingOut=tokenOuts.some(x=>FUNDING_MINTS.has(x.mint));
+  if(!hasFundingIn){
+    const extraIn=tokenTransfers
+      .filter(x=>String(x?.fromUserAccount||'').toLowerCase()===walletLc)
+      .map(x=>normalizeToken(x,'from')).filter(x=>x.mint&&x.amount>0&&FUNDING_MINTS.has(x.mint));
+    tokenIns.push(...extraIn);
+  }
+  if(!hasFundingOut){
+    const extraOut=tokenTransfers
+      .filter(x=>String(x?.toUserAccount||'').toLowerCase()===walletLc)
+      .map(x=>normalizeToken(x,'to')).filter(x=>x.mint&&x.amount>0&&FUNDING_MINTS.has(x.mint));
+    tokenOuts.push(...extraOut);
+  }
+
   const nativeFrom=nativeTransfers
     .filter(x=>String(x?.fromUserAccount||'').toLowerCase()===walletLc)
     .reduce((sum,x)=>sum+Math.max(0,n(x?.amount)/1e9),0);
@@ -609,8 +626,8 @@ function enhancedSwap(tx,wallet,solUsd){
 
   const nativeInUsd=nativeInput*solUsd;
   const nativeOutUsd=nativeOutput*solUsd;
-  const buyFunding=Math.max(0,...fundingOut.map(x=>x.usd),nativeInUsd);
-  const sellFunding=Math.max(0,...fundingIn.map(x=>x.usd),nativeOutUsd);
+  const buyFunding=Math.max(0,...fundingIn.map(x=>x.usd),nativeInUsd);
+  const sellFunding=Math.max(0,...fundingOut.map(x=>x.usd),nativeOutUsd);
 
   // BUY = quote/funding asset leaves the wallet and a non-funding token enters it.
   if(tokenReceived.length&&buyFunding>0){
