@@ -1,11 +1,11 @@
 {
   "SPOT:sy88tvipKfaCTuVVeU2PczPa88hqgPfKnYQyCHboHP8": {
-    "updatedAt": 1790870254266,
+    "updatedAt": 1790872128306,
     "data": {
       "market": "SPOT",
       "complete": false,
       "pages": 12,
-      "txCount": 1197,
+      "txCount": 1199,
       "closedTrades": 0,
       "w7": {
         "roi": 0,
@@ -31,7 +31,7 @@
         "coinPnl": {},
         "topCoin": null
       },
-      "updatedAt": 1790870254266
+      "updatedAt": 1790872128306
     }
   },
   "SPOT:RustUSBDaDcRRbT8JRmJ8GpomiXiMdgt3iYwbA59xvB": {
@@ -70,70 +70,68 @@
     }
   },
   "SPOT:MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa": {
-    "updatedAt": 1790870993845,
+    "updatedAt": 1790872141776,
     "data": {
       "market": "SPOT",
       "complete": false,
       "pages": 12,
-      "txCount": 1196,
-      "closedTrades": 195,
+      "txCount": 1198,
+      "closedTrades": 269,
       "w7": {
-        "roi": 400585323.44655704,
-        "closedTrades": 195,
-        "wins": 79,
-        "losses": 116,
-        "wr": 40.51282051282051,
-        "pf": 18858483.1421335,
-        "maxDrawdown": 15.971042747141567,
-        "avgHoldHours": 0.057485754985755005,
+        "roi": 3774947.804211245,
+        "closedTrades": 269,
+        "wins": 150,
+        "losses": 119,
+        "wr": 55.762081784386616,
+        "pf": 258179.28342139427,
+        "maxDrawdown": 7.923268052120581,
+        "avgHoldHours": 0.030333539859562168,
         "coinPnl": {
-          "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn": 51196332.615248546,
-          "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij": 349388992.55357426,
-          "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN": -1.4906656004883834,
-          "98sMhvDwXj1RQi5c5Mndm3vPe9cBqPrbLaufMXFNMh5g": -1.2425464476286008,
-          "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263": -0.02863284546630318,
-          "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm": -0.25809312508632276,
-          "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh": -0.5450284242781822,
-          "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs": -0.11524948274203028,
-          "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr": 0.10346812270237704,
-          "KMNo3nJsBXfcpJTVhZcXLW7RmTwTt4GVFE7suUBo9sS": 0.5902964466235727,
-          "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R": -0.10189255728012547,
-          "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE": 1.3660781948105716
+          "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263": 13.476702343008759,
+          "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn": 5.512587435964499,
+          "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij": 3774930.996148143,
+          "KMNo3nJsBXfcpJTVhZcXLW7RmTwTt4GVFE7suUBo9sS": -0.3102820909965831,
+          "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN": -0.6091950310513683,
+          "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3": -0.4084980283320272,
+          "98sMhvDwXj1RQi5c5Mndm3vPe9cBqPrbLaufMXFNMh5g": -0.16558582878117845,
+          "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh": -0.4135357073827617,
+          "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm": 0.14458226361355742,
+          "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr": 0.15144463676235453,
+          "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R": -0.5701568911108512
         },
         "topCoin": {
           "coin": "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij",
-          "pnl": 349388992.55357426
+          "pnl": 3774930.996148143
         }
       },
       "w30": {
-        "roi": 400585323.44655704,
-        "closedTrades": 195,
-        "wins": 79,
-        "losses": 116,
-        "wr": 40.51282051282051,
-        "pf": 18858483.1421335,
-        "maxDrawdown": 15.971042747141567,
-        "avgHoldHours": 0.057485754985755005,
+        "roi": 3774947.804211245,
+        "closedTrades": 269,
+        "wins": 150,
+        "losses": 119,
+        "wr": 55.762081784386616,
+        "pf": 258179.28342139427,
+        "maxDrawdown": 7.923268052120581,
+        "avgHoldHours": 0.030333539859562168,
         "coinPnl": {
-          "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn": 51196332.615248546,
-          "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij": 349388992.55357426,
-          "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN": -1.4906656004883834,
-          "98sMhvDwXj1RQi5c5Mndm3vPe9cBqPrbLaufMXFNMh5g": -1.2425464476286008,
-          "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263": -0.02863284546630318,
-          "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm": -0.25809312508632276,
-          "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh": -0.5450284242781822,
-          "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs": -0.11524948274203028,
-          "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr": 0.10346812270237704,
-          "KMNo3nJsBXfcpJTVhZcXLW7RmTwTt4GVFE7suUBo9sS": 0.5902964466235727,
-          "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R": -0.10189255728012547,
-          "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE": 1.3660781948105716
+          "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263": 13.476702343008759,
+          "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn": 5.512587435964499,
+          "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij": 3774930.996148143,
+          "KMNo3nJsBXfcpJTVhZcXLW7RmTwTt4GVFE7suUBo9sS": -0.3102820909965831,
+          "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN": -0.6091950310513683,
+          "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3": -0.4084980283320272,
+          "98sMhvDwXj1RQi5c5Mndm3vPe9cBqPrbLaufMXFNMh5g": -0.16558582878117845,
+          "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh": -0.4135357073827617,
+          "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm": 0.14458226361355742,
+          "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr": 0.15144463676235453,
+          "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R": -0.5701568911108512
         },
         "topCoin": {
           "coin": "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij",
-          "pnl": 349388992.55357426
+          "pnl": 3774930.996148143
         }
       },
-      "updatedAt": 1790870993845
+      "updatedAt": 1790872141776
     }
   }
 }
