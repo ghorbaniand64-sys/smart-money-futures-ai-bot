@@ -56,7 +56,7 @@ jobs:
       # ============================================================
       # FUTURES DISCOVERY
       #
-      # Discovery selects active Futures wallets.
+      # Discovery selects ACTIVE Futures wallets.
       # It does NOT require a fresh ADD at discovery time.
       #
       # scanFutures() makes the final signal decision:
@@ -138,7 +138,7 @@ jobs:
         run: |
           set -e
 
-          mkdir -p state
+          mkdir -p "$GITHUB_WORKSPACE/state"
 
       # ============================================================
       # WORKER FILE CHECK
@@ -148,21 +148,30 @@ jobs:
         run: |
           set -e
 
-          WORKER="crypto_whale_signal_engine.mjs"
+          WORKER="$GITHUB_WORKSPACE/crypto_whale_signal_engine.mjs"
 
           echo "========================================"
           echo "WORKER FILE VERIFICATION"
           echo "========================================"
 
+          echo "Workspace:"
+          echo "$GITHUB_WORKSPACE"
+
+          echo
+          echo "Worker:"
+          echo "$WORKER"
+
           if [ ! -f "$WORKER" ]; then
-            echo "FATAL: $WORKER not found"
             echo
-            echo "Repository root:"
-            ls -la
+            echo "FATAL: Worker file not found"
+            echo
+            echo "Workspace contents:"
+            find "$GITHUB_WORKSPACE" -maxdepth 2 -type f -print | sort
             exit 1
           fi
 
-          echo "Worker: $WORKER"
+          echo
+          echo "Worker file found."
           echo "Size:"
           wc -c "$WORKER"
 
@@ -176,36 +185,46 @@ jobs:
         run: |
           set -e
 
-          WORKER="crypto_whale_signal_engine.mjs"
+          WORKER="$GITHUB_WORKSPACE/crypto_whale_signal_engine.mjs"
 
           echo "========================================"
           echo "ENGINE VERSION VERIFICATION"
           echo "========================================"
 
           echo
+          echo "Worker:"
+          echo "$WORKER"
+
+          echo
           echo "VERSION declarations:"
           grep -n "const VERSION" "$WORKER" || true
 
-          ACTUAL_VERSION="$(node -e "
-            const fs = require('fs');
+          ACTUAL_VERSION="$(node - "$WORKER" <<'NODE'
+          const fs = require('fs');
 
-            const file = process.argv[1];
-            const source = fs.readFileSync(file, 'utf8');
+          const file = process.argv[2];
+          const source = fs.readFileSync(file, 'utf8');
 
-            const match = source.match(
-              /const\\s+VERSION\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]/
-            );
+          const match = source.match(
+            /const\s+VERSION\s*=\s*['"]([^'"]+)['"]/
+          );
 
-            if (!match) {
-              process.exit(2);
-            }
+          if (!match) {
+            console.error('VERSION declaration not found');
+            process.exit(2);
+          }
 
-            process.stdout.write(match[1]);
-          " "$WORKER")"
+          process.stdout.write(match[1]);
+          NODE
+          )"
 
           echo
           echo "Expected:"
           echo "$EXPECTED_ENGINE_VERSION"
+
+          echo
+          echo "Actual:"
+          echo "$ACTUAL_VERSION"
 
           echo
 
@@ -216,7 +235,6 @@ jobs:
             echo
             echo "Repository contains: $ACTUAL_VERSION"
             echo "Workflow expects:     $EXPECTED_ENGINE_VERSION"
-            echo
             exit 1
           fi
 
@@ -225,11 +243,184 @@ jobs:
           echo "========================================"
 
       # ============================================================
-      # NODE SYNTAX
+      # NODE SYNTAX CHECK
+      #
+      # IMPORTANT:
+      # Use absolute path to avoid runner path resolution problems.
       # ============================================================
       - name: Node syntax check
         shell: bash
         run: |
           set -e
 
-          node --check crypto_whale
+          WORKER="$GITHUB_WORKSPACE/crypto_whale_signal_engine.mjs"
+
+          echo "========================================"
+          echo "NODE SYNTAX CHECK"
+          echo "========================================"
+
+          echo "Worker:"
+          echo "$WORKER"
+
+          if [ ! -f "$WORKER" ]; then
+            echo "FATAL: Worker file not found"
+            exit 1
+          fi
+
+          node --check "$WORKER"
+
+          echo
+          echo "========================================"
+          echo "NODE SYNTAX CHECK PASSED"
+          echo "========================================"
+
+      # ============================================================
+      # V6.1 CONTRACT VERIFICATION
+      # ============================================================
+      - name: Verify critical V6.1 contracts
+        shell: bash
+        run: |
+          set -e
+
+          WORKER="$GITHUB_WORKSPACE/crypto_whale_signal_engine.mjs"
+
+          echo "========================================"
+          echo "V6.1 CONTRACT VERIFICATION"
+          echo "========================================"
+
+          required_patterns=(
+            "V6.1-SPOT-FIFO-PERFORMANCE-V3"
+            "V6.1-SPOT-PERFORMANCE-FUTURES-RECON-AUDITED"
+            "DISCOVERY_FUTURES_ACTIVE_SELECTION"
+            "FUTURES_MIN_ACTIVE_FILLS"
+            "FUTURES_MIN_ACTIVE_VOLUME_USD"
+            "FUTURES_MIN_SIGNAL_ADD_USD"
+            "FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD"
+            "FUTURES_SIGNAL_FRESHNESS_MIN"
+            "SPOT_MIN_SIGNAL_BUY_USD"
+          )
+
+          for pattern in "${required_patterns[@]}"; do
+            if ! grep -q "$pattern" "$WORKER"; then
+              echo "FATAL: missing V6.1 contract: $pattern"
+              exit 1
+            fi
+
+            echo "PASS | $pattern"
+          done
+
+          echo
+          echo "========================================"
+          echo "V6.1 CONTRACTS VERIFIED"
+          echo "========================================"
+
+      # ============================================================
+      # RUNTIME CONFIGURATION
+      # ============================================================
+      - name: Print runtime configuration
+        shell: bash
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "CRYPTO WHALE SIGNAL ENGINE V6.1"
+          echo "========================================"
+
+          echo
+          echo "Mode: READ-ONLY / SIGNAL-ONLY"
+          echo "Orders: DISABLED"
+          echo "Execution: DISABLED"
+
+          echo
+          echo "Watchlist:"
+          echo "Spot target: 5"
+          echo "Futures target: 5"
+
+          echo
+          echo "Spot quality:"
+          echo "Minimum evidence trades: 10"
+          echo "Minimum recent BUYs: 2"
+          echo "Minimum recent BUY volume: \$100"
+
+          echo
+          echo "Futures:"
+          echo "Discovery: ACTIVE WALLET SELECTION"
+          echo "Fresh ADD minimum: \$100"
+          echo "Freshness: <= 15m"
+
+          echo
+          echo "Signal rules:"
+          echo "Entry distance: <= 0.75%"
+          echo "Watch distance: <= 3%"
+          echo "Minimum RR: 2.0"
+          echo "Freshness: <= 15m"
+
+          echo
+          echo "Execution:"
+          echo "NO ORDERS"
+          echo "NO POSITION CHANGES"
+          echo "NO LEVERAGE CHANGES"
+
+          echo
+          echo "Engine: V6.1"
+
+          echo
+          echo "========================================"
+
+      # ============================================================
+      # RUN ENGINE
+      # ============================================================
+      - name: Run Crypto Whale Signal Engine V6.1
+        shell: bash
+        run: |
+          set -e
+
+          WORKER="$GITHUB_WORKSPACE/crypto_whale_signal_engine.mjs"
+
+          echo "========================================"
+          echo "STARTING CRYPTO WHALE SIGNAL ENGINE V6.1"
+          echo "========================================"
+
+          echo "Worker:"
+          echo "$WORKER"
+
+          if [ ! -f "$WORKER" ]; then
+            echo "FATAL: Worker file not found"
+            exit 1
+          fi
+
+          node "$WORKER"
+
+          echo
+          echo "========================================"
+          echo "CRYPTO WHALE SIGNAL ENGINE V6.1 FINISHED"
+          echo "========================================"
+
+      # ============================================================
+      # PERSIST STATE
+      # ============================================================
+      - name: Persist state changes
+        if: always()
+        shell: bash
+        run: |
+          set -e
+
+          cd "$GITHUB_WORKSPACE"
+
+          if [ -n "$(git status --porcelain)" ]; then
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+            git add state/
+
+            if ! git diff --cached --quiet; then
+              git commit -m "chore: update whale signal engine state"
+              git push
+            fi
+
+          else
+
+            echo "No state changes to commit."
+
+          fi
