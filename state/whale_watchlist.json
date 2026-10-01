@@ -1,6 +1,6 @@
 {
   "schema": "V6.1-SPOT-PERFORMANCE-FUTURES-RECON-AUDITED",
-  "generatedAt": 1790881152802,
+  "generatedAt": 1790882415880,
   "criteria": {
     "holdHours": [
       1,
@@ -10,94 +10,6 @@
     "minInWindow": 5,
     "minHoldRatio": 0.5
   },
-  "spotWallets": [
-    {
-      "name": "SOL_B4RR",
-      "address": "B4RRE8DrRRLAH3d6CAqmSixLdcurwnic1h83rEYmSY4s",
-      "discovery": {
-        "programHits": 2,
-        "recentTxs24h": 100,
-        "buys": 67,
-        "sells": 5,
-        "recentBuys": 67,
-        "recentBuyVolume": 37364.64930917396,
-        "roundTrips": 0,
-        "inWindow": 0,
-        "holdRatio": 0,
-        "medianHoldHours": 0,
-        "avgHoldHours": 0,
-        "lastTrade": 1790881104000,
-        "volumeUsd": 37445.07182132514,
-        "recentLifecycles": 0,
-        "quality": "ACTIVE_FALLBACK",
-        "qualificationReasons": [
-          "ROUND_TRIPS<3",
-          "HOLD_1_24H<5",
-          "HOLD_RATIO<50%",
-          "MEDIAN_HOLD_OUT_OF_RANGE",
-          "VOLUME<250000"
-        ],
-        "score": 8673.146789335839
-      }
-    },
-    {
-      "name": "SOL_H8BG",
-      "address": "H8bgvrbb1E6WWiyFtKSrWZomkuf54LPcNjVGwoH449bz",
-      "discovery": {
-        "programHits": 2,
-        "recentTxs24h": 100,
-        "buys": 30,
-        "sells": 8,
-        "recentBuys": 9,
-        "recentBuyVolume": 367.6734385901333,
-        "roundTrips": 0,
-        "inWindow": 0,
-        "holdRatio": 0,
-        "medianHoldHours": 0,
-        "avgHoldHours": 0,
-        "lastTrade": 1790881098000,
-        "volumeUsd": 1742.1013987756946,
-        "recentLifecycles": 0,
-        "quality": "ACTIVE_FALLBACK",
-        "qualificationReasons": [
-          "ROUND_TRIPS<3",
-          "HOLD_1_24H<5",
-          "HOLD_RATIO<50%",
-          "MEDIAN_HOLD_OUT_OF_RANGE",
-          "VOLUME<250000"
-        ],
-        "score": 1414.4821468589175
-      }
-    },
-    {
-      "name": "SOL_8V6Y",
-      "address": "8V6YtHmyYz3wXKGAECqoxVii7N3AxJkv1P3DunZrEsw3",
-      "discovery": {
-        "programHits": 1,
-        "recentTxs24h": 20,
-        "buys": 18,
-        "sells": 10,
-        "recentBuys": 2,
-        "recentBuyVolume": 476.702802653916,
-        "roundTrips": 0,
-        "inWindow": 0,
-        "holdRatio": 0,
-        "medianHoldHours": 0,
-        "avgHoldHours": 0,
-        "lastTrade": 1790881099000,
-        "volumeUsd": 4378.3123211287,
-        "recentLifecycles": 0,
-        "quality": "ACTIVE_FALLBACK",
-        "qualificationReasons": [
-          "ROUND_TRIPS<3",
-          "HOLD_1_24H<5",
-          "HOLD_RATIO<50%",
-          "MEDIAN_HOLD_OUT_OF_RANGE",
-          "VOLUME<250000"
-        ],
-        "score": 475.28261347632076
-      }
-    }
-  ],
+  "spotWallets": [],
   "futuresWallets": []
 }
