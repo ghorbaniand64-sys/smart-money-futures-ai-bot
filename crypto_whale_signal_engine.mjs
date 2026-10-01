@@ -1,12 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-// CRYPTO WHALE SIGNAL ENGINE V5.3
-// BUILD: V5.3-ECONOMIC-AUDIT-DECISION-TRACE
+// CRYPTO WHALE SIGNAL ENGINE V5.4
+// BUILD: V5.4-SIDE-DEDUP-SPOT-FUTURES-CLEAN-REPORT
 // READ ONLY: NO ORDERS, NO PRIVATE KEYS, NO EXECUTION ENGINE.
 // Dynamic whale discovery: 5 Spot + 5 Futures. READ ONLY.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V5.3-ECONOMIC-AUDIT-DECISION-TRACE';
+const VERSION = 'V5.4-SIDE-DEDUP-SPOT-FUTURES-CLEAN-REPORT';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY || '';
@@ -83,7 +83,7 @@ const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TO
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 16);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
-const DISCOVERY_SCHEMA = 'V5.3-ECONOMIC-AUDIT-DECISION-TRACE';
+const DISCOVERY_SCHEMA = 'V5.4-SIDE-DEDUP-SPOT-FUTURES-CLEAN-REPORT';
 const DISCOVERY_FILL_PAGE_SIZE = Number(process.env.WHALE_DISCOVERY_FILL_PAGE_SIZE || 2000);
 const DISCOVERY_FILL_MAX_PAGES = Number(process.env.WHALE_DISCOVERY_FILL_MAX_PAGES || 8);
 const DISCOVERY_RPC_DELAY_MS = Number(process.env.WHALE_DISCOVERY_RPC_DELAY_MS || 1800);
@@ -1057,6 +1057,7 @@ async function scanFutures(w,mids,now,symbolMap){
     }
     latestAdd._recentAddCount=list.length;
     latestAdd._recentAddedSize=totalAdded;
+    latestAdd._latestAddedSize=n(latestAdd._addedSize,n(latestAdd.sz));
     latestAdd._recentAvgPx=totalAdded>0?weighted/totalAdded:n(latestAdd.px);
     latestAdd._isAveraging=averaging;
     latest.push(latestAdd);
@@ -1066,7 +1067,7 @@ async function scanFutures(w,mids,now,symbolMap){
   console.log(`[FUTURES][AUDIT-SUMMARY] ${w.name} | recentFills=${fills.length} | rawOpen=${dirOpen} | derivedOpen=${derivedOpen} | reductions=${rejectedClose} | invalid=${invalid} | addEvents=${recentAdds} | averaging=${averagingKeys} | freshAdds=${latest.filter(f=>Math.max(0,(now-n(f.time))/60000)<=FUTURES_SIGNAL_FRESHNESS_MIN).length}`);
 
   const signals=[];
-  const decisionAudit={priceUnavailable:0,belowMeaningfulAdd:0,stale:0,fresh:0,tooFar:0,rrFail:0,lifecycleOld:0,avgAdverse:0,ready:0,yellow:0};
+  const decisionAudit={priceUnavailable:0,belowMeaningfulAdd:0,stale:0,fresh:0,tooFar:0,rrFail:0,lifecycleOld:0,avgAdverse:0,ready:0,yellow:0,sideMismatch:0};
   const sortedCandidates=latest.sort((a,b)=>n(b?.time)-n(a?.time));
   const freshCandidates=sortedCandidates.filter(f=>{
     const a=Math.max(0,(now-n(f.time))/60000);
@@ -1089,13 +1090,20 @@ async function scanFutures(w,mids,now,symbolMap){
     const mid=n(mids?.[coin]);
     const ageMin=Math.max(0,(now-n(f.time))/60000);
     const pos=currentPositions.get(coin);
+    if(pos?.side && f._derivedSide && f._derivedSide!==pos.side){
+      decisionAudit.sideMismatch++;
+      console.log(`[FUTURES][DROP] ${w.name} | ${displaySymbol} | fillSide=${f._derivedSide} | currentSide=${pos.side} | Age ${ageMin.toFixed(1)}m | REASON=SIDE_MISMATCH`);
+      continue;
+    }
     const currentSide=pos?.side||side;
     const avgEntry=Number.isFinite(Number(pos?.entry))&&Number(pos.entry)>0?Number(pos.entry):n(f._recentAvgPx,entry);
     const recentAvg=f._recentAvgPx;
     const addCount=n(f._recentAddCount,1);
-    const addedSize=n(f._recentAddedSize,n(f.sz));
+    const latestAddedSize=n(f._latestAddedSize,n(f._addedSize,n(f.sz)));
+    const recentAddedSize=n(f._recentAddedSize,latestAddedSize);
     const averaging=f._isAveraging===true;
-    const addNotional=addedSize*entry;
+    const freshAveraging=averaging&&ageMin<=FUTURES_AVERAGING_GREEN_LATENCY_MIN;
+    const addNotional=latestAddedSize*entry;
     const lifecycleAgeHours=pos?.entry&&Number(pos.entry)>0 ? Math.max(0,(now-n(f.time))/3600000) : ageMin/60;
 
     if(!(entry>0)||!(mid>0)){
@@ -1113,12 +1121,12 @@ async function scanFutures(w,mids,now,symbolMap){
     const tp=side==='LONG'?entry*(1+HL_TP_PCT/100):entry*(1-HL_TP_PCT/100);
     const R=normalizedRR(Math.abs(entry-sl),Math.abs(tp-entry));
     const x={wallet:w,coin,displaySymbol,side:currentSide,sourceEntry:entry,current:mid,distancePct:dist,sl,tp,rr:R,
-      size:addedSize,positionValue:pos?.positionValue??addedSize*entry,unrealized:pos?.unrealized??null,
+      size:latestAddedSize,positionValue:pos?.positionValue??latestAddedSize*entry,unrealized:pos?.unrealized??null,
       leverage:pos?.leverage??null,liq:pos?.liq??null,margin:pos?.margin??null,
-      openedAt:n(f.time),ageMin,openFillPx:entry,openFillSize:addedSize,openFillHash:f.hash||null,
+      openedAt:n(f.time),ageMin,openFillPx:entry,openFillSize:latestAddedSize,openFillHash:f.hash||null,
       activitySource:'RECENT_HYPERLIQUID_POSITION_ADD',fillDir:f.dir,
       avgEntry,avgDistancePct:avgDist,recentAvgPx:recentAvg,addCount,averaging,
-      totalRecentAddedSize:addedSize,currentPositionSize:pos?.size??null,addNotional,lifecycleAgeHours,adverseAvg,
+      totalRecentAddedSize:recentAddedSize,currentPositionSize:pos?.size??null,addNotional,recentAddNotional:recentAddedSize*entry,freshAveraging,lifecycleAgeHours,adverseAvg,
       eligible:ageMin<=FUTURES_SIGNAL_FRESHNESS_MIN&&Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR&&addNotional>=FUTURES_MIN_MEANINGFUL_ADD_NOTIONAL_USD&&(lifecycleAgeHours<=FUTURES_MAX_ACTIVE_LIFECYCLE_AGE_HOURS)&&(!adverseAvg||Math.abs(avgDist)<=FUTURES_MAX_ADVERSE_AVG_PCT)};
     if(addNotional<FUTURES_MIN_MEANINGFUL_ADD_NOTIONAL_USD)decisionAudit.belowMeaningfulAdd++;
     if(Math.abs(dist)>ENTRY_WINDOW_PCT)decisionAudit.tooFar++;
@@ -1206,27 +1214,34 @@ function yellowReason(x){
   const averagingGreen=Boolean(x.averaging)&&Number.isFinite(latency)&&latency<=FUTURES_AVERAGING_GREEN_LATENCY_MIN;
   if(Number.isFinite(latency)&&latency>FUTURES_GREEN_LATENCY_MIN&&!averagingGreen)reasons.push(`LATENCY>${FUTURES_GREEN_LATENCY_MIN}m`);
   if(Number.isFinite(latency)&&latency>FUTURES_SIGNAL_FRESHNESS_MIN)reasons.push(`STALE>${FUTURES_SIGNAL_FRESHNESS_MIN}m`);
-  if(x.averaging)reasons.push(`FRESH_AVERAGING | OBSERVED_ADDs=${x.addCount}`);
+  if(x.averaging)reasons.push(`${x.freshAveraging?'FRESH_AVERAGING':'AVERAGING'} | RECENT_ADDS=${x.addCount}`);
   return reasons.length?reasons.join(' + '):'NEAR_ENTRY';
 }
 function compactSignalLine(x,i){
   const ageMin=signalAgeMin(x);
-  const ageText=Number.isFinite(ageMin)?` | Age ${ageMin<1?Math.max(1,Math.round(ageMin*60))+'s':ageMin.toFixed(1)+'m'}`:'';
-  const size=Number.isFinite(Number(x.buyNotionalUsd))?` | Size ${money(x.buyNotionalUsd)}`:'';
-  const pos=Number.isFinite(Number(x.positionValue))?` | Pos ${money(x.positionValue)}`:'';
+  const ageText=Number.isFinite(ageMin)?(ageMin<1?`${Math.max(1,Math.round(ageMin*60))}s`:`${ageMin.toFixed(1)}m`):'—';
+  const size=Number.isFinite(Number(x.buyNotionalUsd))?` | Trade ${money(x.buyNotionalUsd)}`:'';
+  const pos=Number.isFinite(Number(x.positionValue))?` | Position ${money(x.positionValue)}`:'';
   const lev=Number.isFinite(Number(x.leverage))?` | Lev ${fmt(x.leverage,1)}x`:'';
-  const avg=Number.isFinite(Number(x.avgEntry))?` | AVG ${priceFmt(x.avgEntry)}`:'';
-  const avgTag=x.averaging?` | FRESH AVERAGING | Observed ADDs ${x.addCount}`:'';
-  const reason=classifyPosition(x)==='YELLOW'?` | ${yellowReason(x)}`:'';
-  return `${i}. ${x.wallet.name} | ${x.displaySymbol||x.coin} | ${x.side} | ADD ${priceFmt(x.sourceEntry)} | AVG ${priceFmt(x.avgEntry)} | Now ${priceFmt(x.current)} | Dist ${pct(x.distancePct,2)} | SL ${priceFmt(x.sl)} | TP ${priceFmt(x.tp)} | RR ${fmt(x.rr,3)}${ageText}${avgTag}${size}${pos}${lev}${reason}`;
+  const avgTag=x.averaging?` | ${x.freshAveraging?'FRESH AVERAGING':'AVERAGING'} · Recent ADDs ${x.addCount}`:'';
+  const reason=classifyPosition(x)==='YELLOW'?`\n   Watch reason: ${yellowReason(x)}`:'';
+  return `${i}. ${x.displaySymbol||x.coin} ${x.side} — ${x.wallet.name}\n   ADD ${priceFmt(x.sourceEntry)} | AVG ${priceFmt(x.avgEntry)} | Now ${priceFmt(x.current)}\n   SL ${priceFmt(x.sl)} | TP ${priceFmt(x.tp)} | RR ${fmt(x.rr,2)} | Dist ${pct(x.distancePct,2)} | Age ${ageText}${avgTag}${size}${pos}${lev}${reason}`;
+}
+function dedupeFuturesSignals(items){
+  const map=new Map();
+  for(const x of items){
+    const key=`${x.wallet?.name||x.wallet?.address||''}|${x.coin||''}|${x.side||''}`;
+    const prev=map.get(key);
+    if(!prev||signalAgeMin(x)<signalAgeMin(prev))map.set(key,x);
+  }
+  return [...map.values()];
 }
 function marketSignals(title,items){
   const rows=[title,'━━━━━━━━━━━━━━━━━━'];
-  if(items.length)items.forEach((x,i)=>rows.push(compactSignalLine(x,i+1)));
-  else rows.push('None');
+  if(items.length)items.forEach((x,i)=>{if(i)rows.push('');rows.push(compactSignalLine(x,i+1));});
+  else rows.push('No qualifying signals this cycle');
   return rows;
 }
-
 async function main(){
   const started=Date.now();
   await discoverWatchlist();
@@ -1253,35 +1268,44 @@ async function main(){
     const reasons=setupReason(x);
     console.log(`[SPOT][CANDIDATE] ${x.wallet?.name||'?'} | ${x.coin||'?'} | ${x.side||'LONG'} | Entry ${priceFmt(x.sourceEntry)} | Now ${priceFmt(x.current)} | Dist ${pct(x.distancePct,2)} | Age ${Number(x.ageMin||0).toFixed(1)}m | RR ${fmt(x.rr,3)} | STATUS=${st} | REASON=${st==='YELLOW'?yellowReason(x):(reasons.length?reasons.join(' + '):'READY')}`);
   }
-  const futuresCandidates=futures.flatMap(x=>x.positions||[]);
+  const futuresCandidatesRaw=futures.flatMap(x=>x.positions||[]);
+  const futuresCandidates=dedupeFuturesSignals(futuresCandidatesRaw);
+  console.log(`[FUTURES][FINAL-DEDUP] raw=${futuresCandidatesRaw.length} unique=${futuresCandidates.length} removed=${futuresCandidatesRaw.length-futuresCandidates.length}`);
   const classified=[...spotCandidates,...futuresCandidates].map(x=>({...x,status:classifyPosition(x)}));
   const spotGreen=classified.filter(x=>x.mint&&x.economicTradeConfirmed===true&&x.status==='GREEN');
   const spotYellow=classified.filter(x=>x.mint&&x.economicTradeConfirmed===true&&x.status==='YELLOW');
   const futuresGreen=classified.filter(x=>!x.mint&&x.status==='GREEN');
   const futuresYellow=classified.filter(x=>!x.mint&&x.status==='YELLOW');
 
+  const spotErrors=spot.filter(x=>x.error).length;
+  const spotScanned=spot.reduce((a,x)=>a+(Number(x.scanned)||0),0);
+  const spotEconomic=spot.reduce((a,x)=>a+(Number(x.sizeAudit?.economicRows)||0),0);
   const lines=[
-    `🟣 CRYPTO WHALE SIGNAL ENGINE ${VERSION}`,
-    '📡 READ-ONLY | SIGNAL-ONLY | NO ORDERS',
-    '━━━━━━━━━━━━━━━━━━',
-    `🕐 ${new Date().toISOString()}`,
-    `🎯 WATCHLIST: ${SPOT_WALLETS.length} Spot + ${FUTURES_WALLETS.length} Futures | Qualified hold target ${DISCOVERY_MIN_HOLD_HOURS}-${DISCOVERY_MAX_HOLD_HOURS}h`,
-    `📏 Initial GREEN ≤${ENTRY_WINDOW_PCT}% + RR≥${MIN_RR} + Age≤${FUTURES_GREEN_LATENCY_MIN}m | Averaging GREEN ≤${FUTURES_AVERAGING_GREEN_LATENCY_MIN}m | Fresh signal≤${FUTURES_SIGNAL_FRESHNESS_MIN}m | ADD=latest increase, AVG=current position average`,
+    `🐋 CRYPTO WHALE SIGNAL ENGINE ${VERSION}`,
+    'READ-ONLY • SIGNALS ONLY • NO ORDERS',
+    `🕒 ${new Date().toISOString().replace('T',' ').replace('Z',' UTC')}`,
+    `👥 Watchlist: ${SPOT_WALLETS.length} Spot / ${FUTURES_WALLETS.length} Futures`,
+    `📊 Spot: ${spotScanned} tx • ${spotEconomic} economic swaps • ${spotErrors} errors${HELIUS_ENHANCED_ENABLED?'':' • HELIUS KEY/SCAN DISABLED'}`,
+    `📐 Rules: entry ≤${ENTRY_WINDOW_PCT}% • watch ≤${WATCH_WINDOW_PCT}% • RR ≥${MIN_RR} • fresh ≤${FUTURES_SIGNAL_FRESHNESS_MIN}m`,
     '',
-    ...marketSignals('🟢 SPOT — ENTRY READY',spotGreen),
+    '🟢 SPOT — READY',
+    ...(spotGreen.length?spotGreen.map((x,i)=>compactSignalLine(x,i+1)):['No qualifying fresh Spot BUY']),
     '',
-    ...marketSignals('🟡 SPOT — NEAR / LATENCY',spotYellow),
+    '🟡 SPOT — WATCH',
+    ...(spotYellow.length?spotYellow.map((x,i)=>compactSignalLine(x,i+1)):['No Spot setups near entry']),
     '',
-    ...marketSignals('🟢 FUTURES — ENTRY READY',futuresGreen),
+    '🟢 FUTURES — READY',
+    ...(futuresGreen.length?futuresGreen.map((x,i)=>compactSignalLine(x,i+1)):['No qualifying fresh Futures ADD']),
     '',
-    ...marketSignals('🟡 FUTURES — NEAR / LATENCY',futuresYellow),
+    '🟡 FUTURES — WATCH',
+    ...(futuresYellow.length?futuresYellow.map((x,i)=>compactSignalLine(x,i+1)):['No Futures setups near entry']),
     '',
-    `⏱ ${((Date.now()-started)/1000).toFixed(1)}s | Red/too-late signals hidden`
+    `⏱ Cycle ${((Date.now()-started)/1000).toFixed(1)}s • ${classified.filter(x=>x.status==='RED').length} rejected/stale candidates hidden`
   ];
   const spotAudit=spot.map(x=>x.sizeAudit).filter(Boolean);
   const futuresAudit=futures.map(x=>x.dataAudit||null).filter(Boolean);
   for(const x of spot){ if(x?.sizeAudit) console.log(`[SPOT][WALLET-DECISION] ${x.wallet?.name||'?'} | baseline=${x.sizeAudit.baselineReady?'READY':'FALLBACK'} | medianBUY=${money(x.sizeAudit.medianTradeUsd)} | dynamicMin=${money(x.sizeAudit.dynamicMinUsd)} | economic=${x.sizeAudit.economicRows} | unresolved=${x.sizeAudit.unresolved}`); }
-  for(const x of futures){ if(x?.decisionAudit) console.log(`[FUTURES][DECISION-AUDIT] ${x.wallet?.name||'?'} | adds=${x.decisionAudit.stale+x.decisionAudit.ready+x.decisionAudit.yellow} | fresh=${x.decisionAudit.fresh} | stale=${x.decisionAudit.stale} | ready=${x.decisionAudit.ready} | yellow=${x.decisionAudit.yellow} | belowAdd=${x.decisionAudit.belowMeaningfulAdd} | tooFar=${x.decisionAudit.tooFar} | rrFail=${x.decisionAudit.rrFail} | lifecycleOld=${x.decisionAudit.lifecycleOld} | avgAdverse=${x.decisionAudit.avgAdverse} | priceMissing=${x.decisionAudit.priceUnavailable}`); }
+  for(const x of futures){ if(x?.decisionAudit) console.log(`[FUTURES][DECISION-AUDIT] ${x.wallet?.name||'?'} | adds=${x.decisionAudit.stale+x.decisionAudit.ready+x.decisionAudit.yellow} | fresh=${x.decisionAudit.fresh} | stale=${x.decisionAudit.stale} | ready=${x.decisionAudit.ready} | yellow=${x.decisionAudit.yellow} | belowAdd=${x.decisionAudit.belowMeaningfulAdd} | tooFar=${x.decisionAudit.tooFar} | rrFail=${x.decisionAudit.rrFail} | lifecycleOld=${x.decisionAudit.lifecycleOld} | avgAdverse=${x.decisionAudit.avgAdverse} | sideMismatch=${x.decisionAudit.sideMismatch} | priceMissing=${x.decisionAudit.priceUnavailable}`); }
   console.log(`[SIGNAL-ENGINE ${VERSION}][DONE] green=${spotGreen.length+futuresGreen.length} yellow=${spotYellow.length+futuresYellow.length} red-hidden=${classified.filter(x=>x.status==='RED').length} | spotAuditWallets=${spotAudit.length} futuresDataAudits=${futuresAudit.length}`);
   await telegram(lines.join('\n'));
 }
