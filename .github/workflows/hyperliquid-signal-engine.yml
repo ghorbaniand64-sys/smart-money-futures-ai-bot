@@ -60,7 +60,7 @@ jobs:
       WHALE_DISCOVERY_MAX_CANDIDATES: "30"
 
       # ========================================
-      # V5.8 / V5.9 SIGNAL-READY DISCOVERY
+      # SIGNAL-READY DISCOVERY
       # ========================================
       WHALE_DISCOVERY_SIGNAL_READY_ONLY: "true"
 
@@ -69,6 +69,13 @@ jobs:
 
       WHALE_DISCOVERY_SPOT_SIGNAL_READY_LOOKBACK_MIN: "15"
       WHALE_DISCOVERY_SPOT_SIGNAL_READY_MIN_BUY_USD: "25"
+
+      # ========================================
+      # V6.0 SPOT QUALITY
+      # ========================================
+      WHALE_DISCOVERY_SPOT_MIN_EVIDENCE_TRADES: "10"
+      WHALE_DISCOVERY_SPOT_MIN_RECENT_BUYS: "2"
+      WHALE_DISCOVERY_SPOT_MIN_RECENT_BUY_USD: "100"
 
       # ========================================
       # SPOT DISCOVERY
@@ -153,7 +160,7 @@ jobs:
       SIGNAL_FUTURES_FETCH_RETRY: "5"
 
       # ========================================
-      # TELEGRAM / PERFORMANCE
+      # PERFORMANCE
       # ========================================
       SIGNAL_MAX_TELEGRAM_WHALE_BLOCKS: "10"
 
@@ -197,7 +204,7 @@ jobs:
           set -e
 
           echo "========================================"
-          echo "CRYPTO WHALE SIGNAL ENGINE"
+          echo "CRYPTO WHALE SIGNAL ENGINE V6.0"
           echo "ENVIRONMENT AUDIT"
           echo "========================================"
 
@@ -231,15 +238,13 @@ jobs:
             find .github/workflows -maxdepth 1 -type f -print || true
           else
             echo "WARNING: .github/workflows directory not found."
-            echo "Continuing because workflow file existence is not required"
-            echo "for execution of the engine."
           fi
 
           echo
           echo "ENVIRONMENT AUDIT: PASS"
 
       # ========================================
-      # V5.9 VERSION VERIFICATION
+      # V6.0 VERSION VERIFICATION
       # ========================================
       - name: VERIFY ENGINE VERSION
         shell: bash
@@ -253,20 +258,20 @@ jobs:
           echo
           echo "VERSION declarations:"
 
-          grep -nE "const VERSION|DISCOVERY_SCHEMA|V5\.[0-9]" \
+          grep -nE "const VERSION|DISCOVERY_SCHEMA|V6\.[0-9]" \
             crypto_whale_signal_engine.mjs || true
 
           echo
           echo "Expected:"
-          echo "V5.9"
+          echo "V6.0"
 
-          if ! grep -q "V5.9" crypto_whale_signal_engine.mjs; then
+          if ! grep -q "V6.0" crypto_whale_signal_engine.mjs; then
             echo
             echo "========================================"
             echo "FATAL: WRONG ENGINE VERSION"
             echo "========================================"
             echo
-            echo "The repository does not contain V5.9."
+            echo "The repository does not contain V6.0."
             echo "Execution stopped."
             echo
             exit 1
@@ -276,15 +281,15 @@ jobs:
           echo "VERSION CHECK: PASS"
 
       # ========================================
-      # V5.9 LOGIC AUDIT
+      # V6.0 LOGIC AUDIT
       # ========================================
-      - name: VERIFY V5.9 LOGIC
+      - name: VERIFY V6.0 LOGIC
         shell: bash
         run: |
           set -e
 
           echo "========================================"
-          echo "V5.9 LOGIC AUDIT"
+          echo "V6.0 LOGIC AUDIT"
           echo "========================================"
 
           FAIL=0
@@ -301,8 +306,12 @@ jobs:
             fi
           }
 
-          check_pattern "V5.9 marker" "V5.9"
+          check_pattern "V6.0 marker" "V6.0"
           check_pattern "Discovery schema" "DISCOVERY_SCHEMA"
+
+          check_pattern \
+            "Signal-ready discovery" \
+            "DISCOVERY_SIGNAL_READY_ONLY"
 
           check_pattern \
             "Futures freshness rule" \
@@ -317,24 +326,24 @@ jobs:
             "SPOT_MIN_BUY_USD"
 
           check_pattern \
-            "Signal-ready discovery" \
-            "DISCOVERY_SIGNAL_READY_ONLY"
-
-          check_pattern \
-            "Futures signal-ready minimum ADD" \
-            "DISCOVERY_FUTURES_SIGNAL_READY_MIN_ADD_USD"
-
-          check_pattern \
-            "Spot signal-ready lookback" \
-            "DISCOVERY_SPOT_SIGNAL_READY_LOOKBACK_MIN"
-
-          check_pattern \
             "Spot price validation" \
             "baseToken"
 
           check_pattern \
-            "Performance fallback" \
-            "userFills"
+            "Spot quality evidence" \
+            "MIN_EVIDENCE"
+
+          check_pattern \
+            "Spot recent BUY quality" \
+            "MIN_RECENT_BUYS"
+
+          check_pattern \
+            "Performance engine" \
+            "performance"
+
+          check_pattern \
+            "Helius" \
+            "HELIUS_API_KEY"
 
           check_pattern \
             "Watchlist state" \
@@ -343,16 +352,16 @@ jobs:
           if [ "$FAIL" -ne 0 ]; then
             echo
             echo "========================================"
-            echo "FATAL: V5.9 LOGIC AUDIT FAILED"
+            echo "FATAL: V6.0 LOGIC AUDIT FAILED"
             echo "========================================"
             exit 1
           fi
 
           echo
-          echo "V5.9 LOGIC AUDIT: PASS"
+          echo "V6.0 LOGIC AUDIT: PASS"
 
       # ========================================
-      # NODE SYNTAX
+      # NODE SYNTAX CHECK
       # ========================================
       - name: Node syntax check
         shell: bash
@@ -369,7 +378,7 @@ jobs:
           echo "NODE CHECK: PASS"
 
       # ========================================
-      # STATE DIRECTORY
+      # PREPARE STATE
       # ========================================
       - name: Prepare state directory
         shell: bash
@@ -383,23 +392,21 @@ jobs:
           echo "STATE DIRECTORY"
           echo "========================================"
 
-          echo
-          echo "Existing state files:"
-
           find state -maxdepth 1 -type f -print 2>/dev/null || true
 
       # ========================================
-      # RUN ENGINE
+      # RUN V6.0
       # ========================================
-      - name: Run Crypto Whale Signal Engine V5.9
+      - name: Run Crypto Whale Signal Engine V6.0
         shell: bash
         run: |
           set -e
 
           echo "========================================"
-          echo "CRYPTO WHALE SIGNAL ENGINE V5.9"
+          echo "CRYPTO WHALE SIGNAL ENGINE V6.0"
           echo "========================================"
 
+          echo
           echo "Mode: READ-ONLY / SIGNAL-ONLY"
           echo "Orders: DISABLED"
           echo "Execution: DISABLED"
@@ -410,12 +417,15 @@ jobs:
           echo "Futures target: 5"
 
           echo
-          echo "Discovery:"
-          echo "Signal-ready discovery: ENABLED"
-          echo "Futures fresh ADD minimum: \$100"
-          echo "Futures freshness: <= 15m"
-          echo "Spot BUY minimum: \$25"
-          echo "Spot freshness: <= 15m"
+          echo "Spot quality:"
+          echo "Minimum evidence trades: 10"
+          echo "Minimum recent BUYs: 2"
+          echo "Minimum recent BUY volume: \$100"
+
+          echo
+          echo "Futures:"
+          echo "Fresh ADD minimum: \$100"
+          echo "Freshness: <= 15m"
 
           echo
           echo "Signal rules:"
@@ -484,5 +494,5 @@ jobs:
             exit 0
           fi
 
-          git commit -m "chore: update whale signal engine state"
+          git commit -m "chore: update whale signal engine V6.0 state"
           git push
