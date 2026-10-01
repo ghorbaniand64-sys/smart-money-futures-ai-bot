@@ -1,0 +1,72 @@
+{
+  "SPOT:sy88tvipKfaCTuVVeU2PczPa88hqgPfKnYQyCHboHP8": {
+    "updatedAt": 1790869171180,
+    "data": {
+      "market": "SPOT",
+      "complete": false,
+      "pages": 12,
+      "txCount": 1199,
+      "closedTrades": 0,
+      "w7": {
+        "roi": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "avgHoldHours": null,
+        "coinPnl": {},
+        "topCoin": null
+      },
+      "w30": {
+        "roi": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "avgHoldHours": null,
+        "coinPnl": {},
+        "topCoin": null
+      },
+      "updatedAt": 1790869171180
+    }
+  },
+  "SPOT:RustUSBDaDcRRbT8JRmJ8GpomiXiMdgt3iYwbA59xvB": {
+    "updatedAt": 1790869185566,
+    "data": {
+      "market": "SPOT",
+      "complete": false,
+      "pages": 12,
+      "txCount": 1200,
+      "closedTrades": 0,
+      "w7": {
+        "roi": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "avgHoldHours": null,
+        "coinPnl": {},
+        "topCoin": null
+      },
+      "w30": {
+        "roi": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "avgHoldHours": null,
+        "coinPnl": {},
+        "topCoin": null
+      },
+      "updatedAt": 1790869185566
+    }
+  }
+}
