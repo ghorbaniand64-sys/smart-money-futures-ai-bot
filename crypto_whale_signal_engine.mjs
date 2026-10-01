@@ -59,7 +59,27 @@ const HEALTH_MIN_TRADES = Number(process.env.SIGNAL_HEALTH_MIN_TRADES || 20);
 
 const TARGET_SPOT_WALLETS = Number(process.env.WHALE_TARGET_SPOT_WALLETS || 5);
 const TARGET_FUTURES_WALLETS = Number(process.env.WHALE_TARGET_FUTURES_WALLETS || 5);
-const DISCOVERY_TTL_MIN = Number(process.env.WHALE_DISCOVERY_TTL_MIN || 10);
+const DISCOVERY_TTL_MIN = Number(process.env.WHALE_DISCOVERY_TTL_MIN || 5);
+const DISCOVERY_REFRESH_EACH_CYCLE = String(process.env.WHALE_DISCOVERY_REFRESH_EACH_CYCLE || 'true').toLowerCase() !== 'false';
+const TRADER_MIN_WR = Number(process.env.WHALE_TRADER_MIN_WR || 55);
+const TRADER_MIN_PF = Number(process.env.WHALE_TRADER_MIN_PF || 1.25);
+const TRADER_MIN_CLOSED_TRADES = Number(process.env.WHALE_TRADER_MIN_CLOSED_TRADES || 10);
+const TRADER_MIN_PNL_USD = Number(process.env.WHALE_TRADER_MIN_PNL_USD || 0);
+const TRADER_MAX_DD_PCT = Number(process.env.WHALE_TRADER_MAX_DD_PCT || 25);
+const TRADER_MIN_ACCOUNT_VALUE_USD = Number(process.env.WHALE_TRADER_MIN_ACCOUNT_VALUE_USD || 25000);
+const SPOT_TRADER_MIN_WR = Number(process.env.WHALE_SPOT_MIN_WR || 55);
+const SPOT_TRADER_MIN_PF = Number(process.env.WHALE_SPOT_MIN_PF || 1.25);
+const SPOT_TRADER_MIN_CLOSED_TRADES = Number(process.env.WHALE_SPOT_MIN_CLOSED_TRADES || 10);
+const SPOT_TRADER_MIN_PNL_USD = Number(process.env.WHALE_SPOT_MIN_PNL_USD || 0);
+const SPOT_DISCOVERY_DEEP_CANDIDATES = Number(process.env.WHALE_SPOT_DISCOVERY_DEEP_CANDIDATES || 8);
+const SPOT_DISCOVERY_HISTORY_PAGES = Number(process.env.WHALE_SPOT_DISCOVERY_HISTORY_PAGES || 6);
+const SPOT_MIN_LIQUIDITY_USD = Number(process.env.SIGNAL_SPOT_MIN_LIQUIDITY_USD || 50000);
+const SPOT_MIN_VOLUME24H_USD = Number(process.env.SIGNAL_SPOT_MIN_VOLUME24H_USD || 100000);
+const FUTURES_MIN_24H_VOLUME_USD = Number(process.env.SIGNAL_FUTURES_MIN_24H_VOLUME_USD || 1000000);
+const FUTURES_REQUIRE_MARKET_CONFIRMATION = String(process.env.SIGNAL_FUTURES_REQUIRE_MARKET_CONFIRMATION || 'true').toLowerCase() !== 'false';
+const SIGNAL_JOURNAL_FILE = process.env.SIGNAL_JOURNAL_FILE || 'state/signal_journal.json';
+const SIGNAL_OUTCOME_MINUTES = Number(process.env.SIGNAL_OUTCOME_MINUTES || 15);
+const SIGNAL_OUTCOME_MAX_HOURS = Number(process.env.SIGNAL_OUTCOME_MAX_HOURS || 24);
 const DISCOVERY_FUTURES_ACTIVE_SELECTION = String(process.env.WHALE_DISCOVERY_FUTURES_ACTIVE_SELECTION || 'true').toLowerCase() !== 'false';
 const FUTURES_MIN_ACTIVE_FILLS = Number(process.env.WHALE_DISCOVERY_FUTURES_MIN_ACTIVE_FILLS || 5);
 const FUTURES_MIN_ACTIVE_VOLUME_USD = Number(process.env.WHALE_DISCOVERY_FUTURES_MIN_ACTIVE_VOLUME_USD || 25000);
@@ -81,9 +101,9 @@ const DISCOVERY_MIN_COMPLETED = Number(process.env.WHALE_DISCOVERY_MIN_COMPLETED
 const DISCOVERY_MIN_IN_WINDOW = Number(process.env.WHALE_DISCOVERY_MIN_IN_WINDOW || 5);
 const DISCOVERY_MIN_HOLD_RATIO = Number(process.env.WHALE_DISCOVERY_MIN_HOLD_RATIO || 0.5);
 const DISCOVERY_MIN_RECENT_LIFECYCLES = Number(process.env.WHALE_DISCOVERY_MIN_RECENT_LIFECYCLES || 1);
-const DISCOVERY_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_MAX_CANDIDATES || 30);
+const DISCOVERY_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_MAX_CANDIDATES || 60);
 const DISCOVERY_FUTURES_QUICK_LOOKBACK_HOURS = Number(process.env.WHALE_DISCOVERY_FUTURES_QUICK_LOOKBACK_HOURS || 12);
-const DISCOVERY_FUTURES_DEEP_CANDIDATES = Number(process.env.WHALE_DISCOVERY_FUTURES_DEEP_CANDIDATES || 30);
+const DISCOVERY_FUTURES_DEEP_CANDIDATES = Number(process.env.WHALE_DISCOVERY_FUTURES_DEEP_CANDIDATES || 20);
 const DISCOVERY_FUTURES_QUICK_MAX_PAGES = Number(process.env.WHALE_DISCOVERY_FUTURES_QUICK_MAX_PAGES || 1);
 const DISCOVERY_FUTURES_DEEP_MAX_PAGES = Number(process.env.WHALE_DISCOVERY_FUTURES_DEEP_MAX_PAGES || 8);
 const DISCOVERY_FUTURES_DEEP_DELAY_MS = Number(process.env.WHALE_DISCOVERY_FUTURES_DEEP_DELAY_MS || 350);
@@ -96,7 +116,6 @@ const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_H
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 8);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
 const DISCOVERY_SCHEMA = 'V6.1-SPOT-PERFORMANCE-FUTURES-RECON-AUDITED';
-const DISCOVERY_ALLOW_ACTIVE_FALLBACK = String(process.env.WHALE_DISCOVERY_ALLOW_ACTIVE_FALLBACK || 'true').toLowerCase() !== 'false';
 const DISCOVERY_SIGNAL_READY_ONLY = String(process.env.WHALE_DISCOVERY_SIGNAL_READY_ONLY || 'false').toLowerCase() === 'true';
 // Explicit quality-evidence aliases kept in the worker so the static audit and runtime use the same contract.
 const DISCOVERY_SPOT_MIN_EVIDENCE_TRADES = Number(process.env.WHALE_DISCOVERY_SPOT_MIN_EVIDENCE_TRADES || 10);
@@ -132,7 +151,7 @@ async function readDiscoveryCache(){
     const raw=await fs.readFile(DISCOVERY_STATE_FILE,'utf8');
     const x=JSON.parse(raw);
     const ageMin=(Date.now()-n(x?.generatedAt))/60000;
-    if(x?.schema===DISCOVERY_SCHEMA&&ageMin>=0&&ageMin<DISCOVERY_TTL_MIN&&Array.isArray(x?.spotWallets)&&Array.isArray(x?.futuresWallets)&&x.spotWallets.length>0&&x.futuresWallets.length>0){
+    if(x?.schema===DISCOVERY_SCHEMA&&ageMin>=0&&ageMin<DISCOVERY_TTL_MIN&&Array.isArray(x?.spotWallets)&&Array.isArray(x?.futuresWallets)){
       console.log(`[DISCOVERY][CACHE] age=${ageMin.toFixed(1)}m spot=${x.spotWallets.length} futures=${x.futuresWallets.length}`);
       return x;
     }
@@ -303,14 +322,14 @@ function holdStatsFromFills(fills){
 
 async function discoverFutures(){
   const rows=await fetchLeaderboard();
-  const candidates=rows.filter(r=>/^0x[a-fA-F0-9]{40}$/.test(String(r?.ethAddress||'')))
+  const candidates=rows
+    .filter(r=>/^0x[a-fA-F0-9]{40}$/.test(String(r?.ethAddress||'')))
     .map(r=>{const d=lbMetric(r,'pnl'),w=lbMetric(r,'vlm'); return {...r,pnl7:d.week,pnl30:d.month,volume7:w.week,volume1d:w.day};})
     .filter(r=>r.volume7>=Math.max(50000,DISCOVERY_MIN_VOLUME_USD/2))
-    .sort((a,b)=>(b.volume1d-a.volume1d)+(b.pnl7-a.pnl7)*0.01)
+    .sort((a,b)=>(b.volume1d-a.volume1d)+(b.volume7-a.volume7)*0.001+(b.pnl7-a.pnl7)*0.01)
     .slice(0,DISCOVERY_MAX_CANDIDATES);
-  console.log(`[DISCOVERY][FUTURES] prefilter=${candidates.length} quick=${DISCOVERY_FUTURES_QUICK_LOOKBACK_HOURS}h deep=${DISCOVERY_FUTURES_DEEP_CANDIDATES}`);
+  console.log(`[DISCOVERY][FUTURES][MARKET-WIDE] leaderboard=${rows.length} candidates=${candidates.length} deep=${DISCOVERY_FUTURES_DEEP_CANDIDATES}`);
 
-  // Stage 1: cheap recent-activity screen. One page only; incomplete history is expected here.
   const quick=[];
   for(const r of candidates){
     const w={name:`HL_${String(r.ethAddress).slice(2,6).toUpperCase()}`,address:r.ethAddress};
@@ -318,95 +337,58 @@ async function discoverFutures(){
       const end=Date.now(), start=end-DISCOVERY_FUTURES_QUICK_LOOKBACK_HOURS*3600000;
       const pg=await fetchFillsPaginated(w,start,end,'quick',DISCOVERY_FUTURES_QUICK_MAX_PAGES,0);
       const st=holdStatsFromFills(pg.fills);
-      const recentVolume=st.totalVolume;
-      const recentFills=pg.fills.length;
       const fresh=recentAddStatsFromFills(pg.fills,end,FUTURES_SIGNAL_FRESHNESS_MIN);
-      const signalReady=fresh.count>0&&fresh.notional>=FUTURES_DISCOVERY_MIN_FRESH_ADD_USD;
-      const activeQuality=recentFills>=FUTURES_MIN_ACTIVE_FILLS&&recentVolume>=FUTURES_MIN_ACTIVE_VOLUME_USD;
-      // Discovery must not suppress active Futures traders merely because the
-      // current 15m window has no ADD or the quick volume is below the quality
-      // threshold. Those are signal/quality decisions for scanFutures(), not
-      // discovery gates. Any real recent fill is enough to enter deep audit.
-      if(recentFills<=0)continue;
-      quick.push({...w,raw:r,quick:{recentFills,recentVolume,adds:st.additions,recentAdds:fresh.count,recentAddNotional:fresh.notional,signalReady,activeQuality}});
+      if(pg.fills.length<10)continue;
+      quick.push({...w,raw:r,quick:{recentFills:pg.fills.length,recentVolume:st.totalVolume,adds:st.additions,recentAdds:fresh.count,recentAddNotional:fresh.notional,signalReady:fresh.count>0&&fresh.notional>=FUTURES_DISCOVERY_MIN_FRESH_ADD_USD}});
     }catch(e){console.log(`[DISCOVERY][FUTURES][QUICK] ${w.name} ERROR ${String(e?.message||e).slice(0,100)}`)}
   }
-  console.log(`[DISCOVERY][FUTURES][QUICK] accepted=${quick.length} signalReady=${quick.filter(x=>x.quick.signalReady).length} activeQuality=${quick.filter(x=>x.quick.activeQuality).length} minFreshADD=$${FUTURES_DISCOVERY_MIN_FRESH_ADD_USD}`);
   quick.sort((a,b)=>(b.quick.recentAdds-a.quick.recentAdds)*100000000+(b.quick.recentAddNotional-a.quick.recentAddNotional)*10+(b.quick.recentVolume-a.quick.recentVolume));
   const deepPool=quick.slice(0,DISCOVERY_FUTURES_DEEP_CANDIDATES);
+  console.log(`[DISCOVERY][FUTURES][QUICK] accepted=${quick.length} signalReady=${quick.filter(x=>x.quick.signalReady).length}`);
   console.log(`[DISCOVERY][FUTURES][DEEP-POOL] ${deepPool.length}/${candidates.length}`);
 
-  const scored=[];
+  const verified=[];
   for(const x of deepPool){
     const w=x, r=x.raw;
     try{
       const end=Date.now(), start=end-DISCOVERY_LOOKBACK_HOURS*3600000;
       const pg=await fetchFillsPaginated(w,start,end,'deep',DISCOVERY_FUTURES_DEEP_MAX_PAGES,DISCOVERY_FUTURES_DEEP_DELAY_MS);
-      const st=holdStatsFromFills(pg.fills);
-      const fresh=recentAddStatsFromFills(pg.fills,end,FUTURES_SIGNAL_FRESHNESS_MIN);
-      // A deep audit is valid only when the pagination reached the requested window or
-      // returned fewer than a full page. If the API still has a full page at the cap,
-      // we mark it incomplete and do not rank it as fully verified.
-      const complete=!pg.truncated;
-      const qualificationReasons=[]; if(!complete)qualificationReasons.push('INCOMPLETE_HISTORY'); if(st.completed<DISCOVERY_MIN_COMPLETED)qualificationReasons.push(`ROUND_TRIPS<${DISCOVERY_MIN_COMPLETED}`); if(st.inWindow<DISCOVERY_MIN_IN_WINDOW)qualificationReasons.push(`HOLD_1_24H<${DISCOVERY_MIN_IN_WINDOW}`); if(st.holdRatio<DISCOVERY_MIN_HOLD_RATIO)qualificationReasons.push(`HOLD_RATIO<${Math.round(DISCOVERY_MIN_HOLD_RATIO*100)}%`); if(st.recentLifecycles<DISCOVERY_MIN_RECENT_LIFECYCLES)qualificationReasons.push(`RECENT_CLOSED_24H<${DISCOVERY_MIN_RECENT_LIFECYCLES}`); if(st.totalVolume<DISCOVERY_MIN_VOLUME_USD)qualificationReasons.push(`VOLUME<${DISCOVERY_MIN_VOLUME_USD}`); const qualifies=qualificationReasons.length===0;
-      const activeFallback=DISCOVERY_ALLOW_ACTIVE_FALLBACK && st.additions>=FUTURES_MIN_ACTIVE_FILLS && st.totalVolume>=FUTURES_MIN_ACTIVE_VOLUME_USD;
-      console.log(`[DISCOVERY][FUTURES][LIFECYCLE] ${w.name} fills=${pg.fills.length} pages=${pg.pages} complete=${complete} volume48h=${Math.round(st.totalVolume)} lifecycle=${st.completed} hold1-24=${st.inWindow} ratio=${(st.holdRatio*100).toFixed(0)}% median=${st.medianHoldHours.toFixed(2)}h recentClosed24h=${st.recentLifecycles} adds=${st.additions} partialReductions=${st.partialReductions} qualifies=${qualifies}${qualifies?'':' reason='+qualificationReasons.join(',')} fallback=${activeFallback}`);
-      if(qualifies || activeFallback){
-        const discovery={volume48h:st.totalVolume,completedLifecycles:st.completed,inWindow:st.inWindow,holdRatio:st.holdRatio,medianHoldHours:st.medianHoldHours,avgHoldHours:st.avgHoldHours,recentLifecycles:st.recentLifecycles,observedAdds:st.additions,pnl7:r.pnl7,pnl30:r.pnl30,leaderboardVolume7:r.volume7,accountValue:n(r.accountValue),recentAdds:fresh.count,recentAddNotional:fresh.notional,quality:qualifies?'QUALIFIED':'ACTIVE_FALLBACK',qualificationReasons};
-        discovery.score=(qualifies?100000:0)+(st.inWindow*8)+(st.recentLifecycles*10)+(st.holdRatio*25)+Math.min(30,Math.log10(Math.max(1,st.totalVolume)))*3+Math.min(20,st.additions/20)+(fresh.count*100)+(Math.min(10,fresh.notional/1000))+(r.pnl7>0?10:0);
-        scored.push({...w,discovery});
-      }
-    }catch(e){console.log(`[DISCOVERY][FUTURES][DEEP] ${w.name} ERROR ${String(e?.message||e).slice(0,120)}`)}
+      const fills=pg.fills||[];
+      const st=holdStatsFromFills(fills);
+      const fresh=recentAddStatsFromFills(fills,end,FUTURES_SIGNAL_FRESHNESS_MIN);
+      const trades=performanceTradeBook(fills);
+      const perf=performanceWindow(fills,trades,end-DISCOVERY_LOOKBACK_HOURS*3600000,end);
+      const accountValue=n(r.accountValue);
+      const reasons=[];
+      if(st.completed<DISCOVERY_MIN_COMPLETED)reasons.push(`ROUND_TRIPS<${DISCOVERY_MIN_COMPLETED}`);
+      if(st.inWindow<DISCOVERY_MIN_IN_WINDOW)reasons.push(`HOLD_1_24H<${DISCOVERY_MIN_IN_WINDOW}`);
+      if(st.holdRatio<DISCOVERY_MIN_HOLD_RATIO)reasons.push(`HOLD_RATIO<${Math.round(DISCOVERY_MIN_HOLD_RATIO*100)}%`);
+      if(st.totalVolume<DISCOVERY_MIN_VOLUME_USD)reasons.push(`VOLUME<${DISCOVERY_MIN_VOLUME_USD}`);
+      if(perf.closedTrades<TRADER_MIN_CLOSED_TRADES)reasons.push(`CLOSED_TRADES<${TRADER_MIN_CLOSED_TRADES}`);
+      if(!(n(perf.wr)>=TRADER_MIN_WR))reasons.push(`WR<${TRADER_MIN_WR}%`);
+      if(!(n(perf.pf)>=TRADER_MIN_PF))reasons.push(`PF<${TRADER_MIN_PF}`);
+      if(!(n(perf.pnl)>=TRADER_MIN_PNL_USD))reasons.push(`PNL<=${TRADER_MIN_PNL_USD}`);
+      if(Number.isFinite(accountValue)&&accountValue>0&&accountValue<TRADER_MIN_ACCOUNT_VALUE_USD)reasons.push(`ACCOUNT<$${TRADER_MIN_ACCOUNT_VALUE_USD}`);
+      if(Number.isFinite(perf.maxDrawdown)&&perf.maxDrawdown>TRADER_MAX_DD_PCT)reasons.push(`DD>${TRADER_MAX_DD_PCT}%`);
+      const quality=reasons.length===0?'VERIFIED_TOP_TRADER':'REJECTED';
+      console.log(`[DISCOVERY][FUTURES][QUALITY] ${w.name} fills=${fills.length} closed=${perf.closedTrades} WR=${perf.wr==null?'NA':perf.wr.toFixed(1)} PF=${perf.pf===Infinity?'INF':perf.pf==null?'NA':perf.pf.toFixed(2)} PNL=${perf.pnl==null?'NA':perf.pnl.toFixed(2)} DD=${perf.maxDrawdown==null?'NA':perf.maxDrawdown.toFixed(2)}% acct=${accountValue||0} freshADDs=${fresh.count} quality=${quality}${reasons.length?' reason='+reasons.join(','):''}`);
+      if(quality!=='VERIFIED_TOP_TRADER')continue;
+      const discovery={
+        volume48h:st.totalVolume, completedLifecycles:st.completed, inWindow:st.inWindow, holdRatio:st.holdRatio,
+        medianHoldHours:st.medianHoldHours, avgHoldHours:st.avgHoldHours, recentLifecycles:st.recentLifecycles,
+        observedAdds:st.additions, pnl7:r.pnl7, pnl30:r.pnl30, leaderboardVolume7:r.volume7,
+        accountValue, recentAdds:fresh.count, recentAddNotional:fresh.notional,
+        wr:perf.wr,pf:perf.pf,realizedPnl:perf.pnl,closedTrades:perf.closedTrades,maxDrawdown:perf.maxDrawdown,
+        quality,qualificationReasons:[], score:100000+n(perf.wr)*100+n(perf.pf)*500+Math.min(50,Math.max(0,perf.pnl/1000))+Math.min(25,Math.max(0,st.totalVolume/1000000))+fresh.count*50
+      };
+      verified.push({...w,discovery});
+    }catch(e){console.log(`[DISCOVERY][FUTURES][DEEP] ${w.name} ERROR ${String(e?.message||e).slice(0,140)}`)}
     await sleep(DISCOVERY_FUTURES_DEEP_DELAY_MS);
   }
-  scored.sort((a,b)=>{
-    const af=n(a.discovery.recentAdds), bf=n(b.discovery.recentAdds);
-    const an=n(a.discovery.recentAddNotional), bn=n(b.discovery.recentAddNotional);
-    return (bf-af)*1000000 + (bn-an)*10 + (n(b.discovery.score)-n(a.discovery.score));
-  });
-  // Deep qualification is a quality label, never the sole path into the
-  // Futures watchlist. If deep history is incomplete or strict lifecycle
-  // criteria reject a trader, retain the trader when the quick scan proved
-  // there is real recent Hyperliquid activity. scanFutures() remains the hard
-  // signal gate, so this cannot manufacture a signal.
-  const scoredAddresses=new Set(scored.map(x=>String(x.address).toLowerCase()));
-  const activeFallbackPool=quick.filter(x=>!scoredAddresses.has(String(x.address).toLowerCase())).map(x=>({
-    ...x,
-    discovery:{
-      volume48h:n(x.quick?.recentVolume), completedLifecycles:0, inWindow:0, holdRatio:0,
-      medianHoldHours:0, avgHoldHours:0, recentLifecycles:0, observedAdds:n(x.quick?.adds),
-      pnl7:n(x.raw?.pnl7), pnl30:n(x.raw?.pnl30), leaderboardVolume7:n(x.raw?.volume7),
-      accountValue:n(x.raw?.accountValue), recentAdds:n(x.quick?.recentAdds),
-      recentAddNotional:n(x.quick?.recentAddNotional), quality:'ACTIVE_QUICK_FALLBACK',
-      qualificationReasons:['DEEP_NOT_QUALIFIED_OR_INCOMPLETE'],
-      score:50000+(n(x.quick?.recentAdds)*100)+(Math.min(20,n(x.quick?.recentAddNotional)/1000))+(Math.min(20,n(x.quick?.recentVolume)/100000))
-    }
-  }));
-  const activePool=[...scored,...activeFallbackPool];
-  activePool.sort((a,b)=>{
-    const ar=n(a.discovery.recentAdds), br=n(b.discovery.recentAdds);
-    const an=n(a.discovery.recentAddNotional), bn=n(b.discovery.recentAddNotional);
-    return (br-ar)*1000000+(bn-an)*10+(n(b.discovery.score)-n(a.discovery.score));
-  });
-  const signalReadyPool=activePool.filter(x=>n(x.discovery.recentAdds)>0 && n(x.discovery.recentAddNotional)>=FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD);
-  // Signal-ready candidates are always ranked first. Active-selection mode may fill remaining
-  // watchlist slots with active traders, but those traders can NEVER bypass the fresh-add gate
-  // inside scanFutures(). This keeps discovery useful without manufacturing stale signals.
-  const freshPool=signalReadyPool;
-  let selected;
-  if(DISCOVERY_SIGNAL_READY_ONLY){
-    selected=freshPool.slice(0,TARGET_FUTURES_WALLETS);
-  }else if(DISCOVERY_FUTURES_ACTIVE_SELECTION){
-    // Keep active traders in the watchlist even when this exact discovery moment
-    // has no fresh ADD. The signal scanner re-checks fills every cycle and never
-    // promotes a stale ADD into a signal.
-    selected=[...freshPool,...activePool.filter(x=>!freshPool.some(y=>y.address===x.address))].slice(0,TARGET_FUTURES_WALLETS);
-  }else{
-    selected=freshPool.slice(0,TARGET_FUTURES_WALLETS);
-  }
-  console.log(`[DISCOVERY][FUTURES][SIGNAL-READY-POOL] ready=${signalReadyPool.length}/${TARGET_FUTURES_WALLETS} fresh=${freshPool.length} activePool=${activePool.length} quickFallback=${activeFallbackPool.length} signalReadyOnly=${DISCOVERY_SIGNAL_READY_ONLY} activeSelection=${DISCOVERY_FUTURES_ACTIVE_SELECTION}`);
-  console.log(`[DISCOVERY][FUTURES][SELECTION] selected=${selected.length} freshReady=${selected.filter(x=>freshPool.some(y=>y.address===x.address)).length} qualified=${selected.filter(x=>x.discovery.quality==='QUALIFIED').length} fallback=${selected.filter(x=>String(x.discovery.quality||'').includes('FALLBACK')).length}`);
-  console.log(`[DISCOVERY][FUTURES][WATCHLIST-AUDIT] scannedCandidates=${candidates.length} quickActivity=${quick.length} deepScored=${scored.length} activeFallback=${activeFallbackPool.length} selected=${selected.length}`);
+  verified.sort((a,b)=>n(b.discovery.score)-n(a.discovery.score));
+  const selected=verified.slice(0,TARGET_FUTURES_WALLETS);
+  console.log(`[DISCOVERY][FUTURES][VERIFIED-SELECTION] verified=${verified.length} selected=${selected.length}/${TARGET_FUTURES_WALLETS}`);
+  if(!selected.length)console.log('[DISCOVERY][FUTURES][NO-VERIFIED-TRADERS] No Futures wallet passed the high-WR/PF/closed-trade gate; NO FALLBACK SIGNALS WILL BE CREATED.');
   return selected;
 }
 
@@ -432,7 +414,7 @@ async function fetchSpotDiscoveryTokens(){
 
 async function discoverSpotCandidates(){
   if(!HELIUS_ENHANCED_ENABLED){
-    console.log('[DISCOVERY][SPOT][HELIUS] disabled: set production secret HELIUS_API_KEY; public-RPC program transaction fan-out is intentionally disabled');
+    console.log('[DISCOVERY][SPOT][HELIUS] disabled: HELIUS_API_KEY required');
     return [];
   }
   const programs=[
@@ -441,65 +423,75 @@ async function discoverSpotCandidates(){
     ['6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P','PUMPFUN'],
     ['whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc','ORCA']
   ];
-  const owners=await heliusProgramUniverse(programs);
-  const pool=[...owners.entries()].sort((a,b)=>b[1]-a[1]).slice(0,DISCOVERY_SPOT_MAX_CANDIDATES);
-  console.log(`[DISCOVERY][SPOT][HELIUS-UNIVERSE] wallets=${pool.length}`);
-  const finals=[];
   const solUsd=(await tokenInfo(WSOL_MINT)).price||await tokenPrice(WSOL_MINT);
-  for(const [address,programHits] of pool){
+  if(!(solUsd>0))return [];
+
+  // Build the candidate universe directly from recent decoded SWAP transactions.
+  // The old implementation counted fee-payers first and only then inspected 100 wallet
+  // transactions, which frequently produced wallets with buys=0. Here the same swap that
+  // discovers the wallet also provides BUY/SELL evidence.
+  const evidence=new Map();
+  for(const [program,label] of programs){
     try{
-      const txs=await heliusEnhancedTransactions(address,100,'',`wallet:${address.slice(0,6)}`);
-      const cutoff=Date.now()-DISCOVERY_LOOKBACK_HOURS*3600000;
-      const lots=new Map(), lifecycles=[];
-      let buys=0,sells=0,volumeUsd=0,lastTrade=0;
-      for(const tx of txs){
-        const bt=n(tx?.timestamp)*1000; if(!bt||bt<cutoff)continue;
-        const sw=enhancedSwap(tx,address,solUsd); if(!sw)continue;
-        lastTrade=Math.max(lastTrade,bt);
-        if(sw.direction==='BUY'){
-          buys++; volumeUsd+=sw.fundingUsd;
-          if(!lots.has(sw.mint))lots.set(sw.mint,[]);
-          lots.get(sw.mint).push({time:bt,qty:sw.tokenAmount});
-        }else if(sw.direction==='SELL'){
-          sells++; volumeUsd+=sw.fundingUsd;
-          let remain=sw.tokenAmount, q=lots.get(sw.mint)||[];
-          while(remain>0&&q.length){
-            const lot=q[0],take=Math.min(remain,lot.qty),h=(bt-lot.time)/3600000;
-            if(h>=0)lifecycles.push({mint:sw.mint,openTime:lot.time,closeTime:bt,holdHours:h});
-            lot.qty-=take; remain-=take; if(lot.qty<=1e-12)q.shift();
-          }
-        }
+      const rows=await heliusEnhancedTransactions(program,100,'',`program:${label}`);
+      let swaps=0;
+      for(const tx of rows){
+        if(String(tx?.type||'').toUpperCase()!=='SWAP')continue;
+        const ts=n(tx?.timestamp)*1000; if(!ts||Date.now()-ts>DISCOVERY_LOOKBACK_HOURS*3600000)continue;
+        const wallet=String(tx?.feePayer||''); if(!wallet||wallet.length<20)continue;
+        const sw=enhancedSwap(tx,wallet,solUsd,0); if(!sw)continue;
+        swaps++;
+        let e=evidence.get(wallet); if(!e){e={address:wallet,programHits:0,swaps:0,buys:0,sells:0,recentBuys:0,recentBuyVolume:0,volumeUsd:0,lastTrade:0};evidence.set(wallet,e);}
+        e.programHits++; e.swaps++; e.lastTrade=Math.max(e.lastTrade,ts); e.volumeUsd+=n(sw.fundingUsd);
+        if(sw.direction==='BUY'){e.buys++; if(Date.now()-ts<=SPOT_ACTIVITY_LOOKBACK_MIN*60000){e.recentBuys++;e.recentBuyVolume+=n(sw.fundingUsd);}}
+        else if(sw.direction==='SELL')e.sells++;
       }
-      const inWindow=lifecycles.filter(x=>x.holdHours>=DISCOVERY_MIN_HOLD_HOURS&&x.holdHours<=DISCOVERY_MAX_HOLD_HOURS);
-      const hs=inWindow.map(x=>x.holdHours).sort((a,b)=>a-b);
-      const medianHold=hs.length?hs[Math.floor(hs.length/2)]:0;
-      const roundTrips=lifecycles.length, holdRatio=roundTrips?inWindow.length/roundTrips:0;
-      const recentLifecycles=inWindow.filter(x=>Date.now()-x.closeTime<=24*3600000).length;
-      const freshCutoff=Date.now()-SPOT_ACTIVITY_LOOKBACK_MIN*60000;
-      let recentBuys=0,recentBuyVolume=0;
-      for(const tx of txs){
-        const bt=n(tx?.timestamp)*1000; if(!(bt>=freshCutoff))continue;
-        const sw=enhancedSwap(tx,address,solUsd);
-        if(sw?.direction==='BUY' && n(sw.fundingUsd)>=SPOT_MIN_BUY_USD){recentBuys++;recentBuyVolume+=n(sw.fundingUsd);}
-      }
-      const qualificationReasons=spotQualificationReasons({roundTrips,inWindow:inWindow.length,holdRatio,medianHold,volumeUsd,lastTrade}); const qualifies=qualificationReasons.length===0;
-      const totalTradeEvidence=buys+sells;
-      const spotQualityEvidence = totalTradeEvidence>=DISCOVERY_SPOT_MIN_EVIDENCE_TRADES &&
-        recentBuys>=DISCOVERY_SPOT_MIN_RECENT_BUYS &&
-        recentBuyVolume>=DISCOVERY_SPOT_MIN_RECENT_BUY_USD;
-      const activeFallback=DISCOVERY_ALLOW_ACTIVE_FALLBACK && spotQualityEvidence &&
-        recentBuys>=Math.max(DISCOVERY_FALLBACK_MIN_RECENT_BUYS,DISCOVERY_SPOT_MIN_RECENT_BUYS) &&
-        recentBuyVolume>=Math.max(SPOT_MIN_BUY_USD,DISCOVERY_SPOT_MIN_RECENT_BUY_USD) &&
-        totalTradeEvidence>=Math.max(DISCOVERY_ACTIVE_MIN_TOTAL_TRADES,DISCOVERY_SPOT_MIN_EVIDENCE_TRADES);
-      console.log(`[DISCOVERY][SPOT][HELIUS-LIFECYCLE] SOL_${address.slice(0,4).toUpperCase()} tx=${txs.length} buys=${buys} sells=${sells} roundTrips=${roundTrips} hold1-24=${inWindow.length} ratio=${(holdRatio*100).toFixed(0)}% median=${medianHold.toFixed(2)}h volume24h=${Math.round(volumeUsd)} recent=${recentLifecycles} freshBuys=${recentBuys} freshBuyVol=${Math.round(recentBuyVolume)} programHits=${programHits} qualifies=${qualifies}${qualifies?'':' reason='+qualificationReasons.join(',')} fallback=${activeFallback}`);
-      if(qualifies || activeFallback)finals.push({name:`SOL_${address.slice(0,4).toUpperCase()}`,address,discovery:{programHits,recentTxs24h:txs.filter(x=>n(x?.timestamp)*1000>=Date.now()-24*3600000).length,buys,sells,recentBuys,recentBuyVolume,roundTrips,inWindow:inWindow.length,holdRatio,medianHoldHours:medianHold,avgHoldHours:hs.length?hs.reduce((a,b)=>a+b,0)/hs.length:0,lastTrade,volumeUsd,recentLifecycles,quality:qualifies?'QUALIFIED':'ACTIVE_FALLBACK',qualificationReasons,score:(qualifies?100000:0)+(buys*8)+(recentLifecycles*12)+(holdRatio*25)+Math.min(25,Math.log10(Math.max(1,volumeUsd)))*2+programHits*4+(recentBuys*120)+(recentBuyVolume>=SPOT_MIN_BUY_USD?80:0)}});
-    }catch(e){console.log(`[DISCOVERY][SPOT][HELIUS-FINAL] ${short(address)} ERROR ${String(e?.message||e).slice(0,120)}`)}
-    await sleep(300);
-    if(finals.length>=TARGET_SPOT_WALLETS)break;
+      console.log(`[DISCOVERY][SPOT][PROGRAM] ${label} tx=${rows.length} decodedSwaps=${swaps}`);
+    }catch(e){console.log(`[DISCOVERY][SPOT][PROGRAM] ${label} ERROR ${String(e?.message||e).slice(0,140)}`)}
+    await sleep(250);
   }
-  finals.sort((a,b)=>b.discovery.score-a.discovery.score);
+
+  const pool=[...evidence.values()]
+    .filter(x=>x.buys+x.sells>=DISCOVERY_SPOT_MIN_EVIDENCE_TRADES && x.recentBuys>=DISCOVERY_SPOT_MIN_RECENT_BUYS && x.recentBuyVolume>=DISCOVERY_SPOT_MIN_RECENT_BUY_USD)
+    .sort((a,b)=>(b.recentBuyVolume-a.recentBuyVolume)+(b.volumeUsd-a.volumeUsd)*0.01)
+    .slice(0,Math.max(SPOT_DISCOVERY_DEEP_CANDIDATES,TARGET_SPOT_WALLETS));
+  console.log(`[DISCOVERY][SPOT][UNIVERSE] evidenceWallets=${evidence.size} qualityPool=${pool.length}`);
+  if(!pool.length){console.log('[DISCOVERY][SPOT][NO-QUALITY-POOL] No active wallet passed BUY evidence gate.');return []}
+
+  const finals=[];
+  for(const c of pool){
+    const w={name:`SOL_${c.address.slice(0,4).toUpperCase()}`,address:c.address};
+    try{
+      const end=Date.now(), start=end-PERFORMANCE_LOOKBACK_DAYS*86400000;
+      const pg=await fetchSpotPerformanceHistory(w,start,end);
+      const txs=pg.txs||[];
+      const trades=spotPerformanceTrades(txs,solUsd,w.address);
+      const w7=spotPerformanceWindow(trades,end-7*86400000,end);
+      const w30=spotPerformanceWindow(trades,start,end);
+      const recentBuys=c.recentBuys, recentBuyVolume=c.recentBuyVolume;
+      const reasons=[];
+      if(w7.closedTrades<SPOT_TRADER_MIN_CLOSED_TRADES)reasons.push(`7D_TRADES<${SPOT_TRADER_MIN_CLOSED_TRADES}`);
+      if(!(n(w7.wr)>=SPOT_TRADER_MIN_WR))reasons.push(`7D_WR<${SPOT_TRADER_MIN_WR}%`);
+      if(!(n(w7.pf)>=SPOT_TRADER_MIN_PF))reasons.push(`7D_PF<${SPOT_TRADER_MIN_PF}`);
+      if(!(n(w7.realizedPnl)>=SPOT_TRADER_MIN_PNL_USD))reasons.push(`7D_PNL<=${SPOT_TRADER_MIN_PNL_USD}`);
+      if(recentBuys<DISCOVERY_SPOT_MIN_RECENT_BUYS)reasons.push(`FRESH_BUYS<${DISCOVERY_SPOT_MIN_RECENT_BUYS}`);
+      if(recentBuyVolume<DISCOVERY_SPOT_MIN_RECENT_BUY_USD)reasons.push(`FRESH_BUY_USD<${DISCOVERY_SPOT_MIN_RECENT_BUY_USD}`);
+      const quality=reasons.length===0?'VERIFIED_TOP_TRADER':'REJECTED';
+      console.log(`[DISCOVERY][SPOT][QUALITY] ${w.name} tx=${txs.length} coverage=${pg.coverageDays?.toFixed?.(1)||'0'}d 7Dtrades=${w7.closedTrades} WR=${w7.wr==null?'NA':w7.wr.toFixed(1)} PF=${w7.pf===Infinity?'INF':w7.pf==null?'NA':w7.pf.toFixed(2)} PNL=${w7.realizedPnl==null?'NA':w7.realizedPnl.toFixed(2)} freshBuys=${recentBuys} freshUSD=${recentBuyVolume.toFixed(2)} quality=${quality}${reasons.length?' reason='+reasons.join(','):''}`);
+      if(quality!=='VERIFIED_TOP_TRADER')continue;
+      const discovery={
+        programHits:c.programHits, buys:c.buys,sells:c.sells,recentBuys,recentBuyVolume,volumeUsd:c.volumeUsd,lastTrade:c.lastTrade,
+        wr7:w7.wr,pf7:w7.pf,pnl7:w7.realizedPnl,trades7:w7.closedTrades,wr30:w30.wr,pf30:w30.pf,pnl30:w30.realizedPnl,trades30:w30.closedTrades,
+        coverageDays:pg.coverageDays,quality,qualificationReasons:[],score:100000+n(w7.wr)*100+n(w7.pf)*500+Math.min(50,Math.max(0,w7.realizedPnl/100))+recentBuys*100+Math.min(25,recentBuyVolume/100)
+      };
+      finals.push({...w,discovery});
+    }catch(e){console.log(`[DISCOVERY][SPOT][DEEP] ${w.name} ERROR ${String(e?.message||e).slice(0,140)}`)}
+    await sleep(300);
+  }
+  finals.sort((a,b)=>n(b.discovery.score)-n(a.discovery.score));
   const selected=finals.slice(0,TARGET_SPOT_WALLETS);
-  console.log(`[DISCOVERY][SPOT][SELECTION] selected=${selected.length} qualified=${selected.filter(x=>x.discovery.quality==='QUALIFIED').length} fallback=${selected.filter(x=>x.discovery.quality==='ACTIVE_FALLBACK').length}`);
+  console.log(`[DISCOVERY][SPOT][VERIFIED-SELECTION] verified=${finals.length} selected=${selected.length}/${TARGET_SPOT_WALLETS}`);
+  if(!selected.length)console.log('[DISCOVERY][SPOT][NO-VERIFIED-TRADERS] No Spot wallet passed the high-WR/PF/trade-count gate.');
   return selected;
 }
 
@@ -513,17 +505,22 @@ async function solTxDiscovery(sig){
 
 async function discoverWatchlist(){
   const cached=await readDiscoveryCache();
-  if(cached){SPOT_WALLETS=cached.spotWallets;FUTURES_WALLETS=cached.futuresWallets;return cached;}
-  console.log(`[DISCOVERY][START] target spot=${TARGET_SPOT_WALLETS} futures=${TARGET_FUTURES_WALLETS} hold=${DISCOVERY_MIN_HOLD_HOURS}-${DISCOVERY_MAX_HOLD_HOURS}h`);
-  const spotWallets=await discoverSpotCandidates();
-  await sleep(1500);
-  const futuresWallets=await discoverFutures();
-  const data={schema:DISCOVERY_SCHEMA,generatedAt:Date.now(),criteria:{holdHours:[DISCOVERY_MIN_HOLD_HOURS,DISCOVERY_MAX_HOLD_HOURS],minVolumeUsd:DISCOVERY_MIN_VOLUME_USD,minInWindow:DISCOVERY_MIN_IN_WINDOW,minHoldRatio:DISCOVERY_MIN_HOLD_RATIO},spotWallets,futuresWallets};
+  const cacheFresh=Boolean(cached);
+  let spotWallets=cacheFresh?cached.spotWallets:[];
+  let futuresWallets=cacheFresh?cached.futuresWallets:[];
+  if(DISCOVERY_REFRESH_EACH_CYCLE || !spotWallets.length){
+    console.log(`[DISCOVERY][SPOT][REFRESH] cache=${cacheFresh?'available':'missing'} refresh=${DISCOVERY_REFRESH_EACH_CYCLE}`);
+    spotWallets=await discoverSpotCandidates();
+  }
+  if(DISCOVERY_REFRESH_EACH_CYCLE || !futuresWallets.length){
+    await sleep(1200);
+    console.log(`[DISCOVERY][FUTURES][REFRESH] cache=${cacheFresh?'available':'missing'} refresh=${DISCOVERY_REFRESH_EACH_CYCLE}`);
+    futuresWallets=await discoverFutures();
+  }
+  const data={schema:DISCOVERY_SCHEMA,generatedAt:Date.now(),criteria:{holdHours:[DISCOVERY_MIN_HOLD_HOURS,DISCOVERY_MAX_HOLD_HOURS],minVolumeUsd:DISCOVERY_MIN_VOLUME_USD,minInWindow:DISCOVERY_MIN_IN_WINDOW,minHoldRatio:DISCOVERY_MIN_HOLD_RATIO,topTraderGate:{wr:TRADER_MIN_WR,pf:TRADER_MIN_PF,closedTrades:TRADER_MIN_CLOSED_TRADES}},spotWallets,futuresWallets};
   SPOT_WALLETS=spotWallets; FUTURES_WALLETS=futuresWallets;
   await writeDiscoveryCache(data);
-  if(SPOT_WALLETS.length<TARGET_SPOT_WALLETS) console.log(`[DISCOVERY][WARN] Spot selected=${SPOT_WALLETS.length}/${TARGET_SPOT_WALLETS}; insufficient active candidates`);
-  if(FUTURES_WALLETS.length<TARGET_FUTURES_WALLETS) console.log(`[DISCOVERY][WARN] Futures selected=${FUTURES_WALLETS.length}/${TARGET_FUTURES_WALLETS}; insufficient active candidates`);
-  console.log(`[DISCOVERY][DONE] selected spot=${SPOT_WALLETS.length} futures=${FUTURES_WALLETS.length}`);
+  console.log(`[DISCOVERY][DONE] verified spot=${SPOT_WALLETS.length}/${TARGET_SPOT_WALLETS} futures=${FUTURES_WALLETS.length}/${TARGET_FUTURES_WALLETS}`);
   return data;
 }
 
@@ -850,6 +847,7 @@ async function scanSpot(w){
       const sw=enhancedSwap(tx,w.address,solUsd); if(!sw||sw.direction!=='BUY'||n(sw.fundingUsd)<SPOT_MIN_SIGNAL_BUY_USD||seen.has(sw.mint))continue;
       const info=await tokenMarketData(sw.mint); const px=n(info.price);
       if(!(px>0)){diagnostics.push({sig:tx.signature,reason:`PRICE_UNRESOLVED:${sw.mint.slice(0,8)}`});continue;}
+      if(n(info.liquidity)<SPOT_MIN_LIQUIDITY_USD || n(info.volume24h)<SPOT_MIN_VOLUME24H_USD){diagnostics.push({sig:tx.signature,reason:`MARKET_TOO_THIN:liq=${Math.round(n(info.liquidity))}:vol24=${Math.round(n(info.volume24h))}`});continue;}
       const sourceEntry=sw.fundingUsd/sw.tokenAmount; if(!(sourceEntry>0)){diagnostics.push({sig:tx.signature,reason:'ENTRY_RECONSTRUCTION_INVALID'});continue;}
       const dist=(px/sourceEntry-1)*100;
       const sl=sourceEntry*(1-SL_PCT/100),tp=sourceEntry*(1+TP_PCT/100),R=normalizedRR(sourceEntry-sl,tp-sourceEntry);
@@ -986,7 +984,7 @@ function reconstructedPositionMapFromFills(fills){
       else if(Math.sign(post)!==Math.sign(before)){ entry=n(f.px); }
       pos=post;
     }
-    if(Math.abs(pos)>1e-12)map.set(coin,{coin,side:pos>0?'LONG':'SHORT',size:Math.abs(pos),entry,positionValue:Math.abs(pos)*entry,unrealized:null,leverage:null,liq:null,margin:null,source:'FILL_RECONSTRUCTION'});
+    if(Math.abs(pos)>1e-12)map.set(coin,{coin,side:pos>0?'LONG':'SHORT',size:Math.abs(pos),entry,positionValue:Math.abs(pos)*entry,unrealized:null,leverage:null,liq:null,margin:null,source:'FILL_RECONSTRUCTION',openedAt:rows[0]?.time||null});
   }
   return map;
 }
@@ -1197,7 +1195,8 @@ function performanceBlock(p,coin){
 }
 function whaleSignalBlock(w,signals,p,i){
   const rows=[
-    `🐋 WHALE ${i} — ${w.name}`,
+    `🐋 VERIFIED TOP TRADER ${i} — ${w.name}`,
+    `🏷 ${w?.discovery?.quality||'VERIFIED_TOP_TRADER'} | WR ${Number.isFinite(Number(w?.discovery?.wr7??w?.discovery?.wr))?Number(w.discovery.wr7??w.discovery.wr).toFixed(1)+'%':'—'} | PF ${w?.discovery?.pf7!=null?Number(w.discovery.pf7).toFixed(2):w?.discovery?.pf!=null?Number(w.discovery.pf).toFixed(2):'—'}`,
     '━━━━━━━━━━━━━━━━━━',
     ...performanceBlock(p,signals[0]?.mint||signals[0]?.coin),
     ''
@@ -1216,7 +1215,27 @@ function whaleSignalBlock(w,signals,p,i){
   return rows;
 }
 
-async function scanFutures(w,mids,now,symbolMap){
+async function fetchFuturesMarketContext(){
+  try{
+    const r=await hl({type:'metaAndAssetCtxs'},'metaAndAssetCtxs');
+    const meta=r?.[0], ctxs=Array.isArray(r?.[1])?r[1]:[];
+    const out=new Map();
+    const universe=Array.isArray(meta?.universe)?meta.universe:[];
+    universe.forEach((u,i)=>{
+      const coin=String(u?.name||'');
+      if(!coin)return;
+      const c=ctxs[i]||{};
+      out.set(coin,{funding:n(c?.funding),openInterest:n(c?.openInterest),dayNtlVlm:n(c?.dayNtlVlm),prevDayPx:n(c?.prevDayPx),premium:n(c?.premium)});
+    });
+    console.log(`[FUTURES][MARKET-CONTEXT] markets=${out.size} min24hVolume=$${FUTURES_MIN_24H_VOLUME_USD}`);
+    return out;
+  }catch(e){
+    console.log(`[FUTURES][MARKET-CONTEXT] ERROR ${String(e?.message||e).slice(0,160)}`);
+    return new Map();
+  }
+}
+
+async function scanFutures(w,mids,now,symbolMap,marketContext=new Map()){
   // IMPORTANT: current positions are never converted into entry signals.
   // A signal must originate from a recent Hyperliquid position increase.
   // Every same-side increase is an add/re-entry; this catches averaging-in,
@@ -1315,6 +1334,11 @@ async function scanFutures(w,mids,now,symbolMap){
     const mid=n(mids?.[coin]);
     const ageMin=Math.max(0,(now-n(f.time))/60000);
     const pos=currentPositions.get(coin);
+    const market=marketContext.get(coin)||{};
+    if(FUTURES_REQUIRE_MARKET_CONFIRMATION && (n(market.dayNtlVlm)<FUTURES_MIN_24H_VOLUME_USD || n(market.openInterest)<=0)){
+      console.log(`[FUTURES][DROP] ${w.name} | ${displaySymbol} | REASON=MARKET_LIQUIDITY_GATE volume24=${Math.round(n(market.dayNtlVlm))} OI=${Math.round(n(market.openInterest))}`);
+      continue;
+    }
     if(!pos){
       dropNoPos++;
       console.log(`[FUTURES][DROP] ${w.name} | ${displaySymbol} | REASON=POSITION_NO_LONGER_OPEN`);
@@ -1335,7 +1359,8 @@ async function scanFutures(w,mids,now,symbolMap){
     const latestAddNotional=latestAddedSize*entry;
     const recentWindowNotional=recentAddedSize*entry;
     const addNotional=Math.max(latestAddNotional,recentWindowNotional);
-    const lifecycleAgeHours=ageMin/60;
+    const lifecycleOpenTime=Number(pos?.openedAt)||Number(f?.time)||now;
+    const lifecycleAgeHours=Math.max(0,(now-lifecycleOpenTime)/3600000);
 
     if(!(entry>0)||!(mid>0)){
       dropPrice++;
@@ -1467,6 +1492,34 @@ function marketSignals(title,items){
   return rows;
 }
 
+async function readSignalJournal(){
+  try{return JSON.parse(await fs.readFile(SIGNAL_JOURNAL_FILE,'utf8'));}catch{return {signals:[]};}
+}
+async function writeSignalJournal(x){
+  try{await fs.mkdir(path.dirname(SIGNAL_JOURNAL_FILE),{recursive:true});await fs.writeFile(SIGNAL_JOURNAL_FILE,JSON.stringify(x,null,2));}catch(e){console.log(`[SIGNAL-JOURNAL] SAVE_ERROR ${String(e?.message||e).slice(0,120)}`)}
+}
+async function updateSignalJournal(signals){
+  const now=Date.now(); const book=await readSignalJournal();
+  const rows=Array.isArray(book.signals)?book.signals:[];
+  for(const r of rows){
+    if(r.outcome||now-r.time>SIGNAL_OUTCOME_MAX_HOURS*3600000)continue;
+    const age=(now-r.time)/60000; if(age<SIGNAL_OUTCOME_MINUTES)continue;
+    const px=Number(r.currentPrice); if(!(px>0))continue;
+    const move=(px/r.entry-1)*100*(r.side==='LONG'?1:-1);
+    if(move>=Math.abs(r.tpPct))r.outcome='TP';
+    else if(move<=-Math.abs(r.slPct))r.outcome='SL';
+    else if(age>=60)r.outcome='TIMEOUT';
+    r.lastPrice=px; r.lastMovePct=move;
+  }
+  for(const x of signals){
+    const key=`${x.wallet?.address||x.wallet?.name}|${x.mint||x.coin}|${x.side}|${Math.round(Number(x.age||x.openedAt||now)/60000)}`;
+    if(rows.some(r=>r.key===key))continue;
+    rows.push({key,time:now,market:x.mint?'SPOT':'FUTURES',wallet:x.wallet?.address||x.wallet?.name,coin:x.displaySymbol||x.coin,side:x.side,entry:Number(x.current),currentPrice:Number(x.current),tpPct:x.mint?TP_PCT:HL_TP_PCT,slPct:x.mint?SL_PCT:HL_SL_PCT,outcome:null});
+  }
+  book.signals=rows.filter(r=>now-r.time<=SIGNAL_OUTCOME_MAX_HOURS*3600000);
+  await writeSignalJournal(book);
+}
+
 async function main(){
   const started=Date.now();
   await discoverWatchlist();
@@ -1479,10 +1532,11 @@ async function main(){
   }catch(e){
     console.log(`[FUTURES][MIDS] ERROR ${String(e?.message||e).slice(0,180)}`);
   }
+  const marketContext=await fetchFuturesMarketContext();
   const futures=[];
   console.log(`[FUTURES][WATCHLIST-AUDIT] wallets=${FUTURES_WALLETS.length}/${TARGET_FUTURES_WALLETS}`);
   for(const w of FUTURES_WALLETS){
-    futures.push(await scanFutures(w,mids,Date.now(),symbolMap).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0,health:{health:'SIGNAL_ONLY',reason:'FUTURES_SCAN_ERROR',error:e.message}})));
+    futures.push(await scanFutures(w,mids,Date.now(),symbolMap,marketContext).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0,health:{health:'SIGNAL_ONLY',reason:'FUTURES_SCAN_ERROR',error:e.message}})));
     await sleep(FUTURES_BETWEEN_WALLETS_MS);
   }
   const futuresAuditSummary=futures.reduce((a,x)=>{a.wallets++;a.fills+=n(x.scanned);a.adds+=n(x.addEvents);a.signals+=(x.positions||[]).length;return a},{wallets:0,fills:0,adds:0,signals:0});
@@ -1528,7 +1582,8 @@ async function main(){
     'READ-ONLY • SIGNALS ONLY • NO ORDERS',
     '━━━━━━━━━━━━━━━━━━',
     `🕒 ${new Date().toISOString()}`,
-    `👥 Signal whales: ${whaleGroups.length} | Spot ${spotGreen.length} | Futures ${futuresGreen.length}`,
+    `👥 Verified traders: ${whaleGroups.length} | 🟢 Spot ${spotGreen.length} | 🟢 Futures ${futuresGreen.length}`,
+    `📡 Signals: ${reportCandidates.length} | Verified gate: WR≥${TRADER_MIN_WR}% • PF≥${TRADER_MIN_PF} • Trades≥${TRADER_MIN_CLOSED_TRADES}`,
     ''
   ];
   if(!whaleGroups.length){
@@ -1539,6 +1594,7 @@ async function main(){
     if(whaleGroups.length>selected.length)lines.push(`+${whaleGroups.length-selected.length} additional whales hidden`,'');
   }
   lines.push(`⏱ Cycle ${((Date.now()-started)/1000).toFixed(1)}s`);
+  await updateSignalJournal(reportCandidates);
   console.log(`[SIGNAL-ENGINE ${VERSION}][DONE] green=${spotGreen.length+futuresGreen.length} yellow=${spotYellow.length+futuresYellow.length} red-hidden=${classified.filter(x=>x.status==='RED').length}`);
   await telegram(lines.join('\n'));
 }
