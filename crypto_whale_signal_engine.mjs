@@ -5,7 +5,7 @@ import path from 'node:path';
 // Dynamic whale discovery: 5 Spot + 5 Futures. READ ONLY.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V5.6-WHALE-PERFORMANCE-PER-SIGNAL';
+const VERSION = 'V5.7-DYNAMIC-WATCHLIST-PERFORMANCE';
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY || '';
@@ -79,7 +79,10 @@ const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TO
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 8);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
-const DISCOVERY_SCHEMA = 'V5.6-WHALE-PERFORMANCE-PER-SIGNAL';
+const DISCOVERY_SCHEMA = 'V5.7-DYNAMIC-WATCHLIST-PERFORMANCE';
+const DISCOVERY_ALLOW_ACTIVE_FALLBACK = String(process.env.WHALE_DISCOVERY_ALLOW_ACTIVE_FALLBACK || 'true').toLowerCase() !== 'false';
+const DISCOVERY_FALLBACK_MIN_RECENT_ADDS = Number(process.env.WHALE_DISCOVERY_FALLBACK_MIN_RECENT_ADDS || 1);
+const DISCOVERY_FALLBACK_MIN_RECENT_BUYS = Number(process.env.WHALE_DISCOVERY_FALLBACK_MIN_RECENT_BUYS || 1);
 const DISCOVERY_FILL_PAGE_SIZE = Number(process.env.WHALE_DISCOVERY_FILL_PAGE_SIZE || 2000);
 const DISCOVERY_FILL_MAX_PAGES = Number(process.env.WHALE_DISCOVERY_FILL_MAX_PAGES || 8);
 const DISCOVERY_RPC_DELAY_MS = Number(process.env.WHALE_DISCOVERY_RPC_DELAY_MS || 1800);
@@ -290,17 +293,21 @@ async function discoverFutures(){
       // we mark it incomplete and do not rank it as fully verified.
       const complete=!pg.truncated;
       const qualificationReasons=[]; if(!complete)qualificationReasons.push('INCOMPLETE_HISTORY'); if(st.completed<DISCOVERY_MIN_COMPLETED)qualificationReasons.push(`ROUND_TRIPS<${DISCOVERY_MIN_COMPLETED}`); if(st.inWindow<DISCOVERY_MIN_IN_WINDOW)qualificationReasons.push(`HOLD_1_24H<${DISCOVERY_MIN_IN_WINDOW}`); if(st.holdRatio<DISCOVERY_MIN_HOLD_RATIO)qualificationReasons.push(`HOLD_RATIO<${Math.round(DISCOVERY_MIN_HOLD_RATIO*100)}%`); if(st.recentLifecycles<DISCOVERY_MIN_RECENT_LIFECYCLES)qualificationReasons.push(`RECENT_CLOSED_24H<${DISCOVERY_MIN_RECENT_LIFECYCLES}`); if(st.totalVolume<DISCOVERY_MIN_VOLUME_USD)qualificationReasons.push(`VOLUME<${DISCOVERY_MIN_VOLUME_USD}`); const qualifies=qualificationReasons.length===0;
-      console.log(`[DISCOVERY][FUTURES][LIFECYCLE] ${w.name} fills=${pg.fills.length} pages=${pg.pages} complete=${complete} volume48h=${Math.round(st.totalVolume)} lifecycle=${st.completed} hold1-24=${st.inWindow} ratio=${(st.holdRatio*100).toFixed(0)}% median=${st.medianHoldHours.toFixed(2)}h recentClosed24h=${st.recentLifecycles} adds=${st.additions} partialReductions=${st.partialReductions} qualifies=${qualifies}${qualifies?'':' reason='+qualificationReasons.join(',')}`);
-      if(qualifies){
-        const discovery={volume48h:st.totalVolume,completedLifecycles:st.completed,inWindow:st.inWindow,holdRatio:st.holdRatio,medianHoldHours:st.medianHoldHours,avgHoldHours:st.avgHoldHours,recentLifecycles:st.recentLifecycles,observedAdds:st.additions,pnl7:r.pnl7,pnl30:r.pnl30,leaderboardVolume7:r.volume7,accountValue:n(r.accountValue)};
-        discovery.score=(st.inWindow*4)+(st.holdRatio*20)+Math.min(20,Math.log10(Math.max(1,st.totalVolume)))*2+Math.min(10,st.recentLifecycles)+(r.pnl7>0?5:0);
+      const activeFallback=DISCOVERY_ALLOW_ACTIVE_FALLBACK && complete && st.additions>=DISCOVERY_FALLBACK_MIN_RECENT_ADDS && st.totalVolume>=DISCOVERY_MIN_VOLUME_USD/4;
+      console.log(`[DISCOVERY][FUTURES][LIFECYCLE] ${w.name} fills=${pg.fills.length} pages=${pg.pages} complete=${complete} volume48h=${Math.round(st.totalVolume)} lifecycle=${st.completed} hold1-24=${st.inWindow} ratio=${(st.holdRatio*100).toFixed(0)}% median=${st.medianHoldHours.toFixed(2)}h recentClosed24h=${st.recentLifecycles} adds=${st.additions} partialReductions=${st.partialReductions} qualifies=${qualifies}${qualifies?'':' reason='+qualificationReasons.join(',')} fallback=${activeFallback}`);
+      if(qualifies || activeFallback){
+        const discovery={volume48h:st.totalVolume,completedLifecycles:st.completed,inWindow:st.inWindow,holdRatio:st.holdRatio,medianHoldHours:st.medianHoldHours,avgHoldHours:st.avgHoldHours,recentLifecycles:st.recentLifecycles,observedAdds:st.additions,pnl7:r.pnl7,pnl30:r.pnl30,leaderboardVolume7:r.volume7,accountValue:n(r.accountValue),quality:qualifies?'QUALIFIED':'ACTIVE_FALLBACK',qualificationReasons};
+        discovery.score=(qualifies?100000:0)+(st.inWindow*8)+(st.recentLifecycles*10)+(st.holdRatio*25)+Math.min(30,Math.log10(Math.max(1,st.totalVolume)))*3+Math.min(20,st.additions/20)+(r.pnl7>0?10:0);
         scored.push({...w,discovery});
       }
     }catch(e){console.log(`[DISCOVERY][FUTURES][DEEP] ${w.name} ERROR ${String(e?.message||e).slice(0,120)}`)}
     await sleep(DISCOVERY_FUTURES_DEEP_DELAY_MS);
   }
   scored.sort((a,b)=>b.discovery.score-a.discovery.score);
-  return scored.slice(0,TARGET_FUTURES_WALLETS);
+  scored.sort((a,b)=>b.discovery.score-a.discovery.score);
+  const selected=scored.slice(0,TARGET_FUTURES_WALLETS);
+  console.log(`[DISCOVERY][FUTURES][SELECTION] selected=${selected.length} qualified=${selected.filter(x=>x.discovery.quality==='QUALIFIED').length} fallback=${selected.filter(x=>x.discovery.quality==='ACTIVE_FALLBACK').length}`);
+  return selected;
 }
 
 async function fetchSpotDiscoveryTokens(){
@@ -369,14 +376,17 @@ async function discoverSpotCandidates(){
       const roundTrips=lifecycles.length, holdRatio=roundTrips?inWindow.length/roundTrips:0;
       const recentLifecycles=inWindow.filter(x=>Date.now()-x.closeTime<=24*3600000).length;
       const qualificationReasons=spotQualificationReasons({roundTrips,inWindow:inWindow.length,holdRatio,medianHold,volumeUsd,lastTrade}); const qualifies=qualificationReasons.length===0;
-      console.log(`[DISCOVERY][SPOT][HELIUS-LIFECYCLE] SOL_${address.slice(0,4).toUpperCase()} tx=${txs.length} buys=${buys} sells=${sells} roundTrips=${roundTrips} hold1-24=${inWindow.length} ratio=${(holdRatio*100).toFixed(0)}% median=${medianHold.toFixed(2)}h volume24h=${Math.round(volumeUsd)} recent=${recentLifecycles} programHits=${programHits} qualifies=${qualifies}${qualifies?'':' reason='+qualificationReasons.join(',')}`);
-      if(qualifies)finals.push({name:`SOL_${address.slice(0,4).toUpperCase()}`,address,discovery:{programHits,recentTxs24h:txs.filter(x=>n(x?.timestamp)*1000>=Date.now()-24*3600000).length,buys,sells,roundTrips,inWindow:inWindow.length,holdRatio,medianHoldHours:medianHold,avgHoldHours:hs.length?hs.reduce((a,b)=>a+b,0)/hs.length:0,lastTrade,volumeUsd,recentLifecycles}});
+      const activeFallback=DISCOVERY_ALLOW_ACTIVE_FALLBACK && lastTrade>=Date.now()-24*3600000 && buys>=DISCOVERY_FALLBACK_MIN_RECENT_BUYS && volumeUsd>=DISCOVERY_MIN_VOLUME_USD/20;
+      console.log(`[DISCOVERY][SPOT][HELIUS-LIFECYCLE] SOL_${address.slice(0,4).toUpperCase()} tx=${txs.length} buys=${buys} sells=${sells} roundTrips=${roundTrips} hold1-24=${inWindow.length} ratio=${(holdRatio*100).toFixed(0)}% median=${medianHold.toFixed(2)}h volume24h=${Math.round(volumeUsd)} recent=${recentLifecycles} programHits=${programHits} qualifies=${qualifies}${qualifies?'':' reason='+qualificationReasons.join(',')} fallback=${activeFallback}`);
+      if(qualifies || activeFallback)finals.push({name:`SOL_${address.slice(0,4).toUpperCase()}`,address,discovery:{programHits,recentTxs24h:txs.filter(x=>n(x?.timestamp)*1000>=Date.now()-24*3600000).length,buys,sells,roundTrips,inWindow:inWindow.length,holdRatio,medianHoldHours:medianHold,avgHoldHours:hs.length?hs.reduce((a,b)=>a+b,0)/hs.length:0,lastTrade,volumeUsd,recentLifecycles,quality:qualifies?'QUALIFIED':'ACTIVE_FALLBACK',qualificationReasons,score:(qualifies?100000:0)+(buys*8)+(recentLifecycles*12)+(holdRatio*25)+Math.min(25,Math.log10(Math.max(1,volumeUsd)))*2+programHits*4+(lastTrade>=Date.now()-15*60000?80:0)}});
     }catch(e){console.log(`[DISCOVERY][SPOT][HELIUS-FINAL] ${short(address)} ERROR ${String(e?.message||e).slice(0,120)}`)}
     await sleep(300);
     if(finals.length>=TARGET_SPOT_WALLETS)break;
   }
-  finals.sort((a,b)=>(b.discovery.inWindow*4+b.discovery.holdRatio*20+Math.log10(Math.max(1,b.discovery.volumeUsd))*2+b.discovery.recentLifecycles)-(a.discovery.inWindow*4+a.discovery.holdRatio*20+Math.log10(Math.max(1,a.discovery.volumeUsd))*2+a.discovery.recentLifecycles));
-  return finals.slice(0,TARGET_SPOT_WALLETS);
+  finals.sort((a,b)=>b.discovery.score-a.discovery.score);
+  const selected=finals.slice(0,TARGET_SPOT_WALLETS);
+  console.log(`[DISCOVERY][SPOT][SELECTION] selected=${selected.length} qualified=${selected.filter(x=>x.discovery.quality==='QUALIFIED').length} fallback=${selected.filter(x=>x.discovery.quality==='ACTIVE_FALLBACK').length}`);
+  return selected;
 }
 
 async function solSignaturesForDiscovery(address,limit=60){
@@ -397,8 +407,8 @@ async function discoverWatchlist(){
   const data={schema:DISCOVERY_SCHEMA,generatedAt:Date.now(),criteria:{holdHours:[DISCOVERY_MIN_HOLD_HOURS,DISCOVERY_MAX_HOLD_HOURS],minVolumeUsd:DISCOVERY_MIN_VOLUME_USD,minInWindow:DISCOVERY_MIN_IN_WINDOW,minHoldRatio:DISCOVERY_MIN_HOLD_RATIO},spotWallets,futuresWallets};
   SPOT_WALLETS=spotWallets; FUTURES_WALLETS=futuresWallets;
   await writeDiscoveryCache(data);
-  if(SPOT_WALLETS.length<TARGET_SPOT_WALLETS) console.log(`[DISCOVERY][WARN] Spot qualified=${SPOT_WALLETS.length}/${TARGET_SPOT_WALLETS}; no weak wallets substituted`);
-  if(FUTURES_WALLETS.length<TARGET_FUTURES_WALLETS) console.log(`[DISCOVERY][WARN] Futures qualified=${FUTURES_WALLETS.length}/${TARGET_FUTURES_WALLETS}; no weak wallets substituted`);
+  if(SPOT_WALLETS.length<TARGET_SPOT_WALLETS) console.log(`[DISCOVERY][WARN] Spot selected=${SPOT_WALLETS.length}/${TARGET_SPOT_WALLETS}; insufficient active candidates`);
+  if(FUTURES_WALLETS.length<TARGET_FUTURES_WALLETS) console.log(`[DISCOVERY][WARN] Futures selected=${FUTURES_WALLETS.length}/${TARGET_FUTURES_WALLETS}; insufficient active candidates`);
   console.log(`[DISCOVERY][DONE] selected spot=${SPOT_WALLETS.length} futures=${FUTURES_WALLETS.length}`);
   return data;
 }
