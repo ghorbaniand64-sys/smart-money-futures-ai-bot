@@ -133,7 +133,7 @@ async function readDiscoveryCache(){
     const raw=await fs.readFile(DISCOVERY_STATE_FILE,'utf8');
     const x=JSON.parse(raw);
     const ageMin=(Date.now()-n(x?.generatedAt))/60000;
-    if(x?.schema===DISCOVERY_SCHEMA&&ageMin>=0&&ageMin<DISCOVERY_TTL_MIN&&Array.isArray(x?.spotWallets)&&Array.isArray(x?.futuresWallets)&&(x.spotWallets.length>0||x.futuresWallets.length>0)){
+    if(x?.schema===DISCOVERY_SCHEMA&&ageMin>=0&&ageMin<DISCOVERY_TTL_MIN&&Array.isArray(x?.spotWallets)&&Array.isArray(x?.futuresWallets)&&x.spotWallets.length>0&&x.futuresWallets.length>0){
       console.log(`[DISCOVERY][CACHE] age=${ageMin.toFixed(1)}m spot=${x.spotWallets.length} futures=${x.futuresWallets.length}`);
       return x;
     }
@@ -324,7 +324,11 @@ async function discoverFutures(){
       const fresh=recentAddStatsFromFills(pg.fills,end,FUTURES_SIGNAL_FRESHNESS_MIN);
       const signalReady=fresh.count>0&&fresh.notional>=FUTURES_DISCOVERY_MIN_FRESH_ADD_USD;
       const activeQuality=recentFills>=FUTURES_MIN_ACTIVE_FILLS&&recentVolume>=FUTURES_MIN_ACTIVE_VOLUME_USD;
-      if(!signalReady&&!activeQuality)continue;
+      // Discovery must not suppress active Futures traders merely because the
+      // current 15m window has no ADD or the quick volume is below the quality
+      // threshold. Those are signal/quality decisions for scanFutures(), not
+      // discovery gates. Any real recent fill is enough to enter deep audit.
+      if(recentFills<=0)continue;
       quick.push({...w,raw:r,quick:{recentFills,recentVolume,adds:st.additions,recentAdds:fresh.count,recentAddNotional:fresh.notional,signalReady,activeQuality}});
     }catch(e){console.log(`[DISCOVERY][FUTURES][QUICK] ${w.name} ERROR ${String(e?.message||e).slice(0,100)}`)}
   }
@@ -361,7 +365,31 @@ async function discoverFutures(){
     const an=n(a.discovery.recentAddNotional), bn=n(b.discovery.recentAddNotional);
     return (bf-af)*1000000 + (bn-an)*10 + (n(b.discovery.score)-n(a.discovery.score));
   });
-  const signalReadyPool=scored.filter(x=>n(x.discovery.recentAdds)>0 && n(x.discovery.recentAddNotional)>=FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD);
+  // Deep qualification is a quality label, never the sole path into the
+  // Futures watchlist. If deep history is incomplete or strict lifecycle
+  // criteria reject a trader, retain the trader when the quick scan proved
+  // there is real recent Hyperliquid activity. scanFutures() remains the hard
+  // signal gate, so this cannot manufacture a signal.
+  const scoredAddresses=new Set(scored.map(x=>String(x.address).toLowerCase()));
+  const activeFallbackPool=quick.filter(x=>!scoredAddresses.has(String(x.address).toLowerCase())).map(x=>({
+    ...x,
+    discovery:{
+      volume48h:n(x.quick?.recentVolume), completedLifecycles:0, inWindow:0, holdRatio:0,
+      medianHoldHours:0, avgHoldHours:0, recentLifecycles:0, observedAdds:n(x.quick?.adds),
+      pnl7:n(x.raw?.pnl7), pnl30:n(x.raw?.pnl30), leaderboardVolume7:n(x.raw?.volume7),
+      accountValue:n(x.raw?.accountValue), recentAdds:n(x.quick?.recentAdds),
+      recentAddNotional:n(x.quick?.recentAddNotional), quality:'ACTIVE_QUICK_FALLBACK',
+      qualificationReasons:['DEEP_NOT_QUALIFIED_OR_INCOMPLETE'],
+      score:50000+(n(x.quick?.recentAdds)*100)+(Math.min(20,n(x.quick?.recentAddNotional)/1000))+(Math.min(20,n(x.quick?.recentVolume)/100000))
+    }
+  }));
+  const activePool=[...scored,...activeFallbackPool];
+  activePool.sort((a,b)=>{
+    const ar=n(a.discovery.recentAdds), br=n(b.discovery.recentAdds);
+    const an=n(a.discovery.recentAddNotional), bn=n(b.discovery.recentAddNotional);
+    return (br-ar)*1000000+(bn-an)*10+(n(b.discovery.score)-n(a.discovery.score));
+  });
+  const signalReadyPool=activePool.filter(x=>n(x.discovery.recentAdds)>0 && n(x.discovery.recentAddNotional)>=FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD);
   // Signal-ready candidates are always ranked first. Active-selection mode may fill remaining
   // watchlist slots with active traders, but those traders can NEVER bypass the fresh-add gate
   // inside scanFutures(). This keeps discovery useful without manufacturing stale signals.
@@ -373,12 +401,13 @@ async function discoverFutures(){
     // Keep active traders in the watchlist even when this exact discovery moment
     // has no fresh ADD. The signal scanner re-checks fills every cycle and never
     // promotes a stale ADD into a signal.
-    selected=[...freshPool,...scored.filter(x=>!freshPool.some(y=>y.address===x.address))].slice(0,TARGET_FUTURES_WALLETS);
+    selected=[...freshPool,...activePool.filter(x=>!freshPool.some(y=>y.address===x.address))].slice(0,TARGET_FUTURES_WALLETS);
   }else{
     selected=freshPool.slice(0,TARGET_FUTURES_WALLETS);
   }
-  console.log(`[DISCOVERY][FUTURES][SIGNAL-READY-POOL] ready=${signalReadyPool.length}/${TARGET_FUTURES_WALLETS} fresh=${freshPool.length} activePool=${scored.length} signalReadyOnly=${DISCOVERY_SIGNAL_READY_ONLY} activeSelection=${DISCOVERY_FUTURES_ACTIVE_SELECTION}`);
-  console.log(`[DISCOVERY][FUTURES][SELECTION] selected=${selected.length} freshReady=${selected.filter(x=>freshPool.some(y=>y.address===x.address)).length} qualified=${selected.filter(x=>x.discovery.quality==='QUALIFIED').length} fallback=${selected.filter(x=>x.discovery.quality==='ACTIVE_FALLBACK').length}`);
+  console.log(`[DISCOVERY][FUTURES][SIGNAL-READY-POOL] ready=${signalReadyPool.length}/${TARGET_FUTURES_WALLETS} fresh=${freshPool.length} activePool=${activePool.length} quickFallback=${activeFallbackPool.length} signalReadyOnly=${DISCOVERY_SIGNAL_READY_ONLY} activeSelection=${DISCOVERY_FUTURES_ACTIVE_SELECTION}`);
+  console.log(`[DISCOVERY][FUTURES][SELECTION] selected=${selected.length} freshReady=${selected.filter(x=>freshPool.some(y=>y.address===x.address)).length} qualified=${selected.filter(x=>x.discovery.quality==='QUALIFIED').length} fallback=${selected.filter(x=>String(x.discovery.quality||'').includes('FALLBACK')).length}`);
+  console.log(`[DISCOVERY][FUTURES][WATCHLIST-AUDIT] scannedCandidates=${candidates.length} quickActivity=${quick.length} deepScored=${scored.length} activeFallback=${activeFallbackPool.length} selected=${selected.length}`);
   return selected;
 }
 
@@ -1452,10 +1481,13 @@ async function main(){
     console.log(`[FUTURES][MIDS] ERROR ${String(e?.message||e).slice(0,180)}`);
   }
   const futures=[];
+  console.log(`[FUTURES][WATCHLIST-AUDIT] wallets=${FUTURES_WALLETS.length}/${TARGET_FUTURES_WALLETS}`);
   for(const w of FUTURES_WALLETS){
     futures.push(await scanFutures(w,mids,Date.now(),symbolMap).catch(e=>({wallet:w,signals:[],positions:[],error:e.message,scanned:0,health:{health:'SIGNAL_ONLY',reason:'FUTURES_SCAN_ERROR',error:e.message}})));
     await sleep(FUTURES_BETWEEN_WALLETS_MS);
   }
+  const futuresAuditSummary=futures.reduce((a,x)=>{a.wallets++;a.fills+=n(x.scanned);a.adds+=n(x.addEvents);a.signals+=(x.positions||[]).length;return a},{wallets:0,fills:0,adds:0,signals:0});
+  console.log(`[FUTURES][FINAL-AUDIT] wallets=${futuresAuditSummary.wallets} fills=${futuresAuditSummary.fills} addEvents=${futuresAuditSummary.adds} signals=${futuresAuditSummary.signals}`);
 
   // Telegram is intentionally signal-only. Health, current holdings, diagnostics,
   // red/too-late candidates and decoder internals stay out of the user message.
