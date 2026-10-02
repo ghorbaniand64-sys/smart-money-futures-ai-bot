@@ -26,7 +26,7 @@
       "currentPrice": 0.04108,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.04108,
       "lastMovePct": 0
     },
@@ -41,7 +41,7 @@
       "currentPrice": 0.006002,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.006002,
       "lastMovePct": 0
     },
@@ -56,7 +56,7 @@
       "currentPrice": 0.000003927,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.000003927,
       "lastMovePct": 0
     },
@@ -71,7 +71,7 @@
       "currentPrice": 85885.66,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 85885.66,
       "lastMovePct": 0
     },
@@ -86,7 +86,7 @@
       "currentPrice": 730.0029,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 730.0029,
       "lastMovePct": 0
     },
@@ -101,7 +101,7 @@
       "currentPrice": 249.42,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 249.42,
       "lastMovePct": 0
     },
@@ -116,7 +116,7 @@
       "currentPrice": 340.54,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 340.54,
       "lastMovePct": 0
     },
@@ -131,7 +131,7 @@
       "currentPrice": 165.2,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 165.2,
       "lastMovePct": 0
     },
@@ -146,7 +146,7 @@
       "currentPrice": 0.2497,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.2497,
       "lastMovePct": 0
     },
@@ -161,7 +161,7 @@
       "currentPrice": 0.009984,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.009984,
       "lastMovePct": 0
     },
@@ -176,7 +176,7 @@
       "currentPrice": 0.2505,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.2505,
       "lastMovePct": 0
     }
