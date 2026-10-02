@@ -341,7 +341,7 @@
       "currentPrice": 0.5812,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.5812,
       "lastMovePct": 0
     },
@@ -386,7 +386,9 @@
       "currentPrice": 0.0005887,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.0005887,
+      "lastMovePct": 0
     },
     {
       "key": "0x50b309f78e774a756a2230e1769729094cac9f20|BTC|LONG|29849083",
@@ -399,7 +401,9 @@
       "currentPrice": 86745.5,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 86745.5,
+      "lastMovePct": 0
     },
     {
       "key": "0x6752fd3edb8a9adf4db1eed002f7134cf7ae7a2f|BTC|SHORT|29849084",
@@ -412,6 +416,60 @@
       "currentPrice": 86745.5,
       "tpPct": 3,
       "slPct": 1.5,
+      "outcome": null,
+      "lastPrice": 86745.5,
+      "lastMovePct": 0
+    },
+    {
+      "key": "FkaLnX17cXZGyeu3kZGdHCNdFMJJzBrPPYVvd18B3MZp|98sMhvDwXj1RQi5c5Mndm3vPe9cBqPrbLaufMXFNMh5g|LONG|29849110",
+      "time": 1790946614400,
+      "market": "SPOT",
+      "wallet": "FkaLnX17cXZGyeu3kZGdHCNdFMJJzBrPPYVvd18B3MZp",
+      "coin": "HYPE",
+      "side": "LONG",
+      "entry": 91.11,
+      "currentPrice": 91.11,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null
+    },
+    {
+      "key": "FkaLnX17cXZGyeu3kZGdHCNdFMJJzBrPPYVvd18B3MZp|6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN|LONG|29849110",
+      "time": 1790946614400,
+      "market": "SPOT",
+      "wallet": "FkaLnX17cXZGyeu3kZGdHCNdFMJJzBrPPYVvd18B3MZp",
+      "coin": "TRUMP",
+      "side": "LONG",
+      "entry": 2.19,
+      "currentPrice": 2.19,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null
+    },
+    {
+      "key": "FkaLnX17cXZGyeu3kZGdHCNdFMJJzBrPPYVvd18B3MZp|pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn|LONG|29849109",
+      "time": 1790946614400,
+      "market": "SPOT",
+      "wallet": "FkaLnX17cXZGyeu3kZGdHCNdFMJJzBrPPYVvd18B3MZp",
+      "coin": "PUMP",
+      "side": "LONG",
+      "entry": 0.005983,
+      "currentPrice": 0.005983,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null
+    },
+    {
+      "key": "FkaLnX17cXZGyeu3kZGdHCNdFMJJzBrPPYVvd18B3MZp|4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R|LONG|29849109",
+      "time": 1790946614400,
+      "market": "SPOT",
+      "wallet": "FkaLnX17cXZGyeu3kZGdHCNdFMJJzBrPPYVvd18B3MZp",
+      "coin": "RAY",
+      "side": "LONG",
+      "entry": 1.95,
+      "currentPrice": 1.95,
+      "tpPct": 4,
+      "slPct": 2,
       "outcome": null
     }
   ]
