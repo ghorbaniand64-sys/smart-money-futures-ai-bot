@@ -1844,14 +1844,14 @@
     }
   },
   "FUTURES:0x50b309f78e774a756a2230e1769729094cac9f20": {
-    "updatedAt": 1790951145215,
+    "updatedAt": 1790953380095,
     "data": {
       "market": "FUTURES",
       "complete": true,
       "pages": 2,
       "fillCount": 1937,
       "coverageStart": 1788376214951,
-      "coverageDays": 29.802433611111113,
+      "coverageDays": 29.828300277777778,
       "coverage7d": true,
       "coverage30d": true,
       "w7": {
@@ -1887,7 +1887,7 @@
         },
         "fillCount": 1937
       },
-      "updatedAt": 1790951145215
+      "updatedAt": 1790953380095
     }
   },
   "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:DBnXgpAfYRQB2kVab3go3TwqwPTc5g1VMWa8ZR4N2Jz5": {
