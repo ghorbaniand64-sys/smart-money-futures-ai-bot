@@ -641,7 +641,7 @@
       "currentPrice": 85890.5,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 85890.5,
       "lastMovePct": 0
     },
@@ -716,7 +716,9 @@
       "currentPrice": 0.07906,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.07906,
+      "lastMovePct": 0
     },
     {
       "key": "9PHm2cYU8DhwBrbRsqqAjhW9uXVrNR1RaLsvo9oGVeaq|BPxxfRCXkUVhig4HS1Lh7kZqV6SPJhzfEk4x6fVBjPCy|LONG|29849260",
@@ -729,7 +731,9 @@
       "currentPrice": 1.29,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 1.29,
+      "lastMovePct": 0
     },
     {
       "key": "9PHm2cYU8DhwBrbRsqqAjhW9uXVrNR1RaLsvo9oGVeaq|98kfF7rmsg1QDUEoCqNE7g7M1FdrTt92TEp2CLzypump|LONG|29849258",
@@ -742,7 +746,9 @@
       "currentPrice": 0.009005,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.009005,
+      "lastMovePct": 0
     },
     {
       "key": "9nXDunV8eNvYSVys7JSBkm2hz9Q79Q3EYeko19srVeMC|C1MHyoTJpRTeS9AQCyspNVu2EWAYCZwmJ1jNkEArFP1f|LONG|29849262",
@@ -755,7 +761,9 @@
       "currentPrice": 0.1696,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.1696,
+      "lastMovePct": 0
     },
     {
       "key": "9nXDunV8eNvYSVys7JSBkm2hz9Q79Q3EYeko19srVeMC|qntUzPUsJ51abNP7VYNxkmsQ4RnvEZAhavUxsCxpxH4|LONG|29849262",
@@ -768,7 +776,9 @@
       "currentPrice": 247.088,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 247.088,
+      "lastMovePct": 0
     },
     {
       "key": "9PHm2cYU8DhwBrbRsqqAjhW9uXVrNR1RaLsvo9oGVeaq|9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump|LONG|29849255",
@@ -779,6 +789,21 @@
       "side": "LONG",
       "entry": 0.1356,
       "currentPrice": 0.1356,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null,
+      "lastPrice": 0.1356,
+      "lastMovePct": 0
+    },
+    {
+      "key": "9PdR5dxcoiw54uRXZnC3ZA9QBjeYX5P4vqY9UzaF2KVZ|HuAXPyDWDaMYFKuwQHpqL1oPnj93zdzWmtvFGzCeCUa7|LONG|29849273",
+      "time": 1790956809195,
+      "market": "SPOT",
+      "wallet": "9PdR5dxcoiw54uRXZnC3ZA9QBjeYX5P4vqY9UzaF2KVZ",
+      "coin": "MASK",
+      "side": "LONG",
+      "entry": 0.04812,
+      "currentPrice": 0.04812,
       "tpPct": 4,
       "slPct": 2,
       "outcome": null
