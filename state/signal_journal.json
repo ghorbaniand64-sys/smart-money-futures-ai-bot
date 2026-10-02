@@ -281,7 +281,7 @@
       "currentPrice": 0.06417,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.06417,
       "lastMovePct": 0
     },
@@ -296,7 +296,7 @@
       "currentPrice": 0.24814,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.24814,
       "lastMovePct": 0
     },
@@ -339,6 +339,34 @@
       "side": "LONG",
       "entry": 0.5812,
       "currentPrice": 0.5812,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null,
+      "lastPrice": 0.5812,
+      "lastMovePct": 0
+    },
+    {
+      "key": "CUTZr7gqsdh6YTmuUZ6eZxt2be9UM9w58Au1buyQmVxi|5dvXTZ5qwgafnHtwu3Ls3QrWx1U4LQsFeCuJgkk4QEC6|LONG|29849066",
+      "time": 1790944340261,
+      "market": "SPOT",
+      "wallet": "CUTZr7gqsdh6YTmuUZ6eZxt2be9UM9w58Au1buyQmVxi",
+      "coin": "EMBER",
+      "side": "LONG",
+      "entry": 0.007314,
+      "currentPrice": 0.007314,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null
+    },
+    {
+      "key": "CxCLPfEMmEoWg5wHSMFY2BLCRhRqgqRueKczpTPaTwN|Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh|LONG|29849066",
+      "time": 1790944340261,
+      "market": "SPOT",
+      "wallet": "CxCLPfEMmEoWg5wHSMFY2BLCRhRqgqRueKczpTPaTwN",
+      "coin": "NVDAx",
+      "side": "LONG",
+      "entry": 235.96,
+      "currentPrice": 235.96,
       "tpPct": 4,
       "slPct": 2,
       "outcome": null
