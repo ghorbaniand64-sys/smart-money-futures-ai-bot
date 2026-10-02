@@ -1,6 +1,6 @@
 {
   "schema": "V6.1-SPOT-PERFORMANCE-FUTURES-RECON-AUDITED",
-  "generatedAt": 1790936114778,
+  "generatedAt": 1790937271618,
   "criteria": {
     "holdHours": [
       1,
@@ -17,94 +17,117 @@
   },
   "spotWallets": [
     {
-      "name": "SOL_69PS",
-      "address": "69pSgYcnzq1NxjG7EViqytXP1dPXGoVhZHF8hzwYmgmR",
+      "name": "SOL_3PMT",
+      "address": "3PMT8CrReUypPDVy5qRQbB5THQEqCBz7RgACxQBCJpEh",
       "discovery": {
         "programHits": 1,
         "buys": 1,
         "sells": 0,
         "recentBuys": 1,
-        "recentBuyVolume": 127.8350165175098,
-        "volumeUsd": 127.8350165175098,
-        "lastTrade": 1790935792000,
-        "wr7": 66.66666666666666,
-        "pf7": 4.486343529885223,
-        "pnl7": 3161.245108053108,
-        "trades7": 165,
-        "wr30": 66.66666666666666,
-        "pf30": 4.486343529885223,
-        "pnl30": 3161.245108053108,
-        "trades30": 165,
-        "verifiedWr": 66.66666666666666,
-        "verifiedPf": 4.486343529885223,
-        "verifiedPnl": 3161.245108053108,
-        "verifiedTrades": 165,
+        "recentBuyVolume": 122.55216347475067,
+        "volumeUsd": 122.55216347475067,
+        "lastTrade": 1790936898000,
+        "wr7": 83.1081081081081,
+        "pf7": 3.1918355547377555,
+        "pnl7": 2884.866420095027,
+        "trades7": 148,
+        "wr30": 82.57839721254355,
+        "pf30": 1.881620275992817,
+        "pnl30": 2420.1397248344524,
+        "trades30": 287,
+        "verifiedWr": 83.1081081081081,
+        "verifiedPf": 3.1918355547377555,
+        "verifiedPnl": 2884.866420095027,
+        "verifiedTrades": 148,
         "quality": "VERIFIED_TOP_TRADER",
         "qualificationReasons": [],
         "confidenceTier": "VERIFIED_TOP_TRADER",
-        "score": 159042.72923285497
-      }
-    },
-    {
-      "name": "SOL_84JL",
-      "address": "84JLAboHoG9zfjQ2hQCLLmdEaLCcbuZStoeDkpKsXgpd",
-      "discovery": {
-        "programHits": 1,
-        "buys": 1,
-        "sells": 0,
-        "recentBuys": 1,
-        "recentBuyVolume": 122.4097107788233,
-        "volumeUsd": 122.4097107788233,
-        "lastTrade": 1790935792000,
-        "wr7": 64.41717791411043,
-        "pf7": 4.129395679461296,
-        "pnl7": 3063.4875872279176,
-        "trades7": 163,
-        "wr30": 64.41717791411043,
-        "pf30": 4.129395679461296,
-        "pnl30": 3063.4875872279176,
-        "trades30": 163,
-        "verifiedWr": 64.41717791411043,
-        "verifiedPf": 4.129395679461296,
-        "verifiedPnl": 3063.4875872279176,
-        "verifiedTrades": 163,
-        "quality": "VERIFIED_TOP_TRADER",
-        "qualificationReasons": [],
-        "confidenceTier": "VERIFIED_TOP_TRADER",
-        "score": 158638.27460412178
-      }
-    },
-    {
-      "name": "SOL_9XAU",
-      "address": "9xaUatyd1v1Zo7jndxqxUT1AJ4RYBYAi4M7YwSqWDqGQ",
-      "discovery": {
-        "programHits": 1,
-        "buys": 1,
-        "sells": 0,
-        "recentBuys": 1,
-        "recentBuyVolume": 123.95284130487103,
-        "volumeUsd": 123.95284130487103,
-        "lastTrade": 1790935792000,
-        "wr7": 85.71428571428571,
-        "pf7": 2.821810731211961,
-        "pnl7": 11.15925741921279,
-        "trades7": 7,
-        "wr30": 85.71428571428571,
-        "pf30": 2.821810731211961,
-        "pnl30": 11.15925741921279,
-        "trades30": 7,
-        "verifiedWr": 85.71428571428571,
-        "verifiedPf": 2.821810731211961,
-        "verifiedPnl": 11.15925741921279,
-        "verifiedTrades": 7,
-        "quality": "VERIFIED_EMERGING",
-        "qualificationReasons": [],
-        "confidenceTier": "VERIFIED_EMERGING",
-        "score": 63583.68505802179
+        "score": 160036.80277401538
       }
     }
   ],
   "futuresWallets": [
+    {
+      "name": "HL_50B3",
+      "address": "0x50b309f78e774a756a2230e1769729094cac9f20",
+      "raw": {
+        "ethAddress": "0x50b309f78e774a756a2230e1769729094cac9f20",
+        "accountValue": "906283.128255",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "16646.416074",
+              "roi": "0.0187114761",
+              "vlm": "96584274.8199999928"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "-29704.71162",
+              "roi": "-0.0650673879",
+              "vlm": "209339542.3100000024"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-688522.593994",
+              "roi": "-0.4317281938",
+              "vlm": "1037797498.4199999571"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-3105453.0517449998",
+              "roi": "-0.70722701",
+              "vlm": "46226382469.3799972534"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "pnl7": -29704.71162,
+        "pnl30": -688522.593994,
+        "volume7": 209339542.31,
+        "volume1d": 96584274.82
+      },
+      "quick": {
+        "recentFills": 1735,
+        "recentVolume": 60118873.93951006,
+        "adds": 886,
+        "recentAdds": 0,
+        "recentAddNotional": 0,
+        "signalReady": false
+      },
+      "discovery": {
+        "volume48h": 58723134.42580999,
+        "completedLifecycles": 8,
+        "inWindow": 3,
+        "holdRatio": 0.375,
+        "medianHoldHours": 3.212325,
+        "avgHoldHours": 3.6690794444444443,
+        "recentLifecycles": 5,
+        "observedAdds": 1051,
+        "pnl7": -29704.71162,
+        "pnl30": -688522.593994,
+        "leaderboardVolume7": 209339542.31,
+        "accountValue": 906283.128255,
+        "recentAdds": 0,
+        "recentAddNotional": 0,
+        "wr": 62.5,
+        "pf": 2.6734332569453634,
+        "realizedPnl": 21333.021673999905,
+        "closedTrades": 8,
+        "maxDrawdown": 0.8392753852369903,
+        "quality": "VERIFIED_EMERGING",
+        "qualificationReasons": [],
+        "confidenceTier": "VERIFIED_EMERGING",
+        "score": 61633.049650146684
+      }
+    },
     {
       "name": "HL_6752",
       "address": "0x6752fd3edb8a9adf4db1eed002f7134cf7ae7a2f",
