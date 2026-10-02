@@ -72,7 +72,7 @@ const SPOT_TRADER_MIN_WR = Number(process.env.WHALE_SPOT_MIN_WR || 55);
 const SPOT_TRADER_MIN_PF = Number(process.env.WHALE_SPOT_MIN_PF || 1.25);
 const SPOT_TRADER_MIN_CLOSED_TRADES = Number(process.env.WHALE_SPOT_MIN_CLOSED_TRADES || 10);
 const SPOT_TRADER_MIN_PNL_USD = Number(process.env.WHALE_SPOT_MIN_PNL_USD || 0);
-const SPOT_DISCOVERY_DEEP_CANDIDATES = Number(process.env.WHALE_SPOT_DISCOVERY_DEEP_CANDIDATES || 8);
+const SPOT_DISCOVERY_DEEP_CANDIDATES = Number(process.env.WHALE_SPOT_DISCOVERY_DEEP_CANDIDATES || 20);
 const SPOT_DISCOVERY_HISTORY_PAGES = Number(process.env.WHALE_SPOT_DISCOVERY_HISTORY_PAGES || 6);
 const SPOT_MIN_LIQUIDITY_USD = Number(process.env.SIGNAL_SPOT_MIN_LIQUIDITY_USD || 50000);
 const SPOT_MIN_VOLUME24H_USD = Number(process.env.SIGNAL_SPOT_MIN_VOLUME24H_USD || 100000);
@@ -118,7 +118,8 @@ const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TO
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 8);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
-const DISCOVERY_SCHEMA = 'V6.1-SPOT-PERFORMANCE-FUTURES-RECON-AUDITED';
+const DISCOVERY_SCHEMA = 'V6.1-PRO-MARKET-DISCOVERY-REBUILD';
+const BUILD_TAG = 'V6.1-PRO-MARKET-DISCOVERY-REBUILD';
 const DISCOVERY_SIGNAL_READY_ONLY = String(process.env.WHALE_DISCOVERY_SIGNAL_READY_ONLY || 'false').toLowerCase() === 'true';
 // Explicit quality-evidence aliases kept in the worker so the static audit and runtime use the same contract.
 const DISCOVERY_SPOT_MIN_EVIDENCE_TRADES = Number(process.env.WHALE_DISCOVERY_SPOT_MIN_EVIDENCE_TRADES || 3);
@@ -140,6 +141,15 @@ const DISCOVERY_SPOT_HOLDER_COUNT = Number(process.env.WHALE_DISCOVERY_SPOT_HOLD
 const DISCOVERY_SPOT_CANDIDATE_WALLETS = Number(process.env.WHALE_DISCOVERY_SPOT_CANDIDATE_WALLETS || 16);
 const DISCOVERY_SPOT_TX_LIMIT = Number(process.env.WHALE_DISCOVERY_SPOT_TX_LIMIT || 30);
 const DISCOVERY_SPOT_FINALISTS = Number(process.env.WHALE_DISCOVERY_SPOT_FINALISTS || 20);
+const SPOT_EMERGING_MIN_TRADES = Number(process.env.WHALE_SPOT_EMERGING_MIN_TRADES || 5);
+const SPOT_EMERGING_MIN_WR = Number(process.env.WHALE_SPOT_EMERGING_MIN_WR || 58);
+const SPOT_EMERGING_MIN_PF = Number(process.env.WHALE_SPOT_EMERGING_MIN_PF || 1.5);
+const SPOT_EMERGING_MAX_DD_PCT = Number(process.env.WHALE_SPOT_EMERGING_MAX_DD_PCT || 20);
+const FUTURES_EMERGING_MIN_TRADES = Number(process.env.WHALE_FUTURES_EMERGING_MIN_TRADES || 5);
+const FUTURES_EMERGING_MIN_WR = Number(process.env.WHALE_FUTURES_EMERGING_MIN_WR || 58);
+const FUTURES_EMERGING_MIN_PF = Number(process.env.WHALE_FUTURES_EMERGING_MIN_PF || 1.5);
+const FUTURES_EMERGING_MAX_DD_PCT = Number(process.env.WHALE_FUTURES_EMERGING_MAX_DD_PCT || 20);
+const DISCOVERY_DEEP_RATE_LIMIT_CONTINUE = String(process.env.WHALE_DISCOVERY_DEEP_RATE_LIMIT_CONTINUE || 'true').toLowerCase() !== 'false';
 const HL_LEADERBOARD_URL = process.env.HL_LEADERBOARD_URL || 'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';
 
 // V4 deliberately does not carry the old hard-coded wallet list forward.
@@ -369,28 +379,34 @@ async function discoverFutures(){
       const perf=performanceWindow(fills,trades,end-DISCOVERY_LOOKBACK_HOURS*3600000,end);
       const accountValue=n(r.accountValue);
       const reasons=[];
-      // Trading-style/holding behavior is a score, not a hard rejection.
-      // The hard gate is statistical performance + risk. This prevents a good
-      // high-WR trader from being discarded merely because his recent holding
-      // window is shorter/longer than our preferred 1-24h style.
+      // V6.1 PRO: verification is tiered. Strong traders keep the original
+      // statistical gate; Emerging traders can enter the watchlist with a
+      // smaller but still meaningful sample when WR/PF/risk are stronger.
       if(st.totalVolume<DISCOVERY_MIN_VOLUME_USD)reasons.push(`VOLUME<${DISCOVERY_MIN_VOLUME_USD}`);
-      if(perf.closedTrades<TRADER_MIN_CLOSED_TRADES)reasons.push(`CLOSED_TRADES<${TRADER_MIN_CLOSED_TRADES}`);
-      if(!(n(perf.wr)>=TRADER_MIN_WR))reasons.push(`WR<${TRADER_MIN_WR}%`);
-      if(!(n(perf.pf)>=TRADER_MIN_PF))reasons.push(`PF<${TRADER_MIN_PF}`);
-      if(!(n(perf.pnl)>=TRADER_MIN_PNL_USD))reasons.push(`PNL<=${TRADER_MIN_PNL_USD}`);
       if(Number.isFinite(accountValue)&&accountValue>0&&accountValue<TRADER_MIN_ACCOUNT_VALUE_USD)reasons.push(`ACCOUNT<$${TRADER_MIN_ACCOUNT_VALUE_USD}`);
       const ddPct=Number.isFinite(accountValue)&&accountValue>0&&Number.isFinite(perf.maxDrawdown)?(Math.max(0,perf.maxDrawdown)/accountValue)*100:null;
+      const baseEligible=st.totalVolume>=DISCOVERY_MIN_VOLUME_USD && Number.isFinite(accountValue) && accountValue>=TRADER_MIN_ACCOUNT_VALUE_USD;
       if(Number.isFinite(ddPct)&&ddPct>TRADER_MAX_DD_PCT)reasons.push(`DD>${TRADER_MAX_DD_PCT}%`);
-      const quality=reasons.length===0?'VERIFIED_TOP_TRADER':'REJECTED';
+      const strong=baseEligible&&perf.closedTrades>=TRADER_MIN_CLOSED_TRADES&&n(perf.wr)>=TRADER_MIN_WR&&n(perf.pf)>=TRADER_MIN_PF&&n(perf.pnl)>TRADER_MIN_PNL_USD&&(!Number.isFinite(ddPct)||ddPct<=TRADER_MAX_DD_PCT);
+      const emerging=baseEligible&&perf.closedTrades>=FUTURES_EMERGING_MIN_TRADES&&n(perf.wr)>=FUTURES_EMERGING_MIN_WR&&n(perf.pf)>=FUTURES_EMERGING_MIN_PF&&n(perf.pnl)>TRADER_MIN_PNL_USD&&(!Number.isFinite(ddPct)||ddPct<=FUTURES_EMERGING_MAX_DD_PCT);
+      let quality=strong?'VERIFIED_TOP_TRADER':(emerging?'VERIFIED_EMERGING':'REJECTED');
+      if(quality==='REJECTED'){
+        if(perf.closedTrades<Math.min(TRADER_MIN_CLOSED_TRADES,FUTURES_EMERGING_MIN_TRADES))reasons.push(`CLOSED_TRADES<${FUTURES_EMERGING_MIN_TRADES}`);
+        if(!(n(perf.wr)>=FUTURES_EMERGING_MIN_WR))reasons.push(`WR<${FUTURES_EMERGING_MIN_WR}%`);
+        if(!(n(perf.pf)>=FUTURES_EMERGING_MIN_PF))reasons.push(`PF<${FUTURES_EMERGING_MIN_PF}`);
+        if(!(n(perf.pnl)>TRADER_MIN_PNL_USD))reasons.push(`PNL<=${TRADER_MIN_PNL_USD}`);
+      }
       console.log(`[DISCOVERY][FUTURES][QUALITY] ${w.name} fills=${fills.length} closed=${perf.closedTrades} WR=${perf.wr==null?'NA':perf.wr.toFixed(1)} PF=${perf.pf===Infinity?'INF':perf.pf==null?'NA':perf.pf.toFixed(2)} PNL=${perf.pnl==null?'NA':perf.pnl.toFixed(2)} DD=${ddPct==null?'NA':ddPct.toFixed(2)}% acct=${accountValue||0} hold1-24=${st.inWindow}/${st.completed} freshADDs=${fresh.count} quality=${quality}${reasons.length?' reason='+reasons.join(','):''}`);
-      if(quality!=='VERIFIED_TOP_TRADER')continue;
+      if(quality==='REJECTED')continue;
+      const tierBoost=quality==='VERIFIED_TOP_TRADER'?100000:50000;
+      const sampleBoost=Math.min(50000,Math.max(0,perf.closedTrades)*500);
       const discovery={
         volume48h:st.totalVolume, completedLifecycles:st.completed, inWindow:st.inWindow, holdRatio:st.holdRatio,
         medianHoldHours:st.medianHoldHours, avgHoldHours:st.avgHoldHours, recentLifecycles:st.recentLifecycles,
         observedAdds:st.additions, pnl7:r.pnl7, pnl30:r.pnl30, leaderboardVolume7:r.volume7,
         accountValue, recentAdds:fresh.count, recentAddNotional:fresh.notional,
         wr:perf.wr,pf:perf.pf,realizedPnl:perf.pnl,closedTrades:perf.closedTrades,maxDrawdown:ddPct,
-        quality,qualificationReasons:[], score:100000+n(perf.wr)*100+n(perf.pf)*500+Math.min(50,Math.max(0,perf.pnl/1000))+Math.min(25,Math.max(0,st.totalVolume/1000000))+fresh.count*50
+        quality,qualificationReasons:[], confidenceTier:quality, score:tierBoost+sampleBoost+n(perf.wr)*100+n(perf.pf)*500+Math.min(50,Math.max(0,perf.pnl/1000))+Math.min(25,Math.max(0,st.totalVolume/1000000))+fresh.count*50
       };
       verified.push({...w,discovery});
     }catch(e){console.log(`[DISCOVERY][FUTURES][DEEP] ${w.name} ERROR ${String(e?.message||e).slice(0,140)}`)}
@@ -399,7 +415,7 @@ async function discoverFutures(){
   verified.sort((a,b)=>n(b.discovery.score)-n(a.discovery.score));
   const selected=verified.slice(0,TARGET_FUTURES_WALLETS);
   console.log(`[DISCOVERY][FUTURES][VERIFIED-SELECTION] verified=${verified.length} selected=${selected.length}/${TARGET_FUTURES_WALLETS}`);
-  if(!selected.length)console.log('[DISCOVERY][FUTURES][NO-VERIFIED-TRADERS] No Futures wallet passed the high-WR/PF/closed-trade gate; NO FALLBACK SIGNALS WILL BE CREATED.');
+  if(!selected.length)console.log('[DISCOVERY][FUTURES][NO-VERIFIED-TRADERS] No Futures wallet passed the Strong/Emerging performance gate; NO FALLBACK SIGNALS WILL BE CREATED.');
   return selected;
 }
 
@@ -462,12 +478,18 @@ async function discoverSpotCandidates(){
     await sleep(250);
   }
 
+  // V6.1 PRO: recent BUY is a signal-readiness property, not a whale-verification gate.
+  // A wallet with real swap evidence can enter Deep Audit even when its latest
+  // BUY is outside the 15m signal window. This prevents Spot discovery from
+  // collapsing to zero before historical performance is inspected.
   const pool=[...evidence.values()]
-    .filter(x=>x.buys+x.sells>=DISCOVERY_SPOT_MIN_EVIDENCE_TRADES && x.recentBuys>=DISCOVERY_SPOT_MIN_RECENT_BUYS && x.recentBuyVolume>=DISCOVERY_SPOT_MIN_RECENT_BUY_USD)
-    .sort((a,b)=>(b.recentBuyVolume-a.recentBuyVolume)+(b.volumeUsd-a.volumeUsd)*0.01)
-    .slice(0,Math.max(DISCOVERY_SPOT_FINALISTS, TARGET_SPOT_WALLETS));
+    .filter(x=>(x.buys+x.sells)>=1 && x.volumeUsd>=SPOT_MIN_BUY_USD)
+    .sort((a,b)=>{
+      return (b.recentBuyVolume-a.recentBuyVolume)*1000 + (b.recentBuys-a.recentBuys)*100 + (b.programHits-a.programHits)*10 + (b.volumeUsd-a.volumeUsd)*0.01;
+    })
+    .slice(0,Math.max(SPOT_DISCOVERY_DEEP_CANDIDATES,DISCOVERY_SPOT_FINALISTS,TARGET_SPOT_WALLETS));
   console.log(`[DISCOVERY][SPOT][UNIVERSE] evidenceWallets=${evidence.size} qualityPool=${pool.length}`);
-  if(!pool.length){console.log('[DISCOVERY][SPOT][NO-QUALITY-POOL] No active wallet passed BUY evidence gate.');return []}
+  if(!pool.length){console.log('[DISCOVERY][SPOT][NO-EVIDENCE-POOL] No decoded swap wallet passed the minimum evidence floor.');return []}
 
   const finals=[];
   for(const c of pool){
@@ -483,21 +505,23 @@ async function discoverSpotCandidates(){
       const reasons=[];
       const metric=(w7.closedTrades>=SPOT_TRADER_MIN_CLOSED_TRADES?w7:w30);
       const metricLabel=metric===w7?'7D':'30D';
-      if(metric.closedTrades<SPOT_TRADER_MIN_CLOSED_TRADES)reasons.push(`TRADES<${SPOT_TRADER_MIN_CLOSED_TRADES}`);
-      if(!(n(metric.wr)>=SPOT_TRADER_MIN_WR))reasons.push(`${metricLabel}_WR<${SPOT_TRADER_MIN_WR}%`);
-      if(!(n(metric.pf)>=SPOT_TRADER_MIN_PF))reasons.push(`${metricLabel}_PF<${SPOT_TRADER_MIN_PF}`);
-      if(!(n(metric.realizedPnl)>=SPOT_TRADER_MIN_PNL_USD))reasons.push(`${metricLabel}_PNL<=${SPOT_TRADER_MIN_PNL_USD}`);
-      if(recentBuys<DISCOVERY_SPOT_MIN_RECENT_BUYS)reasons.push(`FRESH_BUYS<${DISCOVERY_SPOT_MIN_RECENT_BUYS}`);
-      if(recentBuyVolume<DISCOVERY_SPOT_MIN_RECENT_BUY_USD)reasons.push(`FRESH_BUY_USD<${DISCOVERY_SPOT_MIN_RECENT_BUY_USD}`);
       const ddPct=Number.isFinite(metric.maxDrawdown)&&Number(metric.investedUsd)>0?(Math.max(0,Number(metric.maxDrawdown))/Number(metric.investedUsd))*100:null;
-      if(Number.isFinite(ddPct)&&ddPct>TRADER_MAX_DD_PCT)reasons.push(`${metricLabel}_DD>${TRADER_MAX_DD_PCT}%`);
-      const quality=reasons.length===0?'VERIFIED_TOP_TRADER':'REJECTED';
+      const strong=metric.closedTrades>=SPOT_TRADER_MIN_CLOSED_TRADES&&n(metric.wr)>=SPOT_TRADER_MIN_WR&&n(metric.pf)>=SPOT_TRADER_MIN_PF&&n(metric.realizedPnl)>SPOT_TRADER_MIN_PNL_USD&&(!Number.isFinite(ddPct)||ddPct<=TRADER_MAX_DD_PCT);
+      const emerging=metric.closedTrades>=SPOT_EMERGING_MIN_TRADES&&n(metric.wr)>=SPOT_EMERGING_MIN_WR&&n(metric.pf)>=SPOT_EMERGING_MIN_PF&&n(metric.realizedPnl)>SPOT_TRADER_MIN_PNL_USD&&(!Number.isFinite(ddPct)||ddPct<=SPOT_EMERGING_MAX_DD_PCT);
+      const quality=strong?'VERIFIED_TOP_TRADER':(emerging?'VERIFIED_EMERGING':'REJECTED');
+      if(quality==='REJECTED'){
+        if(metric.closedTrades<SPOT_EMERGING_MIN_TRADES)reasons.push(`TRADES<${SPOT_EMERGING_MIN_TRADES}`);
+        if(!(n(metric.wr)>=SPOT_EMERGING_MIN_WR))reasons.push(`${metricLabel}_WR<${SPOT_EMERGING_MIN_WR}%`);
+        if(!(n(metric.pf)>=SPOT_EMERGING_MIN_PF))reasons.push(`${metricLabel}_PF<${SPOT_EMERGING_MIN_PF}`);
+        if(!(n(metric.realizedPnl)>SPOT_TRADER_MIN_PNL_USD))reasons.push(`${metricLabel}_PNL<=${SPOT_TRADER_MIN_PNL_USD}`);
+        if(Number.isFinite(ddPct)&&ddPct>SPOT_EMERGING_MAX_DD_PCT)reasons.push(`${metricLabel}_DD>${SPOT_EMERGING_MAX_DD_PCT}%`);
+      }
       console.log(`[DISCOVERY][SPOT][QUALITY] ${w.name} tx=${txs.length} coverage=${pg.coverageDays?.toFixed?.(1)||'0'}d metric=${metricLabel} trades=${metric.closedTrades} WR=${metric.wr==null?'NA':metric.wr.toFixed(1)} PF=${metric.pf===Infinity?'INF':metric.pf==null?'NA':metric.pf.toFixed(2)} PNL=${metric.realizedPnl==null?'NA':metric.realizedPnl.toFixed(2)} DD=${ddPct==null?'NA':ddPct.toFixed(2)}% freshBuys=${recentBuys} freshUSD=${recentBuyVolume.toFixed(2)} quality=${quality}${reasons.length?' reason='+reasons.join(','):''}`);
-      if(quality!=='VERIFIED_TOP_TRADER')continue;
+      if(quality==='REJECTED')continue;
       const discovery={
         programHits:c.programHits, buys:c.buys,sells:c.sells,recentBuys,recentBuyVolume,volumeUsd:c.volumeUsd,lastTrade:c.lastTrade,
         wr7:w7.wr,pf7:w7.pf,pnl7:w7.realizedPnl,trades7:w7.closedTrades,wr30:w30.wr,pf30:w30.pf,pnl30:w30.realizedPnl,trades30:w30.closedTrades,verifiedWr:metric.wr,verifiedPf:metric.pf,verifiedPnl:metric.realizedPnl,verifiedTrades:metric.closedTrades,
-        coverageDays:pg.coverageDays,quality,qualificationReasons:[],score:100000+n(w7.wr)*100+n(w7.pf)*500+Math.min(50,Math.max(0,w7.realizedPnl/100))+recentBuys*100+Math.min(25,recentBuyVolume/100)
+        coverageDays:pg.coverageDays,quality,qualificationReasons:[],confidenceTier:quality, score:(quality==='VERIFIED_TOP_TRADER'?100000:50000)+Math.min(50000,Math.max(0,metric.closedTrades)*500)+n(metric.wr)*100+n(metric.pf)*500+Math.min(50,Math.max(0,metric.realizedPnl/100))+recentBuys*100+Math.min(25,recentBuyVolume/100)
       };
       finals.push({...w,discovery});
     }catch(e){console.log(`[DISCOVERY][SPOT][DEEP] ${w.name} ERROR ${String(e?.message||e).slice(0,140)}`)}
@@ -506,7 +530,7 @@ async function discoverSpotCandidates(){
   finals.sort((a,b)=>n(b.discovery.score)-n(a.discovery.score));
   const selected=finals.slice(0,TARGET_SPOT_WALLETS);
   console.log(`[DISCOVERY][SPOT][VERIFIED-SELECTION] verified=${finals.length} selected=${selected.length}/${TARGET_SPOT_WALLETS}`);
-  if(!selected.length)console.log('[DISCOVERY][SPOT][NO-VERIFIED-TRADERS] No Spot wallet passed the high-WR/PF/trade-count gate.');
+  if(!selected.length)console.log('[DISCOVERY][SPOT][NO-VERIFIED-TRADERS] No Spot wallet passed the Strong/Emerging performance gate.');
   return selected;
 }
 
@@ -716,7 +740,8 @@ async function telegram(text){
   if(!TG_TOKEN||!TG_CHAT){console.log('[TELEGRAM] credentials missing');return}
   try{
     const crypto=await import('node:crypto');
-    const hash=crypto.createHash('sha256').update(text).digest('hex');
+    const normalized=text.replace(/^🕒 .*$/m,'🕒 <CYCLE_TIME>').replace(/^⏱ Cycle .*$/m,'⏱ <CYCLE_DURATION>');
+    const hash=crypto.createHash('sha256').update(normalized).digest('hex');
     let prev={}; try{prev=JSON.parse(await fs.readFile(TELEGRAM_STATE_FILE,'utf8'));}catch{}
     if(prev.hash===hash && n(prev.sentAt)>Date.now()-TELEGRAM_DEDUP_MIN*60000){
       console.log(`[TELEGRAM][DEDUP] identical report suppressed for ${TELEGRAM_DEDUP_MIN}m`);return;
@@ -1604,10 +1629,12 @@ async function main(){
   }
   const lines=[
     `🐋 CRYPTO WHALE SIGNAL ENGINE ${VERSION}`,
+    `🔧 Build: ${BUILD_TAG}`,
     'READ-ONLY • SIGNALS ONLY • NO ORDERS',
     '━━━━━━━━━━━━━━━━━━',
     `🕒 ${new Date().toISOString()}`,
-    `👥 Verified traders: ${whaleGroups.length} | 🟢 Spot ${spotGreen.length} | 🟢 Futures ${futuresGreen.length}`,
+    `👥 Verified watchlist: Spot ${SPOT_WALLETS.length}/${TARGET_SPOT_WALLETS} | Futures ${FUTURES_WALLETS.length}/${TARGET_FUTURES_WALLETS}`,
+    `📡 Active signals: ${reportCandidates.length} | 🟢 Spot ${spotGreen.length} | 🟢 Futures ${futuresGreen.length}`,
     `📡 Signals: ${reportCandidates.length} | Verified gate: WR≥${TRADER_MIN_WR}% • PF≥${TRADER_MIN_PF} • Trades≥${TRADER_MIN_CLOSED_TRADES}`,
     ''
   ];
