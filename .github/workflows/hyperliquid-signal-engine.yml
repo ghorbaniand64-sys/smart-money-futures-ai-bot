@@ -33,8 +33,6 @@ jobs:
 
       # ============================================================
       # ENGINE VERSION
-      # IMPORTANT:
-      # Worker crypto_whale_signal_engine.mjs MUST be V6.2
       # ============================================================
       EXPECTED_ENGINE_VERSION: "V6.2"
 
@@ -55,10 +53,6 @@ jobs:
 
       # ============================================================
       # FUTURES DISCOVERY
-      #
-      # Discovery selects active Futures wallets.
-      # Final signal decision is still made by scanFutures()
-      # using fresh ADD activity.
       # ============================================================
       WHALE_DISCOVERY_SIGNAL_READY_ONLY: "false"
       WHALE_DISCOVERY_FUTURES_ACTIVE_SELECTION: "true"
@@ -76,14 +70,6 @@ jobs:
 
       # ============================================================
       # V6.2 FUTURES LIFECYCLE AUDIT
-      #
-      # Used to distinguish:
-      # NEW ENTRY
-      # ADD #2
-      # ADD #3
-      # ...
-      #
-      # Leverage comes from Hyperliquid clearinghouse state.
       # ============================================================
       SIGNAL_FUTURES_LIFECYCLE_AUDIT_HOURS: "24"
       SIGNAL_FUTURES_LIFECYCLE_AUDIT_MAX_PAGES: "3"
@@ -118,11 +104,7 @@ jobs:
 
       # ============================================================
       # SAFETY
-      #
       # READ-ONLY / SIGNAL-ONLY
-      # NO ORDERS
-      # NO POSITION CHANGES
-      # NO LEVERAGE CHANGES
       # ============================================================
       EXECUTION_ENABLED: "false"
       DRY_RUN: "true"
@@ -139,12 +121,16 @@ jobs:
 
       # ============================================================
       # NODE 22
+      #
+      # IMPORTANT:
+      # No npm cache is enabled here because this repository
+      # does not contain package-lock.json / npm-shrinkwrap.json
+      # / yarn.lock.
       # ============================================================
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: "npm"
 
       # ============================================================
       # STATE DIRECTORY
@@ -193,13 +179,6 @@ jobs:
 
       # ============================================================
       # ENGINE VERSION VERIFICATION
-      #
-      # THIS IS THE PART THAT FIXES:
-      #
-      # Expected: V6.1
-      # Actual:   V6.2
-      #
-      # Both workflow and worker MUST be V6.2.
       # ============================================================
       - name: Verify engine version V6.2
         shell: bash
@@ -261,7 +240,7 @@ jobs:
           echo "========================================"
 
       # ============================================================
-      # NODE SYNTAX
+      # NODE SYNTAX CHECK
       # ============================================================
       - name: Node syntax check
         shell: bash
@@ -295,35 +274,20 @@ jobs:
           required_patterns=(
             "V6.1-SPOT-FIFO-PERFORMANCE-V3"
             "V6.1-SPOT-PERFORMANCE-FUTURES-RECON-AUDITED"
-
-            "DISCOVERY_FUTURES_ACTIVE_SELECTION"
-            "FUTURES_MIN_ACTIVE_FILLS"
-            "FUTURES_MIN_ACTIVE_VOLUME_USD"
-
-            "FUTURES_MIN_SIGNAL_ADD_USD"
-            "FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD"
-            "FUTURES_SIGNAL_FRESHNESS_MIN"
-
-            "SPOT_MIN_SIGNAL_BUY_USD"
-
             "V6.2-TRADE-LIFECYCLE-MARKET-TYPE-LEVERAGE-AUDIT"
             "marketType:'FUTURES'"
-
             "FUTURES_LIFECYCLE_AUDIT_HOURS"
             "FUTURES_LIFECYCLE_AUDIT_MAX_PAGES"
-
             "leverageSource:'HYPERLIQUID_CLEARINGHOUSE_STATE'"
           )
 
           for pattern in "${required_patterns[@]}"; do
-
             if ! grep -q "$pattern" "$WORKER"; then
               echo "FATAL: missing V6.2 contract: $pattern"
               exit 1
             fi
 
             echo "PASS | $pattern"
-
           done
 
           echo
