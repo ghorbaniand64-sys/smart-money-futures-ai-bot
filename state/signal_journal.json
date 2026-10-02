@@ -506,7 +506,7 @@
       "currentPrice": 156.37,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 156.37,
       "lastMovePct": 0
     },
@@ -521,7 +521,7 @@
       "currentPrice": 1,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 1,
       "lastMovePct": 0
     },
@@ -536,7 +536,7 @@
       "currentPrice": 155.24,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 155.24,
       "lastMovePct": 0
     },
@@ -551,7 +551,7 @@
       "currentPrice": 237.51,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 237.51,
       "lastMovePct": 0
     },
@@ -566,7 +566,7 @@
       "currentPrice": 0.3325,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.3325,
       "lastMovePct": 0
     },
@@ -656,7 +656,9 @@
       "currentPrice": 85644.5,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 85644.5,
+      "lastMovePct": 0
     },
     {
       "key": "0x50b309f78e774a756a2230e1769729094cac9f20|BTC|LONG|29849213",
@@ -669,6 +671,34 @@
       "currentPrice": 85644.5,
       "tpPct": 3,
       "slPct": 1.5,
+      "outcome": null,
+      "lastPrice": 85644.5,
+      "lastMovePct": 0
+    },
+    {
+      "key": "MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa|3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh|LONG|29849240",
+      "time": 1790954418414,
+      "market": "SPOT",
+      "wallet": "MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa",
+      "coin": "WBTC",
+      "side": "LONG",
+      "entry": 85405.83,
+      "currentPrice": 85405.83,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null
+    },
+    {
+      "key": "MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa|rndrizKT3MK1iimdxRdWabcF7Zg7AR5T4nud4EkHBof|LONG|29849240",
+      "time": 1790954418414,
+      "market": "SPOT",
+      "wallet": "MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa",
+      "coin": "RENDER",
+      "side": "LONG",
+      "entry": 1.97,
+      "currentPrice": 1.97,
+      "tpPct": 4,
+      "slPct": 2,
       "outcome": null
     }
   ]
