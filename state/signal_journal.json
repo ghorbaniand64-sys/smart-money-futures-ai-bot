@@ -1376,6 +1376,21 @@
       "currentPrice": 0.1747,
       "tpPct": 3,
       "slPct": 1.5,
+      "outcome": null,
+      "lastPrice": 0.1747,
+      "lastMovePct": 0
+    },
+    {
+      "key": "0xddfe0b953e0c88aaa8f01f769ffeb8c856e80f51|BTC|SHORT|29849709",
+      "time": 1790982668796,
+      "market": "FUTURES",
+      "wallet": "0xddfe0b953e0c88aaa8f01f769ffeb8c856e80f51",
+      "coin": "BTC",
+      "side": "SHORT",
+      "entry": 84445.5,
+      "currentPrice": 84445.5,
+      "tpPct": 3,
+      "slPct": 1.5,
       "outcome": null
     }
   ]

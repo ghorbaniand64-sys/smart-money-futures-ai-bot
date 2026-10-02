@@ -1,6 +1,6 @@
 {
   "schema": "V6.5-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE",
-  "generatedAt": 1790982124389,
+  "generatedAt": 1790982660346,
   "criteria": {
     "holdHours": [
       1,
@@ -270,73 +270,85 @@
       }
     },
     {
-      "name": "HL_856C",
-      "address": "0x856c35038594767646266bc7fd68dc26480e910d",
+      "name": "HL_DDFE",
+      "address": "0xddfe0b953e0c88aaa8f01f769ffeb8c856e80f51",
       "raw": {
-        "ethAddress": "0x856c35038594767646266bc7fd68dc26480e910d",
-        "accountValue": "81302622.8350600004",
+        "ethAddress": "0xddfe0b953e0c88aaa8f01f769ffeb8c856e80f51",
+        "accountValue": "430189.892107",
         "windowPerformances": [
           [
             "day",
             {
-              "pnl": "1702375.2021099995",
-              "roi": "0.0213329446",
-              "vlm": "72706700.6400000006"
+              "pnl": "-49920.570553",
+              "roi": "-0.1167552744",
+              "vlm": "36702521.4600000009"
             }
           ],
           [
             "week",
             {
-              "pnl": "4223691.6194660012",
-              "roi": "0.0886678983",
-              "vlm": "389465692.8600000739"
+              "pnl": "-63184.779225",
+              "roi": "-0.1304160693",
+              "vlm": "90111718.3900000006"
             }
           ],
           [
             "month",
             {
-              "pnl": "3559782.5491900002",
-              "roi": "0.0443445497",
-              "vlm": "1944049279.8299999237"
+              "pnl": "-59509.094181",
+              "roi": "-0.1215217835",
+              "vlm": "236233030.0200000107"
             }
           ],
           [
             "allTime",
             {
-              "pnl": "46897645.5950599909",
-              "roi": "0.5806749196",
-              "vlm": "26494708643.6000022888"
+              "pnl": "-1364661.47",
+              "roi": "-0.7641040929",
+              "vlm": "6657344127.5399999619"
             }
           ]
         ],
         "prize": 0,
         "displayName": null,
-        "pnl7": 4223691.619466001,
-        "pnl30": 3559782.54919,
-        "volume7": 389465692.8600001,
-        "volume1d": 72706700.64
+        "pnl7": -63184.779225,
+        "pnl30": -59509.094181,
+        "volume7": 90111718.39,
+        "volume1d": 36702521.46
       },
       "quick": {
-        "recentFills": 341,
-        "recentVolume": 140785.83746100002,
-        "adds": 145,
-        "recentAdds": 5,
-        "recentAddNotional": 1140.6542560000041,
+        "recentFills": 427,
+        "recentVolume": 15089669.354790013,
+        "adds": 279,
+        "recentAdds": 141,
+        "recentAddNotional": 3151179.864000002,
         "signalReady": true
       },
       "discovery": {
-        "quality": "ACTIVE_WATCH",
-        "confidenceTier": "ACTIVE_WATCH",
-        "qualificationReasons": [
-          "QUICK_ACTIVITY_ONLY",
-          "NOT_PERFORMANCE_VERIFIED"
-        ],
-        "recentFills": 341,
-        "recentVolume": 140785.83746100002,
-        "recentAdds": 5,
-        "recentAddNotional": 1140.6542560000041,
-        "score": 7548.512630610005,
-        "tier": "ACTIVE_WATCH",
+        "volume48h": 61031894.85451001,
+        "completedLifecycles": 10,
+        "inWindow": 4,
+        "holdRatio": 0.4,
+        "medianHoldHours": 2.2016258333333334,
+        "avgHoldHours": 4.5789502777777775,
+        "recentLifecycles": 7,
+        "observedAdds": 836,
+        "pnl7": -63184.779225,
+        "pnl30": -59509.094181,
+        "leaderboardVolume7": 90111718.39,
+        "accountValue": 430189.892107,
+        "recentAdds": 63,
+        "recentAddNotional": 776360.1105,
+        "wr": 33.33333333333333,
+        "pf": 0.497473598085509,
+        "realizedPnl": -52611.99070699975,
+        "closedTrades": 9,
+        "maxDrawdown": 13.168505499871088,
+        "quality": "ACTIVE_FALLBACK",
+        "qualificationReasons": [],
+        "confidenceTier": "ACTIVE_FALLBACK",
+        "score": 21257.070132376088,
+        "tier": "ACTIVE_FALLBACK",
         "selectionRank": 4,
         "selectionKind": "FUTURES"
       }
