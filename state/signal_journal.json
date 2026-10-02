@@ -1361,7 +1361,7 @@
       "currentPrice": 2665.95,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 2665.95,
       "lastMovePct": 0
     },
@@ -1391,7 +1391,9 @@
       "currentPrice": 84445.5,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 84445.5,
+      "lastMovePct": 0
     }
   ]
 }
