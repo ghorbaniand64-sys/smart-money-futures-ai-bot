@@ -14,16 +14,17 @@ concurrency:
 
 jobs:
   whale-signal-engine:
-    name: Crypto Whale Signal Engine V6.3
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
     environment: production
 
     env:
-      NODE_ENV: production
+      NODE_VERSION: "22"
+      EXPECTED_ENGINE_VERSION: "V6.3"
 
       # ============================================================
-      # PRODUCTION SECRETS
+      # API / SECRETS
       # ============================================================
       HYPERLIQUID_API_URL: ${{ secrets.HYPERLIQUID_API_URL }}
       SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
@@ -32,83 +33,67 @@ jobs:
       HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
 
       # ============================================================
-      # ENGINE VERSION
+      # ENGINE MODE — READ ONLY / SIGNAL ONLY
       # ============================================================
-      EXPECTED_ENGINE_VERSION: "V6.3"
+      EXECUTION_ENABLED: "false"
+      DRY_RUN: "true"
 
       # ============================================================
-      # DISCOVERY / WATCHLIST
+      # DISCOVERY
       # ============================================================
       TARGET_SPOT_WALLETS: "5"
       TARGET_FUTURES_WALLETS: "5"
+
       DISCOVERY_TTL_MIN: "45"
 
-      # ============================================================
-      # SPOT DISCOVERY QUALITY
-      # ============================================================
       WHALE_DISCOVERY_SPOT_MIN_EVIDENCE_TRADES: "10"
       WHALE_DISCOVERY_SPOT_MIN_RECENT_BUYS: "2"
       WHALE_DISCOVERY_SPOT_MIN_RECENT_BUY_USD: "100"
-      WHALE_DISCOVERY_ALLOW_ACTIVE_FALLBACK: "true"
 
-      # ============================================================
-      # FUTURES DISCOVERY
-      # ============================================================
+      WHALE_DISCOVERY_ALLOW_ACTIVE_FALLBACK: "true"
       WHALE_DISCOVERY_SIGNAL_READY_ONLY: "false"
+
       WHALE_DISCOVERY_FUTURES_ACTIVE_SELECTION: "true"
       WHALE_DISCOVERY_FUTURES_MIN_ACTIVE_FILLS: "5"
       WHALE_DISCOVERY_FUTURES_MIN_ACTIVE_VOLUME_USD: "25000"
       WHALE_DISCOVERY_FUTURES_MIN_FRESH_ADD_USD: "100"
 
       # ============================================================
-      # FUTURES SIGNAL RULES
+      # FUTURES SIGNAL ENGINE
       # ============================================================
       SIGNAL_FUTURES_MIN_ADD_USD: "100"
       SIGNAL_FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD: "100"
+
       SIGNAL_FUTURES_SIGNAL_FRESHNESS_MIN: "15"
       SIGNAL_FUTURES_ACTIVITY_LOOKBACK_MIN: "120"
 
       # ============================================================
-      # V6.3 FUTURES LIFECYCLE
-      #
-      # NEW ENTRY
-      # ADD #2
-      # ADD #3
-      # ...
-      #
-      # Lifecycle is reconstructed from position-increase events,
-      # not raw fill count.
+      # FUTURES LIFECYCLE AUDIT
       # ============================================================
       SIGNAL_FUTURES_LIFECYCLE_AUDIT_HOURS: "24"
       SIGNAL_FUTURES_LIFECYCLE_AUDIT_MAX_PAGES: "3"
       SIGNAL_FUTURES_LIFECYCLE_BATCH_MIN: "3"
 
       # ============================================================
-      # SPOT SIGNAL RULES
+      # SPOT SIGNAL ENGINE
       # ============================================================
       SIGNAL_SPOT_MIN_BUY_USD: "25"
       SIGNAL_SPOT_ACTIVITY_LOOKBACK_MIN: "15"
       SIGNAL_SPOT_MAX_ACTIVITY_AGE_MIN: "15"
 
       # ============================================================
-      # GENERAL SIGNAL LATENCY
+      # SIGNAL RISK MODEL
       # ============================================================
-      SIGNAL_MAX_SIGNAL_LATENCY_MIN: "5"
-
-      # ============================================================
-      # RISK / TARGETS
-      # ============================================================
-      SIGNAL_SPOT_SL_PCT: "2.0"
-      SIGNAL_SPOT_TP_PCT: "4.0"
+      SIGNAL_SPOT_SL_PCT: "2"
+      SIGNAL_SPOT_TP_PCT: "4"
 
       SIGNAL_FUTURES_SL_PCT: "1.5"
-      SIGNAL_FUTURES_TP_PCT: "3.0"
+      SIGNAL_FUTURES_TP_PCT: "3"
 
       # ============================================================
-      # UNIFIED PERFORMANCE GATE
+      # UNIFIED TRADER GATE
       #
-      # The displayed audited performance and verified gate
-      # use the same performance basis.
+      # SAME PERFORMANCE CONTRACT FOR DISCOVERY + SIGNAL GATE
       # ============================================================
       TRADER_MIN_CLOSED_TRADES: "10"
       TRADER_MIN_WR: "55"
@@ -126,15 +111,9 @@ jobs:
       PERFORMANCE_MIN_CLOSED_TRADE_USD: "1"
 
       # ============================================================
-      # EXECUTION SAFETY
-      #
-      # READ-ONLY / SIGNAL-ONLY
-      # NO ORDERS
-      # NO POSITION CHANGES
-      # NO LEVERAGE CHANGES
+      # SELF TEST
       # ============================================================
-      EXECUTION_ENABLED: "false"
-      DRY_RUN: "true"
+      WHALE_SELF_TEST: "true"
 
     steps:
 
@@ -144,126 +123,79 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
+          persist-credentials: true
+          ref: main
 
       # ============================================================
-      # NODE 22
+      # NODE
       #
       # IMPORTANT:
-      # No npm cache is enabled because this repository does not
-      # require package-lock.json / npm-shrinkwrap.json / yarn.lock.
+      # No npm cache here because the repository does not require
+      # package-lock.json for setup-node cache.
       # ============================================================
-      - name: Setup Node.js 22
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: ${{ env.NODE_VERSION }}
 
       # ============================================================
-      # STATE DIRECTORY
+      # VERIFY WORKER FILE
       # ============================================================
-      - name: Prepare state directory
+      - name: Verify worker file
         shell: bash
         run: |
           set -e
 
-          mkdir -p state
-
           echo "========================================"
-          echo "STATE DIRECTORY READY"
+          echo "V6.3 WORKER VERIFICATION"
           echo "========================================"
 
+          test -f crypto_whale_signal_engine.mjs
+
+          echo "PASS | crypto_whale_signal_engine.mjs exists"
+
       # ============================================================
-      # WORKER FILE VERIFICATION
+      # VERIFY ENGINE VERSION
       # ============================================================
-      - name: Verify required worker exists
+      - name: Verify engine version
         shell: bash
         run: |
           set -e
 
-          WORKER="crypto_whale_signal_engine.mjs"
-
           echo "========================================"
-          echo "WORKER FILE VERIFICATION"
+          echo "ENGINE VERSION"
           echo "========================================"
 
-          if [ ! -f "$WORKER" ]; then
-            echo "FATAL: $WORKER not found"
-            echo
-            echo "Repository root:"
-            ls -la
-            echo
-            exit 1
-          fi
+          ACTUAL_VERSION="$(
+            node - <<'NODE'
+            const fs = require('fs');
 
-          echo "Worker: $WORKER"
-          echo "Bytes:"
-          wc -c "$WORKER"
+            const file = 'crypto_whale_signal_engine.mjs';
+            const src = fs.readFileSync(file, 'utf8');
 
-          echo
-          echo "Worker exists: PASS"
-          echo "========================================"
-
-      # ============================================================
-      # ENGINE VERSION VERIFICATION
-      # ============================================================
-      - name: Verify engine version V6.3
-        shell: bash
-        env:
-          EXPECTED_ENGINE_VERSION: "V6.3"
-        run: |
-          set -e
-
-          WORKER="crypto_whale_signal_engine.mjs"
-
-          echo "========================================"
-          echo "ENGINE VERSION VERIFICATION"
-          echo "========================================"
-
-          echo
-          echo "VERSION declarations:"
-          grep -n "const VERSION" "$WORKER" || true
-
-          ACTUAL_VERSION="$(node -e "
-            const fs=require('fs');
-
-            const s=fs.readFileSync(process.argv[1],'utf8');
-
-            const m=s.match(
-              /const\\s+VERSION\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]/
+            const m = src.match(
+              /const\s+VERSION\s*=\s*['"]([^'"]+)['"]/
             );
 
-            if(!m) {
-              console.error('VERSION declaration not found');
-              process.exit(2);
+            if (!m) {
+              console.error('FATAL: VERSION constant not found');
+              process.exit(1);
             }
 
             process.stdout.write(m[1]);
-          " "$WORKER")"
+            NODE
+          )"
 
-          echo
-          echo "Expected:"
-          echo "$EXPECTED_ENGINE_VERSION"
-
-          echo
-          echo "Actual:"
-          echo "$ACTUAL_VERSION"
-
-          echo
+          echo "Expected: ${EXPECTED_ENGINE_VERSION}"
+          echo "Actual:   ${ACTUAL_VERSION}"
 
           if [ "$ACTUAL_VERSION" != "$EXPECTED_ENGINE_VERSION" ]; then
-            echo "========================================"
-            echo "FATAL: WRONG ENGINE VERSION"
-            echo "========================================"
-            echo
-            echo "Repository contains: $ACTUAL_VERSION"
-            echo "Workflow expects:     $EXPECTED_ENGINE_VERSION"
-            echo
+            echo "FATAL: engine version mismatch"
             exit 1
           fi
 
-          echo "========================================"
-          echo "ENGINE VERSION VERIFIED: $ACTUAL_VERSION"
-          echo "========================================"
+          echo "PASS | engine version ${ACTUAL_VERSION}"
 
       # ============================================================
       # NODE SYNTAX CHECK
@@ -279,92 +211,140 @@ jobs:
 
           node --check crypto_whale_signal_engine.mjs
 
-          echo
           echo "PASS | node --check"
-          echo "========================================"
 
       # ============================================================
       # V6.3 CONTRACT VERIFICATION
       # ============================================================
-      - name: Verify critical V6.3 contracts
+      - name: V6.3 contract verification
         shell: bash
         run: |
           set -e
-
-          WORKER="crypto_whale_signal_engine.mjs"
 
           echo "========================================"
           echo "V6.3 CONTRACT VERIFICATION"
           echo "========================================"
 
-          required_patterns=(
-            "V6.1-SPOT-FIFO-PERFORMANCE-V3"
-            "V6.1-SPOT-PERFORMANCE-FUTURES-RECON-AUDITED"
+          FILE="crypto_whale_signal_engine.mjs"
 
-            "V6.2-TRADE-LIFECYCLE-MARKET-TYPE-LEVERAGE-AUDIT"
+          require_pattern() {
+            PATTERN="$1"
+            LABEL="$2"
 
-            "V6.3"
-
-            "marketType:'FUTURES'"
-            "marketType:'SPOT'"
-
-            "FUTURES_LIFECYCLE_AUDIT_HOURS"
-            "FUTURES_LIFECYCLE_AUDIT_MAX_PAGES"
-
-            "leverageSource:'HYPERLIQUID_CLEARINGHOUSE_STATE'"
-
-            "TRADER_MIN_CLOSED_TRADES"
-            "TRADER_MIN_WR"
-            "TRADER_MIN_PF"
-
-            "SPOT_TRADER_MIN_CLOSED_TRADES"
-            "SPOT_TRADER_MIN_WR"
-            "SPOT_TRADER_MIN_PF"
-          )
-
-          for pattern in "${required_patterns[@]}"; do
-
-            if ! grep -q "$pattern" "$WORKER"; then
-              echo "FATAL: missing V6.3 contract: $pattern"
+            if grep -Fq "$PATTERN" "$FILE"; then
+              echo "PASS | $LABEL"
+            else
+              echo "FATAL: missing V6.3 contract: $LABEL"
+              echo "Pattern: $PATTERN"
               exit 1
             fi
+          }
 
-            echo "PASS | $pattern"
+          # Legacy / previous contracts that must remain present
+          require_pattern \
+            "V6.1-SPOT-FIFO-PERFORMANCE-V3" \
+            "V6.1 spot FIFO performance"
 
-          done
+          require_pattern \
+            "V6.1-SPOT-PERFORMANCE-FUTURES-RECON-AUDITED" \
+            "V6.1 futures recon audited"
 
-          echo
+          require_pattern \
+            "V6.2-TRADE-LIFECYCLE-MARKET-TYPE-LEVERAGE-AUDIT" \
+            "V6.2 lifecycle market type leverage"
+
+          # V6.3
+          require_pattern \
+            "V6.3" \
+            "V6.3 engine"
+
+          # Market contracts
+          require_pattern \
+            "marketType:'FUTURES'" \
+            "FUTURES marketType"
+
+          require_pattern \
+            "marketType:'SPOT'" \
+            "SPOT marketType"
+
+          # Lifecycle
+          require_pattern \
+            "FUTURES_LIFECYCLE_AUDIT_HOURS" \
+            "futures lifecycle audit hours"
+
+          require_pattern \
+            "FUTURES_LIFECYCLE_AUDIT_MAX_PAGES" \
+            "futures lifecycle audit max pages"
+
+          # Leverage
+          require_pattern \
+            "leverageSource:'HYPERLIQUID_CLEARINGHOUSE_STATE'" \
+            "live Hyperliquid clearinghouse leverage"
+
+          # Unified trader gate
+          require_pattern \
+            "TRADER_MIN_CLOSED_TRADES" \
+            "unified minimum closed trades"
+
+          require_pattern \
+            "TRADER_MIN_WR" \
+            "unified minimum win rate"
+
+          require_pattern \
+            "TRADER_MIN_PF" \
+            "unified minimum profit factor"
+
+          # Spot gate
+          require_pattern \
+            "SPOT_TRADER_MIN_CLOSED_TRADES" \
+            "spot minimum closed trades"
+
+          require_pattern \
+            "SPOT_TRADER_MIN_WR" \
+            "spot minimum win rate"
+
+          require_pattern \
+            "SPOT_TRADER_MIN_PF" \
+            "spot minimum profit factor"
+
           echo "========================================"
-          echo "V6.3 CONTRACTS VERIFIED"
+          echo "PASS | V6.3 CONTRACT VERIFICATION"
           echo "========================================"
 
       # ============================================================
       # SELF TEST
       # ============================================================
-      - name: Run V6.3 self-test
+      - name: V6.3 self test
         shell: bash
         env:
           WHALE_SELF_TEST: "true"
+          EXECUTION_ENABLED: "false"
+          DRY_RUN: "true"
         run: |
           set -e
 
           echo "========================================"
-          echo "V6.3 SELF-TEST"
+          echo "V6.3 SELF TEST"
           echo "========================================"
 
-          WHALE_SELF_TEST=true \
-            node crypto_whale_signal_engine.mjs
+          node crypto_whale_signal_engine.mjs
 
-          echo
           echo "========================================"
-          echo "V6.3 SELF-TEST PASSED"
+          echo "PASS | V6.3 SELF TEST"
           echo "========================================"
 
       # ============================================================
-      # RUNTIME CONFIGURATION
+      # LIVE SIGNAL RUN
+      #
+      # Still READ-ONLY / SIGNAL-ONLY.
+      # No order execution.
       # ============================================================
-      - name: Print runtime configuration
+      - name: Run whale signal engine
         shell: bash
+        env:
+          WHALE_SELF_TEST: "false"
+          EXECUTION_ENABLED: "false"
+          DRY_RUN: "true"
         run: |
           set -e
 
@@ -372,177 +352,75 @@ jobs:
           echo "CRYPTO WHALE SIGNAL ENGINE V6.3"
           echo "========================================"
 
-          echo
           echo "Mode: READ-ONLY / SIGNAL-ONLY"
-          echo "Orders: DISABLED"
           echo "Execution: DISABLED"
-          echo "Dry Run: TRUE"
-
-          echo
-          echo "----------------------------------------"
-          echo "WATCHLIST"
-          echo "----------------------------------------"
-
-          echo "Spot target: 5"
-          echo "Futures target: 5"
-          echo "Discovery TTL: 45m"
-
-          echo
-          echo "----------------------------------------"
-          echo "SPOT DISCOVERY"
-          echo "----------------------------------------"
-
-          echo "Minimum evidence trades: 10"
-          echo "Minimum recent BUYs: 2"
-          echo "Minimum recent BUY volume: \$100"
-
-          echo
-          echo "----------------------------------------"
-          echo "FUTURES DISCOVERY"
-          echo "----------------------------------------"
-
-          echo "Discovery: ACTIVE WALLET SELECTION"
-          echo "Minimum active fills: 5"
-          echo "Minimum active volume: \$25,000"
-          echo "Fresh ADD minimum: \$100"
-
-          echo
-          echo "----------------------------------------"
-          echo "FUTURES SIGNAL"
-          echo "----------------------------------------"
-
-          echo "Fresh ADD minimum: \$100"
-          echo "Freshness: <= 15m"
-          echo "Activity lookback: 120m"
-
-          echo
-          echo "----------------------------------------"
-          echo "FUTURES LIFECYCLE"
-          echo "----------------------------------------"
-
-          echo "Lifecycle audit: 24h"
-          echo "Lifecycle audit max pages: 3"
-          echo "Lifecycle batch window: 3m"
-          echo "Leverage source: Hyperliquid clearinghouse state"
-
-          echo
-          echo "Lifecycle labels:"
-          echo "NEW ENTRY"
-          echo "ADD #2"
-          echo "ADD #3"
-          echo "ADD #N"
-
-          echo
-          echo "----------------------------------------"
-          echo "UNIFIED VERIFIED GATE"
-          echo "----------------------------------------"
-
-          echo "Closed trades minimum: 10"
-          echo "Win rate minimum: 55%"
-          echo "Profit factor minimum: 1.25"
-
-          echo
-          echo "Gate basis:"
-          echo "AUDITED PERFORMANCE DATA"
-
-          echo
-          echo "----------------------------------------"
-          echo "SPOT SIGNAL"
-          echo "----------------------------------------"
-
-          echo "Minimum BUY: \$25"
-          echo "Activity lookback: 15m"
-          echo "Maximum signal age: 15m"
-
-          echo
-          echo "----------------------------------------"
-          echo "RISK / TARGETS"
-          echo "----------------------------------------"
-
-          echo "Spot SL: 2.0%"
-          echo "Spot TP: 4.0%"
-          echo "Spot RR: 2.0"
-
-          echo "Futures SL: 1.5%"
-          echo "Futures TP: 3.0%"
-          echo "Futures RR: 2.0"
-
-          echo
-          echo "----------------------------------------"
-          echo "EXECUTION SAFETY"
-          echo "----------------------------------------"
-
-          echo "NO ORDERS"
-          echo "NO POSITION CHANGES"
-          echo "NO LEVERAGE CHANGES"
-
-          echo
-          echo "----------------------------------------"
-          echo "ENGINE"
-          echo "----------------------------------------"
-
-          echo "V6.3"
-          echo "========================================"
-
-      # ============================================================
-      # RUN ENGINE
-      # ============================================================
-      - name: Run Crypto Whale Signal Engine V6.3
-        shell: bash
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "STARTING CRYPTO WHALE SIGNAL ENGINE V6.3"
+          echo "Dry run: TRUE"
+          echo "Engine: ${EXPECTED_ENGINE_VERSION}"
           echo "========================================"
 
           node crypto_whale_signal_engine.mjs
 
-          echo
-          echo "========================================"
-          echo "CRYPTO WHALE SIGNAL ENGINE V6.3 FINISHED"
-          echo "========================================"
-
       # ============================================================
       # PERSIST STATE
+      #
+      # IMPORTANT:
+      # 1. Fetch latest remote main
+      # 2. Rebase our state commit on top
+      # 3. Push HEAD -> main
+      #
+      # This fixes:
+      # ! [rejected] main -> main (fetch first)
       # ============================================================
-      - name: Persist state changes
-        if: always()
+      - name: Persist state
         shell: bash
         run: |
           set -e
 
           echo "========================================"
-          echo "STATE PERSISTENCE"
+          echo "PERSIST STATE"
           echo "========================================"
 
-          if [ -n "$(git status --porcelain)" ]; then
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/
 
-            git add state/
-
-            if ! git diff --cached --quiet; then
-
-              git commit -m "chore: update whale signal engine state"
-
-              git push
-
-              echo "State changes committed and pushed."
-
-            else
-
-              echo "No staged state changes."
-
-            fi
-
-          else
-
+          if git diff --cached --quiet; then
             echo "No state changes to commit."
-
+            exit 0
           fi
 
+          git commit -m "chore: update whale signal engine state"
+
+          echo "Fetching latest remote main..."
+
+          git fetch origin main
+
+          echo "Rebasing local state commit onto origin/main..."
+
+          git rebase origin/main
+
+          echo "Pushing synchronized state..."
+
+          git push origin HEAD:main
+
           echo "========================================"
-          echo "STATE PERSISTENCE FINISHED"
+          echo "PASS | STATE PUSHED"
+          echo "========================================"
+
+      # ============================================================
+      # FINAL STATUS
+      # ============================================================
+      - name: Final status
+        if: always()
+        shell: bash
+        run: |
+          echo "========================================"
+          echo "CRYPTO WHALE SIGNAL ENGINE V6.3"
+          echo "========================================"
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Run ID:   ${{ github.run_id }}"
+          echo "Commit:   ${{ github.sha }}"
+          echo "Mode:     READ-ONLY / SIGNAL-ONLY"
+          echo "Orders:   DISABLED"
           echo "========================================"
