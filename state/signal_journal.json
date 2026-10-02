@@ -581,7 +581,9 @@
       "currentPrice": 0.003112,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.003112,
+      "lastMovePct": 0
     },
     {
       "key": "9EVzTzLSfYHrjXpejBRFGmZVG9jRsS4tDtcE1NpD6srb|6ZnCkq5t8XG4q42b5JiVvU6hV5cZFaNdSBoFq5E7Vf9q|LONG|29849180",
@@ -594,7 +596,9 @@
       "currentPrice": 0.008734,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.008734,
+      "lastMovePct": 0
     },
     {
       "key": "7qcqTuCEQEGSRNHL7wPLAxrzE8iSscwEVhn8ozkgWHR|G6autZruJLEzYKRh84qTsbVhrTvLEbjBYdHnBQH1zitp|LONG|29849180",
@@ -607,7 +611,9 @@
       "currentPrice": 0.0003632,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.0003632,
+      "lastMovePct": 0
     },
     {
       "key": "0x50b309f78e774a756a2230e1769729094cac9f20|BTC|LONG|29849178",
@@ -618,6 +624,21 @@
       "side": "LONG",
       "entry": 86481.5,
       "currentPrice": 86481.5,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null,
+      "lastPrice": 86481.5,
+      "lastMovePct": 0
+    },
+    {
+      "key": "0x50b309f78e774a756a2230e1769729094cac9f20|BTC|LONG|29849196",
+      "time": 1790952309712,
+      "market": "FUTURES",
+      "wallet": "0x50b309f78e774a756a2230e1769729094cac9f20",
+      "coin": "BTC",
+      "side": "LONG",
+      "entry": 85890.5,
+      "currentPrice": 85890.5,
       "tpPct": 3,
       "slPct": 1.5,
       "outcome": null
