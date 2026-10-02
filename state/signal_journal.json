@@ -248,6 +248,19 @@
       "tpPct": 3,
       "slPct": 1.5,
       "outcome": null
+    },
+    {
+      "key": "5XDgCHK5GrvC1vR8UEtBYQep6kYw56TVj69FmxuiMRbs|BPxxfRCXkUVhig4HS1Lh7kZqV6SPJhzfEk4x6fVBjPCy|LONG|29848979",
+      "time": 1790939094189,
+      "market": "SPOT",
+      "wallet": "5XDgCHK5GrvC1vR8UEtBYQep6kYw56TVj69FmxuiMRbs",
+      "coin": "BP",
+      "side": "LONG",
+      "entry": 1.35,
+      "currentPrice": 1.35,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null
     }
   ]
 }
