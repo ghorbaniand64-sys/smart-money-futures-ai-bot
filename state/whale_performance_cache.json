@@ -1714,5 +1714,70 @@
       },
       "updatedAt": 1790928280737
     }
+  },
+  "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:GrtB74p48p4nnwQ5BvAYJrAubUas5KSRzi2NCms7Nt2s": {
+    "updatedAt": 1790929107121,
+    "data": {
+      "schema": "V6.1-SPOT-FIFO-PERFORMANCE-V3",
+      "market": "SPOT",
+      "complete": false,
+      "pages": 12,
+      "txCount": 1197,
+      "closedTrades": 19,
+      "coverageStart": 1790904422000,
+      "coverageDays": 0.2857074189814815,
+      "rateLimited": false,
+      "coverage7d": false,
+      "coverage30d": false,
+      "w7": {
+        "roi": 5.516585487438516,
+        "realizedPnl": 120.78023485041199,
+        "investedUsd": 2189.402033657112,
+        "closedTrades": 19,
+        "wins": 13,
+        "losses": 6,
+        "wr": 68.42105263157895,
+        "pf": 15.37288556148443,
+        "maxDrawdown": 0.37376529582831286,
+        "avgHoldHours": 2.280423976608187,
+        "coinPnl": {
+          "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv": 10.676509506857059,
+          "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS": 110.18392378218947,
+          "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN": -3.126061231092727,
+          "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs": -2.1026706907131825,
+          "98sMhvDwXj1RQi5c5Mndm3vPe9cBqPrbLaufMXFNMh5g": 5.368647847883409,
+          "6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx": -0.22011436471204604
+        },
+        "topCoin": {
+          "coin": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS",
+          "pnl": 110.18392378218947
+        }
+      },
+      "w30": {
+        "roi": 5.516585487438516,
+        "realizedPnl": 120.78023485041199,
+        "investedUsd": 2189.402033657112,
+        "closedTrades": 19,
+        "wins": 13,
+        "losses": 6,
+        "wr": 68.42105263157895,
+        "pf": 15.37288556148443,
+        "maxDrawdown": 0.37376529582831286,
+        "avgHoldHours": 2.280423976608187,
+        "coinPnl": {
+          "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv": 10.676509506857059,
+          "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS": 110.18392378218947,
+          "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN": -3.126061231092727,
+          "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs": -2.1026706907131825,
+          "98sMhvDwXj1RQi5c5Mndm3vPe9cBqPrbLaufMXFNMh5g": 5.368647847883409,
+          "6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx": -0.22011436471204604
+        },
+        "topCoin": {
+          "coin": "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS",
+          "pnl": 110.18392378218947
+        }
+      },
+      "updatedAt": 1790929107121
+    }
   }
 }

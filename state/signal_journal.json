@@ -131,6 +131,32 @@
       "tpPct": 4,
       "slPct": 2,
       "outcome": null
+    },
+    {
+      "key": "GrtB74p48p4nnwQ5BvAYJrAubUas5KSRzi2NCms7Nt2s|2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv|LONG|29848815",
+      "time": 1790929116798,
+      "market": "SPOT",
+      "wallet": "GrtB74p48p4nnwQ5BvAYJrAubUas5KSRzi2NCms7Nt2s",
+      "coin": "PENGU",
+      "side": "LONG",
+      "entry": 0.009984,
+      "currentPrice": 0.009984,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null
+    },
+    {
+      "key": "GrtB74p48p4nnwQ5BvAYJrAubUas5KSRzi2NCms7Nt2s|6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx|LONG|29848811",
+      "time": 1790929116798,
+      "market": "SPOT",
+      "wallet": "GrtB74p48p4nnwQ5BvAYJrAubUas5KSRzi2NCms7Nt2s",
+      "coin": "STONK",
+      "side": "LONG",
+      "entry": 0.2505,
+      "currentPrice": 0.2505,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null
     }
   ]
 }
