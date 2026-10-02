@@ -179,6 +179,19 @@
       "outcome": "TIMEOUT",
       "lastPrice": 0.2505,
       "lastMovePct": 0
+    },
+    {
+      "key": "9xaUatyd1v1Zo7jndxqxUT1AJ4RYBYAi4M7YwSqWDqGQ|CARDSccUMFKoPRZxt5vt3ksUbxEFEcnZ3H2pd3dKxYjp|LONG|29848930",
+      "time": 1790936122373,
+      "market": "SPOT",
+      "wallet": "9xaUatyd1v1Zo7jndxqxUT1AJ4RYBYAi4M7YwSqWDqGQ",
+      "coin": "CARDS",
+      "side": "LONG",
+      "entry": 0.2407,
+      "currentPrice": 0.2407,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null
     }
   ]
 }
