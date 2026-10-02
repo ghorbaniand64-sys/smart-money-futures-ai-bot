@@ -1286,7 +1286,7 @@
       "currentPrice": 0.31216,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.31216,
       "lastMovePct": 0
     },
@@ -1301,7 +1301,7 @@
       "currentPrice": 2661.05,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 2661.05,
       "lastMovePct": 0
     },
@@ -1331,7 +1331,9 @@
       "currentPrice": 0.309495,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.309495,
+      "lastMovePct": 0
     },
     {
       "key": "0x856c35038594767646266bc7fd68dc26480e910d|FARTCOIN|SHORT|29849655",
@@ -1344,7 +1346,9 @@
       "currentPrice": 0.17242,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.17242,
+      "lastMovePct": 0
     },
     {
       "key": "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7|ETH|SHORT|29849666",
