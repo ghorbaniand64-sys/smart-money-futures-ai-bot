@@ -431,7 +431,9 @@
       "currentPrice": 91.11,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 91.11,
+      "lastMovePct": 0
     },
     {
       "key": "FkaLnX17cXZGyeu3kZGdHCNdFMJJzBrPPYVvd18B3MZp|6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN|LONG|29849110",
@@ -444,7 +446,9 @@
       "currentPrice": 2.19,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 2.19,
+      "lastMovePct": 0
     },
     {
       "key": "FkaLnX17cXZGyeu3kZGdHCNdFMJJzBrPPYVvd18B3MZp|pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn|LONG|29849109",
@@ -457,7 +461,9 @@
       "currentPrice": 0.005983,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.005983,
+      "lastMovePct": 0
     },
     {
       "key": "FkaLnX17cXZGyeu3kZGdHCNdFMJJzBrPPYVvd18B3MZp|4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R|LONG|29849109",
@@ -470,7 +476,9 @@
       "currentPrice": 1.95,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 1.95,
+      "lastMovePct": 0
     }
   ]
 }
