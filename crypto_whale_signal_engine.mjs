@@ -5,9 +5,9 @@ import path from 'node:path';
 // Dynamic whale discovery: 5 Spot + 5 Futures. READ ONLY.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V6.4';
-// V6.1 Spot FIFO Performance + Futures Fill/Position Reconstruction + Futures Discovery.
-// VERSION is intentionally V6.1; repository/workflow version gates must expect V6.1.
+const VERSION = 'V6.5';
+// V6.5: audited performance coverage, lifecycle-aware ADD labels, explicit
+// ENTRY/WATCH classification, and non-verified ACTIVE WATCH discovery tiers.
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY || '';
@@ -59,7 +59,7 @@ const HEALTH_MIN_TRADES = Number(process.env.SIGNAL_HEALTH_MIN_TRADES || 20);
 
 const TARGET_SPOT_WALLETS = Number(process.env.WHALE_TARGET_SPOT_WALLETS || 5);
 const TARGET_FUTURES_WALLETS = Number(process.env.WHALE_TARGET_FUTURES_WALLETS || 5);
-const DISCOVERY_TTL_MIN = Number(process.env.WHALE_DISCOVERY_TTL_MIN || DISCOVERY_CACHE_QUALITY_TTL_MIN);
+const DISCOVERY_TTL_MIN = Number(process.env.WHALE_DISCOVERY_TTL_MIN || 45);
 const DISCOVERY_REFRESH_EACH_CYCLE = String(process.env.WHALE_DISCOVERY_REFRESH_EACH_CYCLE || 'true').toLowerCase() !== 'false';
 const TRADER_MIN_WR = Number(process.env.WHALE_TRADER_MIN_WR || 55);
 const TRADER_MIN_PF = Number(process.env.WHALE_TRADER_MIN_PF || 1.25);
@@ -118,9 +118,9 @@ const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TO
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 20);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
-const DISCOVERY_SCHEMA = 'V6.4-TIERED-DISCOVERY-SIGNAL-CACHE-SEPARATION';
+const DISCOVERY_SCHEMA = 'V6.5-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE';
 const DISCOVERY_BUILD_SCHEMA = 'V6.1-PRO-MARKET-DISCOVERY-REBUILD';
-const BUILD_TAG = 'V6.4-TIERED-DISCOVERY-SIGNAL-CACHE-SEPARATION';
+const BUILD_TAG = 'V6.5-AUDITED-PERFORMANCE-LIFECYCLE-ACTIVE-WATCH';
 const DISCOVERY_TIERED_ENABLED = String(process.env.WHALE_DISCOVERY_TIERED_ENABLED || 'true').toLowerCase() !== 'false';
 const DISCOVERY_CACHE_QUALITY_TTL_MIN = Number(process.env.WHALE_DISCOVERY_CACHE_QUALITY_TTL_MIN || 45);
 const DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET = String(process.env.WHALE_DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET || 'true').toLowerCase() !== 'false';
@@ -423,10 +423,30 @@ async function discoverFutures(){
   }
   verified.sort((a,b)=>n(b.discovery.score)-n(a.discovery.score));
   fallback.sort((a,b)=>n(b.discovery.score)-n(a.discovery.score));
-  const selected=[...verified,...fallback].slice(0,TARGET_FUTURES_WALLETS);
-  console.log(`[DISCOVERY][FUTURES][VERIFIED-SELECTION] verified=${verified.length} selected=${selected.length}/${TARGET_FUTURES_WALLETS}`);
-  if(!selected.length)console.log('[DISCOVERY][FUTURES][NO-VERIFIED-TRADERS] No Futures wallet passed the Strong/Emerging performance gate; NO FALLBACK SIGNALS WILL BE CREATED.');
-  return selected;
+  const selected=[...verified,...fallback];
+  // V6.5: if statistical tiers do not fill the monitoring target, use a
+  // separate ACTIVE_WATCH tier from the quick universe. These wallets are
+  // NEVER presented as VERIFIED; they only keep signal scanning populated
+  // when there is fresh, meaningful activity.
+  if(DISCOVERY_ACTIVE_FALLBACK_ENABLED && selected.length<TARGET_FUTURES_WALLETS){
+    const used=new Set(selected.map(x=>String(x.address||'')));
+    const activeWatch=quick
+      .filter(x=>{
+        const a=String(x.address||'');
+        return !used.has(a) && x.quick?.signalReady &&
+          n(x.quick?.recentFills)>=FUTURES_MIN_ACTIVE_FILLS &&
+          n(x.quick?.recentVolume)>=FUTURES_MIN_ACTIVE_VOLUME_USD &&
+          n(x.quick?.recentAddNotional)>=FUTURES_DISCOVERY_MIN_FRESH_ADD_USD;
+      })
+      .sort((a,b)=>(n(b.quick?.recentAddNotional)-n(a.quick?.recentAddNotional))*10+(n(b.quick?.recentVolume)-n(a.quick?.recentVolume)))
+      .map(x=>({...x,discovery:{quality:'ACTIVE_WATCH',confidenceTier:'ACTIVE_WATCH',qualificationReasons:['QUICK_ACTIVITY_ONLY','NOT_PERFORMANCE_VERIFIED'],recentFills:n(x.quick?.recentFills),recentVolume:n(x.quick?.recentVolume),recentAdds:n(x.quick?.recentAdds),recentAddNotional:n(x.quick?.recentAddNotional),score:5000+n(x.quick?.recentAddNotional)+n(x.quick?.recentVolume)*0.01}}));
+    selected.push(...activeWatch);
+    console.log(`[DISCOVERY][FUTURES][ACTIVE-WATCH] added=${activeWatch.length} target=${TARGET_FUTURES_WALLETS}`);
+  }
+  const finalSelected=selected.slice(0,TARGET_FUTURES_WALLETS);
+  console.log(`[DISCOVERY][FUTURES][SELECTION] verified=${verified.length} fallback=${fallback.length} selected=${finalSelected.length}/${TARGET_FUTURES_WALLETS}`);
+  if(!finalSelected.length)console.log('[DISCOVERY][FUTURES][NO-WATCHABLE-TRADERS] No Futures wallet passed statistical or active-watch criteria.');
+  return finalSelected;
 }
 
 async function fetchSpotDiscoveryTokens(){
@@ -545,10 +565,23 @@ async function discoverSpotCandidates(){
   }
   finals.sort((a,b)=>n(b.discovery.score)-n(a.discovery.score));
   fallback.sort((a,b)=>n(b.discovery.score)-n(a.discovery.score));
-  const selected=[...finals,...fallback].slice(0,TARGET_SPOT_WALLETS);
-  console.log(`[DISCOVERY][SPOT][VERIFIED-SELECTION] verified=${finals.length} selected=${selected.length}/${TARGET_SPOT_WALLETS}`);
-  if(!selected.length)console.log('[DISCOVERY][SPOT][NO-VERIFIED-TRADERS] No Spot wallet passed the Strong/Emerging performance gate.');
-  return selected;
+  const selected=[...finals,...fallback];
+  if(DISCOVERY_ACTIVE_FALLBACK_ENABLED && selected.length<TARGET_SPOT_WALLETS){
+    const used=new Set(selected.map(x=>String(x.address||'')));
+    const activeWatch=pool
+      .filter(c=>{
+        const a=String(c.address||'');
+        return !used.has(a) && n(c.swaps)>=DISCOVERY_ACTIVE_MIN_TOTAL_TRADES && n(c.recentBuys)>=DISCOVERY_ACTIVE_MIN_RECENT_BUYS && n(c.recentBuyVolume)>=DISCOVERY_ACTIVE_MIN_RECENT_BUY_USD;
+      })
+      .sort((a,b)=>(n(b.recentBuyVolume)-n(a.recentBuyVolume))*10+(n(b.swaps)-n(a.swaps)))
+      .map(c=>({name:`SOL_${c.address.slice(0,4).toUpperCase()}`,address:c.address,discovery:{programHits:c.programHits,buys:c.buys,sells:c.sells,recentBuys:c.recentBuys,recentBuyVolume:c.recentBuyVolume,volumeUsd:c.volumeUsd,lastTrade:c.lastTrade,coverageDays:0,quality:'ACTIVE_WATCH',confidenceTier:'ACTIVE_WATCH',qualificationReasons:['RECENT_ACTIVITY_ONLY','NOT_PERFORMANCE_VERIFIED'],score:5000+n(c.recentBuyVolume)+n(c.swaps)*10}}));
+    selected.push(...activeWatch);
+    console.log(`[DISCOVERY][SPOT][ACTIVE-WATCH] added=${activeWatch.length} target=${TARGET_SPOT_WALLETS}`);
+  }
+  const finalSelected=selected.slice(0,TARGET_SPOT_WALLETS);
+  console.log(`[DISCOVERY][SPOT][SELECTION] verified=${finals.length} fallback=${fallback.length} selected=${finalSelected.length}/${TARGET_SPOT_WALLETS}`);
+  if(!finalSelected.length)console.log('[DISCOVERY][SPOT][NO-WATCHABLE-WALLETS] No Spot wallet passed statistical or active-watch criteria.');
+  return finalSelected;
 }
 
 async function solSignaturesForDiscovery(address,limit=60){
@@ -1202,7 +1235,7 @@ function spotPerformanceWindow(trades,start,end){
   const byCoin={}; for(const t of closed)byCoin[t.mint]=(byCoin[t.mint]||0)+t.pnlUsd;
   const topCoin=Object.entries(byCoin).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]))[0]||null;
   const avgHold=closed.length?closed.reduce((a,t)=>a+t.holdHours,0)/closed.length:null;
-  return {roi:invested>0?realized/invested*100:null,realizedPnl:realized,investedUsd:invested,closedTrades:closed.length,wins,losses,wr:closed.length?wins/closed.length*100:null,pf:grossLoss>0?grossProfit/grossLoss:(grossProfit>0?Infinity:null),maxDrawdown:invested>0?maxDd/invested*100:null,avgHoldHours:avgHold,coinPnl:byCoin,topCoin:topCoin?{coin:topCoin[0],pnl:topCoin[1]}:null};
+  return {roi:invested>0?realized/invested*100:null,realizedPnl:realized,investedUsd:invested,closedTrades:closed.length,wins,losses,wr:closed.length?wins/closed.length*100:null,pf:grossLoss>0?grossProfit/grossLoss:(grossProfit>0?Infinity:null),maxDrawdown:maxDd,maxDrawdownPct:invested>0?maxDd/invested*100:null,avgHoldHours:avgHold,coinPnl:byCoin,topCoin:topCoin?{coin:topCoin[0],pnl:topCoin[1]}:null};
 }
 function performanceCoverageLabel(p,start,end){
   const cov=n(p?.coverageStart); if(!(cov>0))return 'UNKNOWN';
@@ -1256,20 +1289,25 @@ function performanceBlock(p,coin){
   const fmtWR=x=>Number.isFinite(Number(x))?`${Number(x).toFixed(1)}%`:'—';
   const fmtPF=x=>x===Infinity?'∞':Number.isFinite(Number(x))?Number(x).toFixed(2):'—';
   const c7=p.w7||{},c30=p.w30||{};
+  const coverageDays=n(p.coverageDays);
+  const cov7=p.coverage7d!==false && coverageDays>=6.5;
+  const cov30=p.coverage30d===true || coverageDays>=29.5;
   const rows=['📊 PERFORMANCE'];
-  const cov7=p.coverage7d!==false && n(p.coverageDays)>=6.5;
-  const cov30=p.coverage30d===true || n(p.coverageDays)>=29.5;
   rows.push(`${cov7?'7D  ':'7D*'} ROI ${fmtPct(c7.roi)} | WR ${fmtWR(c7.wr)} | PF ${fmtPF(c7.pf)} | Trades ${c7.closedTrades??'—'}`);
   rows.push(`${cov30?'30D ':'30D*'} ROI ${fmtPct(c30.roi)} | WR ${fmtWR(c30.wr)} | PF ${fmtPF(c30.pf)} | Trades ${c30.closedTrades??'—'}`);
   if(Number.isFinite(Number(c30.avgHoldHours)))rows.push(`30D  Avg Hold ${Number(c30.avgHoldHours).toFixed(2)}h`);
-  if(Number.isFinite(Number(c30.maxDrawdown)))rows.push(`30D  Max DD ${fmtPct(-Math.abs(c30.maxDrawdown))}`);
+  if(p.market==='SPOT' && Number.isFinite(Number(c30.maxDrawdownPct)) && Number(c30.maxDrawdownPct)<=100)rows.push(`30D  Max DD ${fmtPct(-Math.abs(c30.maxDrawdownPct))}`);
+  else if(p.market==='FUTURES')rows.push('30D  Max DD — equity curve unavailable');
   if(coin&&c30.coinPnl&&Object.prototype.hasOwnProperty.call(c30.coinPnl,coin))rows.push(`30D  ${coin} PnL ${money(c30.coinPnl[coin])}`);
+  if(Number.isFinite(coverageDays))rows.push(`History ${coverageDays.toFixed(1)}d available${cov30?'':' | 30D PARTIAL'}`);
   if(p.complete===false || p.rateLimited || !cov30)rows.push(`⚠️ ${p.rateLimited?'Rate-limited':'Partial'} history — available on-chain fills only`);
   return rows;
 }
 function whaleSignalBlock(w,signals,p,i){
+  const quality=String(w?.discovery?.quality||'VERIFIED_TOP_TRADER').toUpperCase();
+  const title=quality==='VERIFIED_TOP_TRADER'?'VERIFIED TOP TRADER':quality==='VERIFIED_EMERGING'?'VERIFIED EMERGING':'ACTIVE WATCH';
   const rows=[
-    `🐋 VERIFIED TOP TRADER ${i} — ${w.name}`,
+    `🐋 ${title} ${i} — ${w.name}`,
     `🏷 ${w?.discovery?.quality||'VERIFIED_TOP_TRADER'} | WR ${Number.isFinite(Number(w?.discovery?.wr7??w?.discovery?.wr))?Number(w.discovery.wr7??w.discovery.wr).toFixed(1)+'%':'—'} | PF ${w?.discovery?.pf7!=null?Number(w.discovery.pf7).toFixed(2):w?.discovery?.pf!=null?Number(w.discovery.pf).toFixed(2):'—'}`,
     '━━━━━━━━━━━━━━━━━━',
     ...performanceBlock(p,signals[0]?.mint||signals[0]?.coin),
@@ -1277,9 +1315,13 @@ function whaleSignalBlock(w,signals,p,i){
   ];
   signals.forEach((x,j)=>{
     const ageMin=signalAgeMin(x);
+    const status=classifyPosition(x);
     const avgTag=x.averaging?(Number.isFinite(ageMin)&&ageMin<=FUTURES_AVERAGING_GREEN_LATENCY_MIN?'FRESH AVERAGING':'AVERAGING'):'';
-    rows.push(`🎯 ${x.displaySymbol||x.coin} ${x.side}`);
-    rows.push(`ADD   ${priceFmt(x.sourceEntry)}   |   AVG ${priceFmt(x.avgEntry)}   |   NOW ${priceFmt(x.current)}`);
+    const icon=status==='GREEN'?'🟢':status==='YELLOW'?'🟡':'🔴';
+    const statusLabel=status==='GREEN'?'ENTRY READY':status==='YELLOW'?'WATCH':'BLOCKED';
+    const lifecycle=x.mint?'BUY':(x.lifecycleAddLabel||'ADD');
+    rows.push(`${icon} ${x.displaySymbol||x.coin} ${x.side} | ${statusLabel}`);
+    rows.push(`${lifecycle}   ${priceFmt(x.sourceEntry)}   |   AVG ${priceFmt(x.avgEntry)}   |   NOW ${priceFmt(x.current)}`);
     rows.push(`SL    ${priceFmt(x.sl)}   |   TP ${priceFmt(x.tp)}   |   RR ${fmt(x.rr,2)}`);
     rows.push(`DIST  ${pct(x.distancePct,2)}   |   AGE ${ageMin<1?Math.max(1,Math.round(ageMin*60))+'s':ageMin.toFixed(1)+'m'}`);
     if(x.mint){ rows.push(`SIZE  ${money(x.buyNotionalUsd)}`); } else { rows.push(`POS   ${money(x.positionValue)}   |   LEV ${fmt(x.leverage,1)}x${avgTag?`   |   ${avgTag}`:''}`); }
@@ -1368,6 +1410,8 @@ async function scanFutures(w,mids,now,symbolMap,marketContext=new Map()){
     const averaging=list.length>=2;
     if(averaging)averagingKeys++;
     const latestAdd=list[list.length-1];
+    latestAdd._lifecycleAddNumber=list.length;
+    latestAdd._lifecycleAddExact=Math.abs(n(list[0]?._startPosition))<=1e-12;
     latestAdd._latestAddedSize=n(latestAdd._addedSize);
     const freshCutoff=now-FUTURES_SIGNAL_FRESHNESS_MIN*60000;
     const freshList=list.filter(f=>n(f.time)>=freshCutoff);
@@ -1427,6 +1471,8 @@ async function scanFutures(w,mids,now,symbolMap,marketContext=new Map()){
     const avgEntry=Number.isFinite(Number(pos?.entry))&&Number(pos.entry)>0?Number(pos.entry):n(f._recentAvgPx,entry);
     const recentAvg=f._recentAvgPx;
     const addCount=n(f._recentAddCount,1);
+    const lifecycleCount=n(f._lifecycleAddNumber,1);
+    const lifecycleAddLabel=f._lifecycleAddExact ? (lifecycleCount<=1?'NEW ENTRY':`ADD #${lifecycleCount}`) : (lifecycleCount<=1?'ADD #1+':`ADD #${lifecycleCount}+`);
     const recentAddedSize=n(f._recentAddedSize,n(f.sz));
     const latestAddedSize=n(f._latestAddedSize,n(f._addedSize,n(f.sz)));
     const averaging=f._isAveraging===true;
@@ -1455,7 +1501,7 @@ async function scanFutures(w,mids,now,symbolMap,marketContext=new Map()){
       leverage:pos?.leverage??null,liq:pos?.liq??null,margin:pos?.margin??null,
       openedAt:n(f.time),ageMin,openFillPx:entry,openFillSize:latestAddedSize,openFillHash:f.hash||null,
       activitySource:'RECENT_HYPERLIQUID_POSITION_ADD',fillDir:f.dir,
-      avgEntry,avgDistancePct:avgDist,recentAvgPx:recentAvg,addCount,averaging,
+      avgEntry,avgDistancePct:avgDist,recentAvgPx:recentAvg,addCount,lifecycleAddNumber:lifecycleCount,lifecycleAddLabel,averaging,
       totalRecentAddedSize:recentAddedSize,currentPositionSize:pos?.size??null,addNotional,lifecycleAgeHours,adverseAvg,
       eligible:ageMin<=FUTURES_SIGNAL_FRESHNESS_MIN&&Math.abs(dist)<=ENTRY_WINDOW_PCT&&R+1e-9>=MIN_RR&&addNotional>=FUTURES_MIN_SIGNAL_ADD_USD&&(lifecycleAgeHours<=FUTURES_MAX_ACTIVE_LIFECYCLE_AGE_HOURS)&&(!adverseAvg||Math.abs(avgDist)<=FUTURES_MAX_ADVERSE_AVG_PCT)};
     const auditStatus=classifyPosition(x);
@@ -1657,9 +1703,9 @@ async function main(){
     'READ-ONLY • SIGNALS ONLY • NO ORDERS',
     '━━━━━━━━━━━━━━━━━━',
     `🕒 ${new Date().toISOString()}`,
-    `👥 Verified watchlist: Spot ${SPOT_WALLETS.length}/${TARGET_SPOT_WALLETS} | Futures ${FUTURES_WALLETS.length}/${TARGET_FUTURES_WALLETS}`,
-    `📡 Active signals: ${reportCandidates.length} | 🟢 Spot ${spotGreen.length} | 🟢 Futures ${futuresGreen.length}`,
-    `📡 Signals: ${reportCandidates.length} | Verified gate: WR≥${TRADER_MIN_WR}% • PF≥${TRADER_MIN_PF} • Trades≥${TRADER_MIN_CLOSED_TRADES}`,
+    `👥 Watchlist: Spot ${SPOT_WALLETS.length}/${TARGET_SPOT_WALLETS} | Futures ${FUTURES_WALLETS.length}/${TARGET_FUTURES_WALLETS}`,
+    `📡 Signals: ${reportCandidates.length} | 🟢 Entry Ready ${green.length} | 🟡 Watch ${yellow.length}`,
+    `📊 Verified gate: WR≥${TRADER_MIN_WR}% • PF≥${TRADER_MIN_PF} • Trades≥${TRADER_MIN_CLOSED_TRADES}`,
     ''
   ];
   if(!whaleGroups.length){
