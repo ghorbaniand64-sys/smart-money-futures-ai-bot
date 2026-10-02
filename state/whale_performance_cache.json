@@ -4027,5 +4027,64 @@
       },
       "updatedAt": 1790969784222
     }
+  },
+  "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:7pqJfozZv6JRyUfihjFXrmuq7SBa36coXMG7BtHQWGRb": {
+    "updatedAt": 1790970313223,
+    "data": {
+      "schema": "V6.1-SPOT-FIFO-PERFORMANCE-V3",
+      "market": "SPOT",
+      "complete": false,
+      "pages": 12,
+      "txCount": 1140,
+      "closedTrades": 552,
+      "coverageStart": 1786225143000,
+      "coverageDays": 54.920951655092594,
+      "rateLimited": false,
+      "coverage7d": true,
+      "coverage30d": true,
+      "w7": {
+        "roi": 25.25018829200418,
+        "realizedPnl": 5303.8190455706645,
+        "investedUsd": 21005.06730577606,
+        "closedTrades": 215,
+        "wins": 180,
+        "losses": 35,
+        "wr": 83.72093023255815,
+        "pf": 17.370355264966477,
+        "maxDrawdown": 1.262041731722293,
+        "avgHoldHours": 201.37198449612407,
+        "coinPnl": {
+          "CWZ6BsdnjkDVTGkmL6bGbJXXig6ceef12KvyGQW14cMt": 149.2026573666148,
+          "9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump": 5154.616388204049
+        },
+        "topCoin": {
+          "coin": "9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump",
+          "pnl": 5154.616388204049
+        }
+      },
+      "w30": {
+        "roi": 26.485583974550806,
+        "realizedPnl": 14790.57444465312,
+        "investedUsd": 55843.86758798648,
+        "closedTrades": 552,
+        "wins": 409,
+        "losses": 143,
+        "wr": 74.09420289855072,
+        "pf": 14.036279249874584,
+        "maxDrawdown": 0.7470306536461315,
+        "avgHoldHours": 108.39213063607089,
+        "coinPnl": {
+          "BANKJmvhT8tiJRsBSS1n2HryMBPvT5Ze4HU95DUAmeta": 48.8231955963209,
+          "9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump": 14489.480828239724,
+          "METAwkXcqyXKy1AtsSgJ8JiUHwGCafnZL38n3vYmeta": 13.953195450456263,
+          "CWZ6BsdnjkDVTGkmL6bGbJXXig6ceef12KvyGQW14cMt": 238.31722536661476
+        },
+        "topCoin": {
+          "coin": "9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump",
+          "pnl": 14489.480828239724
+        }
+      },
+      "updatedAt": 1790970313223
+    }
   }
 }

@@ -921,6 +921,45 @@
       "tpPct": 3,
       "slPct": 1.5,
       "outcome": null
+    },
+    {
+      "key": "7pqJfozZv6JRyUfihjFXrmuq7SBa36coXMG7BtHQWGRb|9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump|LONG|29849501",
+      "time": 1790970327884,
+      "market": "SPOT",
+      "wallet": "7pqJfozZv6JRyUfihjFXrmuq7SBa36coXMG7BtHQWGRb",
+      "coin": "ANSEM",
+      "side": "LONG",
+      "entry": 0.1301,
+      "currentPrice": 0.1301,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null
+    },
+    {
+      "key": "0x3f240a16bb7c34302cab342227207acc3d9e0d4d|JUP|LONG|29849503",
+      "time": 1790970327884,
+      "market": "FUTURES",
+      "wallet": "0x3f240a16bb7c34302cab342227207acc3d9e0d4d",
+      "coin": "JUP",
+      "side": "LONG",
+      "entry": 0.310835,
+      "currentPrice": 0.310835,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null
+    },
+    {
+      "key": "0x3f240a16bb7c34302cab342227207acc3d9e0d4d|BTC|LONG|29849497",
+      "time": 1790970327884,
+      "market": "FUTURES",
+      "wallet": "0x3f240a16bb7c34302cab342227207acc3d9e0d4d",
+      "coin": "BTC",
+      "side": "LONG",
+      "entry": 84201.5,
+      "currentPrice": 84201.5,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null
     }
   ]
 }
