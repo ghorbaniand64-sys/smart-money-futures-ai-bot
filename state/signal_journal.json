@@ -206,6 +206,47 @@
       "currentPrice": 86431.5,
       "tpPct": 3,
       "slPct": 1.5,
+      "outcome": null,
+      "lastPrice": 86431.5,
+      "lastMovePct": 0
+    },
+    {
+      "key": "BLUEZYapTJn89Rq5Mb48gD6XdT2ZJtDMw9iXBeNq8ntx|Xs3oZwbHvqis4NYcf4YKWmEia2eC84wSiVrcYcTqpH8|LONG|29848962",
+      "time": 1790938375026,
+      "market": "SPOT",
+      "wallet": "BLUEZYapTJn89Rq5Mb48gD6XdT2ZJtDMw9iXBeNq8ntx",
+      "coin": "SPCXx",
+      "side": "LONG",
+      "entry": 149.37,
+      "currentPrice": 149.37,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null
+    },
+    {
+      "key": "DBnXgpAfYRQB2kVab3go3TwqwPTc5g1VMWa8ZR4N2Jz5|DvNcJZTiSMD1RBCtZ2J31mh7s42CVCwrzGapv1Lypump|LONG|29848966",
+      "time": 1790938375026,
+      "market": "SPOT",
+      "wallet": "DBnXgpAfYRQB2kVab3go3TwqwPTc5g1VMWa8ZR4N2Jz5",
+      "coin": "MICRO",
+      "side": "LONG",
+      "entry": 0.00068,
+      "currentPrice": 0.00068,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null
+    },
+    {
+      "key": "0x50b309f78e774a756a2230e1769729094cac9f20|BTC|LONG|29848962",
+      "time": 1790938375026,
+      "market": "FUTURES",
+      "wallet": "0x50b309f78e774a756a2230e1769729094cac9f20",
+      "coin": "BTC",
+      "side": "LONG",
+      "entry": 86276.5,
+      "currentPrice": 86276.5,
+      "tpPct": 3,
+      "slPct": 1.5,
       "outcome": null
     }
   ]
