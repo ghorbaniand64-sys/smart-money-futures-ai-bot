@@ -1226,7 +1226,7 @@
       "currentPrice": 379.61,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 379.61,
       "lastMovePct": 0
     },
@@ -1241,7 +1241,7 @@
       "currentPrice": 84548.2,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 84548.2,
       "lastMovePct": 0
     },
@@ -1256,7 +1256,7 @@
       "currentPrice": 2666.45,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 2666.45,
       "lastMovePct": 0
     },
@@ -1271,7 +1271,7 @@
       "currentPrice": 157.35,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 157.35,
       "lastMovePct": 0
     },
@@ -1342,6 +1342,19 @@
       "side": "SHORT",
       "entry": 0.17242,
       "currentPrice": 0.17242,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null
+    },
+    {
+      "key": "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7|ETH|SHORT|29849666",
+      "time": 1790980366020,
+      "market": "FUTURES",
+      "wallet": "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7",
+      "coin": "ETH",
+      "side": "SHORT",
+      "entry": 2665.95,
+      "currentPrice": 2665.95,
       "tpPct": 3,
       "slPct": 1.5,
       "outcome": null
