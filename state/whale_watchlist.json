@@ -1,6 +1,6 @@
 {
   "schema": "V6.1-SPOT-PERFORMANCE-FUTURES-RECON-AUDITED",
-  "generatedAt": 1790920975089,
+  "generatedAt": 1790922453599,
   "criteria": {
     "holdHours": [
       1,
@@ -16,86 +16,5 @@
     }
   },
   "spotWallets": [],
-  "futuresWallets": [
-    {
-      "name": "HL_6DB7",
-      "address": "0x6db7204f8783dfddf80b957ba5e40e24251e304d",
-      "raw": {
-        "ethAddress": "0x6db7204f8783dfddf80b957ba5e40e24251e304d",
-        "accountValue": "216019.153004",
-        "windowPerformances": [
-          [
-            "day",
-            {
-              "pnl": "3530.286663",
-              "roi": "0.0165983614",
-              "vlm": "73473791.6099999994"
-            }
-          ],
-          [
-            "week",
-            {
-              "pnl": "43680.274267",
-              "roi": "0.2670300286",
-              "vlm": "261182963.5200000107"
-            }
-          ],
-          [
-            "month",
-            {
-              "pnl": "160895.66534",
-              "roi": "1.763878689",
-              "vlm": "659750161.189999938"
-            }
-          ],
-          [
-            "allTime",
-            {
-              "pnl": "302812.293004",
-              "roi": "6.4241450857",
-              "vlm": "1396191104.1099998951"
-            }
-          ]
-        ],
-        "prize": 0,
-        "displayName": null,
-        "pnl7": 43680.274267,
-        "pnl30": 160895.66534,
-        "volume7": 261182963.52,
-        "volume1d": 73473791.61
-      },
-      "quick": {
-        "recentFills": 1977,
-        "recentVolume": 17252307.444620047,
-        "adds": 1285,
-        "recentAdds": 0,
-        "recentAddNotional": 0,
-        "signalReady": false
-      },
-      "discovery": {
-        "volume48h": 4572947.003589986,
-        "completedLifecycles": 12,
-        "inWindow": 0,
-        "holdRatio": 0,
-        "medianHoldHours": 0,
-        "avgHoldHours": 0,
-        "recentLifecycles": 0,
-        "observedAdds": 1518,
-        "pnl7": 43680.274267,
-        "pnl30": 160895.66534,
-        "leaderboardVolume7": 261182963.52,
-        "accountValue": 216019.153004,
-        "recentAdds": 0,
-        "recentAddNotional": 0,
-        "wr": 58.333333333333336,
-        "pf": 1.5349283808404035,
-        "realizedPnl": 1459.631394,
-        "closedTrades": 12,
-        "maxDrawdown": 1.2621332530405371,
-        "quality": "VERIFIED_TOP_TRADER",
-        "qualificationReasons": [],
-        "score": 106606.83010215111
-      }
-    }
-  ]
+  "futuresWallets": []
 }
