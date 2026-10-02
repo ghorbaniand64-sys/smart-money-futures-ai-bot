@@ -356,7 +356,7 @@
       "currentPrice": 0.007314,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.007314,
       "lastMovePct": 0
     },
@@ -371,7 +371,7 @@
       "currentPrice": 235.96,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 235.96,
       "lastMovePct": 0
     },
@@ -479,6 +479,19 @@
       "outcome": null,
       "lastPrice": 1.95,
       "lastMovePct": 0
+    },
+    {
+      "key": "0x50b309f78e774a756a2230e1769729094cac9f20|BTC|LONG|29849142",
+      "time": 1790948991906,
+      "market": "FUTURES",
+      "wallet": "0x50b309f78e774a756a2230e1769729094cac9f20",
+      "coin": "BTC",
+      "side": "LONG",
+      "entry": 86916.5,
+      "currentPrice": 86916.5,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null
     }
   ]
 }
