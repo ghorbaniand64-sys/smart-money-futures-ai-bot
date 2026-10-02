@@ -191,7 +191,7 @@
       "currentPrice": 0.2407,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.2407,
       "lastMovePct": 0
     },
@@ -221,7 +221,9 @@
       "currentPrice": 149.37,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 149.37,
+      "lastMovePct": 0
     },
     {
       "key": "DBnXgpAfYRQB2kVab3go3TwqwPTc5g1VMWa8ZR4N2Jz5|DvNcJZTiSMD1RBCtZ2J31mh7s42CVCwrzGapv1Lypump|LONG|29848966",
@@ -234,7 +236,9 @@
       "currentPrice": 0.00068,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.00068,
+      "lastMovePct": 0
     },
     {
       "key": "0x50b309f78e774a756a2230e1769729094cac9f20|BTC|LONG|29848962",
@@ -247,7 +251,9 @@
       "currentPrice": 86276.5,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 86276.5,
+      "lastMovePct": 0
     },
     {
       "key": "5XDgCHK5GrvC1vR8UEtBYQep6kYw56TVj69FmxuiMRbs|BPxxfRCXkUVhig4HS1Lh7kZqV6SPJhzfEk4x6fVBjPCy|LONG|29848979",
@@ -260,6 +266,34 @@
       "currentPrice": 1.35,
       "tpPct": 4,
       "slPct": 2,
+      "outcome": null,
+      "lastPrice": 1.35,
+      "lastMovePct": 0
+    },
+    {
+      "key": "5i1xVD5x84iA7TpT64iHGUrmNLF8qaT4AwqVLATLU9kp|METAewgxyPbgwsseH8T16a39CQ5VyVxZi9zXiDPY18m|LONG|29849001",
+      "time": 1790940263226,
+      "market": "SPOT",
+      "wallet": "5i1xVD5x84iA7TpT64iHGUrmNLF8qaT4AwqVLATLU9kp",
+      "coin": "MPLX",
+      "side": "LONG",
+      "entry": 0.06417,
+      "currentPrice": 0.06417,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null
+    },
+    {
+      "key": "0x6db7204f8783dfddf80b957ba5e40e24251e304d|ENA|LONG|29848991",
+      "time": 1790940263226,
+      "market": "FUTURES",
+      "wallet": "0x6db7204f8783dfddf80b957ba5e40e24251e304d",
+      "coin": "ENA",
+      "side": "LONG",
+      "entry": 0.24814,
+      "currentPrice": 0.24814,
+      "tpPct": 3,
+      "slPct": 1.5,
       "outcome": null
     }
   ]
