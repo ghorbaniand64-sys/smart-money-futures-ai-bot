@@ -201,7 +201,7 @@ jobs:
             "ACTIVE_WATCH"
             "lifecycleAddLabel"
             "Max DD — equity curve unavailable"
-            "History ${coverageDays.toFixed(1)}d available"
+            'History ${coverageDays.toFixed(1)}d available'
             "DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET"
             "DISCOVERY_ACTIVE_FALLBACK_ENABLED"
             "FUTURES_DISCOVERY_MIN_FRESH_ADD_USD"
@@ -211,7 +211,7 @@ jobs:
             "SPOT_MIN_SIGNAL_BUY_USD"
           )
           for pattern in "${required_patterns[@]}"; do
-            if ! grep -q "$pattern" "$WORKER"; then echo "FATAL: missing V6.4 contract: $pattern"; exit 1; fi
+            if ! grep -q "$pattern" "$WORKER"; then echo "FATAL: missing V6.5 contract: $pattern"; exit 1; fi
             echo "PASS | $pattern"
           done
           echo "V6.5 CONTRACTS VERIFIED"
