@@ -1844,14 +1844,14 @@
     }
   },
   "FUTURES:0x50b309f78e774a756a2230e1769729094cac9f20": {
-    "updatedAt": 1790948990634,
+    "updatedAt": 1790951145215,
     "data": {
       "market": "FUTURES",
       "complete": true,
       "pages": 2,
-      "fillCount": 1928,
-      "coverageStart": 1788357285389,
-      "coverageDays": 29.996588483796295,
+      "fillCount": 1937,
+      "coverageStart": 1788376214951,
+      "coverageDays": 29.802433611111113,
       "coverage7d": true,
       "coverage30d": true,
       "w7": {
@@ -1869,25 +1869,25 @@
         "fillCount": 0
       },
       "w30": {
-        "pnl": 87914.8936569999,
-        "closedTrades": 4,
-        "wins": 4,
+        "pnl": 23347.07955200004,
+        "closedTrades": 3,
+        "wins": 3,
         "losses": 0,
         "wr": 100,
         "pf": null,
         "maxDrawdown": 0,
-        "grossProfit": 87914.89365700001,
+        "grossProfit": 38156.298772,
         "grossLoss": 0,
         "coinPnl": {
-          "BTC": 87914.8936569999
+          "BTC": 23347.07955200004
         },
         "topCoin": {
           "coin": "BTC",
-          "pnl": 87914.8936569999
+          "pnl": 23347.07955200004
         },
-        "fillCount": 1928
+        "fillCount": 1937
       },
-      "updatedAt": 1790948990634
+      "updatedAt": 1790951145215
     }
   },
   "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:DBnXgpAfYRQB2kVab3go3TwqwPTc5g1VMWa8ZR4N2Jz5": {
@@ -3186,6 +3186,305 @@
         }
       },
       "updatedAt": 1790949905736
+    }
+  },
+  "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:9EVzTzLSfYHrjXpejBRFGmZVG9jRsS4tDtcE1NpD6srb": {
+    "updatedAt": 1790951117015,
+    "data": {
+      "schema": "V6.1-SPOT-FIFO-PERFORMANCE-V3",
+      "market": "SPOT",
+      "complete": false,
+      "pages": 12,
+      "txCount": 1200,
+      "closedTrades": 767,
+      "coverageStart": 1790917047000,
+      "coverageDays": 0.3943288773148148,
+      "rateLimited": false,
+      "coverage7d": false,
+      "coverage30d": false,
+      "w7": {
+        "roi": 0.6554817931496452,
+        "realizedPnl": 266.6385556834179,
+        "investedUsd": 40678.25505910656,
+        "closedTrades": 767,
+        "wins": 434,
+        "losses": 333,
+        "wr": 56.58409387222947,
+        "pf": 1.7544606063156607,
+        "maxDrawdown": 0.48168337323171073,
+        "avgHoldHours": 1.0854005504852962,
+        "coinPnl": {
+          "6ZnCkq5t8XG4q42b5JiVvU6hV5cZFaNdSBoFq5E7Vf9q": 33.49947004786306,
+          "Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk": 0.41931768787033263,
+          "cbADAmv9issuPfhFwyQG3xac4DGPd1LDSt1oz7vwJsg": -4.1855413921012214,
+          "cbLTC4T5NpzSUtQ7ekgEMZGaUPVJY1ko6BUikqa4gGf": 0.4169405030628539,
+          "DN4L5JE9VuGpMt1SsEWqyybUqyrYuWuywmTq7Q5GVDFK": 13.485759684113155,
+          "uniHfuPhEQSrtpzXpJZDCSq53yaejKKpNhFUiKoHKHV": -2.765501904630053,
+          "poNSfquKq512ApeYjVghwViSun4x1MhCqHVH2Paq4jN": -3.3242035230174967,
+          "61V8vBaqAGMpgDQi4JcAwo1dmBGHsyhzodcPqnEVpump": 2.5070780613439894,
+          "7dUKUopcNWW6CcU4eRxCHh1uiMh32zDrmGf6ufqhxann": 3.05757949579521,
+          "avaxGHCq3T7hoxd73oY2KY9hJSTaeMibXvHy5KNzh5D": -0.4484665599417781,
+          "8cn4JeRLiHTtfX6maZAsipGGyyZPdEcos3s2X3Hw3BS6": -0.5304304132717448,
+          "3iQL8BFS2vE7mww4ehAqQHAsbmRNCrPxizWAT2Zfyr9y": 0.32930414381166884,
+          "C1MHyoTJpRTeS9AQCyspNVu2EWAYCZwmJ1jNkEArFP1f": 229.9444188308913,
+          "ondohH8Vssxiqcy5u6Efi4AYN17KZrzQtv2a91dnrgW": -4.9804347883919675,
+          "DvjbEsdca43oQcw2h3HW1CT7N3x5vRcr3QrvTUHnXvgV": -0.7867341899794837
+        },
+        "topCoin": {
+          "coin": "C1MHyoTJpRTeS9AQCyspNVu2EWAYCZwmJ1jNkEArFP1f",
+          "pnl": 229.9444188308913
+        }
+      },
+      "w30": {
+        "roi": 0.6554817931496452,
+        "realizedPnl": 266.6385556834179,
+        "investedUsd": 40678.25505910656,
+        "closedTrades": 767,
+        "wins": 434,
+        "losses": 333,
+        "wr": 56.58409387222947,
+        "pf": 1.7544606063156607,
+        "maxDrawdown": 0.48168337323171073,
+        "avgHoldHours": 1.0854005504852962,
+        "coinPnl": {
+          "6ZnCkq5t8XG4q42b5JiVvU6hV5cZFaNdSBoFq5E7Vf9q": 33.49947004786306,
+          "Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk": 0.41931768787033263,
+          "cbADAmv9issuPfhFwyQG3xac4DGPd1LDSt1oz7vwJsg": -4.1855413921012214,
+          "cbLTC4T5NpzSUtQ7ekgEMZGaUPVJY1ko6BUikqa4gGf": 0.4169405030628539,
+          "DN4L5JE9VuGpMt1SsEWqyybUqyrYuWuywmTq7Q5GVDFK": 13.485759684113155,
+          "uniHfuPhEQSrtpzXpJZDCSq53yaejKKpNhFUiKoHKHV": -2.765501904630053,
+          "poNSfquKq512ApeYjVghwViSun4x1MhCqHVH2Paq4jN": -3.3242035230174967,
+          "61V8vBaqAGMpgDQi4JcAwo1dmBGHsyhzodcPqnEVpump": 2.5070780613439894,
+          "7dUKUopcNWW6CcU4eRxCHh1uiMh32zDrmGf6ufqhxann": 3.05757949579521,
+          "avaxGHCq3T7hoxd73oY2KY9hJSTaeMibXvHy5KNzh5D": -0.4484665599417781,
+          "8cn4JeRLiHTtfX6maZAsipGGyyZPdEcos3s2X3Hw3BS6": -0.5304304132717448,
+          "3iQL8BFS2vE7mww4ehAqQHAsbmRNCrPxizWAT2Zfyr9y": 0.32930414381166884,
+          "C1MHyoTJpRTeS9AQCyspNVu2EWAYCZwmJ1jNkEArFP1f": 229.9444188308913,
+          "ondohH8Vssxiqcy5u6Efi4AYN17KZrzQtv2a91dnrgW": -4.9804347883919675,
+          "DvjbEsdca43oQcw2h3HW1CT7N3x5vRcr3QrvTUHnXvgV": -0.7867341899794837
+        },
+        "topCoin": {
+          "coin": "C1MHyoTJpRTeS9AQCyspNVu2EWAYCZwmJ1jNkEArFP1f",
+          "pnl": 229.9444188308913
+        }
+      },
+      "updatedAt": 1790951117015
+    }
+  },
+  "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:7qcqTuCEQEGSRNHL7wPLAxrzE8iSscwEVhn8ozkgWHR": {
+    "updatedAt": 1790951127439,
+    "data": {
+      "schema": "V6.1-SPOT-FIFO-PERFORMANCE-V3",
+      "market": "SPOT",
+      "complete": true,
+      "pages": 7,
+      "txCount": 644,
+      "closedTrades": 245,
+      "coverageStart": 1731885418000,
+      "coverageDays": 683.6308962847222,
+      "rateLimited": false,
+      "coverage7d": true,
+      "coverage30d": true,
+      "w7": {
+        "roi": 5.286772288172878,
+        "realizedPnl": 2228.5423624904524,
+        "investedUsd": 42153.17477312121,
+        "closedTrades": 205,
+        "wins": 115,
+        "losses": 90,
+        "wr": 56.09756097560976,
+        "pf": 1.3320243810396244,
+        "maxDrawdown": 7.064541984424986,
+        "avgHoldHours": 11.28145663956639,
+        "coinPnl": {
+          "AyYNfPtftg2zDP4ZbgcoQMggQtwLh4zpfVVmUJs2thto": 116.14615213343197,
+          "5NhN6zzDkzwXFGPFqtpTopV4ttBeZ6CWy1oRL9Rkpump": -101.87290525773858,
+          "jLz71QZfjnZZMLjUaCBw7KmUyftkkNq8NkWi2u9dyap": 9.942256529199994,
+          "FgJReZeYfmKZeWrCaGYL8gLnUixwBhjdHuRknC6ypump": -9.950050110150656,
+          "5g9PWcRUHpmqm5uKycpShKXJB18sGLeCEzgB3qrRpump": 95.92801935877084,
+          "7GUnr7krtQhJwd6ASY2VUprd9t4c64zcgCsjdmZepump": 2508.971001428566,
+          "GTBxUiw6wJdmmkCGZgRHLyYxqu1vG4KtRpeox6yDpump": 603.9582691403514,
+          "CMuvWQ6qQbSt7NUQdPGcVKCoDgETieuqS68qu6BaeVgR": 136.85197991239994,
+          "777XNvfVmvumMEc6M9yxJQJQnQtjbUYJyx53cqrwo777": 78.36447630900003,
+          "D1YZZg9dBZ7AbfknZVbaeVLto36eySwoFYEVhZrD4F4n": 860.9295408621069,
+          "5wW9mhbwq1HTFh341iimpmrqBB4mfxdXiYhdYBL7hUnp": -163.40267793300967,
+          "HSUMi4rMgjrx7zRUabw3ogGu1pa5hmF2eVcXj9Apump": 28.798033988820393,
+          "6uPEdkU2xPg1iyfLzV1ssUwvve8nndA2sd6nBFrb1n58": 80.1500306954368,
+          "HgoScXAo4zFv5kDb6axGrwuz95FaVEcLskyDVZfo297z": 141.31435256400002,
+          "5tCju6YNxHq5zrA6tGndr6F7TK42mpUFmeE31cSFpump": 196.3988741619023,
+          "2yu92oYzBWLAdVpu8BoaLzmM1oxPsHoboay2BXmeDDZr": 399.5485832755421,
+          "fvHLJUwsynVHJrssbZ8MLNyku9jt2izUspbBD4Spump": 27.610765509599872,
+          "3kmygWKZBkCYrgZHKfiuB9UFKTcDLTFFsKo3BWpmpump": -1042.3813692635458,
+          "8jayQDfRc3GYxftBJ2VAwjqmRBdYPC9KnjY15rc9pump": -799.521505132683,
+          "G6autZruJLEzYKRh84qTsbVhrTvLEbjBYdHnBQH1zitp": 28.66691396366174,
+          "4i5FqkfYDAPcEVcXyuVyaaBcz3bpwJPqDkmaF36kpump": -968.1347235923184,
+          "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs": 0.226343947108834
+        },
+        "topCoin": {
+          "coin": "7GUnr7krtQhJwd6ASY2VUprd9t4c64zcgCsjdmZepump",
+          "pnl": 2508.971001428566
+        }
+      },
+      "w30": {
+        "roi": 4.3021084437960715,
+        "realizedPnl": 2038.7725132485882,
+        "investedUsd": 47390.07721175961,
+        "closedTrades": 245,
+        "wins": 138,
+        "losses": 107,
+        "wr": 56.326530612244895,
+        "pf": 1.271621007653077,
+        "maxDrawdown": 6.283865536467687,
+        "avgHoldHours": 9.625670068027206,
+        "coinPnl": {
+          "GkBZGFgNy9Q6jHjBuYeTqsvugfEMhniACF9ieV8H3TtC": 153.71473728633424,
+          "BP4Wic5LNKsqpmiREW6uNVEC16juvFCSd4WzVBatpump": 11.869124379000013,
+          "2jcvq8QcJ8TzEYJKYMCjR61kXVSzib4mEkz89tQxpump": -36.40935152659313,
+          "AyYNfPtftg2zDP4ZbgcoQMggQtwLh4zpfVVmUJs2thto": -23.51471988012125,
+          "7GUnr7krtQhJwd6ASY2VUprd9t4c64zcgCsjdmZepump": 2588.714333272966,
+          "82ezhRLKdKwkSC9jkM3js1yf93VbmvLXNMPkBmompump": 76.16020153979997,
+          "D1YZZg9dBZ7AbfknZVbaeVLto36eySwoFYEVhZrD4F4n": 525.7425201108543,
+          "5NhN6zzDkzwXFGPFqtpTopV4ttBeZ6CWy1oRL9Rkpump": -101.87290525773858,
+          "jLz71QZfjnZZMLjUaCBw7KmUyftkkNq8NkWi2u9dyap": 9.942256529199994,
+          "FgJReZeYfmKZeWrCaGYL8gLnUixwBhjdHuRknC6ypump": -9.950050110150656,
+          "5g9PWcRUHpmqm5uKycpShKXJB18sGLeCEzgB3qrRpump": 95.92801935877084,
+          "GTBxUiw6wJdmmkCGZgRHLyYxqu1vG4KtRpeox6yDpump": 603.9582691403514,
+          "CMuvWQ6qQbSt7NUQdPGcVKCoDgETieuqS68qu6BaeVgR": 136.85197991239994,
+          "777XNvfVmvumMEc6M9yxJQJQnQtjbUYJyx53cqrwo777": 78.36447630900003,
+          "5wW9mhbwq1HTFh341iimpmrqBB4mfxdXiYhdYBL7hUnp": -163.40267793300967,
+          "HSUMi4rMgjrx7zRUabw3ogGu1pa5hmF2eVcXj9Apump": 28.798033988820393,
+          "6uPEdkU2xPg1iyfLzV1ssUwvve8nndA2sd6nBFrb1n58": 80.1500306954368,
+          "HgoScXAo4zFv5kDb6axGrwuz95FaVEcLskyDVZfo297z": 141.31435256400002,
+          "5tCju6YNxHq5zrA6tGndr6F7TK42mpUFmeE31cSFpump": 196.3988741619023,
+          "2yu92oYzBWLAdVpu8BoaLzmM1oxPsHoboay2BXmeDDZr": 399.5485832755421,
+          "fvHLJUwsynVHJrssbZ8MLNyku9jt2izUspbBD4Spump": 27.610765509599872,
+          "3kmygWKZBkCYrgZHKfiuB9UFKTcDLTFFsKo3BWpmpump": -1042.3813692635458,
+          "8jayQDfRc3GYxftBJ2VAwjqmRBdYPC9KnjY15rc9pump": -799.521505132683,
+          "G6autZruJLEzYKRh84qTsbVhrTvLEbjBYdHnBQH1zitp": 28.66691396366174,
+          "4i5FqkfYDAPcEVcXyuVyaaBcz3bpwJPqDkmaF36kpump": -968.1347235923184,
+          "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs": 0.226343947108834
+        },
+        "topCoin": {
+          "coin": "7GUnr7krtQhJwd6ASY2VUprd9t4c64zcgCsjdmZepump",
+          "pnl": 2588.714333272966
+        }
+      },
+      "updatedAt": 1790951127439
+    }
+  },
+  "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:8kX7NKDNqcfV4Ad2TADTdRF4b4uPGn2FnSgEzHrBpovU": {
+    "updatedAt": 1790951134215,
+    "data": {
+      "schema": "V6.1-SPOT-FIFO-PERFORMANCE-V3",
+      "market": "SPOT",
+      "complete": true,
+      "pages": 10,
+      "txCount": 976,
+      "closedTrades": 393,
+      "coverageStart": 1787833432000,
+      "coverageDays": 36.08451637731481,
+      "rateLimited": false,
+      "coverage7d": true,
+      "coverage30d": true,
+      "w7": {
+        "roi": 14.877372000689052,
+        "realizedPnl": 3625.900441827635,
+        "investedUsd": 24371.9148896707,
+        "closedTrades": 206,
+        "wins": 127,
+        "losses": 79,
+        "wr": 61.6504854368932,
+        "pf": 4.810327121329199,
+        "maxDrawdown": 0.8158324195947728,
+        "avgHoldHours": 29.437572815533997,
+        "coinPnl": {
+          "GTBxUiw6wJdmmkCGZgRHLyYxqu1vG4KtRpeox6yDpump": 180.57506073346343,
+          "6HU4CmRb15C2nQDx8Ld2f2W2wTdmog6aZiiXdrT5Pzi8": 273.050934610684,
+          "jLz71QZfjnZZMLjUaCBw7KmUyftkkNq8NkWi2u9dyap": 178.7012655844811,
+          "98kfF7rmsg1QDUEoCqNE7g7M1FdrTt92TEp2CLzypump": 890.009941084378,
+          "6uPEdkU2xPg1iyfLzV1ssUwvve8nndA2sd6nBFrb1n58": 348.0534374882918,
+          "7S1pH2coVoBgzr23gnMpU2nirjCJbrnJGR3g6zmZhzZc": 325.06930493600004,
+          "Dxz3LSztqekB38wLNZSJuASLDXouphBnUkZnrrj6t7it": -17.434980406799998,
+          "5wHgFMQ45nPU7qK51Y9ATFjMVB3yegB3tLm5UD3rsEcS": -21.749897377399996,
+          "G5ccwyzfJKU4yyHUTnEzP58BYkjAmiozxBnxZ8QdYKRZ": -1.401277319200001,
+          "H61fq5HQGXAr5rJ3BCVRHfHDdoBgFR4Ttz8F8gjmFaV4": -6.536574999999999,
+          "HRgAXzTx4Kbbwx1oLVbjUAL67x9vP54S1QFTwFEvJcUF": -8.239232999999999,
+          "7EGKe4CygoNeEN76PDrZhysbj6TRdkEvzDUo8KvvsmgS": -10.349629591199998,
+          "7tEsDuij7aj4b2jLUAS5oXcp6B3zWratYVmviS5zpump": -108.56150257879972,
+          "DKxXdaMC1so182urvrrnhs6V6fGTrttPS8br6JuEpump": -7.8537918899999895,
+          "6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx": 149.8278536945939,
+          "DEW9dSN6QpWyNthphCpMmAbZP1Q4cEKR9xQXAri98WDP": 1280.0300435827855,
+          "4MMQY9bwkxxTtsK3W227Q5ABT6yFY8Pmn9Ze7wmAXKY8": -18.630401158104576,
+          "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS": 1.21782375199989,
+          "G6autZruJLEzYKRh84qTsbVhrTvLEbjBYdHnBQH1zitp": 9.031772779495405,
+          "9aqmJjCnnMQv42TXLk921ceUkN35nea2QP969n1caqjj": 81.53771928539999,
+          "CNohWHNTurS7PpB55czspwUJfpk9yy92uf1wXdweEGg9": 230.61859462409598,
+          "GAwhcphCqCv5bKHmCiN4VDdNWfbXJL4npmkc8L3Q9S9H": -168.0535349771165,
+          "7VertkgF9KLhxxJXHX6uaWuoYZTP9LdGj2bWmVXVpump": 46.98751297058381
+        },
+        "topCoin": {
+          "coin": "DEW9dSN6QpWyNthphCpMmAbZP1Q4cEKR9xQXAri98WDP",
+          "pnl": 1280.0300435827855
+        }
+      },
+      "w30": {
+        "roi": 23.614297920574597,
+        "realizedPnl": 11069.824877829455,
+        "investedUsd": 46877.637078443775,
+        "closedTrades": 393,
+        "wins": 247,
+        "losses": 146,
+        "wr": 62.849872773536894,
+        "pf": 5.834485633525674,
+        "maxDrawdown": 1.4622783615366004,
+        "avgHoldHours": 22.02414404862879,
+        "coinPnl": {
+          "ANM35KbUcfKdEVBXzSjZBoT6ceSwYRs3fuc79fp7kRqP": -61.83381014999998,
+          "Cj3upTXz6cYCP1TLbyF5AseKX4hqaWK7eiRqR7uu6npU": -5.485791002999999,
+          "98sMhvDwXj1RQi5c5Mndm3vPe9cBqPrbLaufMXFNMh5g": 1.2668123781994076,
+          "HcRLc9VDgjLeK154xDawfb1dmVJ98DoSqcwTHGqiDeJR": 121.6328639014728,
+          "Pren1FvFX6J3E4kXhJuCiAD5aDmGEb7qJRncwA8Lkhw": 0.16805212117540833,
+          "6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx": -46.89832858373131,
+          "5dvXTZ5qwgafnHtwu3Ls3QrWx1U4LQsFeCuJgkk4QEC6": -34.398837301386465,
+          "6rHkNb7HCtkpvdnVJsBCZHH5dw3AndqEjfmbEGhooR7t": -102.51564997699998,
+          "98kfF7rmsg1QDUEoCqNE7g7M1FdrTt92TEp2CLzypump": 1551.533462801285,
+          "G4hgryWhpNchZsjXZeiwNtGnAL6NjgLDLQx7KHCpump": -5.562466539,
+          "4MMQY9bwkxxTtsK3W227Q5ABT6yFY8Pmn9Ze7wmAXKY8": 132.76665453480587,
+          "91ryaCo5yGpYZM3bs6GUPs97VWJQj7RozBmqPULgpump": 1069.482805688042,
+          "HgcxVs6kJhPAaGqnPNGaa7zYgNT49hJrLufiqcNMuYZT": 119.94122435303109,
+          "HTmQz7My6MehV7bjhJ6jde8nDND1yvsz68d24LP7YgUQ": -156.39423615285833,
+          "5oKRttfSRNH3Zgi6MGY8xYsJUEEB6sjZQ3BVGbKjugT6": -17.358554766000005,
+          "PEPEqnuuCDbBC89p1u9vpnP1KQ2oj1xTcQBsjt9X55m": 1.2945072904361346,
+          "GTBxUiw6wJdmmkCGZgRHLyYxqu1vG4KtRpeox6yDpump": 5984.978931262945,
+          "8TSUhXRhpEFtUVfDFAQdYCwgp2mEbs2jQk7tAYc1pump": -1.6391211858000005,
+          "2jcvq8QcJ8TzEYJKYMCjR61kXVSzib4mEkz89tQxpump": -10.378684940399998,
+          "HSUMi4rMgjrx7zRUabw3ogGu1pa5hmF2eVcXj9Apump": 105.1070566239515,
+          "6HU4CmRb15C2nQDx8Ld2f2W2wTdmog6aZiiXdrT5Pzi8": 273.050934610684,
+          "jLz71QZfjnZZMLjUaCBw7KmUyftkkNq8NkWi2u9dyap": 178.7012655844811,
+          "6uPEdkU2xPg1iyfLzV1ssUwvve8nndA2sd6nBFrb1n58": 348.0534374882918,
+          "7S1pH2coVoBgzr23gnMpU2nirjCJbrnJGR3g6zmZhzZc": 325.06930493600004,
+          "Dxz3LSztqekB38wLNZSJuASLDXouphBnUkZnrrj6t7it": -17.434980406799998,
+          "5wHgFMQ45nPU7qK51Y9ATFjMVB3yegB3tLm5UD3rsEcS": -21.749897377399996,
+          "G5ccwyzfJKU4yyHUTnEzP58BYkjAmiozxBnxZ8QdYKRZ": -1.401277319200001,
+          "H61fq5HQGXAr5rJ3BCVRHfHDdoBgFR4Ttz8F8gjmFaV4": -6.536574999999999,
+          "HRgAXzTx4Kbbwx1oLVbjUAL67x9vP54S1QFTwFEvJcUF": -8.239232999999999,
+          "7EGKe4CygoNeEN76PDrZhysbj6TRdkEvzDUo8KvvsmgS": -10.349629591199998,
+          "7tEsDuij7aj4b2jLUAS5oXcp6B3zWratYVmviS5zpump": -108.56150257879972,
+          "DKxXdaMC1so182urvrrnhs6V6fGTrttPS8br6JuEpump": -7.8537918899999895,
+          "DEW9dSN6QpWyNthphCpMmAbZP1Q4cEKR9xQXAri98WDP": 1280.0300435827855,
+          "A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS": 1.21782375199989,
+          "G6autZruJLEzYKRh84qTsbVhrTvLEbjBYdHnBQH1zitp": 9.031772779495405,
+          "9aqmJjCnnMQv42TXLk921ceUkN35nea2QP969n1caqjj": 81.53771928539999,
+          "CNohWHNTurS7PpB55czspwUJfpk9yy92uf1wXdweEGg9": 230.61859462409598,
+          "GAwhcphCqCv5bKHmCiN4VDdNWfbXJL4npmkc8L3Q9S9H": -168.0535349771165,
+          "7VertkgF9KLhxxJXHX6uaWuoYZTP9LdGj2bWmVXVpump": 46.98751297058381
+        },
+        "topCoin": {
+          "coin": "GTBxUiw6wJdmmkCGZgRHLyYxqu1vG4KtRpeox6yDpump",
+          "pnl": 5984.978931262945
+        }
+      },
+      "updatedAt": 1790951134215
     }
   }
 }
