@@ -1,6 +1,6 @@
 {
   "schema": "V6.5-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE",
-  "generatedAt": 1790984620485,
+  "generatedAt": 1790985085744,
   "criteria": {
     "holdHours": [
       1,
@@ -102,6 +102,90 @@
       }
     },
     {
+      "name": "HL_A63B",
+      "address": "0xa63be3806dbaa5b8dfc62a4e1d93d7a530567de7",
+      "raw": {
+        "ethAddress": "0xa63be3806dbaa5b8dfc62a4e1d93d7a530567de7",
+        "accountValue": "153081.586697",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "12718.714663",
+              "roi": "0.0893401101",
+              "vlm": "28231486.3999999985"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "16403.409803",
+              "roi": "0.1182840024",
+              "vlm": "40049955.1300000027"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-194588.843303",
+              "roi": "-0.5564921326",
+              "vlm": "177449138.0600000024"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-194588.843303",
+              "roi": "-0.5564921326",
+              "vlm": "177449138.0600000024"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "pnl7": 16403.409803,
+        "pnl30": -194588.843303,
+        "volume7": 40049955.13,
+        "volume1d": 28231486.4
+      },
+      "quick": {
+        "recentFills": 1950,
+        "recentVolume": 11292396.047104016,
+        "adds": 1573,
+        "recentAdds": 0,
+        "recentAddNotional": 0,
+        "signalReady": false
+      },
+      "discovery": {
+        "volume48h": 8406268.795272995,
+        "completedLifecycles": 5,
+        "inWindow": 1,
+        "holdRatio": 0.2,
+        "medianHoldHours": 3.322900277777778,
+        "avgHoldHours": 3.322900277777778,
+        "recentLifecycles": 0,
+        "observedAdds": 1403,
+        "pnl7": 16403.409803,
+        "pnl30": -194588.843303,
+        "leaderboardVolume7": 40049955.13,
+        "accountValue": 153081.586697,
+        "recentAdds": 0,
+        "recentAddNotional": 0,
+        "wr": 80,
+        "pf": 74.97664270432576,
+        "realizedPnl": 24480.95742299998,
+        "closedTrades": 5,
+        "maxDrawdown": 0.21681373649264915,
+        "quality": "VERIFIED_EMERGING",
+        "qualificationReasons": [],
+        "confidenceTier": "VERIFIED_EMERGING",
+        "score": 98021.20857838115,
+        "tier": "VERIFIED_EMERGING",
+        "selectionRank": 2,
+        "selectionKind": "FUTURES"
+      }
+    },
+    {
       "name": "HL_50B3",
       "address": "0x50b309f78e774a756a2230e1769729094cac9f20",
       "raw": {
@@ -181,7 +265,7 @@
         "confidenceTier": "VERIFIED_EMERGING",
         "score": 63223.96685094495,
         "tier": "VERIFIED_EMERGING",
-        "selectionRank": 2,
+        "selectionRank": 3,
         "selectionKind": "FUTURES"
       }
     },
@@ -233,11 +317,11 @@
         "volume1d": 72706700.64
       },
       "quick": {
-        "recentFills": 345,
-        "recentVolume": 141818.618496,
-        "adds": 148,
-        "recentAdds": 3,
-        "recentAddNotional": 972.698640000002,
+        "recentFills": 348,
+        "recentVolume": 142800.60654600002,
+        "adds": 151,
+        "recentAdds": 4,
+        "recentAddNotional": 1464.854565000002,
         "signalReady": true
       },
       "discovery": {
@@ -247,13 +331,13 @@
           "QUICK_ACTIVITY_ONLY",
           "NOT_PERFORMANCE_VERIFIED"
         ],
-        "recentFills": 345,
-        "recentVolume": 141818.618496,
-        "recentAdds": 3,
-        "recentAddNotional": 972.698640000002,
-        "score": 7390.884824960002,
+        "recentFills": 348,
+        "recentVolume": 142800.60654600002,
+        "recentAdds": 4,
+        "recentAddNotional": 1464.854565000002,
+        "score": 7892.860630460002,
         "tier": "ACTIVE_WATCH",
-        "selectionRank": 3,
+        "selectionRank": 4,
         "selectionKind": "FUTURES"
       }
     }

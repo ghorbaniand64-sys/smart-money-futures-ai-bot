@@ -1394,6 +1394,19 @@
       "outcome": null,
       "lastPrice": 84445.5,
       "lastMovePct": 0
+    },
+    {
+      "key": "0x856c35038594767646266bc7fd68dc26480e910d|FARTCOIN|SHORT|29849748",
+      "time": 1790985105074,
+      "market": "FUTURES",
+      "wallet": "0x856c35038594767646266bc7fd68dc26480e910d",
+      "coin": "FARTCOIN",
+      "side": "SHORT",
+      "entry": 0.17818,
+      "currentPrice": 0.17818,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null
     }
   ]
 }
