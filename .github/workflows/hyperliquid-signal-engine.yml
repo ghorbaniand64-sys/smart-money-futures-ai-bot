@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   whale-signal-engine:
-    name: Crypto Whale Signal Engine V6.1
+    name: Crypto Whale Signal Engine V6.2
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production
@@ -33,10 +33,10 @@ jobs:
 
       # ============================================================
       # ENGINE VERSION
-      # MUST MATCH:
-      # const VERSION = 'V6.1';
+      # IMPORTANT:
+      # Worker crypto_whale_signal_engine.mjs MUST be V6.2
       # ============================================================
-      EXPECTED_ENGINE_VERSION: "V6.1"
+      EXPECTED_ENGINE_VERSION: "V6.2"
 
       # ============================================================
       # DISCOVERY / WATCHLIST
@@ -46,7 +46,7 @@ jobs:
       DISCOVERY_TTL_MIN: "45"
 
       # ============================================================
-      # SPOT QUALITY
+      # SPOT DISCOVERY QUALITY
       # ============================================================
       WHALE_DISCOVERY_SPOT_MIN_EVIDENCE_TRADES: "10"
       WHALE_DISCOVERY_SPOT_MIN_RECENT_BUYS: "2"
@@ -56,14 +56,9 @@ jobs:
       # ============================================================
       # FUTURES DISCOVERY
       #
-      # Discovery selects ACTIVE Futures wallets.
-      # It does NOT require a fresh ADD at discovery time.
-      #
-      # scanFutures() makes the final signal decision:
-      # - ADD >= $100
-      # - freshness <= 15m
-      # - entry distance
-      # - RR
+      # Discovery selects active Futures wallets.
+      # Final signal decision is still made by scanFutures()
+      # using fresh ADD activity.
       # ============================================================
       WHALE_DISCOVERY_SIGNAL_READY_ONLY: "false"
       WHALE_DISCOVERY_FUTURES_ACTIVE_SELECTION: "true"
@@ -80,19 +75,37 @@ jobs:
       SIGNAL_FUTURES_ACTIVITY_LOOKBACK_MIN: "120"
 
       # ============================================================
+      # V6.2 FUTURES LIFECYCLE AUDIT
+      #
+      # Used to distinguish:
+      # NEW ENTRY
+      # ADD #2
+      # ADD #3
+      # ...
+      #
+      # Leverage comes from Hyperliquid clearinghouse state.
+      # ============================================================
+      SIGNAL_FUTURES_LIFECYCLE_AUDIT_HOURS: "24"
+      SIGNAL_FUTURES_LIFECYCLE_AUDIT_MAX_PAGES: "3"
+
+      # ============================================================
       # SPOT SIGNAL RULES
       # ============================================================
       SIGNAL_SPOT_MIN_BUY_USD: "25"
       SIGNAL_SPOT_ACTIVITY_LOOKBACK_MIN: "15"
       SIGNAL_SPOT_MAX_ACTIVITY_AGE_MIN: "15"
+
+      # ============================================================
+      # GENERAL SIGNAL LATENCY
+      # ============================================================
       SIGNAL_MAX_SIGNAL_LATENCY_MIN: "5"
 
+      # ============================================================
+      # RISK / TARGETS
+      # ============================================================
       SIGNAL_SPOT_SL_PCT: "2.0"
       SIGNAL_SPOT_TP_PCT: "4.0"
 
-      # ============================================================
-      # FUTURES SL / TP
-      # ============================================================
       SIGNAL_FUTURES_SL_PCT: "1.5"
       SIGNAL_FUTURES_TP_PCT: "3.0"
 
@@ -105,6 +118,11 @@ jobs:
 
       # ============================================================
       # SAFETY
+      #
+      # READ-ONLY / SIGNAL-ONLY
+      # NO ORDERS
+      # NO POSITION CHANGES
+      # NO LEVERAGE CHANGES
       # ============================================================
       EXECUTION_ENABLED: "false"
       DRY_RUN: "true"
@@ -121,14 +139,12 @@ jobs:
 
       # ============================================================
       # NODE 22
-      #
-      # IMPORTANT:
-      # No npm cache because repository has no package-lock.json.
       # ============================================================
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: "npm"
 
       # ============================================================
       # STATE DIRECTORY
@@ -138,85 +154,86 @@ jobs:
         run: |
           set -e
 
-          mkdir -p "$GITHUB_WORKSPACE/state"
+          mkdir -p state
+
+          echo "========================================"
+          echo "STATE DIRECTORY READY"
+          echo "========================================"
 
       # ============================================================
-      # WORKER FILE CHECK
+      # WORKER FILE VERIFICATION
       # ============================================================
       - name: Verify required worker exists
         shell: bash
         run: |
           set -e
 
-          WORKER="$GITHUB_WORKSPACE/crypto_whale_signal_engine.mjs"
+          WORKER="crypto_whale_signal_engine.mjs"
 
           echo "========================================"
           echo "WORKER FILE VERIFICATION"
           echo "========================================"
 
-          echo "Workspace:"
-          echo "$GITHUB_WORKSPACE"
-
-          echo
-          echo "Worker:"
-          echo "$WORKER"
-
           if [ ! -f "$WORKER" ]; then
+            echo "FATAL: $WORKER not found"
             echo
-            echo "FATAL: Worker file not found"
+            echo "Repository root:"
+            ls -la
             echo
-            echo "Workspace contents:"
-            find "$GITHUB_WORKSPACE" -maxdepth 2 -type f -print | sort
             exit 1
           fi
 
-          echo
-          echo "Worker file found."
-          echo "Size:"
+          echo "Worker: $WORKER"
+          echo "Bytes:"
           wc -c "$WORKER"
 
+          echo
+          echo "Worker exists: PASS"
+          echo "========================================"
+
       # ============================================================
-      # V6.1 VERSION GATE
+      # ENGINE VERSION VERIFICATION
+      #
+      # THIS IS THE PART THAT FIXES:
+      #
+      # Expected: V6.1
+      # Actual:   V6.2
+      #
+      # Both workflow and worker MUST be V6.2.
       # ============================================================
-      - name: Verify engine version V6.1
+      - name: Verify engine version V6.2
         shell: bash
         env:
-          EXPECTED_ENGINE_VERSION: "V6.1"
+          EXPECTED_ENGINE_VERSION: "V6.2"
         run: |
           set -e
 
-          WORKER="$GITHUB_WORKSPACE/crypto_whale_signal_engine.mjs"
+          WORKER="crypto_whale_signal_engine.mjs"
 
           echo "========================================"
           echo "ENGINE VERSION VERIFICATION"
           echo "========================================"
 
           echo
-          echo "Worker:"
-          echo "$WORKER"
-
-          echo
           echo "VERSION declarations:"
           grep -n "const VERSION" "$WORKER" || true
 
-          ACTUAL_VERSION="$(node - "$WORKER" <<'NODE'
-          const fs = require('fs');
+          ACTUAL_VERSION="$(node -e "
+            const fs=require('fs');
 
-          const file = process.argv[2];
-          const source = fs.readFileSync(file, 'utf8');
+            const s=fs.readFileSync(process.argv[1],'utf8');
 
-          const match = source.match(
-            /const\s+VERSION\s*=\s*['"]([^'"]+)['"]/
-          );
+            const m=s.match(
+              /const\\s+VERSION\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]/
+            );
 
-          if (!match) {
-            console.error('VERSION declaration not found');
-            process.exit(2);
-          }
+            if(!m) {
+              console.error('VERSION declaration not found');
+              process.exit(2);
+            }
 
-          process.stdout.write(match[1]);
-          NODE
-          )"
+            process.stdout.write(m[1]);
+          " "$WORKER")"
 
           echo
           echo "Expected:"
@@ -235,6 +252,7 @@ jobs:
             echo
             echo "Repository contains: $ACTUAL_VERSION"
             echo "Workflow expects:     $EXPECTED_ENGINE_VERSION"
+            echo
             exit 1
           fi
 
@@ -243,75 +261,96 @@ jobs:
           echo "========================================"
 
       # ============================================================
-      # NODE SYNTAX CHECK
-      #
-      # IMPORTANT:
-      # Use absolute path to avoid runner path resolution problems.
+      # NODE SYNTAX
       # ============================================================
       - name: Node syntax check
         shell: bash
         run: |
           set -e
 
-          WORKER="$GITHUB_WORKSPACE/crypto_whale_signal_engine.mjs"
-
           echo "========================================"
           echo "NODE SYNTAX CHECK"
           echo "========================================"
 
-          echo "Worker:"
-          echo "$WORKER"
-
-          if [ ! -f "$WORKER" ]; then
-            echo "FATAL: Worker file not found"
-            exit 1
-          fi
-
-          node --check "$WORKER"
+          node --check crypto_whale_signal_engine.mjs
 
           echo
-          echo "========================================"
-          echo "NODE SYNTAX CHECK PASSED"
+          echo "PASS | node --check"
           echo "========================================"
 
       # ============================================================
-      # V6.1 CONTRACT VERIFICATION
+      # V6.2 CONTRACT VERIFICATION
       # ============================================================
-      - name: Verify critical V6.1 contracts
+      - name: Verify critical V6.2 contracts
         shell: bash
         run: |
           set -e
 
-          WORKER="$GITHUB_WORKSPACE/crypto_whale_signal_engine.mjs"
+          WORKER="crypto_whale_signal_engine.mjs"
 
           echo "========================================"
-          echo "V6.1 CONTRACT VERIFICATION"
+          echo "V6.2 CONTRACT VERIFICATION"
           echo "========================================"
 
           required_patterns=(
             "V6.1-SPOT-FIFO-PERFORMANCE-V3"
             "V6.1-SPOT-PERFORMANCE-FUTURES-RECON-AUDITED"
+
             "DISCOVERY_FUTURES_ACTIVE_SELECTION"
             "FUTURES_MIN_ACTIVE_FILLS"
             "FUTURES_MIN_ACTIVE_VOLUME_USD"
+
             "FUTURES_MIN_SIGNAL_ADD_USD"
             "FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD"
             "FUTURES_SIGNAL_FRESHNESS_MIN"
+
             "SPOT_MIN_SIGNAL_BUY_USD"
+
+            "V6.2-TRADE-LIFECYCLE-MARKET-TYPE-LEVERAGE-AUDIT"
+            "marketType:'FUTURES'"
+
+            "FUTURES_LIFECYCLE_AUDIT_HOURS"
+            "FUTURES_LIFECYCLE_AUDIT_MAX_PAGES"
+
+            "leverageSource:'HYPERLIQUID_CLEARINGHOUSE_STATE'"
           )
 
           for pattern in "${required_patterns[@]}"; do
+
             if ! grep -q "$pattern" "$WORKER"; then
-              echo "FATAL: missing V6.1 contract: $pattern"
+              echo "FATAL: missing V6.2 contract: $pattern"
               exit 1
             fi
 
             echo "PASS | $pattern"
+
           done
 
           echo
           echo "========================================"
-          echo "V6.1 CONTRACTS VERIFIED"
+          echo "V6.2 CONTRACTS VERIFIED"
+          echo "========================================"
+
+      # ============================================================
+      # SELF TEST
+      # ============================================================
+      - name: Run V6.2 self-test
+        shell: bash
+        env:
+          WHALE_SELF_TEST: "true"
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "V6.2 SELF-TEST"
+          echo "========================================"
+
+          WHALE_SELF_TEST=true \
+            node crypto_whale_signal_engine.mjs
+
+          echo
+          echo "========================================"
+          echo "V6.2 SELF-TEST PASSED"
           echo "========================================"
 
       # ============================================================
@@ -323,77 +362,124 @@ jobs:
           set -e
 
           echo "========================================"
-          echo "CRYPTO WHALE SIGNAL ENGINE V6.1"
+          echo "CRYPTO WHALE SIGNAL ENGINE V6.2"
           echo "========================================"
 
           echo
           echo "Mode: READ-ONLY / SIGNAL-ONLY"
           echo "Orders: DISABLED"
           echo "Execution: DISABLED"
+          echo "Dry Run: TRUE"
 
           echo
-          echo "Watchlist:"
+          echo "----------------------------------------"
+          echo "WATCHLIST"
+          echo "----------------------------------------"
+
           echo "Spot target: 5"
           echo "Futures target: 5"
+          echo "Discovery TTL: 45m"
 
           echo
-          echo "Spot quality:"
+          echo "----------------------------------------"
+          echo "SPOT QUALITY"
+          echo "----------------------------------------"
+
           echo "Minimum evidence trades: 10"
           echo "Minimum recent BUYs: 2"
           echo "Minimum recent BUY volume: \$100"
 
           echo
-          echo "Futures:"
+          echo "----------------------------------------"
+          echo "FUTURES DISCOVERY"
+          echo "----------------------------------------"
+
           echo "Discovery: ACTIVE WALLET SELECTION"
+          echo "Minimum active fills: 5"
+          echo "Minimum active volume: \$25,000"
+          echo "Fresh ADD minimum: \$100"
+
+          echo
+          echo "----------------------------------------"
+          echo "FUTURES SIGNAL"
+          echo "----------------------------------------"
+
           echo "Fresh ADD minimum: \$100"
           echo "Freshness: <= 15m"
+          echo "Activity lookback: 120m"
 
           echo
-          echo "Signal rules:"
-          echo "Entry distance: <= 0.75%"
-          echo "Watch distance: <= 3%"
-          echo "Minimum RR: 2.0"
-          echo "Freshness: <= 15m"
+          echo "----------------------------------------"
+          echo "FUTURES LIFECYCLE"
+          echo "----------------------------------------"
+
+          echo "Lifecycle audit: 24h"
+          echo "Lifecycle audit max pages: 3"
+          echo "Leverage source: Hyperliquid clearinghouse state"
 
           echo
-          echo "Execution:"
+          echo "Lifecycle labels:"
+          echo "NEW ENTRY"
+          echo "ADD #2"
+          echo "ADD #3"
+          echo "ADD #N"
+
+          echo
+          echo "----------------------------------------"
+          echo "SPOT SIGNAL"
+          echo "----------------------------------------"
+
+          echo "Minimum BUY: \$25"
+          echo "Activity lookback: 15m"
+          echo "Maximum signal age: 15m"
+
+          echo
+          echo "----------------------------------------"
+          echo "RISK / TARGETS"
+          echo "----------------------------------------"
+
+          echo "Spot SL: 2.0%"
+          echo "Spot TP: 4.0%"
+          echo "Spot RR: 2.0"
+
+          echo "Futures SL: 1.5%"
+          echo "Futures TP: 3.0%"
+          echo "Futures RR: 2.0"
+
+          echo
+          echo "----------------------------------------"
+          echo "EXECUTION SAFETY"
+          echo "----------------------------------------"
+
           echo "NO ORDERS"
           echo "NO POSITION CHANGES"
           echo "NO LEVERAGE CHANGES"
 
           echo
-          echo "Engine: V6.1"
+          echo "----------------------------------------"
+          echo "ENGINE"
+          echo "----------------------------------------"
 
-          echo
+          echo "V6.2"
           echo "========================================"
 
       # ============================================================
       # RUN ENGINE
       # ============================================================
-      - name: Run Crypto Whale Signal Engine V6.1
+      - name: Run Crypto Whale Signal Engine V6.2
         shell: bash
         run: |
           set -e
 
-          WORKER="$GITHUB_WORKSPACE/crypto_whale_signal_engine.mjs"
-
           echo "========================================"
-          echo "STARTING CRYPTO WHALE SIGNAL ENGINE V6.1"
+          echo "STARTING CRYPTO WHALE SIGNAL ENGINE V6.2"
           echo "========================================"
 
-          echo "Worker:"
-          echo "$WORKER"
-
-          if [ ! -f "$WORKER" ]; then
-            echo "FATAL: Worker file not found"
-            exit 1
-          fi
-
-          node "$WORKER"
+          node crypto_whale_signal_engine.mjs
 
           echo
           echo "========================================"
-          echo "CRYPTO WHALE SIGNAL ENGINE V6.1 FINISHED"
+          echo "CRYPTO WHALE SIGNAL ENGINE V6.2 FINISHED"
           echo "========================================"
 
       # ============================================================
@@ -405,7 +491,9 @@ jobs:
         run: |
           set -e
 
-          cd "$GITHUB_WORKSPACE"
+          echo "========================================"
+          echo "STATE PERSISTENCE"
+          echo "========================================"
 
           if [ -n "$(git status --porcelain)" ]; then
 
@@ -415,8 +503,17 @@ jobs:
             git add state/
 
             if ! git diff --cached --quiet; then
+
               git commit -m "chore: update whale signal engine state"
+
               git push
+
+              echo "State changes committed and pushed."
+
+            else
+
+              echo "No staged state changes."
+
             fi
 
           else
@@ -424,3 +521,7 @@ jobs:
             echo "No state changes to commit."
 
           fi
+
+          echo "========================================"
+          echo "STATE PERSISTENCE FINISHED"
+          echo "========================================"
