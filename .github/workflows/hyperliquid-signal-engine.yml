@@ -1,4 +1,4 @@
-name: CRYPTO WHALE SIGNAL ENGINE
+name: CRYPTO WHALE SIGNAL ENGINE V6.3
 
 on:
   schedule:
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   whale-signal-engine:
-    name: Crypto Whale Signal Engine V6.2
+    name: Crypto Whale Signal Engine V6.3
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production
@@ -34,7 +34,7 @@ jobs:
       # ============================================================
       # ENGINE VERSION
       # ============================================================
-      EXPECTED_ENGINE_VERSION: "V6.2"
+      EXPECTED_ENGINE_VERSION: "V6.3"
 
       # ============================================================
       # DISCOVERY / WATCHLIST
@@ -69,10 +69,19 @@ jobs:
       SIGNAL_FUTURES_ACTIVITY_LOOKBACK_MIN: "120"
 
       # ============================================================
-      # V6.2 FUTURES LIFECYCLE AUDIT
+      # V6.3 FUTURES LIFECYCLE
+      #
+      # NEW ENTRY
+      # ADD #2
+      # ADD #3
+      # ...
+      #
+      # Lifecycle is reconstructed from position-increase events,
+      # not raw fill count.
       # ============================================================
       SIGNAL_FUTURES_LIFECYCLE_AUDIT_HOURS: "24"
       SIGNAL_FUTURES_LIFECYCLE_AUDIT_MAX_PAGES: "3"
+      SIGNAL_FUTURES_LIFECYCLE_BATCH_MIN: "3"
 
       # ============================================================
       # SPOT SIGNAL RULES
@@ -96,6 +105,20 @@ jobs:
       SIGNAL_FUTURES_TP_PCT: "3.0"
 
       # ============================================================
+      # UNIFIED PERFORMANCE GATE
+      #
+      # The displayed audited performance and verified gate
+      # use the same performance basis.
+      # ============================================================
+      TRADER_MIN_CLOSED_TRADES: "10"
+      TRADER_MIN_WR: "55"
+      TRADER_MIN_PF: "1.25"
+
+      SPOT_TRADER_MIN_CLOSED_TRADES: "10"
+      SPOT_TRADER_MIN_WR: "55"
+      SPOT_TRADER_MIN_PF: "1.25"
+
+      # ============================================================
       # PERFORMANCE
       # ============================================================
       PERFORMANCE_LOOKBACK_DAYS: "30"
@@ -103,8 +126,12 @@ jobs:
       PERFORMANCE_MIN_CLOSED_TRADE_USD: "1"
 
       # ============================================================
-      # SAFETY
+      # EXECUTION SAFETY
+      #
       # READ-ONLY / SIGNAL-ONLY
+      # NO ORDERS
+      # NO POSITION CHANGES
+      # NO LEVERAGE CHANGES
       # ============================================================
       EXECUTION_ENABLED: "false"
       DRY_RUN: "true"
@@ -123,9 +150,8 @@ jobs:
       # NODE 22
       #
       # IMPORTANT:
-      # No npm cache is enabled here because this repository
-      # does not contain package-lock.json / npm-shrinkwrap.json
-      # / yarn.lock.
+      # No npm cache is enabled because this repository does not
+      # require package-lock.json / npm-shrinkwrap.json / yarn.lock.
       # ============================================================
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
@@ -180,10 +206,10 @@ jobs:
       # ============================================================
       # ENGINE VERSION VERIFICATION
       # ============================================================
-      - name: Verify engine version V6.2
+      - name: Verify engine version V6.3
         shell: bash
         env:
-          EXPECTED_ENGINE_VERSION: "V6.2"
+          EXPECTED_ENGINE_VERSION: "V6.3"
         run: |
           set -e
 
@@ -258,9 +284,9 @@ jobs:
           echo "========================================"
 
       # ============================================================
-      # V6.2 CONTRACT VERIFICATION
+      # V6.3 CONTRACT VERIFICATION
       # ============================================================
-      - name: Verify critical V6.2 contracts
+      - name: Verify critical V6.3 contracts
         shell: bash
         run: |
           set -e
@@ -268,37 +294,54 @@ jobs:
           WORKER="crypto_whale_signal_engine.mjs"
 
           echo "========================================"
-          echo "V6.2 CONTRACT VERIFICATION"
+          echo "V6.3 CONTRACT VERIFICATION"
           echo "========================================"
 
           required_patterns=(
             "V6.1-SPOT-FIFO-PERFORMANCE-V3"
             "V6.1-SPOT-PERFORMANCE-FUTURES-RECON-AUDITED"
+
             "V6.2-TRADE-LIFECYCLE-MARKET-TYPE-LEVERAGE-AUDIT"
+
+            "V6.3"
+
             "marketType:'FUTURES'"
+            "marketType:'SPOT'"
+
             "FUTURES_LIFECYCLE_AUDIT_HOURS"
             "FUTURES_LIFECYCLE_AUDIT_MAX_PAGES"
+
             "leverageSource:'HYPERLIQUID_CLEARINGHOUSE_STATE'"
+
+            "TRADER_MIN_CLOSED_TRADES"
+            "TRADER_MIN_WR"
+            "TRADER_MIN_PF"
+
+            "SPOT_TRADER_MIN_CLOSED_TRADES"
+            "SPOT_TRADER_MIN_WR"
+            "SPOT_TRADER_MIN_PF"
           )
 
           for pattern in "${required_patterns[@]}"; do
+
             if ! grep -q "$pattern" "$WORKER"; then
-              echo "FATAL: missing V6.2 contract: $pattern"
+              echo "FATAL: missing V6.3 contract: $pattern"
               exit 1
             fi
 
             echo "PASS | $pattern"
+
           done
 
           echo
           echo "========================================"
-          echo "V6.2 CONTRACTS VERIFIED"
+          echo "V6.3 CONTRACTS VERIFIED"
           echo "========================================"
 
       # ============================================================
       # SELF TEST
       # ============================================================
-      - name: Run V6.2 self-test
+      - name: Run V6.3 self-test
         shell: bash
         env:
           WHALE_SELF_TEST: "true"
@@ -306,7 +349,7 @@ jobs:
           set -e
 
           echo "========================================"
-          echo "V6.2 SELF-TEST"
+          echo "V6.3 SELF-TEST"
           echo "========================================"
 
           WHALE_SELF_TEST=true \
@@ -314,7 +357,7 @@ jobs:
 
           echo
           echo "========================================"
-          echo "V6.2 SELF-TEST PASSED"
+          echo "V6.3 SELF-TEST PASSED"
           echo "========================================"
 
       # ============================================================
@@ -326,7 +369,7 @@ jobs:
           set -e
 
           echo "========================================"
-          echo "CRYPTO WHALE SIGNAL ENGINE V6.2"
+          echo "CRYPTO WHALE SIGNAL ENGINE V6.3"
           echo "========================================"
 
           echo
@@ -346,7 +389,7 @@ jobs:
 
           echo
           echo "----------------------------------------"
-          echo "SPOT QUALITY"
+          echo "SPOT DISCOVERY"
           echo "----------------------------------------"
 
           echo "Minimum evidence trades: 10"
@@ -379,6 +422,7 @@ jobs:
 
           echo "Lifecycle audit: 24h"
           echo "Lifecycle audit max pages: 3"
+          echo "Lifecycle batch window: 3m"
           echo "Leverage source: Hyperliquid clearinghouse state"
 
           echo
@@ -387,6 +431,19 @@ jobs:
           echo "ADD #2"
           echo "ADD #3"
           echo "ADD #N"
+
+          echo
+          echo "----------------------------------------"
+          echo "UNIFIED VERIFIED GATE"
+          echo "----------------------------------------"
+
+          echo "Closed trades minimum: 10"
+          echo "Win rate minimum: 55%"
+          echo "Profit factor minimum: 1.25"
+
+          echo
+          echo "Gate basis:"
+          echo "AUDITED PERFORMANCE DATA"
 
           echo
           echo "----------------------------------------"
@@ -424,26 +481,26 @@ jobs:
           echo "ENGINE"
           echo "----------------------------------------"
 
-          echo "V6.2"
+          echo "V6.3"
           echo "========================================"
 
       # ============================================================
       # RUN ENGINE
       # ============================================================
-      - name: Run Crypto Whale Signal Engine V6.2
+      - name: Run Crypto Whale Signal Engine V6.3
         shell: bash
         run: |
           set -e
 
           echo "========================================"
-          echo "STARTING CRYPTO WHALE SIGNAL ENGINE V6.2"
+          echo "STARTING CRYPTO WHALE SIGNAL ENGINE V6.3"
           echo "========================================"
 
           node crypto_whale_signal_engine.mjs
 
           echo
           echo "========================================"
-          echo "CRYPTO WHALE SIGNAL ENGINE V6.2 FINISHED"
+          echo "CRYPTO WHALE SIGNAL ENGINE V6.3 FINISHED"
           echo "========================================"
 
       # ============================================================
