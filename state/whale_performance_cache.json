@@ -4088,14 +4088,14 @@
     }
   },
   "FUTURES:0xf58b673c1633ccef0ac58263cdc95ed80f817fc7": {
-    "updatedAt": 1790974477503,
+    "updatedAt": 1790975603754,
     "data": {
       "market": "FUTURES",
       "complete": false,
       "pages": 2,
       "fillCount": 1947,
       "coverageStart": 1790495861826,
-      "coverageDays": 5.539533298611111,
+      "coverageDays": 5.552568611111111,
       "coverage7d": false,
       "coverage30d": false,
       "w7": {
@@ -4138,7 +4138,7 @@
         },
         "fillCount": 1947
       },
-      "updatedAt": 1790974477503
+      "updatedAt": 1790975603754
     }
   },
   "FUTURES:0xa63be3806dbaa5b8dfc62a4e1d93d7a530567de7": {
@@ -4191,14 +4191,14 @@
     }
   },
   "FUTURES:0x856c35038594767646266bc7fd68dc26480e910d": {
-    "updatedAt": 1790974491775,
+    "updatedAt": 1790975602535,
     "data": {
       "market": "FUTURES",
       "complete": false,
       "pages": 2,
       "fillCount": 1994,
       "coverageStart": 1788703991686,
-      "coverageDays": 26.278936215277778,
+      "coverageDays": 26.291792233796297,
       "coverage7d": true,
       "coverage30d": false,
       "w7": {
@@ -4236,7 +4236,7 @@
         },
         "fillCount": 1994
       },
-      "updatedAt": 1790974491775
+      "updatedAt": 1790975602535
     }
   },
   "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:2GpCsi66JvSWz4wSvPAVgrspwCFEgcES5cssjFWbkGqk": {
