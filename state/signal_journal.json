@@ -221,7 +221,7 @@
       "currentPrice": 149.37,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 149.37,
       "lastMovePct": 0
     },
@@ -236,7 +236,7 @@
       "currentPrice": 0.00068,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.00068,
       "lastMovePct": 0
     },
@@ -251,7 +251,7 @@
       "currentPrice": 86276.5,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 86276.5,
       "lastMovePct": 0
     },
@@ -311,7 +311,9 @@
       "currentPrice": 86419.5,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 86419.5,
+      "lastMovePct": 0
     },
     {
       "key": "Ha6yLchoRhCoax1f8MkMrWdtPW4KVBKXY24EY6paRXP7|A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS|LONG|29849015",
@@ -322,6 +324,21 @@
       "side": "LONG",
       "entry": 1385.36,
       "currentPrice": 1385.36,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null,
+      "lastPrice": 1385.36,
+      "lastMovePct": 0
+    },
+    {
+      "key": "5RavSBTfaaLhiA8SjTs59BdupNJS5axntifVk7x7PL65|nosXBVoaCTtYdLvKY6Csb4AC8JCdQKKAaWYtx2ZMoo7|LONG|29849035",
+      "time": 1790942202605,
+      "market": "SPOT",
+      "wallet": "5RavSBTfaaLhiA8SjTs59BdupNJS5axntifVk7x7PL65",
+      "coin": "NOS",
+      "side": "LONG",
+      "entry": 0.5812,
+      "currentPrice": 0.5812,
       "tpPct": 4,
       "slPct": 2,
       "outcome": null
