@@ -206,7 +206,7 @@
       "currentPrice": 86431.5,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 86431.5,
       "lastMovePct": 0
     },
@@ -281,7 +281,9 @@
       "currentPrice": 0.06417,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.06417,
+      "lastMovePct": 0
     },
     {
       "key": "0x6db7204f8783dfddf80b957ba5e40e24251e304d|ENA|LONG|29848991",
@@ -294,6 +296,34 @@
       "currentPrice": 0.24814,
       "tpPct": 3,
       "slPct": 1.5,
+      "outcome": null,
+      "lastPrice": 0.24814,
+      "lastMovePct": 0
+    },
+    {
+      "key": "0x50b309f78e774a756a2230e1769729094cac9f20|BTC|LONG|29849017",
+      "time": 1790941281419,
+      "market": "FUTURES",
+      "wallet": "0x50b309f78e774a756a2230e1769729094cac9f20",
+      "coin": "BTC",
+      "side": "LONG",
+      "entry": 86419.5,
+      "currentPrice": 86419.5,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null
+    },
+    {
+      "key": "Ha6yLchoRhCoax1f8MkMrWdtPW4KVBKXY24EY6paRXP7|A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS|LONG|29849015",
+      "time": 1790941281419,
+      "market": "SPOT",
+      "wallet": "Ha6yLchoRhCoax1f8MkMrWdtPW4KVBKXY24EY6paRXP7",
+      "coin": "ZEC",
+      "side": "LONG",
+      "entry": 1385.36,
+      "currentPrice": 1385.36,
+      "tpPct": 4,
+      "slPct": 2,
       "outcome": null
     }
   ]
