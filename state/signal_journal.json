@@ -986,7 +986,7 @@
       "currentPrice": 2667.85,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 2667.85,
       "lastMovePct": 0
     },
@@ -1001,7 +1001,7 @@
       "currentPrice": 0.17223,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.17223,
       "lastMovePct": 0
     },
@@ -1121,7 +1121,9 @@
       "currentPrice": 8.87,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 8.87,
+      "lastMovePct": 0
     },
     {
       "key": "0x3f240a16bb7c34302cab342227207acc3d9e0d4d|JUP|LONG|29849580",
@@ -1134,7 +1136,9 @@
       "currentPrice": 0.311295,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.311295,
+      "lastMovePct": 0
     },
     {
       "key": "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7|ETH|SHORT|29849583",
@@ -1147,7 +1151,9 @@
       "currentPrice": 2664.55,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 2664.55,
+      "lastMovePct": 0
     },
     {
       "key": "0x856c35038594767646266bc7fd68dc26480e910d|FARTCOIN|SHORT|29849579",
@@ -1160,7 +1166,9 @@
       "currentPrice": 0.17335,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.17335,
+      "lastMovePct": 0
     },
     {
       "key": "2GpCsi66JvSWz4wSvPAVgrspwCFEgcES5cssjFWbkGqk|A7bdiYdS5GjqGFtxf17ppRHtDKPkkRqbKtR27dxvQXaS|LONG|29849577",
@@ -1173,7 +1181,9 @@
       "currentPrice": 1280.062,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 1280.062,
+      "lastMovePct": 0
     },
     {
       "key": "5j1fCUiAmpJuNy3VUGgQkrBJmc5PMFGU9EknUcx1HyZR|BLKKYfF41c6xRPrtX1rdYbxLE1xxEdZUnxQsB5hcZ8Nf|LONG|29849582",
@@ -1186,7 +1196,9 @@
       "currentPrice": 1071.68,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 1071.68,
+      "lastMovePct": 0
     },
     {
       "key": "0x856c35038594767646266bc7fd68dc26480e910d|FARTCOIN|SHORT|29849589",
@@ -1199,6 +1211,58 @@
       "currentPrice": 0.17336,
       "tpPct": 3,
       "slPct": 1.5,
+      "outcome": null
+    },
+    {
+      "key": "MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa|Xsv9hRk1z5ystj9MhnA7Lq4vjSsLwzL2nxrwmwtD3re|LONG|29849607",
+      "time": 1790976481519,
+      "market": "SPOT",
+      "wallet": "MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa",
+      "coin": "GLDx",
+      "side": "LONG",
+      "entry": 379.61,
+      "currentPrice": 379.61,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null
+    },
+    {
+      "key": "MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa|3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh|LONG|29849607",
+      "time": 1790976481519,
+      "market": "SPOT",
+      "wallet": "MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa",
+      "coin": "WBTC",
+      "side": "LONG",
+      "entry": 84548.2,
+      "currentPrice": 84548.2,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null
+    },
+    {
+      "key": "MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa|7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs|LONG|29849607",
+      "time": 1790976481519,
+      "market": "SPOT",
+      "wallet": "MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa",
+      "coin": "WETH",
+      "side": "LONG",
+      "entry": 2666.45,
+      "currentPrice": 2666.45,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null
+    },
+    {
+      "key": "MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa|SPCXxcqXj6e5dJDVNovHN8744zkbhM2bYudU45BimGb|LONG|29849607",
+      "time": 1790976481519,
+      "market": "SPOT",
+      "wallet": "MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa",
+      "coin": "SPCX",
+      "side": "LONG",
+      "entry": 157.35,
+      "currentPrice": 157.35,
+      "tpPct": 4,
+      "slPct": 2,
       "outcome": null
     }
   ]
