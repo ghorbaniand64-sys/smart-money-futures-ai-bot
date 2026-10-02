@@ -3976,14 +3976,14 @@
     }
   },
   "FUTURES:0x3f240a16bb7c34302cab342227207acc3d9e0d4d": {
-    "updatedAt": 1790975073782,
+    "updatedAt": 1790979573397,
     "data": {
       "market": "FUTURES",
       "complete": true,
       "pages": 2,
-      "fillCount": 1945,
-      "coverageStart": 1788383585545,
-      "coverageDays": 29.99407681712963,
+      "fillCount": 1937,
+      "coverageStart": 1788388237725,
+      "coverageDays": 29.992311018518517,
       "coverage7d": true,
       "coverage30d": true,
       "w7": {
@@ -4001,7 +4001,7 @@
         "fillCount": 0
       },
       "w30": {
-        "pnl": 41902.80084099998,
+        "pnl": 47044.46549099997,
         "closedTrades": 14,
         "wins": 13,
         "losses": 1,
@@ -4011,29 +4011,30 @@
         "grossProfit": 38327.779151,
         "grossLoss": 106.128376,
         "coinPnl": {
-          "xyz:AVGO": 7044.424598000001,
-          "BTC": 16353.841478999999,
-          "ETH": -632.2866840000002,
+          "BTC": 19836.692029000005,
           "PONS": 467.13,
           "JUP": 2568.6238999999982,
+          "xyz:AVGO": 7044.424598000001,
           "xyz:GOOGL": 1583.2255539999999,
           "ZEC": 1136.5845760000002,
           "XRP": 989.9999999999997,
+          "ETH": 842.7133159999997,
           "LIT": 0,
           "UNI": 0,
           "xyz:TSLA": 2949.33648,
           "xyz:HOOD": 4404.253189999999,
           "ARB": 0,
           "xyz:COIN": 2156.33596,
-          "xyz:CRCL": 2881.3317880000004
+          "xyz:CRCL": 2881.3317880000004,
+          "LINK": 183.8141
         },
         "topCoin": {
           "coin": "BTC",
-          "pnl": 16353.841478999999
+          "pnl": 19836.692029000005
         },
-        "fillCount": 1945
+        "fillCount": 1937
       },
-      "updatedAt": 1790975073782
+      "updatedAt": 1790979573397
     }
   },
   "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:7pqJfozZv6JRyUfihjFXrmuq7SBa36coXMG7BtHQWGRb": {

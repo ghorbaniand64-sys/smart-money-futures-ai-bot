@@ -1211,7 +1211,7 @@
       "currentPrice": 0.17336,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.17336,
       "lastMovePct": 0
     },
@@ -1314,6 +1314,34 @@
       "side": "LONG",
       "entry": 2665.65,
       "currentPrice": 2665.65,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null,
+      "lastPrice": 2665.65,
+      "lastMovePct": 0
+    },
+    {
+      "key": "0x3f240a16bb7c34302cab342227207acc3d9e0d4d|JUP|LONG|29849658",
+      "time": 1790979580345,
+      "market": "FUTURES",
+      "wallet": "0x3f240a16bb7c34302cab342227207acc3d9e0d4d",
+      "coin": "JUP",
+      "side": "LONG",
+      "entry": 0.309495,
+      "currentPrice": 0.309495,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null
+    },
+    {
+      "key": "0x856c35038594767646266bc7fd68dc26480e910d|FARTCOIN|SHORT|29849655",
+      "time": 1790979580345,
+      "market": "FUTURES",
+      "wallet": "0x856c35038594767646266bc7fd68dc26480e910d",
+      "coin": "FARTCOIN",
+      "side": "SHORT",
+      "entry": 0.17242,
+      "currentPrice": 0.17242,
       "tpPct": 3,
       "slPct": 1.5,
       "outcome": null
