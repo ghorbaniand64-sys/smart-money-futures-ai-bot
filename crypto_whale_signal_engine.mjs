@@ -118,7 +118,8 @@ const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TO
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 8);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
-const DISCOVERY_SCHEMA = 'V6.1-PRO-MARKET-DISCOVERY-REBUILD';
+const DISCOVERY_SCHEMA = 'V6.1-SPOT-PERFORMANCE-FUTURES-RECON-AUDITED';
+const DISCOVERY_BUILD_SCHEMA = 'V6.1-PRO-MARKET-DISCOVERY-REBUILD';
 const BUILD_TAG = 'V6.1-PRO-MARKET-DISCOVERY-REBUILD';
 const DISCOVERY_SIGNAL_READY_ONLY = String(process.env.WHALE_DISCOVERY_SIGNAL_READY_ONLY || 'false').toLowerCase() === 'true';
 // Explicit quality-evidence aliases kept in the worker so the static audit and runtime use the same contract.
