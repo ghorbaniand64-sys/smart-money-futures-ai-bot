@@ -821,7 +821,9 @@
       "currentPrice": 0.01148,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.01148,
+      "lastMovePct": 0
     },
     {
       "key": "DqazGFEASTe4avAcd7zzz4KddHyGLfmgoAoZhyMoT2eG|6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx|LONG|29849413",
@@ -832,6 +834,34 @@
       "side": "LONG",
       "entry": 0.2453,
       "currentPrice": 0.2453,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null,
+      "lastPrice": 0.2453,
+      "lastMovePct": 0
+    },
+    {
+      "key": "DqazGFEASTe4avAcd7zzz4KddHyGLfmgoAoZhyMoT2eG|6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx|LONG|29849447",
+      "time": 1790967112354,
+      "market": "SPOT",
+      "wallet": "DqazGFEASTe4avAcd7zzz4KddHyGLfmgoAoZhyMoT2eG",
+      "coin": "STONK",
+      "side": "LONG",
+      "entry": 0.233,
+      "currentPrice": 0.233,
+      "tpPct": 4,
+      "slPct": 2,
+      "outcome": null
+    },
+    {
+      "key": "DqazGFEASTe4avAcd7zzz4KddHyGLfmgoAoZhyMoT2eG|Cm6fNnMk7NfzStP9CZpsQA2v3jjzbcYGAxdJySmHpump|LONG|29849447",
+      "time": 1790967112354,
+      "market": "SPOT",
+      "wallet": "DqazGFEASTe4avAcd7zzz4KddHyGLfmgoAoZhyMoT2eG",
+      "coin": "Buttcoin",
+      "side": "LONG",
+      "entry": 0.01129,
+      "currentPrice": 0.01129,
       "tpPct": 4,
       "slPct": 2,
       "outcome": null
