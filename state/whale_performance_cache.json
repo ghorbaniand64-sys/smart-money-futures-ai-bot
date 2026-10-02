@@ -1844,14 +1844,14 @@
     }
   },
   "FUTURES:0x50b309f78e774a756a2230e1769729094cac9f20": {
-    "updatedAt": 1790941277676,
+    "updatedAt": 1790945645010,
     "data": {
       "market": "FUTURES",
       "complete": true,
       "pages": 2,
-      "fillCount": 1864,
-      "coverageStart": 1788350383937,
-      "coverageDays": 29.98719605324074,
+      "fillCount": 1928,
+      "coverageStart": 1788357285389,
+      "coverageDays": 29.957865983796296,
       "coverage7d": true,
       "coverage30d": true,
       "w7": {
@@ -1869,25 +1869,25 @@
         "fillCount": 0
       },
       "w30": {
-        "pnl": -178019.21877500036,
-        "closedTrades": 3,
-        "wins": 0,
-        "losses": 3,
-        "wr": 0,
-        "pf": 0,
-        "maxDrawdown": 178019.2187750002,
-        "grossProfit": 0,
-        "grossLoss": 178019.2187750002,
+        "pnl": 87914.8936569999,
+        "closedTrades": 4,
+        "wins": 4,
+        "losses": 0,
+        "wr": 100,
+        "pf": null,
+        "maxDrawdown": 0,
+        "grossProfit": 87914.89365700001,
+        "grossLoss": 0,
         "coinPnl": {
-          "BTC": -178019.21877500036
+          "BTC": 87914.8936569999
         },
         "topCoin": {
           "coin": "BTC",
-          "pnl": -178019.21877500036
+          "pnl": 87914.8936569999
         },
-        "fillCount": 1864
+        "fillCount": 1928
       },
-      "updatedAt": 1790941277676
+      "updatedAt": 1790945645010
     }
   },
   "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:DBnXgpAfYRQB2kVab3go3TwqwPTc5g1VMWa8ZR4N2Jz5": {
@@ -2808,6 +2808,121 @@
         }
       },
       "updatedAt": 1790944327089
+    }
+  },
+  "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:9NEKKdPMp6tnLPWZCxRzQgpcttSxRtQnVZaphVoWCrUE": {
+    "updatedAt": 1790945642279,
+    "data": {
+      "schema": "V6.1-SPOT-FIFO-PERFORMANCE-V3",
+      "market": "SPOT",
+      "complete": true,
+      "pages": 2,
+      "txCount": 199,
+      "closedTrades": 53,
+      "coverageStart": 1788248407000,
+      "coverageDays": 31.21800091435185,
+      "rateLimited": false,
+      "coverage7d": true,
+      "coverage30d": true,
+      "w7": {
+        "roi": 1.244848989495337,
+        "realizedPnl": 16.67857472073591,
+        "investedUsd": 1339.807065875309,
+        "closedTrades": 23,
+        "wins": 18,
+        "losses": 5,
+        "wr": 78.26086956521739,
+        "pf": 6.596379956742783,
+        "maxDrawdown": 0.13405253934189942,
+        "avgHoldHours": 0.008719806763285026,
+        "coinPnl": {
+          "68RUKJSkhT7Z9itn2tUhCzR7t2pbBahqjgG8qbkB5Dux": 0.46691221236127944,
+          "AwNRGYo4X1iyfiNGKVoMSTydfA4yKMahptcbaLRh8fw1": 0.9897180065131845,
+          "GAwhcphCqCv5bKHmCiN4VDdNWfbXJL4npmkc8L3Q9S9H": 3.2596504108338737,
+          "XLBLxbY1Mr7aadnqAbmqSBXLEyUdjvUXtXCnz8Mpump": 11.962294091027573
+        },
+        "topCoin": {
+          "coin": "XLBLxbY1Mr7aadnqAbmqSBXLEyUdjvUXtXCnz8Mpump",
+          "pnl": 11.962294091027573
+        }
+      },
+      "w30": {
+        "roi": 0.22087088512625697,
+        "realizedPnl": 3.0552404301547913,
+        "investedUsd": 1383.2698811381665,
+        "closedTrades": 53,
+        "wins": 20,
+        "losses": 33,
+        "wr": 37.735849056603776,
+        "pf": 1.1797319940360147,
+        "maxDrawdown": 0.9848645211136761,
+        "avgHoldHours": 0.03424528301886792,
+        "coinPnl": {
+          "CfBYu1dsy6nC3oiYmxE3Kxds6auwpoxcErvSMVykVEPH": -5.791910927990896,
+          "GTmRSuqENCavU5BZvaZoSYJnhCmWmKk7GeMmv75CRH4H": -1.100132905924786,
+          "43uJZGxfZcsiL29k1vpwd7H6up5qgMAoU1aMb5Rmpump": -0.7661491723134706,
+          "8KAPV5bS26u6kvQ4S8o6Fef8Wh7u5iqJWXWyTgzPpump": -0.2686859554002867,
+          "A6PVnMVFm3tFCjz3FDwWDR7YcUEqfe5wRSkawaEFpump": -0.4451958450218464,
+          "98kfF7rmsg1QDUEoCqNE7g7M1FdrTt92TEp2CLzypump": -0.35312207041676835,
+          "JAra3zTcKBhDnM4jQwEcUj3rtsYaA6YCqRdaW7zApump": -4.8981374135130675,
+          "68RUKJSkhT7Z9itn2tUhCzR7t2pbBahqjgG8qbkB5Dux": 0.46691221236127944,
+          "AwNRGYo4X1iyfiNGKVoMSTydfA4yKMahptcbaLRh8fw1": 0.9897180065131845,
+          "GAwhcphCqCv5bKHmCiN4VDdNWfbXJL4npmkc8L3Q9S9H": 3.2596504108338737,
+          "XLBLxbY1Mr7aadnqAbmqSBXLEyUdjvUXtXCnz8Mpump": 11.962294091027573
+        },
+        "topCoin": {
+          "coin": "XLBLxbY1Mr7aadnqAbmqSBXLEyUdjvUXtXCnz8Mpump",
+          "pnl": 11.962294091027573
+        }
+      },
+      "updatedAt": 1790945642279
+    }
+  },
+  "FUTURES:0x6752fd3edb8a9adf4db1eed002f7134cf7ae7a2f": {
+    "updatedAt": 1790945644323,
+    "data": {
+      "market": "FUTURES",
+      "complete": false,
+      "pages": 2,
+      "fillCount": 1874,
+      "coverageStart": 1788404694107,
+      "coverageDays": 29.40914601851852,
+      "coverage7d": true,
+      "coverage30d": false,
+      "w7": {
+        "pnl": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "grossProfit": 0,
+        "grossLoss": 0,
+        "coinPnl": {},
+        "topCoin": null,
+        "fillCount": 0
+      },
+      "w30": {
+        "pnl": 198621.36998999928,
+        "closedTrades": 3,
+        "wins": 3,
+        "losses": 0,
+        "wr": 100,
+        "pf": null,
+        "maxDrawdown": 0,
+        "grossProfit": 187317.9601549997,
+        "grossLoss": 0,
+        "coinPnl": {
+          "BTC": 198621.36998999928
+        },
+        "topCoin": {
+          "coin": "BTC",
+          "pnl": 198621.36998999928
+        },
+        "fillCount": 1874
+      },
+      "updatedAt": 1790945644323
     }
   }
 }
