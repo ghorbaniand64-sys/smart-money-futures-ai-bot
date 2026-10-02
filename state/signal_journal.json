@@ -1226,7 +1226,9 @@
       "currentPrice": 379.61,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 379.61,
+      "lastMovePct": 0
     },
     {
       "key": "MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa|3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh|LONG|29849607",
@@ -1239,7 +1241,9 @@
       "currentPrice": 84548.2,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 84548.2,
+      "lastMovePct": 0
     },
     {
       "key": "MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa|7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs|LONG|29849607",
@@ -1252,7 +1256,9 @@
       "currentPrice": 2666.45,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 2666.45,
+      "lastMovePct": 0
     },
     {
       "key": "MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa|SPCXxcqXj6e5dJDVNovHN8744zkbhM2bYudU45BimGb|LONG|29849607",
@@ -1265,7 +1271,9 @@
       "currentPrice": 157.35,
       "tpPct": 4,
       "slPct": 2,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 157.35,
+      "lastMovePct": 0
     },
     {
       "key": "0x3f240a16bb7c34302cab342227207acc3d9e0d4d|JUP|LONG|29849611",
