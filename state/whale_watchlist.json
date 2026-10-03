@@ -1,6 +1,6 @@
 {
   "schema": "V6.5-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE",
-  "generatedAt": 1790993721564,
+  "generatedAt": 1790994928210,
   "criteria": {
     "holdHours": [
       1,
@@ -65,9 +65,9 @@
         "volume1d": 58987481.65
       },
       "quick": {
-        "recentFills": 1914,
-        "recentVolume": 15159092.821319994,
-        "adds": 1525,
+        "recentFills": 1456,
+        "recentVolume": 7670304.452360009,
+        "adds": 1291,
         "recentAdds": 0,
         "recentAddNotional": 0,
         "signalReady": false
