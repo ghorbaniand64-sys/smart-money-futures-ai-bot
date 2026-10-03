@@ -1540,6 +1540,19 @@
       "tpPct": 3,
       "slPct": 1.5,
       "outcome": null
+    },
+    {
+      "key": "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7|ETH|LONG|29850030",
+      "time": 1791002364678,
+      "market": "FUTURES",
+      "wallet": "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7",
+      "coin": "ETH",
+      "side": "LONG",
+      "entry": 2672.55,
+      "currentPrice": 2672.55,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null
     }
   ]
 }
