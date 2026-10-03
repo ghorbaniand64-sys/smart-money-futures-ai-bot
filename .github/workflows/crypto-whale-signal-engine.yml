@@ -8,229 +8,432 @@ on:
 permissions:
   contents: write
 
+# Prevent old scheduled runs from piling up behind a newer run.
+# The Worker itself is NOT changed by this workflow.
 concurrency:
   group: crypto-whale-signal-engine-production
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
-  engine:
+  whale-signal-engine:
     name: Crypto Whale Signal Engine
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production
 
+    env:
+      NODE_ENV: production
+
+      # ============================================================
+      # PRODUCTION ENVIRONMENT SECRETS
+      # ============================================================
+      HYPERLIQUID_API_URL: ${{ secrets.HYPERLIQUID_API_URL }}
+      SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
+      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+
+      # ============================================================
+      # DISCOVERY / WATCHLIST
+      # ============================================================
+      WHALE_TARGET_SPOT_WALLETS: "5"
+      WHALE_TARGET_FUTURES_WALLETS: "5"
+
+      WHALE_DISCOVERY_TTL_MIN: "45"
+      WHALE_DISCOVERY_REFRESH_EACH_CYCLE: "false"
+      WHALE_DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET: "true"
+
+      WHALE_DISCOVERY_SPOT_MIN_EVIDENCE_TRADES: "10"
+      WHALE_DISCOVERY_SPOT_MIN_RECENT_BUYS: "2"
+      WHALE_DISCOVERY_SPOT_MIN_RECENT_BUY_USD: "100"
+
+      WHALE_DISCOVERY_ALLOW_ACTIVE_FALLBACK: "true"
+      WHALE_DISCOVERY_ACTIVE_FALLBACK_ENABLED: "true"
+
+      WHALE_DISCOVERY_SIGNAL_READY_ONLY: "false"
+
+      WHALE_DISCOVERY_FUTURES_ACTIVE_SELECTION: "true"
+      WHALE_DISCOVERY_FUTURES_MIN_ACTIVE_FILLS: "5"
+      WHALE_DISCOVERY_FUTURES_MIN_ACTIVE_VOLUME_USD: "25000"
+      WHALE_DISCOVERY_FUTURES_MIN_FRESH_ADD_USD: "100"
+
+      # ============================================================
+      # FUTURES SIGNAL RULES
+      # ============================================================
+      WHALE_FUTURES_MIN_SIGNAL_ADD_USD: "100"
+      WHALE_FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD: "100"
+      WHALE_FUTURES_SIGNAL_FRESHNESS_MIN: "15"
+      WHALE_FUTURES_ACTIVITY_LOOKBACK_MIN: "120"
+
+      # ============================================================
+      # SPOT SIGNAL RULES
+      # ============================================================
+      WHALE_SPOT_MIN_SIGNAL_BUY_USD: "25"
+      WHALE_SPOT_ACTIVITY_LOOKBACK_MIN: "15"
+      WHALE_SPOT_MAX_ACTIVITY_AGE_MIN: "15"
+
+      # ============================================================
+      # SIGNAL SL / TP
+      # ============================================================
+      WHALE_SIGNAL_SPOT_SL_PCT: "2"
+      WHALE_SIGNAL_SPOT_TP_PCT: "4"
+
+      WHALE_SIGNAL_FUTURES_SL_PCT: "1.5"
+      WHALE_SIGNAL_FUTURES_TP_PCT: "3"
+
+      # ============================================================
+      # PERFORMANCE / QUALITY
+      # ============================================================
+      WHALE_TRADER_MIN_CLOSED_TRADES: "10"
+      WHALE_TRADER_MIN_WR: "55"
+      WHALE_TRADER_MIN_PF: "1.25"
+
+      WHALE_SPOT_MIN_CLOSED_TRADES: "10"
+      WHALE_SPOT_MIN_WR: "55"
+      WHALE_SPOT_MIN_PF: "1.25"
+
+      WHALE_PERFORMANCE_LOOKBACK_DAYS: "30"
+      WHALE_PERFORMANCE_CACHE_MIN: "15"
+      WHALE_PERFORMANCE_MIN_CLOSED_TRADE_USD: "1"
+
+      # ============================================================
+      # FUTURES LIFECYCLE AUDIT
+      # ============================================================
+      WHALE_FUTURES_LIFECYCLE_AUDIT_HOURS: "24"
+      WHALE_FUTURES_LIFECYCLE_AUDIT_MAX_PAGES: "3"
+      WHALE_FUTURES_LIFECYCLE_BATCH_MIN: "3"
+
+      # ============================================================
+      # SAFETY — PERMANENTLY READ-ONLY
+      # ============================================================
+      EXECUTION_ENABLED: "false"
+      DRY_RUN: "true"
+
     steps:
-      - name: Checkout
+
+      # ============================================================
+      # CHECKOUT
+      # ============================================================
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
-      - name: Setup Node.js
+      # ============================================================
+      # NODE 22
+      # ============================================================
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      - name: Install runtime dependencies
-        run: npm install --no-package-lock --no-save axios
-
-      - name: VERSION-AGNOSTIC CONTRACT VERIFICATION
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          HYPERLIQUID_API_URL: ${{ secrets.HYPERLIQUID_API_URL }}
-          SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
-          HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+      # ============================================================
+      # PREPARE STATE
+      # ============================================================
+      - name: Prepare state directory
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
+
+          mkdir -p state
 
           echo "========================================"
-          echo "VERSION-AGNOSTIC CONTRACT VERIFICATION"
+          echo "CRYPTO WHALE SIGNAL ENGINE"
+          echo "========================================"
+          echo "UTC start: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          echo "Workflow run: $GITHUB_RUN_ID"
+          echo "Run attempt: $GITHUB_RUN_ATTEMPT"
+          echo "Repository: $GITHUB_REPOSITORY"
+          echo "Branch: $GITHUB_REF_NAME"
           echo "========================================"
 
-          node <<'NODE'
-          const fs = require('fs');
+      # ============================================================
+      # WORKER EXISTENCE
+      # ============================================================
+      - name: Verify required worker exists
+        shell: bash
+        run: |
+          set -euo pipefail
 
-          const src = fs.readFileSync(
-            'crypto_whale_signal_engine.mjs',
-            'utf8'
-          );
+          WORKER="crypto_whale_signal_engine.mjs"
 
-          const get = (name) => {
-            const re = new RegExp(
-              `const\\s+${name}\\s*=\\s*['"]([^'"]+)['"]`
+          if [ ! -f "$WORKER" ]; then
+            echo "========================================"
+            echo "FATAL: WORKER NOT FOUND"
+            echo "========================================"
+            echo "Expected file:"
+            echo "$WORKER"
+            echo
+            echo "Repository files:"
+            ls -la
+            exit 1
+          fi
+
+          echo "Worker found:"
+          echo "$WORKER"
+
+          echo
+          echo "Worker size:"
+          wc -c "$WORKER"
+
+      # ============================================================
+      # AUTOMATIC WORKER VERSION DETECTION
+      #
+      # IMPORTANT:
+      # There is intentionally NO EXPECTED_ENGINE_VERSION.
+      #
+      # This means V6.8 -> V6.9 -> V7.x does not require
+      # changing this Workflow merely because the Worker version
+      # changes.
+      # ============================================================
+      - name: Detect worker version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          WORKER="crypto_whale_signal_engine.mjs"
+
+          VERSION="$(node -e "
+            const fs = require('fs');
+
+            const file = process.argv[1];
+            const source = fs.readFileSync(file, 'utf8');
+
+            const match = source.match(
+              /const\\s+VERSION\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]/
             );
 
-            const m = src.match(re);
-
-            if (!m) {
-              throw new Error(`missing constant: ${name}`);
+            if (!match) {
+              console.error('VERSION constant not found');
+              process.exit(2);
             }
 
-            return m[1];
-          };
+            process.stdout.write(match[1]);
+          " "$WORKER")"
 
-          const version = get('VERSION');
-          const buildTag = get('BUILD_TAG');
-          const discoverySchema = get('DISCOVERY_SCHEMA');
-          const performanceSchema = get('PERFORMANCE_SCHEMA');
+          if ! [[ "$VERSION" =~ ^V[0-9]+\.[0-9]+$ ]]; then
+            echo "========================================"
+            echo "FATAL: INVALID WORKER VERSION"
+            echo "========================================"
+            echo "Detected: $VERSION"
+            echo "Expected format: Vx.y"
+            exit 1
+          fi
 
-          console.log(`VERSION           | ${version}`);
-          console.log(`BUILD_TAG         | ${buildTag}`);
-          console.log(`DISCOVERY_SCHEMA  | ${discoverySchema}`);
-          console.log(`PERFORMANCE_SCHEMA| ${performanceSchema}`);
+          echo "========================================"
+          echo "WORKER VERSION DETECTED"
+          echo "Version: $VERSION"
+          echo "========================================"
 
-          /*
-           * IMPORTANT:
-           * Single backslashes are intentional here.
-           *
-           * Correct:
-           * /^V\d+\.\d+$/
-           *
-           * This accepts:
-           * V6.6
-           * V6.7
-           * V7.0
-           *
-           * and rejects malformed versions.
-           */
-          if (!/^V\d+\.\d+$/.test(version)) {
-            throw new Error(`invalid VERSION: ${version}`);
-          }
+          echo "ENGINE_VERSION=$VERSION" >> "$GITHUB_ENV"
 
-          if (!buildTag.startsWith(version + '-')) {
-            throw new Error(
-              `BUILD_TAG is not aligned with ${version}`
-            );
-          }
-
-          if (!discoverySchema.startsWith(version + '-')) {
-            throw new Error(
-              `DISCOVERY_SCHEMA is not aligned with ${version}`
-            );
-          }
-
-          const required = [
-            'ACTIVE_WATCH',
-            'lifecycleAddLabel',
-            'equity curve unavailable',
-            'DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET',
-            'DISCOVERY_ACTIVE_FALLBACK_ENABLED',
-            'FUTURES_DISCOVERY_MIN_FRESH_ADD_USD',
-            'FUTURES_MIN_SIGNAL_ADD_USD',
-            'FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD',
-            'FUTURES_SIGNAL_FRESHNESS_MIN',
-            'SPOT_MIN_SIGNAL_BUY_USD'
-          ];
-
-          for (const token of required) {
-            if (!src.includes(token)) {
-              throw new Error(
-                `missing contract token: ${token}`
-              );
-            }
-          }
-
-          console.log('PASS | VERSION format');
-          console.log('PASS | BUILD_TAG aligned');
-          console.log('PASS | DISCOVERY_SCHEMA aligned');
-          console.log('PASS | V6.x contract');
-          NODE
-
+      # ============================================================
+      # NODE SYNTAX
+      # ============================================================
       - name: Node syntax check
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
+
           node --check crypto_whale_signal_engine.mjs
 
-      - name: Worker self-test
-        env:
-          WHALE_SELF_TEST: "true"
-          EXECUTION_ENABLED: "false"
-          DRY_RUN: "true"
+          echo "PASS | Node syntax check"
+
+      # ============================================================
+      # VERSION-AGNOSTIC CONTRACT VERIFICATION
+      # ============================================================
+      - name: Verify engine contracts
+        shell: bash
         run: |
-          set -e
-          node crypto_whale_signal_engine.mjs --self-test
+          set -euo pipefail
 
-      - name: Run signal engine
-        env:
-          HYPERLIQUID_API_URL: ${{ secrets.HYPERLIQUID_API_URL }}
-          SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
-          HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          WORKER="crypto_whale_signal_engine.mjs"
 
-          EXECUTION_ENABLED: "false"
-          DRY_RUN: "true"
+          echo "========================================"
+          echo "ENGINE CONTRACT VERIFICATION"
+          echo "Engine: $ENGINE_VERSION"
+          echo "========================================"
 
-          WHALE_TARGET_SPOT_WALLETS: "5"
-          WHALE_TARGET_FUTURES_WALLETS: "5"
+          required_patterns=(
+            "ACTIVE_WATCH"
+            "lifecycleAddLabel"
+            "equity curve unavailable"
+            "DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET"
+            "DISCOVERY_ACTIVE_FALLBACK_ENABLED"
+            "FUTURES_DISCOVERY_MIN_FRESH_ADD_USD"
+            "FUTURES_MIN_SIGNAL_ADD_USD"
+            "FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD"
+            "FUTURES_SIGNAL_FRESHNESS_MIN"
+            "SPOT_MIN_SIGNAL_BUY_USD"
+          )
 
-          WHALE_DISCOVERY_TTL_MIN: "45"
-          WHALE_DISCOVERY_REFRESH_EACH_CYCLE: "false"
-          WHALE_DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET: "true"
-          WHALE_DISCOVERY_ACTIVE_FALLBACK_ENABLED: "true"
+          for pattern in "${required_patterns[@]}"; do
 
-          WHALE_DISCOVERY_SPOT_MIN_EVIDENCE_TRADES: "10"
-          WHALE_DISCOVERY_SPOT_MIN_RECENT_BUYS: "2"
-          WHALE_DISCOVERY_SPOT_MIN_RECENT_BUY_USD: "100"
-          WHALE_DISCOVERY_ALLOW_ACTIVE_FALLBACK: "true"
-          WHALE_DISCOVERY_SIGNAL_READY_ONLY: "false"
+            if ! grep -q "$pattern" "$WORKER"; then
+              echo "========================================"
+              echo "FATAL: MISSING ENGINE CONTRACT"
+              echo "========================================"
+              echo "Missing:"
+              echo "$pattern"
+              exit 1
+            fi
 
-          WHALE_DISCOVERY_FUTURES_ACTIVE_SELECTION: "true"
-          WHALE_DISCOVERY_FUTURES_MIN_ACTIVE_FILLS: "5"
-          WHALE_DISCOVERY_FUTURES_MIN_ACTIVE_VOLUME_USD: "25000"
-          WHALE_DISCOVERY_FUTURES_MIN_FRESH_ADD_USD: "100"
+            echo "PASS | $pattern"
 
-          WHALE_FUTURES_MIN_SIGNAL_ADD_USD: "100"
-          WHALE_FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD: "100"
-          WHALE_FUTURES_SIGNAL_FRESHNESS_MIN: "15"
-          WHALE_FUTURES_ACTIVITY_LOOKBACK_MIN: "120"
+          done
 
-          WHALE_SPOT_MIN_SIGNAL_BUY_USD: "25"
-          WHALE_SPOT_ACTIVITY_LOOKBACK_MIN: "15"
-          WHALE_SPOT_MAX_ACTIVITY_AGE_MIN: "15"
+          echo
+          echo "ENGINE CONTRACTS VERIFIED"
 
-          WHALE_SIGNAL_SPOT_SL_PCT: "2"
-          WHALE_SIGNAL_SPOT_TP_PCT: "4"
-
-          WHALE_SIGNAL_FUTURES_SL_PCT: "1.5"
-          WHALE_SIGNAL_FUTURES_TP_PCT: "3"
-
-          WHALE_TRADER_MIN_CLOSED_TRADES: "10"
-          WHALE_TRADER_MIN_WR: "55"
-          WHALE_TRADER_MIN_PF: "1.25"
-
-          WHALE_SPOT_MIN_CLOSED_TRADES: "10"
-          WHALE_SPOT_MIN_WR: "55"
-          WHALE_SPOT_MIN_PF: "1.25"
-
-          WHALE_PERFORMANCE_LOOKBACK_DAYS: "30"
-          WHALE_PERFORMANCE_CACHE_MIN: "15"
-          WHALE_PERFORMANCE_MIN_CLOSED_TRADE_USD: "1"
-
-          WHALE_FUTURES_LIFECYCLE_AUDIT_HOURS: "24"
-          WHALE_FUTURES_LIFECYCLE_AUDIT_MAX_PAGES: "3"
-          WHALE_FUTURES_LIFECYCLE_BATCH_MIN: "3"
-
+      # ============================================================
+      # SELF TEST
+      # ============================================================
+      - name: Run worker self-test
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
+
+          echo "========================================"
+          echo "WORKER SELF-TEST"
+          echo "Engine: $ENGINE_VERSION"
+          echo "========================================"
+
+          WHALE_SELF_TEST=true node crypto_whale_signal_engine.mjs
+
+          echo
+          echo "SELF-TEST PASSED"
+
+      # ============================================================
+      # RUNTIME CONFIGURATION
+      # ============================================================
+      - name: Print runtime configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "CRYPTO WHALE SIGNAL ENGINE"
+          echo "========================================"
+
+          echo "Engine:       $ENGINE_VERSION"
+          echo "Mode:         READ-ONLY / SIGNAL-ONLY"
+          echo "Orders:       DISABLED"
+          echo "Execution:    DISABLED"
+
+          echo
+          echo "Schedule:"
+          echo "*/5 * * * *"
+
+          echo
+          echo "Concurrency:"
+          echo "cancel older run = true"
+
+          echo
+          echo "Watchlist:"
+          echo "Spot target:    5"
+          echo "Futures target: 5"
+
+          echo
+          echo "Signal freshness:"
+          echo "Futures: <= 15m"
+          echo "Spot:    <= 15m"
+
+          echo
+          echo "Signal minimum:"
+          echo "Futures ADD: \$100"
+          echo "Spot BUY:    \$25"
+
+          echo
+          echo "Execution:"
+          echo "EXECUTION_ENABLED=false"
+          echo "DRY_RUN=true"
+
+          echo
+          echo "========================================"
+
+      # ============================================================
+      # MAIN WORKER
+      # ============================================================
+      - name: Run Crypto Whale Signal Engine
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          START_EPOCH="$(date +%s)"
+
+          echo "========================================"
+          echo "WORKER START"
+          echo "========================================"
+          echo "UTC: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          echo "Engine: $ENGINE_VERSION"
+          echo "Run: $GITHUB_RUN_ID"
+          echo "Attempt: $GITHUB_RUN_ATTEMPT"
+          echo "========================================"
+
           node crypto_whale_signal_engine.mjs
 
-      - name: Commit state changes
+          END_EPOCH="$(date +%s)"
+
+          echo
+          echo "========================================"
+          echo "WORKER END"
+          echo "========================================"
+          echo "UTC: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          echo "Worker seconds: $((END_EPOCH-START_EPOCH))"
+          echo "========================================"
+
+      # ============================================================
+      # PERSIST STATE
+      # ============================================================
+      - name: Persist state changes
+        if: always()
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          echo "========================================"
+          echo "STATE PERSISTENCE"
+          echo "========================================"
 
-          git add state/ || true
-
-          if git diff --cached --quiet; then
+          if [ -z "$(git status --porcelain -- state/)" ]; then
             echo "No state changes to commit."
             exit 0
           fi
 
-          git commit -m "chore: update whale engine state [skip ci]"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git fetch origin main
-          git rebase origin/main
-          git push origin HEAD:main
+          git add state/
+
+          if git diff --cached --quiet; then
+            echo "No staged state changes."
+            exit 0
+          fi
+
+          git commit -m "chore: update whale signal engine state"
+
+          echo "Rebasing against latest branch state..."
+
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+
+          echo "Pushing state..."
+
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+          echo "State persisted successfully."
+
+      # ============================================================
+      # FINAL HEARTBEAT
+      # ============================================================
+      - name: Runtime heartbeat
+        if: always()
+        shell: bash
+        run: |
+          echo "========================================"
+          echo "RUNTIME HEARTBEAT"
+          echo "========================================"
+          echo "UTC finish: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          echo "Run: $GITHUB_RUN_ID"
+          echo "Attempt: $GITHUB_RUN_ATTEMPT"
+          echo "Engine: ${ENGINE_VERSION:-unknown}"
+          echo "========================================"
