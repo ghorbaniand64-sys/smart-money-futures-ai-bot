@@ -1,36 +1,6 @@
 {
   "signals": [
     {
-      "key": "DqazGFEASTe4avAcd7zzz4KddHyGLfmgoAoZhyMoT2eG|Cm6fNnMk7NfzStP9CZpsQA2v3jjzbcYGAxdJySmHpump|LONG|29849413",
-      "time": 1790965133231,
-      "market": "SPOT",
-      "wallet": "DqazGFEASTe4avAcd7zzz4KddHyGLfmgoAoZhyMoT2eG",
-      "coin": "Buttcoin",
-      "side": "LONG",
-      "entry": 0.01148,
-      "currentPrice": 0.01148,
-      "tpPct": 4,
-      "slPct": 2,
-      "outcome": "TIMEOUT",
-      "lastPrice": 0.01148,
-      "lastMovePct": 0
-    },
-    {
-      "key": "DqazGFEASTe4avAcd7zzz4KddHyGLfmgoAoZhyMoT2eG|6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx|LONG|29849413",
-      "time": 1790965133231,
-      "market": "SPOT",
-      "wallet": "DqazGFEASTe4avAcd7zzz4KddHyGLfmgoAoZhyMoT2eG",
-      "coin": "STONK",
-      "side": "LONG",
-      "entry": 0.2453,
-      "currentPrice": 0.2453,
-      "tpPct": 4,
-      "slPct": 2,
-      "outcome": "TIMEOUT",
-      "lastPrice": 0.2453,
-      "lastMovePct": 0
-    },
-    {
       "key": "DqazGFEASTe4avAcd7zzz4KddHyGLfmgoAoZhyMoT2eG|6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx|LONG|29849447",
       "time": 1790967112354,
       "market": "SPOT",
@@ -1061,7 +1031,7 @@
       "currentPrice": 11.1325,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 11.1325,
       "lastMovePct": 0
     },
@@ -1076,7 +1046,7 @@
       "currentPrice": 790.275,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 790.275,
       "lastMovePct": 0
     },
@@ -1091,7 +1061,7 @@
       "currentPrice": 11.1325,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 11.1325,
       "lastMovePct": 0
     },
@@ -1106,7 +1076,7 @@
       "currentPrice": 0.583675,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.583675,
       "lastMovePct": 0
     },
@@ -1121,7 +1091,7 @@
       "currentPrice": 294.505,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 294.505,
       "lastMovePct": 0
     },
@@ -1136,7 +1106,7 @@
       "currentPrice": 88.9615,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 88.9615,
       "lastMovePct": 0
     },
@@ -1151,7 +1121,7 @@
       "currentPrice": 0.49358,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.49358,
       "lastMovePct": 0
     },
@@ -1166,7 +1136,9 @@
       "currentPrice": 0.81963,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": "TIMEOUT",
+      "lastPrice": 0.81963,
+      "lastMovePct": 0
     },
     {
       "key": "0xe86b057f5eb764c9738d6b0d38170befd0723664|LIT|SHORT|29850816",
@@ -1179,7 +1151,9 @@
       "currentPrice": 3.6862,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": "TIMEOUT",
+      "lastPrice": 3.6862,
+      "lastMovePct": 0
     },
     {
       "key": "0xe86b057f5eb764c9738d6b0d38170befd0723664|NEAR|LONG|29850813",
@@ -1192,7 +1166,9 @@
       "currentPrice": 4.69435,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": "TIMEOUT",
+      "lastPrice": 4.69435,
+      "lastMovePct": 0
     },
     {
       "key": "0x493364de7f4a39ed24f9c68ece229973f324d369|ETH|LONG|29850816",
@@ -1205,7 +1181,9 @@
       "currentPrice": 2683.35,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": "TIMEOUT",
+      "lastPrice": 2683.35,
+      "lastMovePct": 0
     },
     {
       "key": "0x493364de7f4a39ed24f9c68ece229973f324d369|PUMP|LONG|29850815",
@@ -1218,7 +1196,9 @@
       "currentPrice": 0.006054,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": "TIMEOUT",
+      "lastPrice": 0.006054,
+      "lastMovePct": 0
     }
   ]
 }
