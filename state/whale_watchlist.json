@@ -1,6 +1,6 @@
 {
   "schema": "V6.5-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE",
-  "generatedAt": 1791004156859,
+  "generatedAt": 1791005358210,
   "criteria": {
     "holdHours": [
       1,
@@ -16,78 +16,5 @@
     }
   },
   "spotWallets": [],
-  "futuresWallets": [
-    {
-      "name": "HL_F58B",
-      "address": "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7",
-      "raw": {
-        "ethAddress": "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7",
-        "accountValue": "4085429.1599189998",
-        "windowPerformances": [
-          [
-            "day",
-            {
-              "pnl": "198335.587193",
-              "roi": "0.0469406694",
-              "vlm": "62578843.6799999923"
-            }
-          ],
-          [
-            "week",
-            {
-              "pnl": "121768.667625",
-              "roi": "0.0234274077",
-              "vlm": "330073686.6200000048"
-            }
-          ],
-          [
-            "month",
-            {
-              "pnl": "-1472398.4803449998",
-              "roi": "-0.1576088043",
-              "vlm": "1368423812.25"
-            }
-          ],
-          [
-            "allTime",
-            {
-              "pnl": "3206204.6999189993",
-              "roi": "0.235070122",
-              "vlm": "22728529640.9099998474"
-            }
-          ]
-        ],
-        "prize": 0,
-        "displayName": null,
-        "pnl7": 121768.667625,
-        "pnl30": -1472398.4803449998,
-        "volume7": 330073686.62,
-        "volume1d": 62578843.67999999
-      },
-      "quick": {
-        "recentFills": 284,
-        "recentVolume": 329484.1886500001,
-        "adds": 80,
-        "recentAdds": 4,
-        "recentAddNotional": 2542.5607500000006,
-        "signalReady": true
-      },
-      "discovery": {
-        "quality": "ACTIVE_WATCH",
-        "confidenceTier": "ACTIVE_WATCH",
-        "qualificationReasons": [
-          "QUICK_ACTIVITY_ONLY",
-          "NOT_PERFORMANCE_VERIFIED"
-        ],
-        "recentFills": 284,
-        "recentVolume": 329484.1886500001,
-        "recentAdds": 4,
-        "recentAddNotional": 2542.5607500000006,
-        "score": 10837.4026365,
-        "tier": "ACTIVE_WATCH",
-        "selectionRank": 1,
-        "selectionKind": "FUTURES"
-      }
-    }
-  ]
+  "futuresWallets": []
 }

@@ -1511,7 +1511,7 @@
       "currentPrice": 88.0735,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 88.0735,
       "lastMovePct": 0
     },
@@ -1526,7 +1526,7 @@
       "currentPrice": 2674.75,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 2674.75,
       "lastMovePct": 0
     },
@@ -1541,7 +1541,7 @@
       "currentPrice": 2674.75,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 2674.75,
       "lastMovePct": 0
     },
@@ -1571,7 +1571,9 @@
       "currentPrice": 2674.15,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 2674.15,
+      "lastMovePct": 0
     }
   ]
 }
