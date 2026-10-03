@@ -1,6 +1,6 @@
 {
   "schema": "V6.5-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE",
-  "generatedAt": 1791007151611,
+  "generatedAt": 1791008059364,
   "criteria": {
     "holdHours": [
       1,
@@ -17,6 +17,90 @@
   },
   "spotWallets": [],
   "futuresWallets": [
+    {
+      "name": "HL_3F24",
+      "address": "0x3f240a16bb7c34302cab342227207acc3d9e0d4d",
+      "raw": {
+        "ethAddress": "0x3f240a16bb7c34302cab342227207acc3d9e0d4d",
+        "accountValue": "608868.829473",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-54571.669103",
+              "roi": "-0.0882686951",
+              "vlm": "57670214.3900000006"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "-157202.50869",
+              "roi": "-0.2051538752",
+              "vlm": "109055975.5"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "210547.509403",
+              "roi": "0.5276664107",
+              "vlm": "362853982.2900000215"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "252036.914081",
+              "roi": "0.6942700344",
+              "vlm": "794405286.1799999475"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "pnl7": -157202.50869,
+        "pnl30": 210547.509403,
+        "volume7": 109055975.5,
+        "volume1d": 57670214.39
+      },
+      "quick": {
+        "recentFills": 462,
+        "recentVolume": 2233717.2159599983,
+        "adds": 462,
+        "recentAdds": 0,
+        "recentAddNotional": 0,
+        "signalReady": false
+      },
+      "discovery": {
+        "volume48h": 17850994.645720024,
+        "completedLifecycles": 17,
+        "inWindow": 9,
+        "holdRatio": 0.5294117647058824,
+        "medianHoldHours": 6.5046019444444445,
+        "avgHoldHours": 7.293896975308641,
+        "recentLifecycles": 4,
+        "observedAdds": 558,
+        "pnl7": -157202.50869,
+        "pnl30": 210547.509403,
+        "leaderboardVolume7": 109055975.5,
+        "accountValue": 608868.829473,
+        "recentAdds": 0,
+        "recentAddNotional": 0,
+        "wr": 61.53846153846154,
+        "pf": 11.204017300340663,
+        "realizedPnl": 67197.85594700012,
+        "closedTrades": 13,
+        "maxDrawdown": 1.055464298535745,
+        "quality": "VERIFIED_TOP_TRADER",
+        "qualificationReasons": [],
+        "confidenceTier": "VERIFIED_TOP_TRADER",
+        "score": 118323.70579866221,
+        "tier": "VERIFIED_TOP_TRADER",
+        "selectionRank": 1,
+        "selectionKind": "FUTURES"
+      }
+    },
     {
       "name": "HL_F87C",
       "address": "0xf87c27f3e754d21d3271ea38cb269e603da80a7c",
@@ -97,7 +181,7 @@
         "confidenceTier": "VERIFIED_EMERGING",
         "score": 117693.83720232094,
         "tier": "VERIFIED_EMERGING",
-        "selectionRank": 1,
+        "selectionRank": 2,
         "selectionKind": "FUTURES"
       }
     }
