@@ -1,6 +1,6 @@
 {
   "schema": "V6.5-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE",
-  "generatedAt": 1791003027133,
+  "generatedAt": 1791003661457,
   "criteria": {
     "holdHours": [
       1,
@@ -16,90 +16,5 @@
     }
   },
   "spotWallets": [],
-  "futuresWallets": [
-    {
-      "name": "HL_A63B",
-      "address": "0xa63be3806dbaa5b8dfc62a4e1d93d7a530567de7",
-      "raw": {
-        "ethAddress": "0xa63be3806dbaa5b8dfc62a4e1d93d7a530567de7",
-        "accountValue": "191506.835845",
-        "windowPerformances": [
-          [
-            "day",
-            {
-              "pnl": "48380.241831",
-              "roi": "0.3244239711",
-              "vlm": "29781473.4400000013"
-            }
-          ],
-          [
-            "week",
-            {
-              "pnl": "56962.421282",
-              "roi": "0.4052983639",
-              "vlm": "41974754.3299999982"
-            }
-          ],
-          [
-            "month",
-            {
-              "pnl": "-152163.594155",
-              "roi": "-0.435162888",
-              "vlm": "180888018.9399999976"
-            }
-          ],
-          [
-            "allTime",
-            {
-              "pnl": "-152163.594155",
-              "roi": "-0.435162888",
-              "vlm": "180888018.9399999976"
-            }
-          ]
-        ],
-        "prize": 0,
-        "displayName": null,
-        "pnl7": 56962.421282,
-        "pnl30": -152163.594155,
-        "volume7": 41974754.33,
-        "volume1d": 29781473.44
-      },
-      "quick": {
-        "recentFills": 1702,
-        "recentVolume": 4758914.917452996,
-        "adds": 1423,
-        "recentAdds": 0,
-        "recentAddNotional": 0,
-        "signalReady": false
-      },
-      "discovery": {
-        "volume48h": 8406268.795272995,
-        "completedLifecycles": 5,
-        "inWindow": 1,
-        "holdRatio": 0.2,
-        "medianHoldHours": 3.322900277777778,
-        "avgHoldHours": 3.322900277777778,
-        "recentLifecycles": 0,
-        "observedAdds": 1403,
-        "pnl7": 56962.421282,
-        "pnl30": -152163.594155,
-        "leaderboardVolume7": 41974754.33,
-        "accountValue": 191506.835845,
-        "recentAdds": 0,
-        "recentAddNotional": 0,
-        "wr": 80,
-        "pf": 74.97664270432576,
-        "realizedPnl": 24480.95742299998,
-        "closedTrades": 5,
-        "maxDrawdown": 0.17331073668233518,
-        "quality": "VERIFIED_EMERGING",
-        "qualificationReasons": [],
-        "confidenceTier": "VERIFIED_EMERGING",
-        "score": 98021.20857838115,
-        "tier": "VERIFIED_EMERGING",
-        "selectionRank": 1,
-        "selectionKind": "FUTURES"
-      }
-    }
-  ]
+  "futuresWallets": []
 }
