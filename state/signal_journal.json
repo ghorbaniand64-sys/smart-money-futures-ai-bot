@@ -1406,7 +1406,7 @@
       "currentPrice": 0.17818,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.17818,
       "lastMovePct": 0
     },
@@ -1421,7 +1421,7 @@
       "currentPrice": 0.17795,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null,
+      "outcome": "TIMEOUT",
       "lastPrice": 0.17795,
       "lastMovePct": 0
     },
