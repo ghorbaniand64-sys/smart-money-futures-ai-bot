@@ -1061,7 +1061,9 @@
       "currentPrice": 11.1325,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 11.1325,
+      "lastMovePct": 0
     },
     {
       "key": "0xfc27136e42af1732ddc9ce2605ea9bff1b959d9d|BNB|SHORT|29850796",
@@ -1074,7 +1076,9 @@
       "currentPrice": 790.275,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 790.275,
+      "lastMovePct": 0
     },
     {
       "key": "0xe86b057f5eb764c9738d6b0d38170befd0723664|AVAX|SHORT|29850798",
@@ -1087,7 +1091,9 @@
       "currentPrice": 11.1325,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 11.1325,
+      "lastMovePct": 0
     },
     {
       "key": "0xe86b057f5eb764c9738d6b0d38170befd0723664|JTO|SHORT|29850797",
@@ -1100,7 +1106,9 @@
       "currentPrice": 0.583675,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.583675,
+      "lastMovePct": 0
     },
     {
       "key": "0xe86b057f5eb764c9738d6b0d38170befd0723664|TAO|SHORT|29850796",
@@ -1113,7 +1121,9 @@
       "currentPrice": 294.505,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 294.505,
+      "lastMovePct": 0
     },
     {
       "key": "0x577a00a0ee907ee481791049477a3c1fa1470568|HYPE|LONG|29850795",
@@ -1126,7 +1136,9 @@
       "currentPrice": 88.9615,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 88.9615,
+      "lastMovePct": 0
     },
     {
       "key": "0xfc27136e42af1732ddc9ce2605ea9bff1b959d9d|ONDO|SHORT|29850792",
@@ -1137,6 +1149,73 @@
       "side": "SHORT",
       "entry": 0.49358,
       "currentPrice": 0.49358,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null,
+      "lastPrice": 0.49358,
+      "lastMovePct": 0
+    },
+    {
+      "key": "0xe86b057f5eb764c9738d6b0d38170befd0723664|AERO|SHORT|29850819",
+      "time": 1791049202679,
+      "market": "FUTURES",
+      "wallet": "0xe86b057f5eb764c9738d6b0d38170befd0723664",
+      "coin": "AERO",
+      "side": "SHORT",
+      "entry": 0.81963,
+      "currentPrice": 0.81963,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null
+    },
+    {
+      "key": "0xe86b057f5eb764c9738d6b0d38170befd0723664|LIT|SHORT|29850816",
+      "time": 1791049202679,
+      "market": "FUTURES",
+      "wallet": "0xe86b057f5eb764c9738d6b0d38170befd0723664",
+      "coin": "LIT",
+      "side": "SHORT",
+      "entry": 3.6862,
+      "currentPrice": 3.6862,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null
+    },
+    {
+      "key": "0xe86b057f5eb764c9738d6b0d38170befd0723664|NEAR|LONG|29850813",
+      "time": 1791049202679,
+      "market": "FUTURES",
+      "wallet": "0xe86b057f5eb764c9738d6b0d38170befd0723664",
+      "coin": "NEAR",
+      "side": "LONG",
+      "entry": 4.69435,
+      "currentPrice": 4.69435,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null
+    },
+    {
+      "key": "0x493364de7f4a39ed24f9c68ece229973f324d369|ETH|LONG|29850816",
+      "time": 1791049202679,
+      "market": "FUTURES",
+      "wallet": "0x493364de7f4a39ed24f9c68ece229973f324d369",
+      "coin": "ETH",
+      "side": "LONG",
+      "entry": 2683.35,
+      "currentPrice": 2683.35,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null
+    },
+    {
+      "key": "0x493364de7f4a39ed24f9c68ece229973f324d369|PUMP|LONG|29850815",
+      "time": 1791049202679,
+      "market": "FUTURES",
+      "wallet": "0x493364de7f4a39ed24f9c68ece229973f324d369",
+      "coin": "PUMP",
+      "side": "LONG",
+      "entry": 0.006054,
+      "currentPrice": 0.006054,
       "tpPct": 3,
       "slPct": 1.5,
       "outcome": null

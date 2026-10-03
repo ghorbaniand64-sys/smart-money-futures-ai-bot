@@ -1,6 +1,6 @@
 {
-  "schema": "V6.7-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE-RATE-LIMIT-SAFE",
-  "generatedAt": 1791047891851,
+  "schema": "V6.8-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE-RATE-LIMIT-SAFE",
+  "generatedAt": 1791049161776,
   "criteria": {
     "holdHours": [
       1,
@@ -118,7 +118,7 @@
         "holdRatio": 0,
         "medianHoldHours": 0,
         "avgHoldHours": 0,
-        "recentLifecycles": 1,
+        "recentLifecycles": 0,
         "observedAdds": 1098,
         "pnl7": -3504.231519,
         "pnl30": 33619.793694,
@@ -225,78 +225,6 @@
       }
     },
     {
-      "name": "HL_FC27",
-      "address": "0xfc27136e42af1732ddc9ce2605ea9bff1b959d9d",
-      "raw": {
-        "ethAddress": "0xfc27136e42af1732ddc9ce2605ea9bff1b959d9d",
-        "accountValue": "21871762.2936460003",
-        "windowPerformances": [
-          [
-            "day",
-            {
-              "pnl": "1041274.723255",
-              "roi": "0.0522524057",
-              "vlm": "27016341.2899999991"
-            }
-          ],
-          [
-            "week",
-            {
-              "pnl": "3904838.7239529998",
-              "roi": "0.1722417125",
-              "vlm": "628541623.25"
-            }
-          ],
-          [
-            "month",
-            {
-              "pnl": "-10655949.5369649995",
-              "roi": "-0.2102978582",
-              "vlm": "2834205032.3699998856"
-            }
-          ],
-          [
-            "allTime",
-            {
-              "pnl": "-1354532.1863539999",
-              "roi": "-0.0327424254",
-              "vlm": "11219735425.7000007629"
-            }
-          ]
-        ],
-        "prize": 0,
-        "displayName": null,
-        "pnl7": 3904838.723953,
-        "pnl30": -10655949.536965,
-        "volume7": 628541623.25,
-        "volume1d": 27016341.29
-      },
-      "quick": {
-        "recentFills": 1179,
-        "recentVolume": 3924952.101541004,
-        "adds": 492,
-        "recentAdds": 45,
-        "recentAddNotional": 69187.80809000012,
-        "signalReady": true
-      },
-      "discovery": {
-        "quality": "ACTIVE_WATCH",
-        "confidenceTier": "ACTIVE_WATCH",
-        "qualificationReasons": [
-          "QUICK_ACTIVITY_ONLY",
-          "NOT_PERFORMANCE_VERIFIED"
-        ],
-        "recentFills": 1179,
-        "recentVolume": 3924952.101541004,
-        "recentAdds": 45,
-        "recentAddNotional": 69187.80809000012,
-        "score": 113437.32910541017,
-        "tier": "ACTIVE_WATCH",
-        "selectionRank": 3,
-        "selectionKind": "FUTURES"
-      }
-    },
-    {
       "name": "HL_E86B",
       "address": "0xe86b057f5eb764c9738d6b0d38170befd0723664",
       "raw": {
@@ -344,11 +272,11 @@
         "volume1d": 18953549.75
       },
       "quick": {
-        "recentFills": 1852,
-        "recentVolume": 3994538.8264870048,
-        "adds": 881,
-        "recentAdds": 16,
-        "recentAddNotional": 31855.09843199998,
+        "recentFills": 1859,
+        "recentVolume": 4076857.220367,
+        "adds": 883,
+        "recentAdds": 26,
+        "recentAddNotional": 52616.49561800001,
         "signalReady": true
       },
       "discovery": {
@@ -358,69 +286,141 @@
           "QUICK_ACTIVITY_ONLY",
           "NOT_PERFORMANCE_VERIFIED"
         ],
-        "recentFills": 1852,
-        "recentVolume": 3994538.8264870048,
-        "recentAdds": 16,
-        "recentAddNotional": 31855.09843199998,
-        "score": 76800.48669687004,
+        "recentFills": 1859,
+        "recentVolume": 4076857.220367,
+        "recentAdds": 26,
+        "recentAddNotional": 52616.49561800001,
+        "score": 98385.06782167,
+        "tier": "ACTIVE_WATCH",
+        "selectionRank": 3,
+        "selectionKind": "FUTURES"
+      }
+    },
+    {
+      "name": "HL_FC27",
+      "address": "0xfc27136e42af1732ddc9ce2605ea9bff1b959d9d",
+      "raw": {
+        "ethAddress": "0xfc27136e42af1732ddc9ce2605ea9bff1b959d9d",
+        "accountValue": "21871762.2936460003",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "1041274.723255",
+              "roi": "0.0522524057",
+              "vlm": "27016341.2899999991"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "3904838.7239529998",
+              "roi": "0.1722417125",
+              "vlm": "628541623.25"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-10655949.5369649995",
+              "roi": "-0.2102978582",
+              "vlm": "2834205032.3699998856"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-1354532.1863539999",
+              "roi": "-0.0327424254",
+              "vlm": "11219735425.7000007629"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "pnl7": 3904838.723953,
+        "pnl30": -10655949.536965,
+        "volume7": 628541623.25,
+        "volume1d": 27016341.29
+      },
+      "quick": {
+        "recentFills": 1199,
+        "recentVolume": 3910029.0608450044,
+        "adds": 487,
+        "recentAdds": 5,
+        "recentAddNotional": 14434.030599999987,
+        "signalReady": true
+      },
+      "discovery": {
+        "quality": "ACTIVE_WATCH",
+        "confidenceTier": "ACTIVE_WATCH",
+        "qualificationReasons": [
+          "QUICK_ACTIVITY_ONLY",
+          "NOT_PERFORMANCE_VERIFIED"
+        ],
+        "recentFills": 1199,
+        "recentVolume": 3910029.0608450044,
+        "recentAdds": 5,
+        "recentAddNotional": 14434.030599999987,
+        "score": 58534.32120845003,
         "tier": "ACTIVE_WATCH",
         "selectionRank": 4,
         "selectionKind": "FUTURES"
       }
     },
     {
-      "name": "HL_577A",
-      "address": "0x577a00a0ee907ee481791049477a3c1fa1470568",
+      "name": "HL_4933",
+      "address": "0x493364de7f4a39ed24f9c68ece229973f324d369",
       "raw": {
-        "ethAddress": "0x577a00a0ee907ee481791049477a3c1fa1470568",
-        "accountValue": "2288243.8577490002",
+        "ethAddress": "0x493364de7f4a39ed24f9c68ece229973f324d369",
+        "accountValue": "233275.999336",
         "windowPerformances": [
           [
             "day",
             {
-              "pnl": "-22280.607058",
-              "roi": "-0.0635912849",
-              "vlm": "21845860.6000000015"
+              "pnl": "485.333303",
+              "roi": "0.0072302579",
+              "vlm": "16719174.9499999993"
             }
           ],
           [
             "week",
             {
-              "pnl": "-148167.177315",
-              "roi": "-0.3111065707",
-              "vlm": "197250645.1399999857"
+              "pnl": "-34820.991698",
+              "roi": "-0.3399437261",
+              "vlm": "98459150.4800000042"
             }
           ],
           [
             "month",
             {
-              "pnl": "23857.815548",
-              "roi": "0.0104928538",
-              "vlm": "520360410.2200000286"
+              "pnl": "-50114.634679",
+              "roi": "-0.1767770439",
+              "vlm": "265844471.2199999988"
             }
           ],
           [
             "allTime",
             {
-              "pnl": "1183800.7177490001",
-              "roi": "0.9833004468",
-              "vlm": "2712635985.8899998665"
+              "pnl": "287158.489336",
+              "roi": "2.1637649604",
+              "vlm": "5744193391.1799993515"
             }
           ]
         ],
         "prize": 0,
         "displayName": null,
-        "pnl7": -148167.177315,
-        "pnl30": 23857.815548,
-        "volume7": 197250645.14,
-        "volume1d": 21845860.6
+        "pnl7": -34820.991698,
+        "pnl30": -50114.634679,
+        "volume7": 98459150.48,
+        "volume1d": 16719174.95
       },
       "quick": {
-        "recentFills": 401,
-        "recentVolume": 1127445.6165499995,
-        "adds": 295,
-        "recentAdds": 82,
-        "recentAddNotional": 177971.52569000013,
+        "recentFills": 283,
+        "recentVolume": 421770.3164169999,
+        "adds": 128,
+        "recentAdds": 13,
+        "recentAddNotional": 32892.106105,
         "signalReady": true
       },
       "discovery": {
@@ -430,11 +430,11 @@
           "QUICK_ACTIVITY_ONLY",
           "NOT_PERFORMANCE_VERIFIED"
         ],
-        "recentFills": 401,
-        "recentVolume": 1127445.6165499995,
-        "recentAdds": 82,
-        "recentAddNotional": 177971.52569000013,
-        "score": 194245.9818555001,
+        "recentFills": 283,
+        "recentVolume": 421770.3164169999,
+        "recentAdds": 13,
+        "recentAddNotional": 32892.106105,
+        "score": 42109.80926917,
         "tier": "ACTIVE_WATCH",
         "selectionRank": 5,
         "selectionKind": "FUTURES"
