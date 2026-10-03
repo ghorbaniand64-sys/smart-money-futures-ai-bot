@@ -1406,7 +1406,9 @@
       "currentPrice": 0.17818,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.17818,
+      "lastMovePct": 0
     },
     {
       "key": "0x856c35038594767646266bc7fd68dc26480e910d|FARTCOIN|SHORT|29849755",
