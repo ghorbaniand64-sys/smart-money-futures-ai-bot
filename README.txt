@@ -1,64 +1,20 @@
-CRYPTO WHALE SIGNAL ENGINE V6.7
-================================
-Drop-in Worker replacement for the permanent workflow:
-.github/workflows/crypto-whale-signal-engine.yml
+CRYPTO WHALE SIGNAL ENGINE V6.9
 
-REQUIRED FILE NAME
-------------------
+Worker file:
 crypto_whale_signal_engine.mjs
 
-MODE
-----
-READ-ONLY / SIGNAL-ONLY
-NO ORDERS
-NO EXECUTION
-NO LEVERAGE CHANGES
+Replace ONLY the Worker file in the repository.
+Do NOT replace or rename the permanent workflow.
 
-V6.7 AUDIT FIXES
-----------------
-1. Helius 429 / max-usage circuit breaker.
-   - 429 no longer becomes trades=0 / WR=0 / PF=0.
-   - Historical performance is marked unavailable instead of rejected.
-   - Repeated Helius calls are stopped for a cooldown window.
+V6.9 changes:
+- Partial historical data is explicitly separated from unavailable history.
+- Available observed PnL/fills are surfaced instead of appearing as zero/empty performance.
+- WR/PF/ROI remain withheld when there is no closed-trade sample; no fake metrics are manufactured.
+- Partial history remains ineligible for the Verified gate.
+- Stale cached history is labeled as observed partial history, not zero performance.
+- Existing discovery, Active Watch, lifecycle, signal, RR, SL/TP and rate-limit-safe behavior is preserved.
+- READ-ONLY / SIGNALS ONLY / NO ORDERS.
 
-2. Spot discovery recovery.
-   - Recent decoded BUY activity can keep a wallet in ACTIVE_WATCH when history is unavailable.
-   - Verified and Active Watch remain separate tiers.
-   - Existing cached watchlists are preserved if a refresh fails.
-
-3. Spot signal fallback.
-   - When Helius is rate-limited, recent Spot activity can be inspected through Solana RPC as a signal-only fallback.
-
-4. Performance integrity.
-   - Rate-limited/failed performance is never cached as an empty zero-performance record.
-   - Existing valid performance cache can be retained as stale rather than replaced by zeros.
-
-5. Futures lifecycle integrity.
-   - The old 120-minute observed add count is no longer presented as a fake lifecycle ADD #N.
-   - NEW ENTRY is used only when the actual fill starts from zero.
-   - Otherwise the report uses FRESH ADD / FRESH AVERAGING.
-
-6. Full 10-wallet visibility.
-   - Telegram includes a WATCHLIST AUDIT section listing every selected Spot and Futures wallet.
-   - Verified and Active Watch counts are explicit.
-
-7. Signal quality remains strict.
-   - Futures freshness <= 15m.
-   - Entry distance <= configured entry window.
-   - RR >= configured minimum.
-   - Meaningful add notional required.
-   - Market liquidity gate remains active.
-
-VALIDATION
-----------
-node --check: PASS
-WHALE_SELF_TEST=true: PASS
-Permanent workflow contract tokens: PASS
-
-IMPORTANT
----------
-Do NOT rename or replace the permanent workflow just for V6.7.
-Replace only the repository root file:
-crypto_whale_signal_engine.mjs
-
-The permanent workflow is intentionally version-agnostic and should continue to run future V6.x workers.
+Validation:
+node --check crypto_whale_signal_engine.mjs
+WHALE_SELF_TEST=true node crypto_whale_signal_engine.mjs

@@ -5,7 +5,7 @@ import path from 'node:path';
 // Dynamic whale discovery: 5 Spot + 5 Futures. READ ONLY.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V6.8';
+const VERSION = 'V6.9';
 // V6.5: audited performance coverage, lifecycle-aware ADD labels, explicit
 // ENTRY/WATCH classification, and non-verified ACTIVE WATCH discovery tiers.
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
@@ -123,10 +123,10 @@ const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TO
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 20);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
-const DISCOVERY_SCHEMA = 'V6.8-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE-RATE-LIMIT-SAFE';
+const DISCOVERY_SCHEMA = 'V6.9-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE-RATE-LIMIT-SAFE-PARTIAL-PERFORMANCE';
 const DISCOVERY_BUILD_SCHEMA = 'V6.1-PRO-MARKET-DISCOVERY-REBUILD';
 // Contract tokens: DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET DISCOVERY_ACTIVE_FALLBACK_ENABLED FUTURES_MIN_SIGNAL_ADD_USD FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD FUTURES_SIGNAL_FRESHNESS_MIN SPOT_MIN_SIGNAL_BUY_USD lifecycleAddLabel ACTIVE_WATCH
-const BUILD_TAG = 'V6.8-AUDITED-PERFORMANCE-LIFECYCLE-ACTIVE-WATCH-RATE-LIMIT-SAFE';
+const BUILD_TAG = 'V6.9-AUDITED-PERFORMANCE-LIFECYCLE-ACTIVE-WATCH-PARTIAL-PERFORMANCE-RATE-LIMIT-SAFE';
 const DISCOVERY_TIERED_ENABLED = String(process.env.WHALE_DISCOVERY_TIERED_ENABLED || 'true').toLowerCase() !== 'false';
 const DISCOVERY_CACHE_QUALITY_TTL_MIN = Number(process.env.WHALE_DISCOVERY_CACHE_QUALITY_TTL_MIN || 45);
 const DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET = String(process.env.WHALE_DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET || 'true').toLowerCase() !== 'false';
@@ -1213,7 +1213,7 @@ function performanceWindow(fills,trades,start,end){
   const byCoin={};
   for(const f of fs){const c=String(f?.coin||'');if(c)byCoin[c]=(byCoin[c]||0)+n(f?.closedPnl)}
   const topCoin=Object.entries(byCoin).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]))[0]||null;
-  return {pnl,closedTrades:closed.length,wins,losses,wr:closed.length?(wins/closed.length*100):null,pf:grossLoss>0?grossProfit/grossLoss:(grossProfit>0?Infinity:null),maxDrawdown:maxDd,grossProfit,grossLoss,coinPnl:byCoin,topCoin:topCoin?{coin:topCoin[0],pnl:topCoin[1]}:null,fillCount:fs.length};
+  return {pnl,observedPnl:pnl,closedTrades:closed.length,wins,losses,wr:closed.length?(wins/closed.length*100):null,pf:grossLoss>0?grossProfit/grossLoss:(grossProfit>0?Infinity:null),maxDrawdown:maxDd,grossProfit,grossLoss,coinPnl:byCoin,topCoin:topCoin?{coin:topCoin[0],pnl:topCoin[1]}:null,fillCount:fs.length,observedFills:fs.length};
 }
 async function fetchSpotPerformanceHistory(w,start,end){
   const all=[]; const seen=new Set(); let before=''; let pages=0; let truncated=false; let rateLimited=false;
@@ -1289,7 +1289,7 @@ function spotPerformanceWindow(trades,start,end){
   const byCoin={}; for(const t of closed)byCoin[t.mint]=(byCoin[t.mint]||0)+t.pnlUsd;
   const topCoin=Object.entries(byCoin).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]))[0]||null;
   const avgHold=closed.length?closed.reduce((a,t)=>a+t.holdHours,0)/closed.length:null;
-  return {roi:invested>0?realized/invested*100:null,realizedPnl:realized,investedUsd:invested,closedTrades:closed.length,wins,losses,wr:closed.length?wins/closed.length*100:null,pf:grossLoss>0?grossProfit/grossLoss:(grossProfit>0?Infinity:null),maxDrawdown:maxDd,maxDrawdownPct:invested>0?maxDd/invested*100:null,avgHoldHours:avgHold,coinPnl:byCoin,topCoin:topCoin?{coin:topCoin[0],pnl:topCoin[1]}:null};
+  return {roi:invested>0?realized/invested*100:null,realizedPnl:realized,observedPnl:realized,investedUsd:invested,closedTrades:closed.length,wins,losses,wr:closed.length?wins/closed.length*100:null,pf:grossLoss>0?grossProfit/grossLoss:(grossProfit>0?Infinity:null),maxDrawdown:maxDd,maxDrawdownPct:invested>0?maxDd/invested*100:null,avgHoldHours:avgHold,coinPnl:byCoin,topCoin:topCoin?{coin:topCoin[0],pnl:topCoin[1]}:null,observedTrades:closed.length};
 }
 function performanceCoverageLabel(p,start,end){
   const cov=n(p?.coverageStart); if(!(cov>0))return 'UNKNOWN';
@@ -1357,12 +1357,11 @@ function performanceBlock(p,coin){
     return ['📊 PERFORMANCE','7D  — unavailable','30D — unavailable',`⚠️ Performance unavailable — ${why}; activity signals remain live`];
   }
   const fmtPct=x=>Number.isFinite(Number(x))?`${Number(x)>=0?'+':''}${Number(x).toFixed(2)}%`:'—';
+  const fmtMoney=x=>Number.isFinite(Number(x))?money(Number(x)):'—';
   const fmtWR=x=>Number.isFinite(Number(x))?`${Number(x).toFixed(1)}%`:'—';
   const fmtPF=x=>x===Infinity?'∞':Number.isFinite(Number(x))?Number(x).toFixed(2):'—';
   const c7=p.w7||{},c30=p.w30||{}; const coverageDays=n(p.coverageDays);
   const cov7=p.coverage7d!==false&&coverageDays>=6.5; const cov30=p.coverage30d===true||coverageDays>=29.5;
-  // A partial/active-watch history with zero closed trades is NOT zero performance.
-  // It means there is not enough closed-trade evidence to calculate WR/PF/ROI.
   const noClosed7=!Number.isFinite(Number(c7.closedTrades)) || Number(c7.closedTrades)<=0;
   const noClosed30=!Number.isFinite(Number(c30.closedTrades)) || Number(c30.closedTrades)<=0;
   const rows=['📊 PERFORMANCE'];
@@ -1371,9 +1370,15 @@ function performanceBlock(p,coin){
   if(Number.isFinite(Number(c30.avgHoldHours)))rows.push(`30D  Avg Hold ${Number(c30.avgHoldHours).toFixed(2)}h`);
   if(p.market==='SPOT'&&Number.isFinite(Number(c30.maxDrawdownPct)))rows.push(`30D  Max DD ${fmtPct(-Math.abs(c30.maxDrawdownPct))}`);
   else if(p.market==='FUTURES')rows.push('30D  Max DD — equity curve unavailable');
-  if(coin&&c30.coinPnl&&Object.prototype.hasOwnProperty.call(c30.coinPnl,coin))rows.push(`30D  ${coin} PnL ${money(c30.coinPnl[coin])}`);
+  if(coin&&c30.coinPnl&&Object.prototype.hasOwnProperty.call(c30.coinPnl,coin))rows.push(`30D  ${coin} PnL ${fmtMoney(c30.coinPnl[coin])}`);
+  if(Number.isFinite(Number(c30.observedPnl)) && Math.abs(Number(c30.observedPnl))>0.0000001 && (!coin || !c30.coinPnl || !Object.prototype.hasOwnProperty.call(c30.coinPnl,coin)))rows.push(`30D  Observed PnL ${fmtMoney(c30.observedPnl)}`);
   if(Number.isFinite(coverageDays))rows.push(`History ${coverageDays.toFixed(1)}d available${cov30?'':' | 30D PARTIAL'}`);
-  if(p.complete===false||!cov30||p.stale||noClosed30)rows.push(`⚠️ ${p.stale?'Stale cached':noClosed30?'No closed-trade sample':'Partial'} history — not treated as zero performance`);
+  if(Number.isFinite(Number(c30.observedFills)) && Number(c30.observedFills)>0)rows.push(`Observed fills ${Number(c30.observedFills)}`);
+  if(p.complete===false||!cov30||p.stale||noClosed30){
+    if(p.stale)rows.push(`⚠️ Stale cached history — ${coverageDays>0?`${coverageDays.toFixed(1)}d observed`:'cached data only'}; not treated as zero performance`);
+    else if(noClosed30)rows.push('⚠️ No closed-trade sample in available history — WR/PF/ROI withheld, not treated as zero');
+    else if(!cov30)rows.push('⚠️ Partial history — available sample shown; not eligible for Verified gate');
+  }
   return rows;
 }
 function whaleSignalBlock(w,signals,p,i){
@@ -1383,6 +1388,7 @@ function whaleSignalBlock(w,signals,p,i){
   const rows=[
     `${marketIcon} 🐋 ${title} ${i} — ${w.name}`,
     `🏷 ${w?.discovery?.quality||'VERIFIED_TOP_TRADER'} | WR ${Number.isFinite(Number(w?.discovery?.wr7??w?.discovery?.wr))?Number(w.discovery.wr7??w.discovery.wr).toFixed(1)+'%':'—'} | PF ${w?.discovery?.pf7!=null?Number(w.discovery.pf7).toFixed(2):w?.discovery?.pf!=null?Number(w.discovery.pf).toFixed(2):'—'}`,
+    `${p?.complete===false||p?.stale?'📚 History: PARTIAL / OBSERVED':'📚 History: AUDITED'}`,
     '━━━━━━━━━━━━━━━━━━',
     ...performanceBlock(p,signals[0]?.mint||signals[0]?.coin),
     ''
