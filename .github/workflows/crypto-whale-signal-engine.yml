@@ -13,125 +13,101 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  whale-signal-engine:
+  engine:
     name: Crypto Whale Signal Engine
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production
 
-    env:
-      NODE_ENV: production
-      HYPERLIQUID_API_URL: ${{ secrets.HYPERLIQUID_API_URL }}
-      SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
-      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
-
-      # The workflow is intentionally version-agnostic.
-      # It reads VERSION/BUILD_TAG/DISCOVERY_SCHEMA directly from the worker.
-      TARGET_SPOT_WALLETS: "5"
-      WHALE_TARGET_SPOT_WALLETS: "5"
-      TARGET_FUTURES_WALLETS: "5"
-      WHALE_TARGET_FUTURES_WALLETS: "5"
-      DISCOVERY_TTL_MIN: "45"
-      WHALE_DISCOVERY_TTL_MIN: "45"
-      WHALE_DISCOVERY_REFRESH_EACH_CYCLE: "false"
-      WHALE_DISCOVERY_TIERED_ENABLED: "true"
-      WHALE_DISCOVERY_CACHE_QUALITY_TTL_MIN: "45"
-      WHALE_DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET: "true"
-      WHALE_DISCOVERY_EMERGING_ENABLED: "true"
-      WHALE_DISCOVERY_SPOT_MIN_EVIDENCE_TRADES: "10"
-      WHALE_DISCOVERY_SPOT_MIN_RECENT_BUYS: "2"
-      WHALE_DISCOVERY_SPOT_MIN_RECENT_BUY_USD: "100"
-      WHALE_DISCOVERY_ALLOW_ACTIVE_FALLBACK: "true"
-      WHALE_DISCOVERY_ACTIVE_FALLBACK_ENABLED: "true"
-      WHALE_DISCOVERY_SIGNAL_READY_ONLY: "false"
-      WHALE_DISCOVERY_FUTURES_ACTIVE_SELECTION: "true"
-      WHALE_DISCOVERY_FUTURES_MIN_ACTIVE_FILLS: "5"
-      WHALE_DISCOVERY_FUTURES_MIN_ACTIVE_VOLUME_USD: "25000"
-      WHALE_DISCOVERY_FUTURES_MIN_FRESH_ADD_USD: "100"
-
-      SIGNAL_FUTURES_MIN_ADD_USD: "100"
-      SIGNAL_FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD: "100"
-      SIGNAL_FUTURES_SIGNAL_FRESHNESS_MIN: "15"
-      SIGNAL_FUTURES_ACTIVITY_LOOKBACK_MIN: "120"
-      SIGNAL_SPOT_MIN_BUY_USD: "25"
-      SIGNAL_SPOT_ACTIVITY_LOOKBACK_MIN: "15"
-      SIGNAL_SPOT_MAX_ACTIVITY_AGE_MIN: "15"
-      SIGNAL_MAX_SIGNAL_LATENCY_MIN: "5"
-      SIGNAL_SPOT_SL_PCT: "2.0"
-      SIGNAL_SPOT_TP_PCT: "4.0"
-      SIGNAL_FUTURES_SL_PCT: "1.5"
-      SIGNAL_FUTURES_TP_PCT: "3.0"
-
-      PERFORMANCE_LOOKBACK_DAYS: "30"
-      PERFORMANCE_CACHE_MIN: "15"
-      PERFORMANCE_MIN_CLOSED_TRADE_USD: "1"
-
-      EXECUTION_ENABLED: "false"
-      DRY_RUN: "true"
-
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
-      - name: Setup Node.js 22
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      - name: Prepare state directory
-        shell: bash
-        run: |
-          set -e
-          mkdir -p state
+      - name: Install runtime dependencies
+        run: npm install --no-package-lock --no-save axios
 
-      - name: Verify required worker exists
-        shell: bash
+      - name: VERSION-AGNOSTIC CONTRACT VERIFICATION
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          HYPERLIQUID_API_URL: ${{ secrets.HYPERLIQUID_API_URL }}
+          SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
+          HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
         run: |
           set -e
-          WORKER="crypto_whale_signal_engine.mjs"
-          echo "========================================"
-          echo "WORKER FILE VERIFICATION"
-          echo "========================================"
-          test -f "$WORKER" || { echo "FATAL: $WORKER not found"; ls -la; exit 1; }
-          echo "Worker: $WORKER"
-          wc -c "$WORKER"
 
-      - name: Verify worker version and contracts
-        shell: bash
-        run: |
-          set -e
-          WORKER="crypto_whale_signal_engine.mjs"
           echo "========================================"
           echo "VERSION-AGNOSTIC CONTRACT VERIFICATION"
           echo "========================================"
 
-          node - "$WORKER" <<'NODE'
+          node <<'NODE'
           const fs = require('fs');
-          const file = process.argv[2];
-          const s = fs.readFileSync(file, 'utf8');
+
+          const src = fs.readFileSync(
+            'crypto_whale_signal_engine.mjs',
+            'utf8'
+          );
+
           const get = (name) => {
-            const re = new RegExp(`const\\s+${name}\\s*=\\s*['"]([^'"]+)['"]`);
-            const m = s.match(re);
-            if (!m) throw new Error(`missing constant: ${name}`);
+            const re = new RegExp(
+              `const\\s+${name}\\s*=\\s*['"]([^'"]+)['"]`
+            );
+
+            const m = src.match(re);
+
+            if (!m) {
+              throw new Error(`missing constant: ${name}`);
+            }
+
             return m[1];
           };
+
           const version = get('VERSION');
-          const build = get('BUILD_TAG');
-          const discovery = get('DISCOVERY_SCHEMA');
-          const performance = get('PERFORMANCE_SCHEMA');
+          const buildTag = get('BUILD_TAG');
+          const discoverySchema = get('DISCOVERY_SCHEMA');
+          const performanceSchema = get('PERFORMANCE_SCHEMA');
 
-          console.log(`VERSION         | ${version}`);
-          console.log(`BUILD_TAG       | ${build}`);
-          console.log(`DISCOVERY_SCHEMA| ${discovery}`);
-          console.log(`PERFORMANCE_SCHEMA | ${performance}`);
+          console.log(`VERSION           | ${version}`);
+          console.log(`BUILD_TAG         | ${buildTag}`);
+          console.log(`DISCOVERY_SCHEMA  | ${discoverySchema}`);
+          console.log(`PERFORMANCE_SCHEMA| ${performanceSchema}`);
 
-          if (!/^V\\d+\\.\\d+$/.test(version)) throw new Error(`invalid VERSION: ${version}`);
-          if (!build.startsWith(version + '-')) throw new Error(`BUILD_TAG does not match VERSION: ${build}`);
-          if (!discovery.startsWith(version + '-')) throw new Error(`DISCOVERY_SCHEMA does not match VERSION: ${discovery}`);
+          /*
+           * IMPORTANT:
+           * Single backslashes are intentional here.
+           *
+           * Correct:
+           * /^V\d+\.\d+$/
+           *
+           * This accepts:
+           * V6.6
+           * V6.7
+           * V7.0
+           *
+           * and rejects malformed versions.
+           */
+          if (!/^V\d+\.\d+$/.test(version)) {
+            throw new Error(`invalid VERSION: ${version}`);
+          }
+
+          if (!buildTag.startsWith(version + '-')) {
+            throw new Error(
+              `BUILD_TAG is not aligned with ${version}`
+            );
+          }
+
+          if (!discoverySchema.startsWith(version + '-')) {
+            throw new Error(
+              `DISCOVERY_SCHEMA is not aligned with ${version}`
+            );
+          }
 
           const required = [
             'ACTIVE_WATCH',
@@ -145,49 +121,116 @@ jobs:
             'FUTURES_SIGNAL_FRESHNESS_MIN',
             'SPOT_MIN_SIGNAL_BUY_USD'
           ];
-          for (const pattern of required) {
-            if (!s.includes(pattern)) throw new Error(`missing generic contract: ${pattern}`);
-            console.log(`PASS | ${pattern}`);
+
+          for (const token of required) {
+            if (!src.includes(token)) {
+              throw new Error(
+                `missing contract token: ${token}`
+              );
+            }
           }
-          console.log(`PASS | VERSION/BUILD/DISCOVERY schema alignment`);
-          console.log('VERSION-AGNOSTIC CONTRACTS VERIFIED');
+
+          console.log('PASS | VERSION format');
+          console.log('PASS | BUILD_TAG aligned');
+          console.log('PASS | DISCOVERY_SCHEMA aligned');
+          console.log('PASS | V6.x contract');
           NODE
 
       - name: Node syntax check
-        shell: bash
         run: |
           set -e
           node --check crypto_whale_signal_engine.mjs
 
       - name: Worker self-test
-        shell: bash
+        env:
+          WHALE_SELF_TEST: "true"
+          EXECUTION_ENABLED: "false"
+          DRY_RUN: "true"
         run: |
           set -e
-          WHALE_SELF_TEST=true node crypto_whale_signal_engine.mjs --self-test
+          node crypto_whale_signal_engine.mjs --self-test
 
       - name: Run signal engine
-        shell: bash
+        env:
+          HYPERLIQUID_API_URL: ${{ secrets.HYPERLIQUID_API_URL }}
+          SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
+          HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+          EXECUTION_ENABLED: "false"
+          DRY_RUN: "true"
+
+          WHALE_TARGET_SPOT_WALLETS: "5"
+          WHALE_TARGET_FUTURES_WALLETS: "5"
+
+          WHALE_DISCOVERY_TTL_MIN: "45"
+          WHALE_DISCOVERY_REFRESH_EACH_CYCLE: "false"
+          WHALE_DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET: "true"
+          WHALE_DISCOVERY_ACTIVE_FALLBACK_ENABLED: "true"
+
+          WHALE_DISCOVERY_SPOT_MIN_EVIDENCE_TRADES: "10"
+          WHALE_DISCOVERY_SPOT_MIN_RECENT_BUYS: "2"
+          WHALE_DISCOVERY_SPOT_MIN_RECENT_BUY_USD: "100"
+          WHALE_DISCOVERY_ALLOW_ACTIVE_FALLBACK: "true"
+          WHALE_DISCOVERY_SIGNAL_READY_ONLY: "false"
+
+          WHALE_DISCOVERY_FUTURES_ACTIVE_SELECTION: "true"
+          WHALE_DISCOVERY_FUTURES_MIN_ACTIVE_FILLS: "5"
+          WHALE_DISCOVERY_FUTURES_MIN_ACTIVE_VOLUME_USD: "25000"
+          WHALE_DISCOVERY_FUTURES_MIN_FRESH_ADD_USD: "100"
+
+          WHALE_FUTURES_MIN_SIGNAL_ADD_USD: "100"
+          WHALE_FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD: "100"
+          WHALE_FUTURES_SIGNAL_FRESHNESS_MIN: "15"
+          WHALE_FUTURES_ACTIVITY_LOOKBACK_MIN: "120"
+
+          WHALE_SPOT_MIN_SIGNAL_BUY_USD: "25"
+          WHALE_SPOT_ACTIVITY_LOOKBACK_MIN: "15"
+          WHALE_SPOT_MAX_ACTIVITY_AGE_MIN: "15"
+
+          WHALE_SIGNAL_SPOT_SL_PCT: "2"
+          WHALE_SIGNAL_SPOT_TP_PCT: "4"
+
+          WHALE_SIGNAL_FUTURES_SL_PCT: "1.5"
+          WHALE_SIGNAL_FUTURES_TP_PCT: "3"
+
+          WHALE_TRADER_MIN_CLOSED_TRADES: "10"
+          WHALE_TRADER_MIN_WR: "55"
+          WHALE_TRADER_MIN_PF: "1.25"
+
+          WHALE_SPOT_MIN_CLOSED_TRADES: "10"
+          WHALE_SPOT_MIN_WR: "55"
+          WHALE_SPOT_MIN_PF: "1.25"
+
+          WHALE_PERFORMANCE_LOOKBACK_DAYS: "30"
+          WHALE_PERFORMANCE_CACHE_MIN: "15"
+          WHALE_PERFORMANCE_MIN_CLOSED_TRADE_USD: "1"
+
+          WHALE_FUTURES_LIFECYCLE_AUDIT_HOURS: "24"
+          WHALE_FUTURES_LIFECYCLE_AUDIT_MAX_PAGES: "3"
+          WHALE_FUTURES_LIFECYCLE_BATCH_MIN: "3"
+
         run: |
           set -e
           node crypto_whale_signal_engine.mjs
 
       - name: Commit state changes
-        shell: bash
         run: |
           set -e
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add state || true
+
+          git add state/ || true
+
           if git diff --cached --quiet; then
             echo "No state changes to commit."
             exit 0
           fi
-          git commit -m "chore: update whale signal engine state"
 
-      - name: Sync and push state safely
-        shell: bash
-        run: |
-          set -e
+          git commit -m "chore: update whale engine state [skip ci]"
+
           git fetch origin main
           git rebase origin/main
           git push origin HEAD:main
