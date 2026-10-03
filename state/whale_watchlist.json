@@ -1,6 +1,6 @@
 {
   "schema": "V6.5-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE",
-  "generatedAt": 1790993024976,
+  "generatedAt": 1790993721564,
   "criteria": {
     "holdHours": [
       1,
@@ -65,9 +65,9 @@
         "volume1d": 58987481.65
       },
       "quick": {
-        "recentFills": 1927,
-        "recentVolume": 17112486.34817001,
-        "adds": 1002,
+        "recentFills": 1914,
+        "recentVolume": 15159092.821319994,
+        "adds": 1525,
         "recentAdds": 0,
         "recentAddNotional": 0,
         "signalReady": false
@@ -98,78 +98,6 @@
         "score": 118321.74976310063,
         "tier": "VERIFIED_TOP_TRADER",
         "selectionRank": 1,
-        "selectionKind": "FUTURES"
-      }
-    },
-    {
-      "name": "HL_F58B",
-      "address": "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7",
-      "raw": {
-        "ethAddress": "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7",
-        "accountValue": "4092699.7090810002",
-        "windowPerformances": [
-          [
-            "day",
-            {
-              "pnl": "90594.128745",
-              "roi": "0.0207582208",
-              "vlm": "67204657.7900000066"
-            }
-          ],
-          [
-            "week",
-            {
-              "pnl": "108720.734864",
-              "roi": "0.0208364066",
-              "vlm": "329491215.6200000048"
-            }
-          ],
-          [
-            "month",
-            {
-              "pnl": "-1465127.9311829999",
-              "roi": "-0.1568306157",
-              "vlm": "1366384830.0199997425"
-            }
-          ],
-          [
-            "allTime",
-            {
-              "pnl": "3213475.2490809993",
-              "roi": "0.2356031787",
-              "vlm": "22726490658.6800003052"
-            }
-          ]
-        ],
-        "prize": 0,
-        "displayName": null,
-        "pnl7": 108720.734864,
-        "pnl30": -1465127.9311829999,
-        "volume7": 329491215.62,
-        "volume1d": 67204657.79
-      },
-      "quick": {
-        "recentFills": 481,
-        "recentVolume": 549966.9486800001,
-        "adds": 157,
-        "recentAdds": 3,
-        "recentAddNotional": 1827.4773599999999,
-        "signalReady": true
-      },
-      "discovery": {
-        "quality": "ACTIVE_WATCH",
-        "confidenceTier": "ACTIVE_WATCH",
-        "qualificationReasons": [
-          "QUICK_ACTIVITY_ONLY",
-          "NOT_PERFORMANCE_VERIFIED"
-        ],
-        "recentFills": 481,
-        "recentVolume": 549966.9486800001,
-        "recentAdds": 3,
-        "recentAddNotional": 1827.4773599999999,
-        "score": 12327.146846800002,
-        "tier": "ACTIVE_WATCH",
-        "selectionRank": 2,
         "selectionKind": "FUTURES"
       }
     }
