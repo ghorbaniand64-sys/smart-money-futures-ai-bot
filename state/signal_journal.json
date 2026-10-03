@@ -1511,6 +1511,34 @@
       "currentPrice": 88.0735,
       "tpPct": 3,
       "slPct": 1.5,
+      "outcome": null,
+      "lastPrice": 88.0735,
+      "lastMovePct": 0
+    },
+    {
+      "key": "0xcd98da856b021a6efcc7d766118531ad64aec433|ETH|SHORT|29850021",
+      "time": 1791001584526,
+      "market": "FUTURES",
+      "wallet": "0xcd98da856b021a6efcc7d766118531ad64aec433",
+      "coin": "ETH",
+      "side": "SHORT",
+      "entry": 2674.75,
+      "currentPrice": 2674.75,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null
+    },
+    {
+      "key": "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7|ETH|SHORT|29850025",
+      "time": 1791001584526,
+      "market": "FUTURES",
+      "wallet": "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7",
+      "coin": "ETH",
+      "side": "SHORT",
+      "entry": 2674.75,
+      "currentPrice": 2674.75,
+      "tpPct": 3,
+      "slPct": 1.5,
       "outcome": null
     }
   ]

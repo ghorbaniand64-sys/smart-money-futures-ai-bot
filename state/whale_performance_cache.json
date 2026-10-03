@@ -4097,14 +4097,14 @@
     }
   },
   "FUTURES:0xf58b673c1633ccef0ac58263cdc95ed80f817fc7": {
-    "updatedAt": 1790992150577,
+    "updatedAt": 1791001582767,
     "data": {
       "market": "FUTURES",
       "complete": false,
       "pages": 2,
       "fillCount": 1947,
       "coverageStart": 1790495861826,
-      "coverageDays": 5.744082766203704,
+      "coverageDays": 5.8532516319444445,
       "coverage7d": false,
       "coverage30d": false,
       "w7": {
@@ -4147,7 +4147,7 @@
         },
         "fillCount": 1947
       },
-      "updatedAt": 1790992150577
+      "updatedAt": 1791001582767
     }
   },
   "FUTURES:0xa63be3806dbaa5b8dfc62a4e1d93d7a530567de7": {
@@ -4507,6 +4507,56 @@
         "fillCount": 1930
       },
       "updatedAt": 1791000580370
+    }
+  },
+  "FUTURES:0xcd98da856b021a6efcc7d766118531ad64aec433": {
+    "updatedAt": 1791001583596,
+    "data": {
+      "market": "FUTURES",
+      "complete": true,
+      "pages": 2,
+      "fillCount": 1970,
+      "coverageStart": 1788413183847,
+      "coverageDays": 29.95833042824074,
+      "coverage7d": true,
+      "coverage30d": true,
+      "w7": {
+        "pnl": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "grossProfit": 0,
+        "grossLoss": 0,
+        "coinPnl": {},
+        "topCoin": null,
+        "fillCount": 0
+      },
+      "w30": {
+        "pnl": 395899.770258,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "grossProfit": 0,
+        "grossLoss": 0,
+        "coinPnl": {
+          "xyz:SKHX": -852.9753000000999,
+          "xyz:SNDK": 0,
+          "ETH": 36733.715245,
+          "xyz:MINIMAX": 360019.03031299985
+        },
+        "topCoin": {
+          "coin": "xyz:MINIMAX",
+          "pnl": 360019.03031299985
+        },
+        "fillCount": 1970
+      },
+      "updatedAt": 1791001583596
     }
   }
 }
