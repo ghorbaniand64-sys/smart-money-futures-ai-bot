@@ -1,6 +1,6 @@
 {
   "schema": "V6.5-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE",
-  "generatedAt": 1790989850475,
+  "generatedAt": 1790990619856,
   "criteria": {
     "holdHours": [
       1,
@@ -65,9 +65,9 @@
         "volume1d": 58952012.6
       },
       "quick": {
-        "recentFills": 1898,
-        "recentVolume": 23636821.071060006,
-        "adds": 648,
+        "recentFills": 1887,
+        "recentVolume": 24994678.131370023,
+        "adds": 599,
         "recentAdds": 0,
         "recentAddNotional": 0,
         "signalReady": false
@@ -233,11 +233,11 @@
         "volume1d": 67020300.870000005
       },
       "quick": {
-        "recentFills": 519,
-        "recentVolume": 581756.9592199996,
-        "adds": 164,
-        "recentAdds": 1,
-        "recentAddNotional": 2983.960400000001,
+        "recentFills": 514,
+        "recentVolume": 576170.2569799995,
+        "adds": 163,
+        "recentAdds": 2,
+        "recentAddNotional": 5970.817200000001,
         "signalReady": true
       },
       "discovery": {
@@ -247,11 +247,11 @@
           "QUICK_ACTIVITY_ONLY",
           "NOT_PERFORMANCE_VERIFIED"
         ],
-        "recentFills": 519,
-        "recentVolume": 581756.9592199996,
-        "recentAdds": 1,
-        "recentAddNotional": 2983.960400000001,
-        "score": 13801.529992199998,
+        "recentFills": 514,
+        "recentVolume": 576170.2569799995,
+        "recentAdds": 2,
+        "recentAddNotional": 5970.817200000001,
+        "score": 16732.519769799997,
         "tier": "ACTIVE_WATCH",
         "selectionRank": 3,
         "selectionKind": "FUTURES"
