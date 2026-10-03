@@ -1526,7 +1526,9 @@
       "currentPrice": 2674.75,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 2674.75,
+      "lastMovePct": 0
     },
     {
       "key": "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7|ETH|SHORT|29850025",
@@ -1539,7 +1541,9 @@
       "currentPrice": 2674.75,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 2674.75,
+      "lastMovePct": 0
     },
     {
       "key": "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7|ETH|LONG|29850030",
