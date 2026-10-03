@@ -1470,14 +1470,14 @@
     }
   },
   "FUTURES:0x020ca66c30bec2c4fe3861a94e4db4a498a35872": {
-    "updatedAt": 1790890186446,
+    "updatedAt": 1791022636679,
     "data": {
       "market": "FUTURES",
       "complete": false,
       "pages": 2,
-      "fillCount": 1905,
-      "coverageStart": 1790129562581,
-      "coverageDays": 8.803516956018518,
+      "fillCount": 1959,
+      "coverageStart": 1790189480675,
+      "coverageDays": 9.643009305555555,
       "coverage7d": true,
       "coverage30d": false,
       "w7": {
@@ -1495,7 +1495,7 @@
         "fillCount": 0
       },
       "w30": {
-        "pnl": 474660.2594420006,
+        "pnl": 50834.62218500002,
         "closedTrades": 0,
         "wins": 0,
         "losses": 0,
@@ -1505,17 +1505,18 @@
         "grossProfit": 0,
         "grossLoss": 0,
         "coinPnl": {
-          "ETH": 314418.76612399984,
-          "HYPE": 40022.436288000004,
-          "BTC": 120219.05703
+          "ETH": 46724.12561100001,
+          "HYPE": 803.5,
+          "BTC": 3306.996574,
+          "PUMP": 0
         },
         "topCoin": {
           "coin": "ETH",
-          "pnl": 314418.76612399984
+          "pnl": 46724.12561100001
         },
-        "fillCount": 1905
+        "fillCount": 1959
       },
-      "updatedAt": 1790890186446
+      "updatedAt": 1791022636679
     }
   },
   "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa": {
