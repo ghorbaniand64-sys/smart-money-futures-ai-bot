@@ -4097,14 +4097,14 @@
     }
   },
   "FUTURES:0xf58b673c1633ccef0ac58263cdc95ed80f817fc7": {
-    "updatedAt": 1790988501186,
+    "updatedAt": 1790992150577,
     "data": {
       "market": "FUTURES",
       "complete": false,
       "pages": 2,
       "fillCount": 1947,
       "coverageStart": 1790495861826,
-      "coverageDays": 5.701844444444444,
+      "coverageDays": 5.744082766203704,
       "coverage7d": false,
       "coverage30d": false,
       "w7": {
@@ -4147,7 +4147,7 @@
         },
         "fillCount": 1947
       },
-      "updatedAt": 1790988501186
+      "updatedAt": 1790992150577
     }
   },
   "FUTURES:0xa63be3806dbaa5b8dfc62a4e1d93d7a530567de7": {
