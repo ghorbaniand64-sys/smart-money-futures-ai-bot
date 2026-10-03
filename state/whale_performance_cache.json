@@ -4459,5 +4459,54 @@
       },
       "updatedAt": 1790982667788
     }
+  },
+  "FUTURES:0x5986347c1d0133d02d307f08bb1efd44c2eb89d9": {
+    "updatedAt": 1791000580370,
+    "data": {
+      "market": "FUTURES",
+      "complete": false,
+      "pages": 2,
+      "fillCount": 1930,
+      "coverageStart": 1788879285897,
+      "coverageDays": 24.552019363425927,
+      "coverage7d": true,
+      "coverage30d": false,
+      "w7": {
+        "pnl": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "grossProfit": 0,
+        "grossLoss": 0,
+        "coinPnl": {},
+        "topCoin": null,
+        "fillCount": 0
+      },
+      "w30": {
+        "pnl": -99578.41413899983,
+        "closedTrades": 6,
+        "wins": 1,
+        "losses": 5,
+        "wr": 16.666666666666664,
+        "pf": 0.28278970399899583,
+        "maxDrawdown": 99578.41413899993,
+        "grossProfit": 39262.891813000104,
+        "grossLoss": 138841.30595200002,
+        "coinPnl": {
+          "PUMP": -83524.46990699999,
+          "BTC": 26341.656550000087,
+          "ENA": -42395.600781999994
+        },
+        "topCoin": {
+          "coin": "PUMP",
+          "pnl": -83524.46990699999
+        },
+        "fillCount": 1930
+      },
+      "updatedAt": 1791000580370
+    }
   }
 }

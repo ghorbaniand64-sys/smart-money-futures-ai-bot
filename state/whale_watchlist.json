@@ -1,6 +1,6 @@
 {
   "schema": "V6.5-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE",
-  "generatedAt": 1790999853807,
+  "generatedAt": 1791000567361,
   "criteria": {
     "holdHours": [
       1,
@@ -182,6 +182,78 @@
         "score": 98021.20857838115,
         "tier": "VERIFIED_EMERGING",
         "selectionRank": 2,
+        "selectionKind": "FUTURES"
+      }
+    },
+    {
+      "name": "HL_5986",
+      "address": "0x5986347c1d0133d02d307f08bb1efd44c2eb89d9",
+      "raw": {
+        "ethAddress": "0x5986347c1d0133d02d307f08bb1efd44c2eb89d9",
+        "accountValue": "3293277.7277580001",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "51565.62953",
+              "roi": "0.036888264",
+              "vlm": "35986860.3100000024"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "-345185.568197",
+              "roi": "-0.094871252",
+              "vlm": "380500785.9900000095"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-615315.251566",
+              "roi": "-0.1531170872",
+              "vlm": "1124469742.8399999142"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "1564991.1877580001",
+              "roi": "0.8012092213",
+              "vlm": "5174934173.4300003052"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "pnl7": -345185.568197,
+        "pnl30": -615315.251566,
+        "volume7": 380500785.99,
+        "volume1d": 35986860.31
+      },
+      "quick": {
+        "recentFills": 706,
+        "recentVolume": 3226537.2445600047,
+        "adds": 521,
+        "recentAdds": 87,
+        "recentAddNotional": 440518.1921400003,
+        "signalReady": true
+      },
+      "discovery": {
+        "quality": "ACTIVE_WATCH",
+        "confidenceTier": "ACTIVE_WATCH",
+        "qualificationReasons": [
+          "QUICK_ACTIVITY_ONLY",
+          "NOT_PERFORMANCE_VERIFIED"
+        ],
+        "recentFills": 706,
+        "recentVolume": 3226537.2445600047,
+        "recentAdds": 87,
+        "recentAddNotional": 440518.1921400003,
+        "score": 477783.56458560034,
+        "tier": "ACTIVE_WATCH",
+        "selectionRank": 3,
         "selectionKind": "FUTURES"
       }
     }
