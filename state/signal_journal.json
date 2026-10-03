@@ -1,21 +1,6 @@
 {
   "signals": [
     {
-      "key": "0x50b309f78e774a756a2230e1769729094cac9f20|BTC|LONG|29848944",
-      "time": 1790937280295,
-      "market": "FUTURES",
-      "wallet": "0x50b309f78e774a756a2230e1769729094cac9f20",
-      "coin": "BTC",
-      "side": "LONG",
-      "entry": 86431.5,
-      "currentPrice": 86431.5,
-      "tpPct": 3,
-      "slPct": 1.5,
-      "outcome": "TIMEOUT",
-      "lastPrice": 86431.5,
-      "lastMovePct": 0
-    },
-    {
       "key": "BLUEZYapTJn89Rq5Mb48gD6XdT2ZJtDMw9iXBeNq8ntx|Xs3oZwbHvqis4NYcf4YKWmEia2eC84wSiVrcYcTqpH8|LONG|29848962",
       "time": 1790938375026,
       "market": "SPOT",
@@ -1406,7 +1391,9 @@
       "currentPrice": 3.55665,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 3.55665,
+      "lastMovePct": 0
     },
     {
       "key": "0xe86b057f5eb764c9738d6b0d38170befd0723664|SUI|SHORT|29850366",
@@ -1419,7 +1406,9 @@
       "currentPrice": 1.17895,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 1.17895,
+      "lastMovePct": 0
     },
     {
       "key": "0xe86b057f5eb764c9738d6b0d38170befd0723664|NEAR|SHORT|29850365",
@@ -1432,7 +1421,9 @@
       "currentPrice": 4.7166,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 4.7166,
+      "lastMovePct": 0
     },
     {
       "key": "0xe86b057f5eb764c9738d6b0d38170befd0723664|ARB|SHORT|29850376",
@@ -1445,7 +1436,9 @@
       "currentPrice": 0.20245,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.20245,
+      "lastMovePct": 0
     },
     {
       "key": "0xe86b057f5eb764c9738d6b0d38170befd0723664|UNI|SHORT|29850375",
@@ -1458,7 +1451,9 @@
       "currentPrice": 9.29905,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 9.29905,
+      "lastMovePct": 0
     },
     {
       "key": "0xe86b057f5eb764c9738d6b0d38170befd0723664|TAO|SHORT|29850375",
@@ -1471,7 +1466,9 @@
       "currentPrice": 291.42,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 291.42,
+      "lastMovePct": 0
     },
     {
       "key": "0x020ca66c30bec2c4fe3861a94e4db4a498a35872|PUMP|LONG|29850372",
@@ -1484,7 +1481,9 @@
       "currentPrice": 0.005528,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 0.005528,
+      "lastMovePct": 0
     },
     {
       "key": "0x020ca66c30bec2c4fe3861a94e4db4a498a35872|HYPE|LONG|29850372",
@@ -1495,6 +1494,60 @@
       "side": "LONG",
       "entry": 87.9005,
       "currentPrice": 87.9005,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null,
+      "lastPrice": 87.9005,
+      "lastMovePct": 0
+    },
+    {
+      "key": "0xe86b057f5eb764c9738d6b0d38170befd0723664|PUMP|SHORT|29850398",
+      "time": 1791023917858,
+      "market": "FUTURES",
+      "wallet": "0xe86b057f5eb764c9738d6b0d38170befd0723664",
+      "coin": "PUMP",
+      "side": "SHORT",
+      "entry": 0.005574,
+      "currentPrice": 0.005574,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null
+    },
+    {
+      "key": "0xe86b057f5eb764c9738d6b0d38170befd0723664|WLD|SHORT|29850397",
+      "time": 1791023917858,
+      "market": "FUTURES",
+      "wallet": "0xe86b057f5eb764c9738d6b0d38170befd0723664",
+      "coin": "WLD",
+      "side": "SHORT",
+      "entry": 0.60596,
+      "currentPrice": 0.60596,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null
+    },
+    {
+      "key": "0xe86b057f5eb764c9738d6b0d38170befd0723664|ARB|SHORT|29850396",
+      "time": 1791023917858,
+      "market": "FUTURES",
+      "wallet": "0xe86b057f5eb764c9738d6b0d38170befd0723664",
+      "coin": "ARB",
+      "side": "SHORT",
+      "entry": 0.2012,
+      "currentPrice": 0.2012,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null
+    },
+    {
+      "key": "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7|ETH|SHORT|29850396",
+      "time": 1791023917858,
+      "market": "FUTURES",
+      "wallet": "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7",
+      "coin": "ETH",
+      "side": "SHORT",
+      "entry": 2683.05,
+      "currentPrice": 2683.05,
       "tpPct": 3,
       "slPct": 1.5,
       "outcome": null
