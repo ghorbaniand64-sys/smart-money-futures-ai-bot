@@ -1451,7 +1451,9 @@
       "currentPrice": 2675.65,
       "tpPct": 3,
       "slPct": 1.5,
-      "outcome": null
+      "outcome": null,
+      "lastPrice": 2675.65,
+      "lastMovePct": 0
     }
   ]
 }
