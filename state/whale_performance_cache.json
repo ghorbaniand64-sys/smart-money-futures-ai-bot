@@ -4613,18 +4613,19 @@
     }
   },
   "FUTURES:0xe86b057f5eb764c9738d6b0d38170befd0723664": {
-    "updatedAt": 1791047903571,
+    "updatedAt": 1791059174593,
     "data": {
       "market": "FUTURES",
       "complete": false,
       "pages": 2,
       "fillCount": 2000,
       "coverageStart": 1790877162442,
-      "coverageDays": 1.976170474537037,
+      "coverageDays": 2.1066221180555558,
       "coverage7d": false,
       "coverage30d": false,
       "w7": {
         "pnl": 7967.923116999999,
+        "observedPnl": 7967.923116999999,
         "closedTrades": 0,
         "wins": 0,
         "losses": 0,
@@ -4684,10 +4685,12 @@
           "coin": "PUMP",
           "pnl": -15069.968388000001
         },
-        "fillCount": 2000
+        "fillCount": 2000,
+        "observedFills": 2000
       },
       "w30": {
         "pnl": 7967.923116999999,
+        "observedPnl": 7967.923116999999,
         "closedTrades": 0,
         "wins": 0,
         "losses": 0,
@@ -4747,9 +4750,10 @@
           "coin": "PUMP",
           "pnl": -15069.968388000001
         },
-        "fillCount": 2000
+        "fillCount": 2000,
+        "observedFills": 2000
       },
-      "updatedAt": 1791047903571
+      "updatedAt": 1791059174593
     }
   },
   "FUTURES:0x577a00a0ee907ee481791049477a3c1fa1470568": {
