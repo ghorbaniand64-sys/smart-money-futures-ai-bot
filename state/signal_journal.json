@@ -1559,6 +1559,19 @@
       "outcome": null,
       "lastPrice": 2672.55,
       "lastMovePct": 0
+    },
+    {
+      "key": "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7|ETH|LONG|29850065",
+      "time": 1791004162616,
+      "market": "FUTURES",
+      "wallet": "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7",
+      "coin": "ETH",
+      "side": "LONG",
+      "entry": 2674.15,
+      "currentPrice": 2674.15,
+      "tpPct": 3,
+      "slPct": 1.5,
+      "outcome": null
     }
   ]
 }
