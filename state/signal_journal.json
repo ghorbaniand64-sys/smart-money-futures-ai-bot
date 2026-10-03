@@ -1,21 +1,6 @@
 {
   "signals": [
     {
-      "key": "0x6db7204f8783dfddf80b957ba5e40e24251e304d|ENA|LONG|29848662",
-      "time": 1790920475725,
-      "market": "FUTURES",
-      "wallet": "0x6db7204f8783dfddf80b957ba5e40e24251e304d",
-      "coin": "ENA",
-      "side": "LONG",
-      "entry": 0.247835,
-      "currentPrice": 0.247835,
-      "tpPct": 3,
-      "slPct": 1.5,
-      "outcome": "TIMEOUT",
-      "lastPrice": 0.247835,
-      "lastMovePct": 0
-    },
-    {
       "key": "MfDuWeqSHEqTFVYZ7LoexgAK9dxk7cy4DFJWjWMGVWa|KMNo3nJsBXfcpJTVhZcXLW7RmTwTt4GVFE7suUBo9sS|LONG|29848804",
       "time": 1790928291926,
       "market": "SPOT",
