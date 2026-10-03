@@ -5,7 +5,7 @@ import path from 'node:path';
 // Dynamic whale discovery: 5 Spot + 5 Futures. READ ONLY.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V6.7';
+const VERSION = 'V6.8';
 // V6.5: audited performance coverage, lifecycle-aware ADD labels, explicit
 // ENTRY/WATCH classification, and non-verified ACTIVE WATCH discovery tiers.
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
@@ -123,10 +123,10 @@ const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TO
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 20);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
-const DISCOVERY_SCHEMA = 'V6.7-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE-RATE-LIMIT-SAFE';
+const DISCOVERY_SCHEMA = 'V6.8-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE-RATE-LIMIT-SAFE';
 const DISCOVERY_BUILD_SCHEMA = 'V6.1-PRO-MARKET-DISCOVERY-REBUILD';
 // Contract tokens: DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET DISCOVERY_ACTIVE_FALLBACK_ENABLED FUTURES_MIN_SIGNAL_ADD_USD FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD FUTURES_SIGNAL_FRESHNESS_MIN SPOT_MIN_SIGNAL_BUY_USD lifecycleAddLabel ACTIVE_WATCH
-const BUILD_TAG = 'V6.7-AUDITED-PERFORMANCE-LIFECYCLE-ACTIVE-WATCH-RATE-LIMIT-SAFE';
+const BUILD_TAG = 'V6.8-AUDITED-PERFORMANCE-LIFECYCLE-ACTIVE-WATCH-RATE-LIMIT-SAFE';
 const DISCOVERY_TIERED_ENABLED = String(process.env.WHALE_DISCOVERY_TIERED_ENABLED || 'true').toLowerCase() !== 'false';
 const DISCOVERY_CACHE_QUALITY_TTL_MIN = Number(process.env.WHALE_DISCOVERY_CACHE_QUALITY_TTL_MIN || 45);
 const DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET = String(process.env.WHALE_DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET || 'true').toLowerCase() !== 'false';
@@ -1361,22 +1361,27 @@ function performanceBlock(p,coin){
   const fmtPF=x=>x===Infinity?'∞':Number.isFinite(Number(x))?Number(x).toFixed(2):'—';
   const c7=p.w7||{},c30=p.w30||{}; const coverageDays=n(p.coverageDays);
   const cov7=p.coverage7d!==false&&coverageDays>=6.5; const cov30=p.coverage30d===true||coverageDays>=29.5;
+  // A partial/active-watch history with zero closed trades is NOT zero performance.
+  // It means there is not enough closed-trade evidence to calculate WR/PF/ROI.
+  const noClosed7=!Number.isFinite(Number(c7.closedTrades)) || Number(c7.closedTrades)<=0;
+  const noClosed30=!Number.isFinite(Number(c30.closedTrades)) || Number(c30.closedTrades)<=0;
   const rows=['📊 PERFORMANCE'];
-  rows.push(`${cov7?'7D  ':'7D*'} ROI ${fmtPct(c7.roi)} | WR ${fmtWR(c7.wr)} | PF ${fmtPF(c7.pf)} | Trades ${c7.closedTrades??'—'}`);
-  rows.push(`${cov30?'30D ':'30D*'} ROI ${fmtPct(c30.roi)} | WR ${fmtWR(c30.wr)} | PF ${fmtPF(c30.pf)} | Trades ${c30.closedTrades??'—'}`);
+  rows.push(`${cov7?'7D  ':'7D*'} ROI ${noClosed7?'—':fmtPct(c7.roi)} | WR ${noClosed7?'—':fmtWR(c7.wr)} | PF ${noClosed7?'—':fmtPF(c7.pf)} | Trades ${noClosed7?'—':c7.closedTrades}`);
+  rows.push(`${cov30?'30D ':'30D*'} ROI ${noClosed30?'—':fmtPct(c30.roi)} | WR ${noClosed30?'—':fmtWR(c30.wr)} | PF ${noClosed30?'—':fmtPF(c30.pf)} | Trades ${noClosed30?'—':c30.closedTrades}`);
   if(Number.isFinite(Number(c30.avgHoldHours)))rows.push(`30D  Avg Hold ${Number(c30.avgHoldHours).toFixed(2)}h`);
   if(p.market==='SPOT'&&Number.isFinite(Number(c30.maxDrawdownPct)))rows.push(`30D  Max DD ${fmtPct(-Math.abs(c30.maxDrawdownPct))}`);
   else if(p.market==='FUTURES')rows.push('30D  Max DD — equity curve unavailable');
   if(coin&&c30.coinPnl&&Object.prototype.hasOwnProperty.call(c30.coinPnl,coin))rows.push(`30D  ${coin} PnL ${money(c30.coinPnl[coin])}`);
   if(Number.isFinite(coverageDays))rows.push(`History ${coverageDays.toFixed(1)}d available${cov30?'':' | 30D PARTIAL'}`);
-  if(p.complete===false||!cov30||p.stale)rows.push(`⚠️ ${p.stale?'Stale cached':'Partial'} history — not treated as zero performance`);
+  if(p.complete===false||!cov30||p.stale||noClosed30)rows.push(`⚠️ ${p.stale?'Stale cached':noClosed30?'No closed-trade sample':'Partial'} history — not treated as zero performance`);
   return rows;
 }
 function whaleSignalBlock(w,signals,p,i){
   const quality=String(w?.discovery?.quality||'VERIFIED_TOP_TRADER').toUpperCase();
   const title=quality==='VERIFIED_TOP_TRADER'?'VERIFIED TOP TRADER':quality==='VERIFIED_EMERGING'?'VERIFIED EMERGING':'ACTIVE WATCH';
+  const marketIcon=signals.some(x=>x?.mint)?'🟢':'🔵';
   const rows=[
-    `🐋 ${title} ${i} — ${w.name}`,
+    `${marketIcon} 🐋 ${title} ${i} — ${w.name}`,
     `🏷 ${w?.discovery?.quality||'VERIFIED_TOP_TRADER'} | WR ${Number.isFinite(Number(w?.discovery?.wr7??w?.discovery?.wr))?Number(w.discovery.wr7??w.discovery.wr).toFixed(1)+'%':'—'} | PF ${w?.discovery?.pf7!=null?Number(w.discovery.pf7).toFixed(2):w?.discovery?.pf!=null?Number(w.discovery.pf).toFixed(2):'—'}`,
     '━━━━━━━━━━━━━━━━━━',
     ...performanceBlock(p,signals[0]?.mint||signals[0]?.coin),
@@ -1389,7 +1394,8 @@ function whaleSignalBlock(w,signals,p,i){
     const icon=status==='GREEN'?'🟢':status==='YELLOW'?'🟡':'🔴';
     const statusLabel=status==='GREEN'?'ENTRY READY':status==='YELLOW'?'WATCH':'BLOCKED';
     const lifecycle=x.mint?'BUY':(x.lifecycleAddLabel||'ADD');
-    rows.push(`${icon} ${x.displaySymbol||x.coin} ${x.side} | ${statusLabel}`);
+    const marketIcon=x.mint?'🟢':'🔵';
+    rows.push(`${marketIcon} ${icon} ${x.displaySymbol||x.coin} ${x.side} | ${statusLabel}`);
     rows.push(`${lifecycle}   ${priceFmt(x.sourceEntry)}   |   AVG ${priceFmt(x.avgEntry)}   |   NOW ${priceFmt(x.current)}`);
     rows.push(`SL    ${priceFmt(x.sl)}   |   TP ${priceFmt(x.tp)}   |   RR ${fmt(x.rr,2)}`);
     rows.push(`DIST  ${pct(x.distancePct,2)}   |   AGE ${ageMin<1?Math.max(1,Math.round(ageMin*60))+'s':ageMin.toFixed(1)+'m'}`);
@@ -1710,16 +1716,20 @@ async function updateSignalJournal(signals){
 }
 
 function watchlistAuditLines(spot,futures){
-  const out=['👁 WATCHLIST AUDIT','━━━━━━━━━━━━━━━━━━','SPOT'];
+  const out=['👁 WATCHLIST AUDIT','━━━━━━━━━━━━━━━━━━','🟢 SPOT'];
   for(const w of spot){
     const d=w?.discovery||{}; const tier=d.quality||'UNKNOWN'; const rb=n(d.recentBuys); const usd=n(d.recentBuyVolume);
-    const perf=d.performanceStatus==='UNAVAILABLE_RATE_LIMITED'?'PERF UNAVAILABLE':Number.isFinite(Number(d.verifiedTrades))?`PERF ${d.verifiedTrades} trades`:'PERF not audited';
-    out.push(`• ${w.name} | ${tier} | BUYs ${rb} | Fresh $${usd.toFixed(0)} | ${perf}`);
+    const trades=Number(d.verifiedTrades??d.closedTrades);
+    const wr=Number(d.wr7??d.wr), pf=Number(d.pf7??d.pf);
+    const perf=d.performanceStatus==='UNAVAILABLE_RATE_LIMITED'?'PERF UNAVAILABLE':Number.isFinite(trades)&&trades>0?`PERF ${trades} trades${Number.isFinite(wr)?` | WR ${wr.toFixed(1)}%`:''}${Number.isFinite(pf)?` | PF ${pf.toFixed(2)}`:''}`:'PERF not audited';
+    out.push(`• 🟢 ${w.name} | ${tier} | BUYs ${rb} | Fresh $${usd.toFixed(0)} | ${perf}`);
   }
-  out.push('FUTURES');
+  out.push('🔵 FUTURES');
   for(const w of futures){
     const d=w?.discovery||{}; const tier=d.quality||'UNKNOWN';
-    out.push(`• ${w.name} | ${tier} | ADDs ${n(d.recentAdds)} | Fresh $${n(d.recentAddNotional).toFixed(0)} | ${Number.isFinite(Number(d.closedTrades))?`PERF ${d.closedTrades} trades`:'PERF not audited'}`);
+    const trades=Number(d.closedTrades??d.verifiedTrades); const wr=Number(d.wr), pf=Number(d.pf);
+    const perf=Number.isFinite(trades)&&trades>0?`PERF ${trades} trades${Number.isFinite(wr)?` | WR ${wr.toFixed(1)}%`:''}${Number.isFinite(pf)?` | PF ${pf.toFixed(2)}`:''}`:'PERF not audited';
+    out.push(`• 🔵 ${w.name} | ${tier} | ADDs ${n(d.recentAdds)} | Fresh $${n(d.recentAddNotional).toFixed(0)} | ${perf}`);
   }
   return out;
 }
