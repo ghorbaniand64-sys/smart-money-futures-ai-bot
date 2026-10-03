@@ -118,15 +118,12 @@ const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TO
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 20);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
-const DISCOVERY_SCHEMA = 'V6.6-RESILIENT-DISCOVERY-SIGNAL-RETAINMENT';
+const DISCOVERY_SCHEMA = 'V6.6-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE';
 const DISCOVERY_BUILD_SCHEMA = 'V6.1-PRO-MARKET-DISCOVERY-REBUILD';
-const BUILD_TAG = 'V6.6-RESILIENT-DISCOVERY-SIGNAL-RETAINMENT-RATE-LIMIT-SAFE';
+const BUILD_TAG = 'V6.6-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE';
 const DISCOVERY_TIERED_ENABLED = String(process.env.WHALE_DISCOVERY_TIERED_ENABLED || 'true').toLowerCase() !== 'false';
 const DISCOVERY_CACHE_QUALITY_TTL_MIN = Number(process.env.WHALE_DISCOVERY_CACHE_QUALITY_TTL_MIN || 45);
 const DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET = String(process.env.WHALE_DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET || 'true').toLowerCase() !== 'false';
-const DISCOVERY_UNDER_TARGET_RETRY_MIN = Number(process.env.WHALE_DISCOVERY_UNDER_TARGET_RETRY_MIN || 30);
-const DISCOVERY_PRESERVE_CACHE_ON_FAILURE = String(process.env.WHALE_DISCOVERY_PRESERVE_CACHE_ON_FAILURE || 'true').toLowerCase() !== 'false';
-const DISCOVERY_ACCEPT_LEGACY_CACHE = String(process.env.WHALE_DISCOVERY_ACCEPT_LEGACY_CACHE || 'true').toLowerCase() !== 'false';
 const DISCOVERY_EMERGING_ENABLED = String(process.env.WHALE_DISCOVERY_EMERGING_ENABLED || 'true').toLowerCase() !== 'false';
 const DISCOVERY_ACTIVE_FALLBACK_ENABLED = String(process.env.WHALE_DISCOVERY_ACTIVE_FALLBACK_ENABLED || 'true').toLowerCase() !== 'false';
 const DISCOVERY_SIGNAL_READY_ONLY = String(process.env.WHALE_DISCOVERY_SIGNAL_READY_ONLY || 'false').toLowerCase() === 'true';
@@ -173,7 +170,7 @@ async function readDiscoveryCache(){
     const raw=await fs.readFile(DISCOVERY_STATE_FILE,'utf8');
     const x=JSON.parse(raw);
     const ageMin=(Date.now()-n(x?.generatedAt))/60000;
-    if((x?.schema===DISCOVERY_SCHEMA || (DISCOVERY_ACCEPT_LEGACY_CACHE && /^V6\./.test(String(x?.schema||''))))&&ageMin>=0&&ageMin<DISCOVERY_TTL_MIN&&Array.isArray(x?.spotWallets)&&Array.isArray(x?.futuresWallets)){
+    if(x?.schema===DISCOVERY_SCHEMA&&ageMin>=0&&ageMin<DISCOVERY_TTL_MIN&&Array.isArray(x?.spotWallets)&&Array.isArray(x?.futuresWallets)){
       console.log(`[DISCOVERY][CACHE] age=${ageMin.toFixed(1)}m spot=${x.spotWallets.length} futures=${x.futuresWallets.length}`);
       return x;
     }
@@ -436,12 +433,13 @@ async function discoverFutures(){
     const activeWatch=quick
       .filter(x=>{
         const a=String(x.address||'');
-        return !used.has(a) &&
+        return !used.has(a) && x.quick?.signalReady &&
           n(x.quick?.recentFills)>=FUTURES_MIN_ACTIVE_FILLS &&
-          n(x.quick?.recentVolume)>=FUTURES_MIN_ACTIVE_VOLUME_USD;
+          n(x.quick?.recentVolume)>=FUTURES_MIN_ACTIVE_VOLUME_USD &&
+          n(x.quick?.recentAddNotional)>=FUTURES_DISCOVERY_MIN_FRESH_ADD_USD;
       })
       .sort((a,b)=>(n(b.quick?.recentAddNotional)-n(a.quick?.recentAddNotional))*10+(n(b.quick?.recentVolume)-n(a.quick?.recentVolume)))
-      .map(x=>({...x,discovery:{quality:'ACTIVE_WATCH',confidenceTier:'ACTIVE_WATCH',qualificationReasons:[x.quick?.signalReady?'QUICK_ACTIVITY_WITH_FRESH_ADD':'QUICK_ACTIVITY_ONLY','NOT_PERFORMANCE_VERIFIED'],recentFills:n(x.quick?.recentFills),recentVolume:n(x.quick?.recentVolume),recentAdds:n(x.quick?.recentAdds),recentAddNotional:n(x.quick?.recentAddNotional),score:5000+n(x.quick?.recentAddNotional)+n(x.quick?.recentVolume)*0.01}}));
+      .map(x=>({...x,discovery:{quality:'ACTIVE_WATCH',confidenceTier:'ACTIVE_WATCH',qualificationReasons:['QUICK_ACTIVITY_ONLY','NOT_PERFORMANCE_VERIFIED'],recentFills:n(x.quick?.recentFills),recentVolume:n(x.quick?.recentVolume),recentAdds:n(x.quick?.recentAdds),recentAddNotional:n(x.quick?.recentAddNotional),score:5000+n(x.quick?.recentAddNotional)+n(x.quick?.recentVolume)*0.01}}));
     selected.push(...activeWatch);
     console.log(`[DISCOVERY][FUTURES][ACTIVE-WATCH] added=${activeWatch.length} target=${TARGET_FUTURES_WALLETS}`);
   }
@@ -599,23 +597,16 @@ async function discoverWatchlist(){
   const cacheFresh=Boolean(cached);
   let spotWallets=cacheFresh?cached.spotWallets:[];
   let futuresWallets=cacheFresh?cached.futuresWallets:[];
-  const cacheAgeMin=cacheFresh?Math.max(0,(Date.now()-n(cached?.generatedAt))/60000):Infinity;
   const cacheUnderTarget=spotWallets.length<TARGET_SPOT_WALLETS || futuresWallets.length<TARGET_FUTURES_WALLETS;
-  const refreshNow=!cacheFresh || DISCOVERY_REFRESH_EACH_CYCLE || cacheAgeMin>=DISCOVERY_TTL_MIN || (DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET && cacheUnderTarget && cacheAgeMin>=DISCOVERY_UNDER_TARGET_RETRY_MIN);
-  const previousSpot=spotWallets;
-  const previousFutures=futuresWallets;
+  const refreshNow=DISCOVERY_REFRESH_EACH_CYCLE || !spotWallets.length || !futuresWallets.length || (DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET && cacheUnderTarget);
   if(refreshNow || !spotWallets.length){
-    console.log(`[DISCOVERY][SPOT][REFRESH] cache=${cacheFresh?'available':'missing'} age=${Number.isFinite(cacheAgeMin)?cacheAgeMin.toFixed(1):'NA'}m refresh=${refreshNow}`);
-    const discovered=await discoverSpotCandidates();
-    if(discovered.length || !DISCOVERY_PRESERVE_CACHE_ON_FAILURE || !previousSpot.length) spotWallets=discovered;
-    else { spotWallets=previousSpot; console.log(`[DISCOVERY][SPOT][PRESERVE-CACHE] discovery returned 0; keeping ${spotWallets.length}/${TARGET_SPOT_WALLETS}`); }
+    console.log(`[DISCOVERY][SPOT][REFRESH] cache=${cacheFresh?'available':'missing'} refresh=${DISCOVERY_REFRESH_EACH_CYCLE}`);
+    spotWallets=await discoverSpotCandidates();
   }
   if(refreshNow || !futuresWallets.length){
     await sleep(1200);
-    console.log(`[DISCOVERY][FUTURES][REFRESH] cache=${cacheFresh?'available':'missing'} age=${Number.isFinite(cacheAgeMin)?cacheAgeMin.toFixed(1):'NA'}m refresh=${refreshNow}`);
-    const discovered=await discoverFutures();
-    if(discovered.length || !DISCOVERY_PRESERVE_CACHE_ON_FAILURE || !previousFutures.length) futuresWallets=discovered;
-    else { futuresWallets=previousFutures; console.log(`[DISCOVERY][FUTURES][PRESERVE-CACHE] discovery returned 0; keeping ${futuresWallets.length}/${TARGET_FUTURES_WALLETS}`); }
+    console.log(`[DISCOVERY][FUTURES][REFRESH] cache=${cacheFresh?'available':'missing'} refresh=${DISCOVERY_REFRESH_EACH_CYCLE}`);
+    futuresWallets=await discoverFutures();
   }
   // V6.4: preserve discovery tier explicitly; fallback wallets are never silently VERIFIED.
   const tier=(w)=>String(w?.discovery?.quality||w?.discovery?.tier||'VERIFIED').toUpperCase();
