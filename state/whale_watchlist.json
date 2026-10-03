@@ -1,6 +1,6 @@
 {
   "schema": "V6.6-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE",
-  "generatedAt": 1791023910579,
+  "generatedAt": 1791025827729,
   "criteria": {
     "holdHours": [
       1,
@@ -65,11 +65,11 @@
         "volume1d": 29391446.859999996
       },
       "quick": {
-        "recentFills": 1873,
-        "recentVolume": 4329731.347868995,
-        "adds": 856,
-        "recentAdds": 38,
-        "recentAddNotional": 54219.92224599996,
+        "recentFills": 1800,
+        "recentVolume": 4118493.2383150016,
+        "adds": 794,
+        "recentAdds": 1,
+        "recentAddNotional": 2320.5742800000066,
         "signalReady": true
       },
       "discovery": {
@@ -79,11 +79,11 @@
           "QUICK_ACTIVITY_ONLY",
           "NOT_PERFORMANCE_VERIFIED"
         ],
-        "recentFills": 1873,
-        "recentVolume": 4329731.347868995,
-        "recentAdds": 38,
-        "recentAddNotional": 54219.92224599996,
-        "score": 102517.2357246899,
+        "recentFills": 1800,
+        "recentVolume": 4118493.2383150016,
+        "recentAdds": 1,
+        "recentAddNotional": 2320.5742800000066,
+        "score": 48505.50666315002,
         "tier": "ACTIVE_WATCH",
         "selectionRank": 1,
         "selectionKind": "FUTURES"
@@ -137,11 +137,11 @@
         "volume1d": 50494504.849999994
       },
       "quick": {
-        "recentFills": 117,
-        "recentVolume": 100837.68406000003,
-        "adds": 32,
-        "recentAdds": 3,
-        "recentAddNotional": 5166.0380000000005,
+        "recentFills": 105,
+        "recentVolume": 105269.32093000002,
+        "adds": 34,
+        "recentAdds": 1,
+        "recentAddNotional": 2987.9708,
         "signalReady": true
       },
       "discovery": {
@@ -151,13 +151,85 @@
           "QUICK_ACTIVITY_ONLY",
           "NOT_PERFORMANCE_VERIFIED"
         ],
-        "recentFills": 117,
-        "recentVolume": 100837.68406000003,
-        "recentAdds": 3,
-        "recentAddNotional": 5166.0380000000005,
-        "score": 11174.4148406,
+        "recentFills": 105,
+        "recentVolume": 105269.32093000002,
+        "recentAdds": 1,
+        "recentAddNotional": 2987.9708,
+        "score": 9040.6640093,
         "tier": "ACTIVE_WATCH",
         "selectionRank": 2,
+        "selectionKind": "FUTURES"
+      }
+    },
+    {
+      "name": "HL_5C9B",
+      "address": "0x5c9b84105d63f0c8ed35fd62f66d9b8c6800ce01",
+      "raw": {
+        "ethAddress": "0x5c9b84105d63f0c8ed35fd62f66d9b8c6800ce01",
+        "accountValue": "2875966.7892680001",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-8514.863446",
+              "roi": "-0.0047230806",
+              "vlm": "58205276.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "7546.896769",
+              "roi": "0.0042237933",
+              "vlm": "296128160.8199999928"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-3877.995252",
+              "roi": "-0.0021566188",
+              "vlm": "442978978.2400000095"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-4377.995252",
+              "roi": "-0.0024340005",
+              "vlm": "442978978.2400000095"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "pnl7": 7546.896769,
+        "pnl30": -3877.995252,
+        "volume7": 296128160.82,
+        "volume1d": 58205276
+      },
+      "quick": {
+        "recentFills": 26,
+        "recentVolume": 28551.564410000003,
+        "adds": 9,
+        "recentAdds": 3,
+        "recentAddNotional": 1114.45504,
+        "signalReady": true
+      },
+      "discovery": {
+        "quality": "ACTIVE_WATCH",
+        "confidenceTier": "ACTIVE_WATCH",
+        "qualificationReasons": [
+          "QUICK_ACTIVITY_ONLY",
+          "NOT_PERFORMANCE_VERIFIED"
+        ],
+        "recentFills": 26,
+        "recentVolume": 28551.564410000003,
+        "recentAdds": 3,
+        "recentAddNotional": 1114.45504,
+        "score": 6399.9706841,
+        "tier": "ACTIVE_WATCH",
+        "selectionRank": 3,
         "selectionKind": "FUTURES"
       }
     }
