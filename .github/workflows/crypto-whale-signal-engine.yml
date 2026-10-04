@@ -1,51 +1,65 @@
-name: Global Futures Top-Trader & Signal Hunter
+name: Crypto Whale Signal Engine
+
 on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
+
 permissions:
   contents: write
+
+env:
+  NODE_VERSION: '22'
+  GFTSH_HL_AUDIT_LIMIT: '100'
+  GFTSH_VERIFY_CONCURRENCY: '4'
+  GFTSH_VERIFY_TIMEOUT_MS: '8500'
+  GFTSH_TOP_SIGNALS: '10'
+  GFTSH_FRESH_MIN: '15'
+  GFTSH_ENTRY_MAX_PCT: '0.5'
+  GFTSH_MIN_RR: '1.5'
+  GFTSH_MODEL_SL_PCT: '0.5'
+  GFTSH_MODEL_TP_R: '2'
+  GFTSH_MIN_7D_TRADES: '40'
+  GFTSH_MIN_ACTIVE_DAYS: '5'
+  GFTSH_MIN_AVG_DAILY_TRADES: '4'
+  GFTSH_MIN_WR: '58'
+  GFTSH_MIN_PF: '1.8'
+  GFTSH_MAX_MEDIAN_HOURS: '6'
+  GFTSH_MAX_AVG_HOURS: '12'
+  GFTSH_MAX_DD: '30'
+
 jobs:
-  run:
+  hunt:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
-      - name: Install worker
-        shell: bash
-        run: |
-          set -e
-          test -f crypto_whale_signal_engine.mjs
-          node --check crypto_whale_signal_engine.mjs
-      - name: Verify V1.7 contract
-        shell: bash
-        run: |
-          set -e
-          grep -q 'GFTSH-V1.7.0-GLOBAL-FUTURES-BOUNDED-AUDIT' crypto_whale_signal_engine.mjs
-          grep -q 'VERIFY_CONCURRENCY' crypto_whale_signal_engine.mjs
-          grep -q 'VERIFY_TIMEOUT_MS' crypto_whale_signal_engine.mjs
-          grep -q 'mapBounded' crypto_whale_signal_engine.mjs
-          grep -q 'READ-ONLY' crypto_whale_signal_engine.mjs
-          echo 'V1.7 CONTRACT PASS'
-      - name: Run GFTSH V1.7
+
+      - name: Ensure state directory
+        run: mkdir -p state
+
+      - name: Run Global Futures Active-Trader Hunter V1.9
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GFTSH_VERIFY_LIMIT: '80'
-          GFTSH_HL_VERIFY_LIMIT: '40'
-          GFTSH_OKX_VERIFY_LIMIT: '40'
-          GFTSH_VERIFY_CONCURRENCY: '4'
-          GFTSH_VERIFY_TIMEOUT_MS: '9000'
-          GFTSH_HTTP_TIMEOUT_MS: '9000'
-          GFTSH_MAX_RETRIES: '1'
-        shell: bash
+          GLOBAL_STATE_FILE: state/global_futures_hunter.json
+          GLOBAL_CACHE_FILE: state/global_futures_cache.json
+        run: node crypto_whale_signal_engine.mjs
+
+      - name: Commit state cache
         run: |
-          set -e
-          node crypto_whale_signal_engine.mjs
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/global_futures_hunter.json state/global_futures_cache.json || true
+          git diff --cached --quiet || git commit -m "chore: update GFTSH V1.9 state"
+          git push || true
