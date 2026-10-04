@@ -5,7 +5,7 @@ import path from 'node:path';
 // Dynamic whale discovery: 5 Spot + 5 Futures. READ ONLY.
 // Telegram report is emitted every workflow cycle (intended every 5 minutes).
 
-const VERSION = 'V6.9';
+const VERSION = 'V7.0';
 // V6.5: audited performance coverage, lifecycle-aware ADD labels, explicit
 // ENTRY/WATCH classification, and non-verified ACTIVE WATCH discovery tiers.
 const HL_INFO = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
@@ -13,7 +13,7 @@ const SOL_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.c
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY || '';
 const HELIUS_ENHANCED_ENABLED = String(process.env.WHALE_HELIUS_ENHANCED_ENABLED || 'true').toLowerCase() === 'true' && Boolean(HELIUS_API_KEY);
 const HELIUS_ENHANCED_BASE = process.env.HELIUS_ENHANCED_BASE || 'https://api.helius.xyz/v0';
-const HELIUS_BREAKER_MIN = Number(process.env.WHALE_HELIUS_BREAKER_MIN || 10);
+const HELIUS_BREAKER_MIN = Number(process.env.WHALE_HELIUS_BREAKER_MIN || 5);
 let HELIUS_RATE_LIMIT_UNTIL = 0;
 let HELIUS_RATE_LIMIT_COUNT = 0;
 function heliusCircuitOpen(){ return Date.now() < HELIUS_RATE_LIMIT_UNTIL; }
@@ -123,10 +123,10 @@ const DISCOVERY_SPOT_TOP_TOKENS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_TO
 const DISCOVERY_SPOT_TOP_HOLDERS = Number(process.env.WHALE_DISCOVERY_SPOT_TOP_HOLDERS || 8);
 const DISCOVERY_SPOT_MAX_CANDIDATES = Number(process.env.WHALE_DISCOVERY_SPOT_MAX_CANDIDATES || 20);
 const DISCOVERY_STATE_FILE = process.env.WHALE_DISCOVERY_STATE_FILE || 'state/whale_watchlist.json';
-const DISCOVERY_SCHEMA = 'V6.9-TIERED-DISCOVERY-AUDITED-PERFORMANCE-LIFECYCLE-RATE-LIMIT-SAFE-PARTIAL-PERFORMANCE';
+const DISCOVERY_SCHEMA = 'V7.0-SPOT-RPC-FAILSAFE-HL-429-SAFE-AUDITED-PERFORMANCE-LIFECYCLE';
 const DISCOVERY_BUILD_SCHEMA = 'V6.1-PRO-MARKET-DISCOVERY-REBUILD';
-// Contract tokens: DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET DISCOVERY_ACTIVE_FALLBACK_ENABLED FUTURES_MIN_SIGNAL_ADD_USD FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD FUTURES_SIGNAL_FRESHNESS_MIN SPOT_MIN_SIGNAL_BUY_USD lifecycleAddLabel ACTIVE_WATCH
-const BUILD_TAG = 'V6.9-AUDITED-PERFORMANCE-LIFECYCLE-ACTIVE-WATCH-PARTIAL-PERFORMANCE-RATE-LIMIT-SAFE';
+// V7 contract tokens: SPOT_RPC_ACTIVITY_FALLBACK SPOT_HELIUS_TO_RPC_FALLBACK MARKET_CONTEXT_UNAVAILABLE DISCOVERY_ACTIVE_FALLBACK_ENABLED FUTURES_MIN_SIGNAL_ADD_USD FUTURES_MIN_SIGNAL_WINDOW_NOTIONAL_USD FUTURES_SIGNAL_FRESHNESS_MIN SPOT_MIN_SIGNAL_BUY_USD lifecycleAddLabel ACTIVE_WATCH
+const BUILD_TAG = 'V7.0-SPOT-RPC-FAILSAFE-HL-429-SAFE-AUDITED-PERFORMANCE-LIFECYCLE-ACTIVE-WATCH';
 const DISCOVERY_TIERED_ENABLED = String(process.env.WHALE_DISCOVERY_TIERED_ENABLED || 'true').toLowerCase() !== 'false';
 const DISCOVERY_CACHE_QUALITY_TTL_MIN = Number(process.env.WHALE_DISCOVERY_CACHE_QUALITY_TTL_MIN || 45);
 const DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET = String(process.env.WHALE_DISCOVERY_FORCE_REFRESH_ON_UNDER_TARGET || 'true').toLowerCase() !== 'false';
@@ -488,7 +488,60 @@ async function fetchSpotDiscoveryTokens(){
   return [...out.values()];
 }
 
+async function discoverSpotCandidatesViaRpc(){
+  const programs=[
+    ['JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4','JUPITER'],
+    ['675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8','RAYDIUM'],
+    ['6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P','PUMPFUN'],
+    ['whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc','ORCA']
+  ];
+  const solUsd=(await tokenInfo(WSOL_MINT)).price||await tokenPrice(WSOL_MINT);
+  if(!(solUsd>0)) return [];
+  const evidence=new Map();
+  for(const [program,label] of programs){
+    try{
+      const r=await solDiscovery({method:'getSignaturesForAddress',params:[program,{limit:12}]},`spot-rpc:${label}:sigs`);
+      const sigs=Array.isArray(r?.result)?r.result.filter(x=>!x.err):[];
+      for(const s of sigs.slice(0,10)){
+        const bt=n(s?.blockTime)*1000;
+        if(!bt||Date.now()-bt>DISCOVERY_LOOKBACK_HOURS*3600000)continue;
+        try{
+          const tr=await solDiscoveryFast({method:'getTransaction',params:[s.signature,{encoding:'jsonParsed',maxSupportedTransactionVersion:0}]},`spot-rpc:${label}:tx`);
+          const tx=tr?.result;
+          if(!tx||String(tx?.meta?.err||'')!=='')continue;
+          const wallet=String(tx?.transaction?.message?.accountKeys?.map(accountKeyPubkey).find(x=>x&&x!=='11111111111111111111111111111111')||'');
+          if(!wallet)continue;
+          const d=swapDirection(tx,wallet,new Set());
+          if(d.direction!=='BUY')continue;
+          let best=null;
+          for(const pos of (d.positive||[])){
+            const rec=reconstructedBuy(tx,wallet,pos.mint,pos.delta,solUsd,new Set());
+            if(rec&&(!best||rec.fundingUsd>best.fundingUsd))best={...rec,mint:pos.mint};
+          }
+          if(!best||best.fundingUsd<DISCOVERY_SPOT_MIN_RECENT_BUY_USD)continue;
+          let e=evidence.get(wallet);
+          if(!e)e={address:wallet,programHits:0,swaps:0,buys:0,sells:0,recentBuys:0,recentBuyVolume:0,volumeUsd:0,lastTrade:0};
+          e.programHits++;e.swaps++;e.buys++;e.recentBuys++;e.recentBuyVolume+=best.fundingUsd;e.volumeUsd+=best.fundingUsd;e.lastTrade=Math.max(e.lastTrade,bt);
+          evidence.set(wallet,e);
+        }catch{}
+      }
+    }catch(e){console.log(`[DISCOVERY][SPOT][RPC] ${label} ERROR ${String(e?.message||e).slice(0,120)}`)}
+    await sleep(120);
+  }
+  const selected=[...evidence.values()]
+    .filter(x=>x.recentBuys>=1&&x.recentBuyVolume>=DISCOVERY_SPOT_MIN_RECENT_BUY_USD)
+    .sort((a,b)=>(b.recentBuyVolume-a.recentBuyVolume)*100+(b.swaps-a.swaps)*10)
+    .slice(0,Math.max(TARGET_SPOT_WALLETS,DISCOVERY_SPOT_FINALISTS))
+    .map(c=>({name:`SOL_${c.address.slice(0,4).toUpperCase()}`,address:c.address,discovery:{...c,quality:'ACTIVE_WATCH',confidenceTier:'ACTIVE_WATCH',performanceAvailable:false,performanceStatus:'UNAVAILABLE_RATE_LIMITED',qualificationReasons:['RPC_ACTIVITY_FALLBACK','PERFORMANCE_NOT_VERIFIED'],score:5000+n(c.recentBuyVolume)+n(c.swaps)*10}}));
+  console.log(`[DISCOVERY][SPOT][RPC-FALLBACK] evidence=${evidence.size} selected=${selected.length}`);
+  return selected;
+}
+
 async function discoverSpotCandidates(){
+  if(!HELIUS_ENHANCED_ENABLED || heliusCircuitOpen()) {
+    console.log(`[DISCOVERY][SPOT] Helius unavailable; switching to Solana RPC activity discovery`);
+    return await discoverSpotCandidatesViaRpc();
+  }
   if(!HELIUS_ENHANCED_ENABLED){
     console.log('[DISCOVERY][SPOT][HELIUS] disabled: HELIUS_API_KEY required');
     return [];
@@ -600,9 +653,14 @@ async function discoverSpotCandidates(){
     selected.push(...activeWatch);
     console.log(`[DISCOVERY][SPOT][ACTIVE-WATCH] added=${activeWatch.length} target=${TARGET_SPOT_WALLETS}`);
   }
-  const finalSelected=selected.slice(0,TARGET_SPOT_WALLETS);
+  let finalSelected=selected.slice(0,TARGET_SPOT_WALLETS);
+  if(finalSelected.length<TARGET_SPOT_WALLETS && DISCOVERY_ACTIVE_FALLBACK_ENABLED){
+    const rpc=await discoverSpotCandidatesViaRpc();
+    const used=new Set(finalSelected.map(x=>String(x.address||'')));
+    for(const w of rpc){ if(!used.has(String(w.address||''))){ finalSelected.push(w); used.add(String(w.address||'')); } if(finalSelected.length>=TARGET_SPOT_WALLETS)break; }
+  }
   console.log(`[DISCOVERY][SPOT][SELECTION] verified=${finals.length} fallback=${fallback.length} selected=${finalSelected.length}/${TARGET_SPOT_WALLETS}`);
-  return finalSelected;
+  return finalSelected.slice(0,TARGET_SPOT_WALLETS);
 }
 async function solSignaturesForDiscovery(address,limit=60){
   const r=await solDiscovery({method:'getSignaturesForAddress',params:[address,{limit}]},`discover:sigs:${String(address).slice(0,6)}`);
@@ -623,8 +681,11 @@ async function discoverWatchlist(){
   if(refreshNow||!spotWallets.length){
     console.log(`[DISCOVERY][SPOT][REFRESH] cache=${cacheFresh?'fresh':fallbackCache?'fallback':'missing'} refresh=${DISCOVERY_REFRESH_EACH_CYCLE}`);
     const fresh=await discoverSpotCandidates();
-    if(fresh.length)spotWallets=fresh;
-    else if(fallbackCache?.spotWallets?.length)console.log(`[DISCOVERY][SPOT][PRESERVE] new discovery unavailable; preserving ${fallbackCache.spotWallets.length} cached wallets`);
+    if(fresh.length){
+      const merged=[]; const seen=new Set();
+      for(const w of [...fresh,...(fallbackCache?.spotWallets||[])]){ const a=String(w?.address||''); if(!a||seen.has(a))continue; seen.add(a); merged.push(w); if(merged.length>=TARGET_SPOT_WALLETS)break; }
+      spotWallets=merged;
+    } else if(fallbackCache?.spotWallets?.length)console.log(`[DISCOVERY][SPOT][PRESERVE] new discovery unavailable; preserving ${fallbackCache.spotWallets.length} cached wallets`);
   }
   if(refreshNow||!futuresWallets.length){
     await sleep(1200);
@@ -1001,7 +1062,16 @@ async function scanSpot(w){
   const cutoff=Date.now()-SPOT_MAX_ACTIVITY_AGE_MIN*60000;
   const candidates=[]; const diagnostics=[]; const seen=new Set();
   if(HELIUS_ENHANCED_ENABLED && !heliusCircuitOpen()){
-    const txs=await heliusEnhancedTransactions(w.address,100,'',`signal:${w.name}`);
+    let txs;
+    try{ txs=await heliusEnhancedTransactions(w.address,100,'',`signal:${w.name}`); }
+    catch(e){
+      const msg=String(e?.message||e);
+      if(/429|rate.?limit|HELIUS_CIRCUIT_OPEN|max usage|credit/i.test(msg)){
+        console.log(`[SPOT][HELIUS->RPC-FALLBACK] ${w.name} reason=${msg.slice(0,100)}`);
+        return scanSpotViaSolanaRpc(w);
+      }
+      throw e;
+    }
     for(const tx of txs){
       const bt=n(tx?.timestamp)*1000; if(!bt||bt<cutoff)continue;
       const sw=enhancedSwap(tx,w.address,solUsd); if(!sw||sw.direction!=='BUY'||n(sw.fundingUsd)<SPOT_MIN_SIGNAL_BUY_USD||seen.has(sw.mint))continue;
@@ -1023,7 +1093,7 @@ async function scanSpot(w){
 
 
 function hlPositions(state){
-  return (state?.assetPositions||[]).map(x=>x?.position||x).filter(p=>p&&Math.abs(n(p.szi))>0).map(p=>({coin:p.coin,side:n(p.szi)>0?'LONG':'SHORT',size:Math.abs(n(p.szi)),entry:n(p.entryPx),positionValue:Math.abs(n(p.positionValue)),unrealized:n(p.unrealizedPnl),leverage:n(p.leverage?.value||p.leverage),liq:n(p.liquidationPx),margin:n(p.marginUsed)}));
+  return (state?.assetPositions||[]).map(x=>x?.position||x).filter(p=>p&&Math.abs(n(p.szi))>0).map(p=>({coin:p.coin,side:n(p.szi)>0?'LONG':'SHORT',size:Math.abs(n(p.szi)),entry:n(p.entryPx),positionValue:Math.abs(n(p.positionValue)),unrealized:n(p.unrealizedPnl),leverage:n(p.leverage?.value||p.leverage),liq:n(p.liquidationPx),margin:n(p.marginUsed),markPx:n(p.markPx)}));
 }
 async function futuresHealth(w){
   // Health is intentionally NOT on the signal path. The Telegram engine is
@@ -1530,13 +1600,18 @@ async function scanFutures(w,mids,now,symbolMap,marketContext=new Map()){
     const displaySymbol=displayCoin(coin,symbolMap);
     const side=f._derivedSide || (f.dir==='Open Long'?'LONG':'SHORT');
     const entry=n(f.px);
-    const mid=n(mids?.[coin]);
     const ageMin=Math.max(0,(now-n(f.time))/60000);
     const pos=currentPositions.get(coin);
+    const mid=n(mids?.[coin]) || n(pos?.markPx);
     const market=marketContext.get(coin)||{};
-    if(FUTURES_REQUIRE_MARKET_CONFIRMATION && (n(market.dayNtlVlm)<FUTURES_MIN_24H_VOLUME_USD || n(market.openInterest)<=0)){
+    if(!(mid>0)){ console.log(`[FUTURES][DROP] ${w.name} | ${displaySymbol} | REASON=MARKET_PRICE_UNAVAILABLE`); continue; }
+    const marketContextKnown=Number.isFinite(Number(market.dayNtlVlm))&&Number(market.dayNtlVlm)>0&&Number.isFinite(Number(market.openInterest));
+    if(FUTURES_REQUIRE_MARKET_CONFIRMATION && marketContextKnown && (n(market.dayNtlVlm)<FUTURES_MIN_24H_VOLUME_USD || n(market.openInterest)<=0)){
       console.log(`[FUTURES][DROP] ${w.name} | ${displaySymbol} | REASON=MARKET_LIQUIDITY_GATE volume24=${Math.round(n(market.dayNtlVlm))} OI=${Math.round(n(market.openInterest))}`);
       continue;
+    }
+    if(FUTURES_REQUIRE_MARKET_CONFIRMATION && !marketContextKnown){
+      console.log(`[FUTURES][MARKET-CONTEXT-UNAVAILABLE] ${w.name} | ${displaySymbol} | 429/empty context; signal gate not treated as zero liquidity`);
     }
     if(!pos){
       dropNoPos++;
@@ -1853,7 +1928,7 @@ async function runSelfTests(){
   assert(decBuy?.direction==='BUY'&&decBuy?.mint==='TOKENX'&&Math.abs(decBuy.fundingUsd-100)<1e-9,'spot BUY economic flow');
   assert(decSell?.direction==='SELL'&&decSell?.mint==='TOKENX'&&Math.abs(decSell.fundingUsd-110)<1e-9,'spot SELL economic flow');
   assert(lifecycleLabelForTest() === 'FRESH ADD','lifecycle labels never fake ADD counts');
-  console.log('[SELF-TEST] PASS | futures position/add detection | weighted spot ROI/PF | no execution');
+  console.log('[SELF-TEST] PASS | V7.0 spot RPC fallback | futures position/add detection | weighted spot ROI/PF | 429-safe market context | no execution');
 }
 
 (process.env.WHALE_SELF_TEST === 'true' ? runSelfTests() : main()).catch(async e=>{console.error(`[SIGNAL-ENGINE][FATAL] ${e.stack||e}`);await telegram(`🟣 CRYPTO WHALE SIGNAL ENGINE ${VERSION}\n📡 READ-ONLY | NO EXECUTION\n💥 FATAL\n${String(e.message||e).slice(0,1200)}`);process.exitCode=1});
