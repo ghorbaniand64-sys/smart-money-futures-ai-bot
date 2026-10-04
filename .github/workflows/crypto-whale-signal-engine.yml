@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: global-futures-top-trader-hunter-production
+  group: gftsh-production
   cancel-in-progress: true
 
 jobs:
@@ -21,56 +21,58 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: 22
+          cache: npm
 
-      - name: Verify worker
+      - name: Verify worker contract
+        shell: bash
         run: |
           set -euo pipefail
           test -f crypto_whale_signal_engine.mjs
           node --check crypto_whale_signal_engine.mjs
+          grep -q "GFTSH-V1.1.0-GLOBAL-FUTURES-MULTI-VENUE" crypto_whale_signal_engine.mjs
+          if grep -Eiq 'HELIUS|SOLANA_RPC|SPOT|JUPITER|RAYDIUM|PUMPFUN' crypto_whale_signal_engine.mjs; then
+            echo 'FATAL: forbidden legacy Spot/Solana/Helius code detected'
+            exit 1
+          fi
+          echo 'PASS | GFTSH V1.1 worker contract'
 
       - name: Run global futures hunter
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          HYPERLIQUID_API_URL: ${{ secrets.HYPERLIQUID_API_URL }}
-
-          GLOBAL_STATE_FILE: state/global_futures_hunter.json
-          GLOBAL_CACHE_FILE: state/global_futures_cache.json
-          GLOBAL_CACHE_TTL_MIN: '60'
-          GLOBAL_LOOKBACK_DAYS: '7'
-          GLOBAL_MAX_DISCOVERED_PER_SOURCE: '100'
-          GLOBAL_MAX_VERIFY_PER_SOURCE: '25'
-          GLOBAL_TOP_SIGNALS: '10'
-          GLOBAL_POSITION_FRESH_MIN: '15'
-          GLOBAL_MAX_ENTRY_DISTANCE_PCT: '0.5'
-          GLOBAL_MIN_TRADES_7D: '30'
-          GLOBAL_MIN_ACTIVE_DAYS: '4'
-          GLOBAL_MIN_WR: '55'
-          GLOBAL_MIN_PF: '1.5'
-          GLOBAL_MAX_MEDIAN_HOLD_H: '4'
-          GLOBAL_MAX_AVG_HOLD_H: '8'
-          GLOBAL_MIN_RR: '1.5'
-          GLOBAL_MAX_DD: '40'
-          GLOBAL_FETCH_TIMEOUT_MS: '12000'
-
+          GFTSH_DISCOVERY_LIMIT: '250'
+          GFTSH_VERIFY_LIMIT: '150'
+          GFTSH_TOP_SIGNALS: '10'
+          GFTSH_FRESH_MIN: '15'
+          GFTSH_ENTRY_MAX_PCT: '0.5'
+          GFTSH_MIN_RR: '1.5'
+          GFTSH_MIN_7D_TRADES: '30'
+          GFTSH_MIN_ACTIVE_DAYS: '4'
+          GFTSH_MIN_WR: '55'
+          GFTSH_MIN_PF: '1.5'
+          GFTSH_MAX_MEDIAN_HOURS: '4'
+          GFTSH_MAX_AVG_HOURS: '8'
+          GFTSH_MAX_DD: '40'
+          GFTSH_MODEL_SL_PCT: '0.5'
+          GFTSH_MODEL_TP_R: '2'
+          GFTSH_HL_VERIFY_CONCURRENCY: '8'
+          GFTSH_HTTP_TIMEOUT_MS: '12000'
         run: node crypto_whale_signal_engine.mjs
 
       - name: Persist state
+        if: always()
+        shell: bash
         run: |
           set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add state/global_futures_hunter.json state/global_futures_cache.json || true
-          if git diff --cached --quiet; then
-            echo 'No state changes to commit.'
-          else
-            git commit -m 'chore: update global futures hunter state'
-            git push
+          if [ -d state ] && [ -n "$(git status --porcelain state 2>/dev/null || true)" ]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add state
+            git commit -m 'chore: update GFTSH global futures state' || true
+            git push || true
           fi
