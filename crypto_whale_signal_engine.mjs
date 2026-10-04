@@ -1,14 +1,16 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-const VERSION='GFTSH-V1.4.0-GLOBAL-FUTURES-COVERAGE-AWARE';
+const VERSION='GFTSH-V1.5.0-GLOBAL-FUTURES-SOURCE-AUDIT';
 const STATE_FILE=process.env.GLOBAL_STATE_FILE||'state/global_futures_hunter.json';
 const CACHE_FILE=process.env.GLOBAL_CACHE_FILE||'state/global_futures_cache.json';
 const TELEGRAM_TOKEN=process.env.TELEGRAM_TOKEN||'';
 const TELEGRAM_CHAT_ID=process.env.TELEGRAM_CHAT_ID||'';
 const LOOKBACK_MS=7*86400000;
 const DISCOVERY_LIMIT=Number(process.env.GFTSH_DISCOVERY_LIMIT||400);
-const VERIFY_LIMIT=Number(process.env.GFTSH_VERIFY_LIMIT||200);
+const VERIFY_LIMIT=Number(process.env.GFTSH_VERIFY_LIMIT||240);
+const HL_VERIFY_LIMIT=Number(process.env.GFTSH_HL_VERIFY_LIMIT||120);
+const OKX_VERIFY_LIMIT=Number(process.env.GFTSH_OKX_VERIFY_LIMIT||120);
 const TOP_SIGNALS=Number(process.env.GFTSH_TOP_SIGNALS||10);
 const FRESH_MIN=Number(process.env.GFTSH_FRESH_MIN||15);
 const ENTRY_MAX=Number(process.env.GFTSH_ENTRY_MAX_PCT||0.5);
@@ -76,7 +78,42 @@ function positionGate(t){const p=t.position;if(!p)return ['NO_CURRENT_POSITION']
 
 async function hyperliquid(){const status={source:'HYPERLIQUID',class:'FULL_SIGNAL',state:'UNAVAILABLE',discovered:0,error:null};const out=[];try{const lb=await json('https://stats-data.hyperliquid.xyz/Mainnet/leaderboard');const rows=arr(lb);for(const x of rows.slice(0,DISCOVERY_LIMIT)){const id=x?.ethAddress||x?.address;if(!id)continue;const perf=new Map((x?.windowPerformances||[]).map(v=>[v?.[0],v?.[1]]));const w=perf.get('week')||{};out.push(normalized('HYPERLIQUID',id,x?.displayName||id,{pnl7d:n(w.pnl),roi7d:n(w.roi)*100,aum:n(x?.accountValue)}))}status.state=out.length?'OK':'EMPTY';status.discovered=out.length}catch(e){status.error=String(e.message||e)}return {status,out}}
 function hlStats(fills){const c=fills.filter(f=>ok(f.closedPnl)&&Math.abs(n(f.closedPnl))>0);const wins=c.filter(f=>n(f.closedPnl)>0),loss=c.filter(f=>n(f.closedPnl)<0);const gp=wins.reduce((a,f)=>a+n(f.closedPnl),0),gl=Math.abs(loss.reduce((a,f)=>a+n(f.closedPnl),0));const days=new Set(c.map(f=>new Date(f.time).toISOString().slice(0,10)));const holds=[];const q=new Map();for(const f of [...fills].sort((a,b)=>a.time-b.time)){const side=String(f.dir||'').toUpperCase().includes('SELL')?'SHORT':'LONG',key=f.coin+'|'+side;if(!q.has(key))q.set(key,[]);if(!ok(f.closedPnl)||Math.abs(n(f.closedPnl))<1e-12)q.get(key).push(f.time);else{const o=q.get(key).shift();if(ok(o))holds.push((f.time-o)/3600000)}}const sh=holds.sort((a,b)=>a-b);let eq=0,peak=0,dd=0;for(const f of c){eq+=n(f.closedPnl);peak=Math.max(peak,eq);if(peak>0)dd=Math.max(dd,(peak-eq)/peak*100)}return{trades7d:c.length,activeDays:days.size,wr:c.length?wins.length/c.length*100:NaN,pf:gl?gp/gl:(gp>0?Infinity:NaN),avgHoldH:holds.length?holds.reduce((a,b)=>a+b,0)/holds.length:NaN,medianHoldH:sh.length?sh[Math.floor(sh.length/2)]:NaN,dd}}
-async function hlVerify(t){try{const end=Date.now(),start=end-LOOKBACK_MS;const [state,fills]=await Promise.all([postJson('https://api.hyperliquid.xyz/info',{type:'clearinghouseState',user:t.traderId}),postJson('https://api.hyperliquid.xyz/info',{type:'userFillsByTime',user:t.traderId,startTime:start,endTime:end})]);const fs=Array.isArray(fills)?fills:[];t.stats={...t.stats,...hlStats(fs)};t.coverage=fs.length?'COMPLETE':'PARTIAL';let best=null;for(const p of (state?.assetPositions||[]).map(x=>x?.position).filter(Boolean)){const sz=n(p?.szi);if(!sz)continue;const side=sz>0?'LONG':'SHORT',symbol=p?.coin||'',entry=n(p?.entryPx),mark=n(p?.markPx);const dir=side==='LONG'?'BUY':'SELL';let last=fs.filter(f=>f?.coin===symbol&&String(f?.dir||'').toUpperCase().includes(dir)).sort((a,b)=>b.time-a.time)[0];best={symbol,side,entry,mark,size:Math.abs(sz),openedAt:n(last?.time,Date.now()),source:'HYPERLIQUID'};break}if(best)t.position=best;return t}catch(e){t.verifyError=String(e.message||e);return t}}
+async function hlVerify(t){
+  try{
+    const end=Date.now(),start=end-LOOKBACK_MS;
+    const [state,fills]=await Promise.all([
+      postJson('https://api.hyperliquid.xyz/info',{type:'clearinghouseState',user:t.traderId}),
+      postJson('https://api.hyperliquid.xyz/info',{type:'userFillsByTime',user:t.traderId,startTime:start,endTime:end})
+    ]);
+    const fs=Array.isArray(fills)?fills:[];
+    if(!fs.length){
+      t.coverage='VERIFY_EMPTY';
+      t.verifyError='HL_NO_FILLS_7D';
+      t.stats={...t.stats,trades7d:0,activeDays:0};
+      return t;
+    }
+    t.stats={...t.stats,...hlStats(fs)};
+    t.coverage='COMPLETE';
+    let best=null;
+    const positions=(state?.assetPositions||[]).map(x=>x?.position).filter(Boolean);
+    for(const p of positions){
+      const sz=n(p?.szi); if(!sz)continue;
+      const side=sz>0?'LONG':'SHORT',symbol=p?.coin||'',entry=n(p?.entryPx),mark=n(p?.markPx);
+      if(!ok(entry)||!ok(mark)||!symbol)continue;
+      const recent=fs.filter(f=>f?.coin===symbol).sort((a,b)=>n(b?.time)-n(a?.time));
+      const last=recent[0];
+      best={symbol,side,entry,mark,size:Math.abs(sz),openedAt:n(last?.time,n(p?.timestamp,Date.now())),lastActivityAt:n(last?.time,n(p?.timestamp,Date.now())),source:'HYPERLIQUID'};
+      break;
+    }
+    if(best)t.position=best;
+    t.audit={fills7d:fs.length,currentPositions:positions.length,verifiedAt:Date.now()};
+    return t;
+  }catch(e){
+    t.coverage='VERIFY_ERROR';
+    t.verifyError='HL:'+String(e.message||e);
+    return t;
+  }
+}
 
 async function binance(){const status={source:'BINANCE',class:'DISCOVERY',state:'UNAVAILABLE',discovered:0,error:null};const out=new Map();const url='https://www.binance.com/bapi/futures/v1/friendly/future/copy-trade/home-page/query-list';try{for(const dataType of ['ROI','PNL','MDD']){const x=await postJson(url,{pageNumber:1,pageSize:100,timeRange:'90D',dataType,favoriteOnly:false,hideFull:false,nickname:'',order:'DESC',apiKeyOnly:false});for(const r of arr(x)){const id=r?.leadPortfolioId||r?.portfolioId;if(!id)continue;out.set(String(id),normalized('BINANCE',id,r?.nickname||r?.nickName||id,{trades7d:first(r,['tradeCount7d','tradeCount7dTotal']),activeDays:first(r,['activeDays','daysTrading']),wr:first(r,['winRate']),pf:first(r,['profitFactor']),pnl7d:first(r,['pnl7d','pnl']),dd:first(r,['mdd','maxDrawdown','maxDrawdownRate']),roi7d:first(r,['roi7d','roi']),aum:first(r,['aum','totalAssets']),coverage:'PARTIAL'}))}if(out.size>=DISCOVERY_LIMIT)break}const list=[...out.values()].slice(0,DISCOVERY_LIMIT);status.discovered=list.length;status.state=list.length?'OK':'EMPTY';if(!list.length)status.error='BINANCE_NO_PUBLIC_PORTFOLIOS';return{status,out:list}}catch(e){status.error='BINANCE:'+String(e.message||e);return{status,out:[]}}}
 
@@ -126,14 +163,65 @@ async function okx(){
     return {status,out};
   }catch(e){status.error='OKX:'+String(e.message||e);return{status,out:[]}}
 }
-async function okxVerify(t){try{const b='https://www.okx.com/api/v5/copytrading';const [st,weekly,pos,hist]=await Promise.all([json(`${b}/public-stats?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}&lastDays=7`),json(`${b}/public-weekly-pnl?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}`),json(`${b}/public-current-subpositions?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}`),json(`${b}/public-subpositions-history?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}&limit=100`)]);const h=arr(hist).filter(x=>n(x?.closeTime)>=Date.now()-LOOKBACK_MS),wins=h.filter(x=>n(x?.pnl)>0),loss=h.filter(x=>n(x?.pnl)<0),gp=wins.reduce((a,x)=>a+n(x.pnl),0),gl=Math.abs(loss.reduce((a,x)=>a+n(x.pnl),0));const holds=h.map(x=>{const a=n(x.openTime),b=n(x.closeTime);return a&&b>=a?(b-a)/3600000:NaN}).filter(ok).sort((a,b)=>a-b);const eq=[];let e=0,peak=0,dd=0;for(const x of h){e+=n(x.pnl);peak=Math.max(peak,e);if(peak>0)dd=Math.max(dd,(peak-e)/peak*100)}t.coverage=h.length?'COMPLETE':'PARTIAL';t.stats={...t.stats,trades7d:h.length,activeDays:new Set(h.map(x=>new Date(n(x.closeTime)).toISOString().slice(0,10))).size,wr:h.length?wins.length/h.length*100:first(st,['winRatio'])*100,pf:gl?gp/gl:(gp>0?Infinity:NaN),avgHoldH:holds.length?holds.reduce((a,b)=>a+b,0)/holds.length:NaN,medianHoldH:holds.length?holds[Math.floor(holds.length/2)]:NaN,dd};const ps=arr(pos);let best=null;for(const x of ps){const entry=first(x,['openAvgPx','avgPx']),mark=first(x,['markPx','markPrice']),opened=first(x,['openTime','openTimeMs','cTime','uTime']);if(!ok(entry)||!ok(mark)||!ok(opened))continue;const side=String(x?.posSide||'').toLowerCase()==='short'?'SHORT':'LONG';const age=(Date.now()-opened)/60000;if(age<0)continue;if(!best||age<(Date.now()-best.openedAt)/60000)best={symbol:x?.instId||x?.ccy||'',side,entry,mark,openedAt:opened,size:Math.abs(n(x?.subPos)),source:'OKX'}}if(best)t.position=best;return t}catch(e){t.verifyError='OKX:'+String(e.message||e);return t}}
+async function okxVerify(t){
+  const bases=['https://eea.okx.com','https://openapi.okx.com'];
+  let lastErr='';
+  for(const base of bases){
+    try{
+      const b=`${base}/api/v5/copytrading`;
+      const [st,weekly,pos,hist]=await Promise.all([
+        json(`${b}/public-stats?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}&lastDays=7`),
+        json(`${b}/public-weekly-pnl?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}`),
+        json(`${b}/public-current-subpositions?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}`),
+        json(`${b}/public-subpositions-history?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}&limit=100`)
+      ]);
+      const h=arr(hist).filter(x=>{
+        const ct=n(x?.closeTime||x?.cTime||x?.uTime); return !ct || ct>=Date.now()-LOOKBACK_MS;
+      });
+      const wins=h.filter(x=>n(x?.pnl||x?.closedPnl)>0),loss=h.filter(x=>n(x?.pnl||x?.closedPnl)<0);
+      const gp=wins.reduce((a,x)=>a+n(x?.pnl??x?.closedPnl),0),gl=Math.abs(loss.reduce((a,x)=>a+n(x?.pnl??x?.closedPnl),0));
+      const holds=h.map(x=>{const a=n(x?.openTime||x?.openTimeMs||x?.cTime),b=n(x?.closeTime||x?.closeTimeMs||x?.uTime);return a&&b>=a?(b-a)/3600000:NaN}).filter(ok).sort((a,b)=>a-b);
+      let e=0,peak=0,dd=0;
+      for(const x of h){e+=n(x?.pnl??x?.closedPnl);peak=Math.max(peak,e);if(peak>0)dd=Math.max(dd,(peak-e)/peak*100)}
+      const statWr=first(st,['winRatio','winRate']);
+      const statPnl=first(st,['pnl','totalPnl','profit']);
+      const statRoi=first(st,['pnlRatio','roi']);
+      const statPf=first(st,['profitLossRatio','profitLossRate']);
+      t.coverage=h.length?'COMPLETE':'PARTIAL';
+      t.stats={...t.stats,
+        trades7d:h.length||t.stats.trades7d,
+        activeDays:h.length?new Set(h.map(x=>{const ts=n(x?.closeTime||x?.cTime||x?.uTime);return ts?new Date(ts).toISOString().slice(0,10):'x'})).size:t.stats.activeDays,
+        wr:h.length?wins.length/h.length*100:(ok(statWr)?(statWr<=1?statWr*100:statWr):t.stats.wr),
+        pf:gl?gp/gl:(ok(statPf)?statPf:t.stats.pf),
+        pnl7d:ok(statPnl)?statPnl:t.stats.pnl7d,
+        roi7d:ok(statRoi)?(statRoi<=1?statRoi*100:statRoi):t.stats.roi7d,
+        avgHoldH:holds.length?holds.reduce((a,b)=>a+b,0)/holds.length:t.stats.avgHoldH,
+        medianHoldH:holds.length?holds[Math.floor(holds.length/2)]:t.stats.medianHoldH,
+        dd:dd||t.stats.dd
+      };
+      const ps=arr(pos); let best=null;
+      for(const x of ps){
+        const entry=first(x,['openAvgPx','avgPx','openPx']),mark=first(x,['markPx','markPrice']),opened=first(x,['openTime','openTimeMs','cTime','uTime']);
+        if(!ok(entry)||!ok(mark))continue;
+        const side=String(x?.posSide||x?.side||'').toLowerCase().includes('short')?'SHORT':'LONG';
+        const openedAt=ok(opened)?opened:Date.now();
+        const age=(Date.now()-openedAt)/60000;if(age<0)continue;
+        if(!best||age<(Date.now()-best.openedAt)/60000)best={symbol:x?.instId||x?.ccy||'',side,entry,mark,openedAt,size:Math.abs(n(x?.subPos||x?.pos||x?.sz)),source:'OKX'};
+      }
+      if(best)t.position=best;
+      t.audit={history7d:h.length,currentPositions:ps.length,verifiedAt:Date.now(),region:base.includes('eea')?'EEA':'GLOBAL'};
+      return t;
+    }catch(e){lastErr=String(e.message||e)}
+  }
+  t.coverage='VERIFY_ERROR';t.verifyError='OKX:'+lastErr;return t;
+}
 
 async function cacheLoad(){const c=await readJson(CACHE_FILE,{sources:{}});return c?.sources||{}}
 async function cacheSave(sources){await writeJson(CACHE_FILE,{version:VERSION,generatedAt:Date.now(),sources})}
 async function withCache(result,cache){const s=result.status;if(result.out.length){cache[s.source]={savedAt:Date.now(),items:result.out};return result}const old=cache[s.source];if(old?.items?.length&&(Date.now()-n(old.savedAt))/3600000<=CACHE_TTL_H){s.state='CACHE';s.error=(s.error?s.error+' | ':'')+'USING_LAST_GOOD_DISCOVERY';return{status:s,out:old.items.map(x=>({...x,fromCache:true}))}}return result}
 async function unsupported(source){return{status:{source,class:'UNSUPPORTED',state:'UNSUPPORTED',discovered:0,error:'NO_VERIFIED_PUBLIC_READ_ONLY_TRADER_DISCOVERY'},out:[]}}
 async function telegram(text){if(!TELEGRAM_TOKEN||!TELEGRAM_CHAT_ID)return;try{await fetchText(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:TELEGRAM_CHAT_ID,text,disable_web_page_preview:true})})}catch(e){console.log('[TELEGRAM]',e.message)}}
-function report(statuses,all,verified,signals,blocked,runtime){const full=statuses.filter(s=>s.class==='FULL_SIGNAL'&&['OK','CACHE'].includes(s.state)).length,disc=statuses.filter(s=>s.class==='DISCOVERY'&&['OK','CACHE'].includes(s.state)).length,uns=statuses.filter(s=>s.state==='UNSUPPORTED').length;const L=[`🌐 GLOBAL FUTURES TOP-TRADER & SIGNAL HUNTER`,`🧠 ${VERSION}`,`📡 READ-ONLY | NO ORDERS | FUTURES ONLY`,`━━━━━━━━━━━━━━━━━━`,`🔎 Full-signal sources: ${full}/${statuses.length} | Discovery sources: ${disc}/${statuses.length} | Unsupported: ${uns}/${statuses.length}`,`👥 Traders discovered: ${all.length} | Verified: ${verified.length} | Actionable: ${signals.length}/${TOP_SIGNALS}`,`🎯 Quality: 7D trades≥${MIN_TRADES} | active days≥${MIN_DAYS} | WR≥${MIN_WR}% | PF≥${MIN_PF} | median hold≤${MAX_MEDIAN_H}h | avg hold≤${MAX_AVG_H}h | DD≤${MAX_DD}%`,`⚡ Signal: fresh≤${FRESH_MIN}m | entry≤${ENTRY_MAX}% | RR≥${MIN_RR} | TP/SL=model ${MODEL_TP_R}R/${MODEL_SL_PCT}%`,`⏱ Runtime: ${runtime.toFixed(1)}s`,'','📡 SOURCE STATUS'];for(const s of statuses)L.push(`${s.source}: ${s.state} | ${s.class} | discovered=${s.discovered}${s.error?' | '+s.error.slice(0,110):''}`);const cov={COMPLETE:verified.filter(t=>t.coverage==='COMPLETE').length,PARTIAL:verified.filter(t=>t.coverage==='PARTIAL').length,UNKNOWN:verified.filter(t=>t.coverage==='UNKNOWN').length};L.push(`🧾 Data coverage: complete=${cov.COMPLETE} | partial=${cov.PARTIAL} | unknown=${cov.UNKNOWN}`,'','🏆 TOP ACTIONABLE FUTURES SIGNALS');if(!signals.length)L.push('No trader passed BOTH the statistical quality gate and current-position signal gate this cycle.');else signals.forEach((t,i)=>{const p=t.position;L.push(`${i+1}. ${t.venue} ${trunc(t.name)} | ${p.side} ${p.symbol} | Entry ${p.entry} | Now ${p.mark} | Dist ${pct(p.distancePct)} | RR ${p.rr.toFixed(2)} | Age ${((Date.now()-p.openedAt)/60000).toFixed(1)}m | WR ${pct(t.stats.wr,1)} | PF ${t.stats.pf.toFixed(2)} | Score ${score(t).toFixed(1)}`)});L.push('','🧱 TOP BLOCKED TRADERS');blocked.slice(0,10).forEach(t=>L.push(`${t.venue} ${trunc(t.name,22)}: ${t.reasons.join(' | ')}`));return L.join('\n')}
+function report(statuses,all,verified,signals,blocked,runtime){const full=statuses.filter(s=>s.class==='FULL_SIGNAL'&&['OK','CACHE'].includes(s.state)).length,disc=statuses.filter(s=>s.class==='DISCOVERY'&&['OK','CACHE'].includes(s.state)).length,uns=statuses.filter(s=>s.state==='UNSUPPORTED').length;const L=[`🌐 GLOBAL FUTURES TOP-TRADER & SIGNAL HUNTER`,`🧠 ${VERSION}`,`📡 READ-ONLY | NO ORDERS | FUTURES ONLY`,`━━━━━━━━━━━━━━━━━━`,`🔎 Full-signal sources: ${full}/${statuses.length} | Discovery sources: ${disc}/${statuses.length} | Unsupported: ${uns}/${statuses.length}`,`👥 Traders discovered: ${all.length} | Full-signal audited: ${verified.length} | Actionable: ${signals.length}/${TOP_SIGNALS}`,`🎯 Quality: 7D trades≥${MIN_TRADES} | active days≥${MIN_DAYS} | WR≥${MIN_WR}% | PF≥${MIN_PF} | median hold≤${MAX_MEDIAN_H}h | avg hold≤${MAX_AVG_H}h | DD≤${MAX_DD}%`,`⚡ Signal: fresh≤${FRESH_MIN}m | entry≤${ENTRY_MAX}% | RR≥${MIN_RR} | TP/SL=model ${MODEL_TP_R}R/${MODEL_SL_PCT}%`,`⏱ Runtime: ${runtime.toFixed(1)}s`,'','📡 SOURCE STATUS'];for(const s of statuses)L.push(`${s.source}: ${s.state} | ${s.class} | discovered=${s.discovered}${s.error?' | '+s.error.slice(0,110):''}`);const cov={COMPLETE:verified.filter(t=>t.coverage==='COMPLETE').length,PARTIAL:verified.filter(t=>t.coverage==='PARTIAL').length,EMPTY:verified.filter(t=>t.coverage==='VERIFY_EMPTY').length,ERROR:verified.filter(t=>t.coverage==='VERIFY_ERROR').length,UNKNOWN:verified.filter(t=>!t.coverage||t.coverage==='UNKNOWN').length};L.push(`🧾 Audit coverage: complete=${cov.COMPLETE} | partial=${cov.PARTIAL} | empty=${cov.EMPTY} | verify-error=${cov.ERROR} | unknown=${cov.UNKNOWN}`,'','🏆 TOP ACTIONABLE FUTURES SIGNALS');if(!signals.length)L.push('No trader passed BOTH the statistical quality gate and current-position signal gate this cycle.');else signals.forEach((t,i)=>{const p=t.position;L.push(`${i+1}. ${t.venue} ${trunc(t.name)} | ${p.side} ${p.symbol} | Entry ${p.entry} | Now ${p.mark} | Dist ${pct(p.distancePct)} | RR ${p.rr.toFixed(2)} | Age ${((Date.now()-p.openedAt)/60000).toFixed(1)}m | WR ${pct(t.stats.wr,1)} | PF ${t.stats.pf.toFixed(2)} | Score ${score(t).toFixed(1)}`)});L.push('','🧱 TOP BLOCKED TRADERS');blocked.slice(0,10).forEach(t=>L.push(`${t.venue} ${trunc(t.name,22)}: ${t.reasons.join(' | ')}`));return L.join('\n')}
 
-async function main(){const started=Date.now();await ensure();console.log(`GFTSH ${VERSION} | READ-ONLY | FUTURES ONLY`);const cache=await cacheLoad();const fns=[hyperliquid,binance,okx,bybit,bitget,()=>unsupported('KUCOIN'),()=>unsupported('GATE'),()=>unsupported('MEXC'),()=>unsupported('PHEMEX'),()=>unsupported('BINGX'),()=>unsupported('COINEX'),()=>unsupported('DYDX'),()=>unsupported('PARADEX')];const results=[];for(const fn of fns){let r;try{r=await fn()}catch(e){r={status:{source:'UNKNOWN',class:'DISCOVERY',state:'UNAVAILABLE',discovered:0,error:String(e.message||e)},out:[]}}results.push(await withCache(r,cache));await sleep(40)}await cacheSave(Object.fromEntries(results.map(r=>[r.status.source,{savedAt:Date.now(),items:r.out}])));const statuses=results.map(r=>r.status);const map=new Map();for(const r of results)for(const t of r.out){const k=`${t.source}:${t.traderId}`;if(!map.has(k))map.set(k,t)}const all=[...map.values()].sort((a,b)=>score(b)-score(a));const verifyPool=all.slice(0,VERIFY_LIMIT),verified=[];for(const t of verifyPool){const v=t.source==='HYPERLIQUID'?await hlVerify(t):t.source==='OKX'?await okxVerify(t):t;v.gate=gate(v);verified.push(v)}const quality=verified.filter(t=>t.gate.length===0);const signals=[];for(const t of quality){const pg=positionGate(t);if(pg.length===0)signals.push(t)}signals.sort((a,b)=>score(b)-score(a));const blocked=verified.filter(t=>t.gate.length||positionGate(t).length).map(t=>({venue:t.venue,name:t.name,reasons:[...t.gate,...(t.gate.length?[]:positionGate(t))]}));const text=report(statuses,all,verified,signals.slice(0,TOP_SIGNALS),blocked,(Date.now()-started)/1000);console.log(text);await writeJson(STATE_FILE,{version:VERSION,updatedAt:Date.now(),statuses,discovered:all.length,verified:verified.length,signals:signals.length,top:signals.slice(0,TOP_SIGNALS)});await telegram(text)}
+async function main(){const started=Date.now();await ensure();console.log(`GFTSH ${VERSION} | READ-ONLY | FUTURES ONLY`);const cache=await cacheLoad();const fns=[hyperliquid,binance,okx,bybit,bitget,()=>unsupported('KUCOIN'),()=>unsupported('GATE'),()=>unsupported('MEXC'),()=>unsupported('PHEMEX'),()=>unsupported('BINGX'),()=>unsupported('COINEX'),()=>unsupported('DYDX'),()=>unsupported('PARADEX')];const results=[];for(const fn of fns){let r;try{r=await fn()}catch(e){r={status:{source:'UNKNOWN',class:'DISCOVERY',state:'UNAVAILABLE',discovered:0,error:String(e.message||e)},out:[]}}results.push(await withCache(r,cache));await sleep(40)}await cacheSave(Object.fromEntries(results.map(r=>[r.status.source,{savedAt:Date.now(),items:r.out}])));const statuses=results.map(r=>r.status);const map=new Map();for(const r of results)for(const t of r.out){const k=`${t.source}:${t.traderId}`;if(!map.has(k))map.set(k,t)}const all=[...map.values()].sort((a,b)=>score(b)-score(a));const hlPool=all.filter(t=>t.source==='HYPERLIQUID').slice(0,HL_VERIFY_LIMIT);const okxPool=all.filter(t=>t.source==='OKX').slice(0,OKX_VERIFY_LIMIT);const verifyPool=[...hlPool,...okxPool].slice(0,VERIFY_LIMIT);const verified=[];for(const t of verifyPool){const v=t.source==='HYPERLIQUID'?await hlVerify(t):await okxVerify(t);v.gate=gate(v);if(v.verifyError)v.gate.push(v.coverage==='VERIFY_EMPTY'?'VERIFY_EMPTY':`VERIFY_ERROR:${v.verifyError.slice(0,90)}`);verified.push(v)}const quality=verified.filter(t=>t.gate.length===0);const signals=[];for(const t of quality){const pg=positionGate(t);if(pg.length===0)signals.push(t)}signals.sort((a,b)=>score(b)-score(a));const blocked=verified.filter(t=>t.gate.length||positionGate(t).length).map(t=>({venue:t.venue,name:t.name,reasons:[...t.gate,...(t.gate.length?[]:positionGate(t))]}));const text=report(statuses,all,verified,signals.slice(0,TOP_SIGNALS),blocked,(Date.now()-started)/1000);console.log(text);await writeJson(STATE_FILE,{version:VERSION,updatedAt:Date.now(),statuses,discovered:all.length,verified:verified.length,signals:signals.length,top:signals.slice(0,TOP_SIGNALS)});await telegram(text)}
 main().catch(e=>{console.error('[FATAL]',e);process.exitCode=1});
