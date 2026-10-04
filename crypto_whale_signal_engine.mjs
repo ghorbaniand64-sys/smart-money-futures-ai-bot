@@ -147,7 +147,11 @@ async function hlVerify(t){try{
  const fs=Array.isArray(fills)?fills:[];const ds=deriveHyperliquidStats(fs);t.stats={...t.stats,...ds};
  const positions=(state?.assetPositions||[]).map(x=>x?.position).filter(Boolean);
  let best=null;
- for(const p of positions){const size=num(p?.szi);if(!size)continue;const symbol=p?.coin||'';const side=size>0?'LONG':'SHORT';const entry=num(p?.entryPx);const mark=num(p?.markPx);const liq=num(p?.liquidationPx);const last=fs.filter(f=>f?.coin===symbol).sort((a,b)=>b.time-a.time)[0];best={symbol,side,entry,mark,size:Math.abs(size),openedAt:num(last?.time,Date.now()),tp:NaN,sl:liq,source:'HYPERLIQUID',leverage:num(p?.leverage?.value)};break;}
+ for(const p of positions){const size=num(p?.szi);if(!size)continue;const symbol=p?.coin||'';const side=size>0?'LONG':'SHORT';const entry=num(p?.entryPx);const mark=num(p?.markPx);const liq=num(p?.liquidationPx);const symFills=fs.filter(f=>f?.coin===symbol).sort((a,b)=>a.time-b.time);
+   const currentDir=side==='LONG'?'BUY':'SELL';
+   let lastAdd=null;
+   for(const f of symFills){const dir=String(f?.dir||'').toUpperCase();if(dir===currentDir||dir.includes(currentDir))lastAdd=f;}
+   best={symbol,side,entry,mark,size:Math.abs(size),openedAt:num(lastAdd?.time,Date.now()),tp:NaN,sl:liq,source:'HYPERLIQUID',leverage:num(p?.leverage?.value)};break;}
  if(best){
    const risk=best.entry*MODEL_SL_PCT/100;
    best.sl=best.side==='LONG'?best.entry-risk:best.entry+risk;
@@ -162,26 +166,107 @@ function extractArray(x){if(Array.isArray(x))return x;for(const k of ['data','re
 function firstNumber(o,keys){for(const k of keys){const v=num(o?.[k]);if(finite(v))return v;}return NaN;}
 
 async function binance(){
- const status={source:'BINANCE',healthy:false,discovered:0,error:null};let rows=[];
- const endpoints=[
-  '/bapi/futures/v1/friendly/future/copy-trade/lead-portfolio/query-list',
-  '/bapi/futures/v1/friendly/future/copy-trade/lead-portfolio/query-lead-portfolio-list',
-  '/bapi/futures/v1/friendly/future/copy-trade/lead-portfolio/query-lead-portfolio'
- ];
- for(const ep of endpoints){try{const x=await requestJson(SOURCES.BINANCE.base+ep,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pageNumber:1,pageSize:DISCOVERY_LIMIT,sortType:'PNL',periodType:'30D'})});rows=extractArray(x);if(rows.length){status.healthy=true;break;}}catch(e){status.error=`binance:${ep}:${e.message}`;}}
- for(const x of rows.slice(0,DISCOVERY_LIMIT)){const id=x?.portfolioId||x?.leadPortfolioId||x?.uid||x?.traderId||x?.userId;if(!id)continue;outPush:out.push;}
- const out=[];for(const x of rows.slice(0,DISCOVERY_LIMIT)){const id=x?.portfolioId||x?.leadPortfolioId||x?.uid||x?.traderId||x?.userId;if(!id)continue;out.push(normalized({source:'BINANCE',id,name:x?.nickName||x?.nickname||x?.portfolioName||id,stats:{trades7d:firstNumber(x,['tradeCount7d','totalTrades7d','tradeCount']),activeDays:firstNumber(x,['daysTrading','activeDays']),wr:firstNumber(x,['winRate','winRate7d']),pf:firstNumber(x,['profitFactor']),pnl7d:firstNumber(x,['pnl7d','profitLoss7d','pnl']),dd:firstNumber(x,['mdd','maxDrawdown']),avgHoldH:firstNumber(x,['avgHoldHours','averageHoldingHours']),medianHoldH:firstNumber(x,['medianHoldHours']),roi7d:firstNumber(x,['roi7d','roi']),aum:firstNumber(x,['aum','aumValue'])}}));}
- status.discovered=out.length;return {status,out};
+ const status={source:'BINANCE',healthy:false,discovered:0,error:null};
+ const out=[];
+ try{
+  const u='https://www.binance.com/bapi/futures/v1/friendly/future/copy-trade/home-page/query-list';
+  const x=await postJson(u,{pageNumber:1,pageSize:21,timeRange:'90D',dataType:'ROI',favoriteOnly:false,hideFull:false,nickname:'',order:'DESC',apiKeyOnly:false});
+  const rows=extractArray(x);
+  for(const r of rows.slice(0,DISCOVERY_LIMIT)){
+   const id=r?.leadPortfolioId||r?.portfolioId;if(!id)continue;
+   out.push(normalized({source:'BINANCE',id,name:r?.nickname||r?.nickName||id,stats:{
+    trades7d:firstNumber(r,['tradeCount7d','tradeCount']),
+    activeDays:firstNumber(r,['activeDays','daysTrading']),
+    wr:firstNumber(r,['winRate']),
+    pf:firstNumber(r,['profitFactor']),
+    pnl7d:firstNumber(r,['pnl7d','pnl']),
+    dd:firstNumber(r,['mdd','maxDrawdown','maxDrawdownRate']),
+    roi7d:firstNumber(r,['roi7d','roi']),
+    aum:firstNumber(r,['aum','totalAssets'])
+   }}));
+  }
+  if(out.length){status.healthy=true;status.discovered=out.length;}
+  else status.error='BINANCE_NO_PUBLIC_PORTFOLIOS';
+ }catch(e){status.error=`binance:home-page/query-list:${e.message}`;}
+ return {status,out};
 }
 
 async function genericCex(name,urls,parser){const status={source:name,healthy:false,discovered:0,error:null};let data=[];
  for(const u of urls){try{const x=await requestJson(u);data=extractArray(x);if(data.length){status.healthy=true;break;}}catch(e){status.error=`${name}:${e.message}`;}}
  const out=parser(data);status.discovered=out.length;return {status,out};}
 
-async function okx(){return genericCex('OKX',[
- 'https://www.okx.com/api/v5/copytrading/public-lead-traders?instType=SWAP&sortType=1&dataType=1&limit=100',
- 'https://www.okx.com/api/v5/copytrading/public-lead-traders?instType=SWAP&limit=100'
- ],rows=>rows.slice(0,DISCOVERY_LIMIT).map(x=>normalized({source:'OKX',id:x?.uniqueCode||x?.traderId||x?.nickName||x?.uid,name:x?.nickName||x?.uniqueCode,stats:{wr:firstNumber(x,['winRatio','winRate']),pnl7d:firstNumber(x,['pnl','pnl7D']),roi7d:firstNumber(x,['pnlRatio','roi']),aum:firstNumber(x,['aum']),daysTrading:firstNumber(x,['daysTrading'])}})).filter(x=>x.traderId));}
+async function okx(){
+ const status={source:'OKX',healthy:false,discovered:0,error:null};
+ const base='https://www.okx.com/api/v5/copytrading';
+ const sorts=['overview','pnl','pnl_ratio','win_ratio','aum'];
+ const seen=new Map();
+ try{
+  for(const sortType of sorts){
+   const u=`${base}/public-lead-traders?instType=SWAP&sortType=${encodeURIComponent(sortType)}&state=0&minLeadDays=1`;
+   const x=await requestJson(u);
+   const rows=extractArray(x);
+   for(const r of rows){
+    const id=r?.uniqueCode;if(!id)continue;
+    const t=normalized({source:'OKX',id,name:r?.nickName||id,stats:{
+      wr:firstNumber(r,['winRatio']) * (firstNumber(r,['winRatio'])<=1?100:1),
+      pnl7d:firstNumber(r,['pnl7d','pnl']),
+      roi7d:firstNumber(r,['pnlRatio','roi7d','roi']) * (firstNumber(r,['pnlRatio','roi7d','roi'])<=1?100:1),
+      aum:firstNumber(r,['aum']),
+      daysTrading:firstNumber(r,['leadDays']),
+      activeDays:firstNumber(r,['leadDays'])
+    }});
+    seen.set(id,t);
+   }
+   if(seen.size>=DISCOVERY_LIMIT)break;
+  }
+  const out=[...seen.values()].slice(0,DISCOVERY_LIMIT);
+  if(out.length){status.healthy=true;status.discovered=out.length;return {status,out};}
+  status.error='OKX_NO_PUBLIC_LEAD_TRADERS';
+ }catch(e){status.error=`OKX:${e.message}`;}
+ return {status,out:[]};
+}
+
+async function okxVerify(t){
+ try{
+  const base='https://www.okx.com/api/v5/copytrading';
+  const [stats,weekly,positions,history]=await Promise.all([
+   requestJson(`${base}/public-stats?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}&lastDays=1`),
+   requestJson(`${base}/public-weekly-pnl?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}`),
+   requestJson(`${base}/public-current-subpositions?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}`),
+   requestJson(`${base}/public-subpositions-history?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}&limit=100`)
+  ]);
+  const st=extractArray(stats)[0]||{};
+  const wp=extractArray(weekly);
+  const hist=extractArray(history);
+  const recentWeek=wp.slice(0,1)[0]||{};
+  const trades7d=hist.filter(x=>num(x?.closeTime)>=Date.now()-7*86400000).length;
+  const activeDays=new Set(hist.filter(x=>num(x?.closeTime)>=Date.now()-7*86400000).map(x=>new Date(num(x.closeTime)).toISOString().slice(0,10))).size;
+  const wins=hist.filter(x=>num(x?.closeTime)>=Date.now()-7*86400000 && num(x?.pnl)>0).length;
+  const closed7=hist.filter(x=>num(x?.closeTime)>=Date.now()-7*86400000 && finite(x?.pnl));
+  const grossWin=closed7.filter(x=>num(x.pnl)>0).reduce((a,x)=>a+num(x.pnl),0);
+  const grossLoss=Math.abs(closed7.filter(x=>num(x.pnl)<0).reduce((a,x)=>a+num(x.pnl),0));
+  const pf=grossLoss>0?grossWin/grossLoss:(grossWin>0?Infinity:NaN);
+  const holds=closed7.map(x=>{const a=num(x.openTime),b=num(x.closeTime);return a>0&&b>=a?(b-a)/3600000:NaN}).filter(finite).sort((a,b)=>a-b);
+  const avgHoldH=holds.length?holds.reduce((a,b)=>a+b,0)/holds.length:NaN;
+  const medianHoldH=holds.length?holds[Math.floor(holds.length/2)]:NaN;
+  let eq=0,peak=0,maxDD=0;for(const x of closed7){eq+=num(x.pnl);peak=Math.max(peak,eq);if(peak>0)maxDD=Math.max(maxDD,(peak-eq)/peak*100);}
+  const wr=finite(st.winRatio)?num(st.winRatio)*100:(closed7.length?wins/closed7.length*100:NaN);
+  const pnl7d=closed7.reduce((a,x)=>a+num(x.pnl),0);
+  t.stats={...t.stats,trades7d,activeDays,wr,pf,avgHoldH,medianHoldH,dd:maxDD,pnl7d:finite(pnl7d)?pnl7d:firstNumber(recentWeek,['pnl'])};
+  const ps=extractArray(positions);
+  let best=null;
+  for(const x of ps){
+    const side=String(x?.posSide||'').toLowerCase()==='short'?'SHORT':(String(x?.posSide||'').toLowerCase()==='long'?'LONG':(num(x?.subPos)<0?'SHORT':'LONG'));
+    const entry=firstNumber(x,['openAvgPx']);const mark=firstNumber(x,['markPx']);const openedAt=firstNumber(x,['openTime']);
+    if(!finite(entry)||!finite(mark)||!finite(openedAt))continue;
+    const age=(Date.now()-openedAt)/60000;if(age<0)continue;
+    if(!best||age<(Date.now()-best.openedAt)/60000)best={symbol:x?.instId||x?.ccy||'',side,entry,mark,openedAt,size:Math.abs(num(x?.subPos)),tp:NaN,sl:NaN,source:'OKX'};
+  }
+  if(best){const risk=best.entry*MODEL_SL_PCT/100;best.sl=best.side==='LONG'?best.entry-risk:best.entry+risk;best.tp=best.side==='LONG'?best.entry+risk*MODEL_TP_R:best.entry-risk*MODEL_TP_R;best.tpSlModel=true;t.position=best;}
+  t.meta={okxPublicStats:st,weeklyRows:wp.length,historyRows:hist.length};
+  return t;
+ }catch(e){t.verifyError=`OKX:${e.message}`;return t;}
+}
 
 async function bybit(){return genericCex('BYBIT',[
  'https://www.bybit.com/x-api/fapi/public/v1/copy-trade/leader-board?limit=100',
@@ -196,8 +281,9 @@ async function bitget(){return genericCex('BITGET',[
 async function unsupported(name){return {status:{source:name,healthy:false,discovered:0,error:'NO_VERIFIED_PUBLIC_READ-ONLY_LEADERBOARD_ADAPTER'},out:[]};}
 
 async function verifyCex(t){
- // Current public leaderboard records are authoritative for ranking fields only.
- // Do not invent a position when the venue does not expose it publicly.
+ if(t.source==='OKX')return okxVerify(t);
+ // Binance/Bybit/Bitget public leaderboard snapshots do not guarantee a
+ // current lead position in the same public contract. Never fabricate one.
  return t;
 }
 
