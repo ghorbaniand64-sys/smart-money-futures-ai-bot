@@ -34,7 +34,7 @@ jobs:
           set -euo pipefail
           test -f crypto_whale_signal_engine.mjs
           node --check crypto_whale_signal_engine.mjs
-          grep -q "GFTSH-V1.1.0-GLOBAL-FUTURES-MULTI-VENUE" crypto_whale_signal_engine.mjs
+          grep -q "GFTSH-V1.2.0-GLOBAL-FUTURES-ADAPTERS" crypto_whale_signal_engine.mjs
           if grep -Eiq 'HELIUS|SOLANA_RPC|SPOT|JUPITER|RAYDIUM|PUMPFUN' crypto_whale_signal_engine.mjs; then
             echo 'FATAL: forbidden legacy Spot/Solana/Helius code detected'
             exit 1
@@ -45,8 +45,8 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GFTSH_DISCOVERY_LIMIT: '250'
-          GFTSH_VERIFY_LIMIT: '150'
+          GFTSH_DISCOVERY_LIMIT: '400'
+          GFTSH_VERIFY_LIMIT: '200'
           GFTSH_TOP_SIGNALS: '10'
           GFTSH_FRESH_MIN: '15'
           GFTSH_ENTRY_MAX_PCT: '0.5'
