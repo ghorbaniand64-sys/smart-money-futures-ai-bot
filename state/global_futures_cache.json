@@ -1,9 +1,9 @@
 {
-  "version": "GFTSH-V1.4.0-GLOBAL-FUTURES-COVERAGE-AWARE",
-  "generatedAt": 1791132087817,
+  "version": "GFTSH-V1.5.0-GLOBAL-FUTURES-SOURCE-AUDIT",
+  "generatedAt": 1791133511894,
   "sources": {
     "HYPERLIQUID": {
-      "savedAt": 1791132087817,
+      "savedAt": 1791133511894,
       "items": [
         {
           "source": "HYPERLIQUID",
@@ -25,7 +25,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503039
         },
         {
           "source": "HYPERLIQUID",
@@ -47,7 +47,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503039
         },
         {
           "source": "HYPERLIQUID",
@@ -69,7 +69,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -91,7 +91,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -113,7 +113,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -135,7 +135,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -157,7 +157,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -179,7 +179,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -201,7 +201,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -223,7 +223,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -245,7 +245,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -267,7 +267,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -289,7 +289,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -311,7 +311,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -333,7 +333,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -355,7 +355,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -377,7 +377,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -399,7 +399,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -421,7 +421,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -443,7 +443,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -465,7 +465,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -487,7 +487,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -509,7 +509,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -531,7 +531,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -553,7 +553,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -575,7 +575,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -597,7 +597,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -619,7 +619,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -641,7 +641,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -663,7 +663,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -685,7 +685,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -707,7 +707,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -729,7 +729,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -751,7 +751,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -773,7 +773,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -795,7 +795,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -817,7 +817,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -839,7 +839,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -861,7 +861,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -883,7 +883,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -905,7 +905,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -927,7 +927,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -949,7 +949,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -971,7 +971,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -993,7 +993,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1015,7 +1015,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076978
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1037,7 +1037,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1059,7 +1059,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1081,7 +1081,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1103,7 +1103,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1125,7 +1125,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1147,7 +1147,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1169,7 +1169,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1191,7 +1191,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1213,7 +1213,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1235,7 +1235,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1257,7 +1257,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1279,7 +1279,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1301,7 +1301,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1323,7 +1323,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1345,7 +1345,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1367,7 +1367,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1389,7 +1389,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1411,7 +1411,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1433,7 +1433,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1455,7 +1455,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1477,7 +1477,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1499,7 +1499,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1521,7 +1521,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1543,7 +1543,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1565,7 +1565,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1587,7 +1587,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1609,7 +1609,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1631,7 +1631,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1653,7 +1653,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1675,7 +1675,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1697,7 +1697,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1719,7 +1719,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1741,7 +1741,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1763,7 +1763,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1785,7 +1785,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1807,7 +1807,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1829,7 +1829,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1851,7 +1851,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503040
         },
         {
           "source": "HYPERLIQUID",
@@ -1873,7 +1873,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -1895,7 +1895,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -1917,7 +1917,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -1939,7 +1939,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -1961,7 +1961,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -1983,7 +1983,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2005,7 +2005,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2027,7 +2027,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2049,7 +2049,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2071,7 +2071,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2093,7 +2093,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2115,7 +2115,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2137,7 +2137,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2159,7 +2159,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2181,7 +2181,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2203,7 +2203,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2225,7 +2225,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2247,7 +2247,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2269,7 +2269,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2291,7 +2291,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2313,7 +2313,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2335,7 +2335,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2357,7 +2357,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2379,7 +2379,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2401,7 +2401,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2423,7 +2423,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2445,7 +2445,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2467,7 +2467,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2489,7 +2489,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2511,7 +2511,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2533,7 +2533,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2555,7 +2555,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2577,7 +2577,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2599,7 +2599,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2621,7 +2621,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2643,7 +2643,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2665,7 +2665,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2687,7 +2687,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2709,7 +2709,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2731,7 +2731,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2753,7 +2753,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2775,7 +2775,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2797,7 +2797,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2819,7 +2819,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2841,7 +2841,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2863,7 +2863,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2885,7 +2885,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2907,7 +2907,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2929,7 +2929,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2951,7 +2951,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2973,7 +2973,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -2995,7 +2995,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3017,7 +3017,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3039,7 +3039,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3061,7 +3061,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3083,7 +3083,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3105,7 +3105,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3127,7 +3127,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3149,7 +3149,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3171,7 +3171,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3193,7 +3193,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3215,7 +3215,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3237,7 +3237,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3259,7 +3259,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3281,7 +3281,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3303,7 +3303,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3325,7 +3325,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3347,7 +3347,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3369,7 +3369,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3391,7 +3391,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3413,7 +3413,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3435,7 +3435,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3457,7 +3457,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3479,7 +3479,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3501,7 +3501,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3523,7 +3523,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3545,7 +3545,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3567,7 +3567,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3589,7 +3589,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3611,7 +3611,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3633,7 +3633,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3655,7 +3655,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3677,7 +3677,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3699,7 +3699,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3721,7 +3721,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3743,7 +3743,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3765,7 +3765,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3787,7 +3787,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3809,7 +3809,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3831,7 +3831,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3853,7 +3853,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3875,7 +3875,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3897,7 +3897,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3919,7 +3919,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076979
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3941,7 +3941,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3963,7 +3963,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -3985,7 +3985,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4007,7 +4007,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4029,7 +4029,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4051,7 +4051,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4073,7 +4073,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4095,7 +4095,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4117,7 +4117,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4139,7 +4139,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4161,7 +4161,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4183,7 +4183,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4205,7 +4205,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4227,7 +4227,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4249,7 +4249,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4271,7 +4271,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4293,7 +4293,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4315,7 +4315,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4337,7 +4337,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4359,7 +4359,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4381,7 +4381,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4403,7 +4403,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4425,7 +4425,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4447,7 +4447,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4469,7 +4469,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4491,7 +4491,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4513,7 +4513,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4535,7 +4535,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4557,7 +4557,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4579,7 +4579,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4601,7 +4601,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4623,7 +4623,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4645,7 +4645,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503041
         },
         {
           "source": "HYPERLIQUID",
@@ -4667,7 +4667,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -4689,7 +4689,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -4711,7 +4711,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -4733,7 +4733,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -4755,7 +4755,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -4777,7 +4777,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -4799,7 +4799,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -4821,7 +4821,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -4843,7 +4843,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -4865,7 +4865,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -4887,7 +4887,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -4909,7 +4909,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -4931,7 +4931,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -4953,7 +4953,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -4975,7 +4975,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -4997,7 +4997,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5019,7 +5019,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5041,7 +5041,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5063,7 +5063,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5085,7 +5085,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5107,7 +5107,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5129,7 +5129,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5151,7 +5151,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5173,7 +5173,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5195,7 +5195,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5217,7 +5217,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5239,7 +5239,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5261,7 +5261,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5283,7 +5283,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5305,7 +5305,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5327,7 +5327,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5349,7 +5349,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5371,7 +5371,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5393,7 +5393,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5415,7 +5415,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5437,7 +5437,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5459,7 +5459,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5481,7 +5481,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5503,7 +5503,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5525,7 +5525,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5547,7 +5547,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5569,7 +5569,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5591,7 +5591,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5613,7 +5613,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5635,7 +5635,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5657,7 +5657,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5679,7 +5679,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5701,7 +5701,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5723,7 +5723,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5745,7 +5745,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5767,7 +5767,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5789,7 +5789,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5811,7 +5811,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5833,7 +5833,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5855,7 +5855,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5877,7 +5877,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5899,7 +5899,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5921,7 +5921,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5943,7 +5943,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5965,7 +5965,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -5987,7 +5987,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6009,7 +6009,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6031,7 +6031,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6053,7 +6053,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6075,7 +6075,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6097,7 +6097,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6119,7 +6119,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6141,7 +6141,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6163,7 +6163,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6185,7 +6185,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6207,7 +6207,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6229,7 +6229,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6251,7 +6251,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6273,7 +6273,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6295,7 +6295,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6317,7 +6317,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6339,7 +6339,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6361,7 +6361,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6383,7 +6383,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6405,7 +6405,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6427,7 +6427,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6449,7 +6449,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6471,7 +6471,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6493,7 +6493,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6515,7 +6515,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6537,7 +6537,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6559,7 +6559,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6581,7 +6581,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6603,7 +6603,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6625,7 +6625,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6647,7 +6647,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6669,7 +6669,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6691,7 +6691,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6713,7 +6713,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6735,7 +6735,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6757,7 +6757,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6779,7 +6779,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6801,7 +6801,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6823,7 +6823,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6845,7 +6845,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076980
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6867,7 +6867,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6889,7 +6889,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6911,7 +6911,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6933,7 +6933,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6955,7 +6955,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6977,7 +6977,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -6999,7 +6999,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7021,7 +7021,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7043,7 +7043,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7065,7 +7065,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7087,7 +7087,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7109,7 +7109,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7131,7 +7131,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7153,7 +7153,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7175,7 +7175,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7197,7 +7197,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7219,7 +7219,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7241,7 +7241,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7263,7 +7263,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7285,7 +7285,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7307,7 +7307,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7329,7 +7329,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7351,7 +7351,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7373,7 +7373,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7395,7 +7395,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7417,7 +7417,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7439,7 +7439,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7461,7 +7461,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7483,7 +7483,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7505,7 +7505,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503042
         },
         {
           "source": "HYPERLIQUID",
@@ -7527,7 +7527,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7549,7 +7549,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7571,7 +7571,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7593,7 +7593,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7615,7 +7615,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7637,7 +7637,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7659,7 +7659,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7681,7 +7681,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7703,7 +7703,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7725,7 +7725,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7747,7 +7747,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7769,7 +7769,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7791,7 +7791,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7813,7 +7813,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7835,7 +7835,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7857,7 +7857,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7879,7 +7879,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7901,7 +7901,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7923,7 +7923,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7945,7 +7945,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7967,7 +7967,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -7989,7 +7989,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8011,7 +8011,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8033,7 +8033,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8055,7 +8055,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8077,7 +8077,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8099,7 +8099,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8121,7 +8121,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8143,7 +8143,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8165,7 +8165,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8187,7 +8187,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8209,7 +8209,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8231,7 +8231,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8253,7 +8253,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8275,7 +8275,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8297,7 +8297,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8319,7 +8319,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8341,7 +8341,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8363,7 +8363,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8385,7 +8385,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8407,7 +8407,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8429,7 +8429,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8451,7 +8451,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8473,7 +8473,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8495,7 +8495,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8517,7 +8517,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8539,7 +8539,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8561,7 +8561,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8583,7 +8583,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8605,7 +8605,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8627,7 +8627,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8649,7 +8649,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8671,7 +8671,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8693,7 +8693,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8715,7 +8715,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8737,7 +8737,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8759,7 +8759,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8781,7 +8781,7 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         },
         {
           "source": "HYPERLIQUID",
@@ -8803,12 +8803,12 @@
           },
           "coverage": "UNKNOWN",
           "position": null,
-          "discoveredAt": 1791132076981
+          "discoveredAt": 1791133503043
         }
       ]
     },
     "BINANCE": {
-      "savedAt": 1791132087817,
+      "savedAt": 1791133511894,
       "items": [
         {
           "source": "BINANCE",
@@ -8820,17 +8820,17 @@
             "activeDays": null,
             "wr": 82.6087,
             "pf": null,
-            "pnl7d": 36987.31514715,
+            "pnl7d": 37946.83588732,
             "dd": 71.918813,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 7397.46302943,
-            "aum": 453509.30757722,
+            "roi7d": 7589.36717746,
+            "aum": 465968.31447379,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -8842,17 +8842,17 @@
             "activeDays": null,
             "wr": 89.5717,
             "pf": null,
-            "pnl7d": 32651.45417792,
+            "pnl7d": 32651.42935672,
             "dd": 6.0090878,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 6530.29083558,
-            "aum": 145995.86894752,
+            "roi7d": 6530.28587134,
+            "aum": 145994.97515262,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -8869,12 +8869,12 @@
             "avgHoldH": null,
             "medianHoldH": null,
             "roi7d": 4996.42997491,
-            "aum": 356826.12400762,
+            "aum": 356226.12400762,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -8886,17 +8886,17 @@
             "activeDays": null,
             "wr": 83.1776,
             "pf": null,
-            "pnl7d": 23821.00113799,
+            "pnl7d": 23787.49901028,
             "dd": 17.928396,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 4764.20022759,
-            "aum": 1067949.53752264,
+            "roi7d": 4757.49980205,
+            "aum": 1068022.03343152,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -8908,17 +8908,17 @@
             "activeDays": null,
             "wr": 86.6667,
             "pf": null,
-            "pnl7d": 22785.77139792,
+            "pnl7d": 22785.76415691,
             "dd": 1.522614,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 4557.15427958,
-            "aum": 169396.44003949,
+            "roi7d": 4557.15283138,
+            "aum": 169398.85551235,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -8930,17 +8930,17 @@
             "activeDays": null,
             "wr": 97.0149,
             "pf": null,
-            "pnl7d": 20477.81984111,
+            "pnl7d": 20493.38549217,
             "dd": 36.12731,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 4095.56396822,
-            "aum": 109499.39340012,
+            "roi7d": 4098.67709843,
+            "aum": 110292.60444674,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -8952,17 +8952,17 @@
             "activeDays": null,
             "wr": 79.1045,
             "pf": null,
-            "pnl7d": 20406.86440127,
+            "pnl7d": 20447.88676219,
             "dd": 42.301216,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 4081.37288025,
-            "aum": 36483.62118364,
+            "roi7d": 4089.57735243,
+            "aum": 36661.67022074,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -8974,17 +8974,17 @@
             "activeDays": null,
             "wr": 83.4951,
             "pf": null,
-            "pnl7d": 20229.95685393,
+            "pnl7d": 20169.01189658,
             "dd": 15.9882,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 4045.99137078,
-            "aum": 569527.51893308,
+            "roi7d": 4033.80237931,
+            "aum": 566580.42743856,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -8996,17 +8996,17 @@
             "activeDays": null,
             "wr": 95.6522,
             "pf": null,
-            "pnl7d": 17968.54617845,
+            "pnl7d": 18008.18904333,
             "dd": 2.3216172,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 3593.70923569,
-            "aum": 41508.25816492,
+            "roi7d": 3601.63780866,
+            "aum": 41673.95784782,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -9018,17 +9018,17 @@
             "activeDays": null,
             "wr": 85.7143,
             "pf": null,
-            "pnl7d": 17564.2875464,
+            "pnl7d": 17493.90526003,
             "dd": 5.6693444,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 3512.85750928,
-            "aum": 652639.8773283,
+            "roi7d": 3498.781052,
+            "aum": 651149.70072218,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -9040,17 +9040,17 @@
             "activeDays": null,
             "wr": 95,
             "pf": null,
-            "pnl7d": 17060.97876136,
+            "pnl7d": 16974.76046055,
             "dd": 40.619333,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 3412.19575227,
-            "aum": 125008.00560848,
+            "roi7d": 3394.95209211,
+            "aum": 129892.82823099,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -9062,17 +9062,17 @@
             "activeDays": null,
             "wr": 90,
             "pf": null,
-            "pnl7d": 773291.94160008,
+            "pnl7d": 771958.90850344,
             "dd": 38.387864,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 3273.32364377,
-            "aum": 1448294.05076613,
+            "roi7d": 3267.68095112,
+            "aum": 1432385.43973484,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9084,61 +9084,17 @@
             "activeDays": null,
             "wr": 90,
             "pf": null,
-            "pnl7d": 41815.39958358,
+            "pnl7d": 41749.27688238,
             "dd": 68.438969,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 3204.27638355,
-            "aum": 45540.16730068,
+            "roi7d": 3199.20946056,
+            "aum": 45646.59985296,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
-        },
-        {
-          "source": "BINANCE",
-          "venue": "BINANCE",
-          "traderId": "5228797161728497664",
-          "name": "BTC苏行长",
-          "stats": {
-            "trades7d": null,
-            "activeDays": null,
-            "wr": 70.9677,
-            "pf": null,
-            "pnl7d": 15461.60163961,
-            "dd": 27.523411,
-            "avgHoldH": null,
-            "medianHoldH": null,
-            "roi7d": 3092.32032792,
-            "aum": 12880.58459085,
-            "daysTrading": null
-          },
-          "coverage": "PARTIAL",
-          "position": null,
-          "discoveredAt": 1791132077671
-        },
-        {
-          "source": "BINANCE",
-          "venue": "BINANCE",
-          "traderId": "5219234690161308161",
-          "name": "金虎趋势论",
-          "stats": {
-            "trades7d": null,
-            "activeDays": null,
-            "wr": 72.093,
-            "pf": null,
-            "pnl7d": 15313.4250539,
-            "dd": 47.543574,
-            "avgHoldH": null,
-            "medianHoldH": null,
-            "roi7d": 3062.68501078,
-            "aum": 31795.99568769,
-            "daysTrading": null
-          },
-          "coverage": "PARTIAL",
-          "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -9150,17 +9106,61 @@
             "activeDays": null,
             "wr": 75,
             "pf": null,
-            "pnl7d": 15080.30065288,
+            "pnl7d": 15624.24886288,
             "dd": 37.387418,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 3016.06013057,
-            "aum": 9496.24660653,
+            "roi7d": 3124.84977257,
+            "aum": 10415.39047111,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
+        },
+        {
+          "source": "BINANCE",
+          "venue": "BINANCE",
+          "traderId": "5228797161728497664",
+          "name": "BTC苏行长",
+          "stats": {
+            "trades7d": null,
+            "activeDays": null,
+            "wr": 70.9677,
+            "pf": null,
+            "pnl7d": 15458.03206948,
+            "dd": 27.523411,
+            "avgHoldH": null,
+            "medianHoldH": null,
+            "roi7d": 3091.60641389,
+            "aum": 12889.09023997,
+            "daysTrading": null
+          },
+          "coverage": "PARTIAL",
+          "position": null,
+          "discoveredAt": 1791133503409
+        },
+        {
+          "source": "BINANCE",
+          "venue": "BINANCE",
+          "traderId": "5219234690161308161",
+          "name": "金虎趋势论",
+          "stats": {
+            "trades7d": null,
+            "activeDays": null,
+            "wr": 72.093,
+            "pf": null,
+            "pnl7d": 15224.49004977,
+            "dd": 47.543574,
+            "avgHoldH": null,
+            "medianHoldH": null,
+            "roi7d": 3044.89800995,
+            "aum": 31700.1953563,
+            "daysTrading": null
+          },
+          "coverage": "PARTIAL",
+          "position": null,
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -9172,17 +9172,17 @@
             "activeDays": null,
             "wr": 45.5446,
             "pf": null,
-            "pnl7d": 17110.3905929,
+            "pnl7d": 17338.89912777,
             "dd": 64.57819,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 2829.59059774,
-            "aum": 27980.92866635,
+            "roi7d": 2867.37965921,
+            "aum": 28425.01058138,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -9194,17 +9194,17 @@
             "activeDays": null,
             "wr": 97.5309,
             "pf": null,
-            "pnl7d": 14081.25400438,
+            "pnl7d": 14096.71826577,
             "dd": 47.721733,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 2816.25080087,
-            "aum": 474423.85277033,
+            "roi7d": 2819.34365315,
+            "aum": 474267.15331742,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -9216,17 +9216,17 @@
             "activeDays": null,
             "wr": 77.7778,
             "pf": null,
-            "pnl7d": 13418.60294341,
+            "pnl7d": 13589.50354323,
             "dd": 39.42756,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 2683.72058868,
-            "aum": 26430.26593839,
+            "roi7d": 2717.90070864,
+            "aum": 26554.37712448,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -9238,17 +9238,17 @@
             "activeDays": null,
             "wr": 57.8947,
             "pf": null,
-            "pnl7d": 22226.85836603,
+            "pnl7d": 22172.71290608,
             "dd": 30.295255,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 2614.92451365,
-            "aum": 44124.60909903,
+            "roi7d": 2608.55445953,
+            "aum": 43948.62754046,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -9260,17 +9260,17 @@
             "activeDays": null,
             "wr": 98.3051,
             "pf": null,
-            "pnl7d": 22568.92856601,
+            "pnl7d": 22301.88134938,
             "dd": 52.728084,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 2575.54202984,
-            "aum": 300078.76076557,
+            "roi7d": 2545.06688662,
+            "aum": 296734.06264265,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -9282,17 +9282,17 @@
             "activeDays": null,
             "wr": 81.8182,
             "pf": null,
-            "pnl7d": 12212.96268135,
+            "pnl7d": 12500.31328561,
             "dd": 19.607379,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 2442.59253627,
-            "aum": 68975.84938217,
+            "roi7d": 2500.06265712,
+            "aum": 66536.54040593,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -9304,17 +9304,17 @@
             "activeDays": null,
             "wr": 72.7273,
             "pf": null,
-            "pnl7d": 11321.7973622,
-            "dd": 0.03118189,
+            "pnl7d": 11325.97966295,
+            "dd": 0,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 2264.35947244,
-            "aum": 18967.47734558,
+            "roi7d": 2265.19593259,
+            "aum": 18982.33917158,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -9326,17 +9326,17 @@
             "activeDays": null,
             "wr": 92.3077,
             "pf": null,
-            "pnl7d": 10933.5624448,
+            "pnl7d": 10936.92631616,
             "dd": 50.917665,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 2186.71248896,
-            "aum": 10359.24647269,
+            "roi7d": 2187.38526323,
+            "aum": 10372.36540679,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -9348,39 +9348,17 @@
             "activeDays": null,
             "wr": 53.3333,
             "pf": null,
-            "pnl7d": 1031725.70626128,
+            "pnl7d": 1017034.08334078,
             "dd": 54.92889,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 2179.32717389,
-            "aum": 1193702.85422939,
+            "roi7d": 2148.29387418,
+            "aum": 1168135.41296965,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
-        },
-        {
-          "source": "BINANCE",
-          "venue": "BINANCE",
-          "traderId": "5156305122364875520",
-          "name": "I_am_Messi",
-          "stats": {
-            "trades7d": null,
-            "activeDays": null,
-            "wr": 58.2759,
-            "pf": null,
-            "pnl7d": 102680.47064191,
-            "dd": 32.584917,
-            "avgHoldH": null,
-            "medianHoldH": null,
-            "roi7d": 2053.60941283,
-            "aum": 87945.12565355,
-            "daysTrading": null
-          },
-          "coverage": "PARTIAL",
-          "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9392,17 +9370,39 @@
             "activeDays": null,
             "wr": 84.4444,
             "pf": null,
-            "pnl7d": 67264.85378214,
+            "pnl7d": 67676.46250922,
             "dd": 71.675087,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 2047.46456809,
-            "aum": 140679.58347736,
+            "roi7d": 2059.99346301,
+            "aum": 140871.59446037,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
+        },
+        {
+          "source": "BINANCE",
+          "venue": "BINANCE",
+          "traderId": "5156305122364875520",
+          "name": "I_am_Messi",
+          "stats": {
+            "trades7d": null,
+            "activeDays": null,
+            "wr": 58.2759,
+            "pf": null,
+            "pnl7d": 102667.79713368,
+            "dd": 32.584917,
+            "avgHoldH": null,
+            "medianHoldH": null,
+            "roi7d": 2053.35594267,
+            "aum": 88472.15472355,
+            "daysTrading": null
+          },
+          "coverage": "PARTIAL",
+          "position": null,
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -9414,17 +9414,17 @@
             "activeDays": null,
             "wr": 61.7647,
             "pf": null,
-            "pnl7d": 9940.70931308,
-            "dd": 3.1704671,
+            "pnl7d": 9825.45933173,
+            "dd": 4.2393218,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 1988.14186261,
-            "aum": 10641.0621693,
+            "roi7d": 1965.09186634,
+            "aum": 10528.07335845,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -9441,12 +9441,12 @@
             "avgHoldH": null,
             "medianHoldH": null,
             "roi7d": 1946.90971733,
-            "aum": 30598.16026937,
+            "aum": 30589.04954116,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -9458,17 +9458,17 @@
             "activeDays": null,
             "wr": 66,
             "pf": null,
-            "pnl7d": 22981.75474472,
+            "pnl7d": 22982.49693505,
             "dd": 67.844333,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 1923.70672364,
-            "aum": 21439.12206056,
+            "roi7d": 1923.7688493,
+            "aum": 21432.79411794,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132077671
+          "discoveredAt": 1791133503409
         },
         {
           "source": "BINANCE",
@@ -9480,17 +9480,17 @@
             "activeDays": null,
             "wr": 62.2642,
             "pf": null,
-            "pnl7d": 1268145.70169643,
+            "pnl7d": 1293154.32969581,
             "dd": 54.001721,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 343.00559809,
-            "aum": 3544720.39369292,
+            "roi7d": 349.76988345,
+            "aum": 3645851.70032318,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9502,17 +9502,17 @@
             "activeDays": null,
             "wr": 36,
             "pf": null,
-            "pnl7d": 1161564.33548997,
+            "pnl7d": 1164227.86660746,
             "dd": 28.863145,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 1373.50755485,
-            "aum": 313723.61614696,
+            "roi7d": 1376.65708346,
+            "aum": 314765.61178295,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9524,17 +9524,17 @@
             "activeDays": null,
             "wr": 58.3333,
             "pf": null,
-            "pnl7d": 742725.06768859,
+            "pnl7d": 747960.50471642,
             "dd": 9.1542307,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 60.85094913,
-            "aum": 752788.42910756,
+            "roi7d": 61.27988485,
+            "aum": 753059.82098669,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9546,17 +9546,17 @@
             "activeDays": null,
             "wr": 76.2238,
             "pf": null,
-            "pnl7d": 468841.80484494,
+            "pnl7d": 458669.93928048,
             "dd": 52.243277,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 215.05222387,
-            "aum": 3699356.92895825,
+            "roi7d": 210.38650873,
+            "aum": 3664061.2121716,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9568,17 +9568,17 @@
             "activeDays": null,
             "wr": 44.898,
             "pf": null,
-            "pnl7d": 432655.60108554,
+            "pnl7d": 431673.57233985,
             "dd": 9.5730294,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 39.74585176,
-            "aum": 1865094.67766919,
+            "roi7d": 39.65563782,
+            "aum": 1866167.00191083,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9590,17 +9590,17 @@
             "activeDays": null,
             "wr": 80,
             "pf": null,
-            "pnl7d": 431558.58288571,
+            "pnl7d": 431535.43548103,
             "dd": 14.003816,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 57.23949611,
-            "aum": 4572317.85477881,
+            "roi7d": 57.23642597,
+            "aum": 4572581.1800164,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9612,17 +9612,17 @@
             "activeDays": null,
             "wr": 66.6667,
             "pf": null,
-            "pnl7d": 406984.3442651,
+            "pnl7d": 400945.34643027,
             "dd": 24.195648,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 51.72706555,
-            "aum": 1349346.15912228,
+            "roi7d": 50.95951849,
+            "aum": 1346922.73073958,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9634,17 +9634,17 @@
             "activeDays": null,
             "wr": 73.4266,
             "pf": null,
-            "pnl7d": 373701.54846364,
+            "pnl7d": 371406.19677994,
             "dd": 51.521169,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 130.13480499,
-            "aum": 156963.95282399,
+            "roi7d": 129.33549028,
+            "aum": 153516.14913371,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9656,17 +9656,17 @@
             "activeDays": null,
             "wr": 20,
             "pf": null,
-            "pnl7d": 353897.47098556,
+            "pnl7d": 355532.52939386,
             "dd": 10.008614,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 72.32943976,
-            "aum": 896150.43436094,
+            "roi7d": 72.66361241,
+            "aum": 896504.30264028,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9678,17 +9678,17 @@
             "activeDays": null,
             "wr": 88.5714,
             "pf": null,
-            "pnl7d": 318019.53045458,
+            "pnl7d": 320195.77993028,
             "dd": 38.29547,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 100.872735,
-            "aum": 835735.15512383,
+            "roi7d": 101.5630204,
+            "aum": 843109.10715913,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9710,7 +9710,7 @@
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9732,7 +9732,7 @@
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9744,17 +9744,17 @@
             "activeDays": null,
             "wr": 42.623,
             "pf": null,
-            "pnl7d": 273417.78282744,
+            "pnl7d": 279544.43712124,
             "dd": 14.239083,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 59.00787818,
-            "aum": 1346202.19352241,
+            "roi7d": 60.33010699,
+            "aum": 1351754.16907845,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9766,17 +9766,17 @@
             "activeDays": null,
             "wr": 38.4615,
             "pf": null,
-            "pnl7d": 269949.72189542,
+            "pnl7d": 275640.27238436,
             "dd": 15.336569,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 19.87341039,
-            "aum": 600778.36077852,
+            "roi7d": 20.29234264,
+            "aum": 600221.49676126,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9788,17 +9788,17 @@
             "activeDays": null,
             "wr": 71.4286,
             "pf": null,
-            "pnl7d": 256691.13961039,
+            "pnl7d": 256979.78742899,
             "dd": 37.164477,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 51.33822792,
-            "aum": 1358249.68778702,
+            "roi7d": 51.39595748,
+            "aum": 1359444.83138762,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9810,17 +9810,17 @@
             "activeDays": null,
             "wr": 35.3448,
             "pf": null,
-            "pnl7d": 237622.65454181,
+            "pnl7d": 238923.44054181,
             "dd": 29.856052,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 239.45364242,
-            "aum": 490551.737819,
+            "roi7d": 240.76445155,
+            "aum": 491441.891519,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9832,17 +9832,17 @@
             "activeDays": null,
             "wr": 51.5152,
             "pf": null,
-            "pnl7d": 235964.99342239,
+            "pnl7d": 238353.51283272,
             "dd": 30.803295,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 86.44572924,
-            "aum": 537832.96684125,
+            "roi7d": 87.32076286,
+            "aum": 542253.53359314,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9854,17 +9854,17 @@
             "activeDays": null,
             "wr": 0,
             "pf": null,
-            "pnl7d": 225758.26899422,
+            "pnl7d": 227039.64714894,
             "dd": 10.82387,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 80.74235095,
-            "aum": 507225.62038049,
+            "roi7d": 81.20063532,
+            "aum": 507447.0665309,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9881,12 +9881,12 @@
             "avgHoldH": null,
             "medianHoldH": null,
             "roi7d": 4.16305102,
-            "aum": 5307213.06824472,
+            "aum": 5307413.06824472,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9898,17 +9898,17 @@
             "activeDays": null,
             "wr": 0,
             "pf": null,
-            "pnl7d": 180224.54331677,
+            "pnl7d": 179691.20579163,
             "dd": 11.626092,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 11.26403395,
-            "aum": 1790461.71694793,
+            "roi7d": 11.23070036,
+            "aum": 1790856.4930417,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9920,17 +9920,17 @@
             "activeDays": null,
             "wr": 75,
             "pf": null,
-            "pnl7d": 173549.27041143,
+            "pnl7d": 174938.01081143,
             "dd": 9.0988779,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 38.91358007,
-            "aum": 620566.81679175,
+            "roi7d": 39.22496635,
+            "aum": 620989.05079175,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9942,39 +9942,17 @@
             "activeDays": null,
             "wr": 98.2323,
             "pf": null,
-            "pnl7d": 161365.65386351,
+            "pnl7d": 161411.58050373,
             "dd": 11.299436,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 109.1082158,
-            "aum": 387312.66220196,
+            "roi7d": 109.13926934,
+            "aum": 387145.13816275,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
-        },
-        {
-          "source": "BINANCE",
-          "venue": "BINANCE",
-          "traderId": "5243440450445628928",
-          "name": "一个币圈的小屌丝",
-          "stats": {
-            "trades7d": null,
-            "activeDays": null,
-            "wr": 83.6066,
-            "pf": null,
-            "pnl7d": 148317.57870537,
-            "dd": 4.4445412,
-            "avgHoldH": null,
-            "medianHoldH": null,
-            "roi7d": 87.24558321,
-            "aum": 209167.19159281,
-            "daysTrading": null
-          },
-          "coverage": "PARTIAL",
-          "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -9986,17 +9964,17 @@
             "activeDays": null,
             "wr": 59.2593,
             "pf": null,
-            "pnl7d": 139422.0295202,
+            "pnl7d": 140807.25934306,
             "dd": 6.2870945,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 278.84405904,
-            "aum": 1237491.52477047,
+            "roi7d": 281.61451868,
+            "aum": 1240552.93997047,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -10008,17 +9986,17 @@
             "activeDays": null,
             "wr": 95.2278,
             "pf": null,
-            "pnl7d": 136680.09580354,
+            "pnl7d": 137645.34960737,
             "dd": 53.837329,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 255.40022601,
-            "aum": 135655.07306183,
+            "roi7d": 257.20389785,
+            "aum": 137632.78021118,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -10030,17 +10008,17 @@
             "activeDays": null,
             "wr": 80.5556,
             "pf": null,
-            "pnl7d": 131244.57910697,
+            "pnl7d": 132997.52222683,
             "dd": 8.7304012,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 34.80771361,
-            "aum": 460194.40845917,
+            "roi7d": 35.27261618,
+            "aum": 461183.22397429,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -10052,17 +10030,17 @@
             "activeDays": null,
             "wr": 0,
             "pf": null,
-            "pnl7d": 128323.26548815,
+            "pnl7d": 131047.66337821,
             "dd": 22.512708,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 36.1378096,
-            "aum": 590940.54416205,
+            "roi7d": 36.90504205,
+            "aum": 592712.42247665,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -10084,7 +10062,29 @@
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078138
+          "discoveredAt": 1791133503721
+        },
+        {
+          "source": "BINANCE",
+          "venue": "BINANCE",
+          "traderId": "5128424030963533056",
+          "name": "Opportunity Grabber",
+          "stats": {
+            "trades7d": null,
+            "activeDays": null,
+            "wr": 83.75,
+            "pf": null,
+            "pnl7d": 121977.94578746,
+            "dd": 30.045269,
+            "avgHoldH": null,
+            "medianHoldH": null,
+            "roi7d": 86.37342315,
+            "aum": 284862.60612604,
+            "daysTrading": null
+          },
+          "coverage": "PARTIAL",
+          "position": null,
+          "discoveredAt": 1791133503721
         },
         {
           "source": "BINANCE",
@@ -10106,7 +10106,7 @@
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -10128,7 +10128,7 @@
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -10140,17 +10140,17 @@
             "activeDays": null,
             "wr": 97.5,
             "pf": null,
-            "pnl7d": 10715.45374317,
+            "pnl7d": 10637.45464226,
             "dd": 0,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 236.64453962,
-            "aum": 11887.46618823,
+            "roi7d": 234.92197501,
+            "aum": 11865.05246918,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -10172,7 +10172,7 @@
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -10184,17 +10184,17 @@
             "activeDays": null,
             "wr": 85.1064,
             "pf": null,
-            "pnl7d": 6919.12354368,
+            "pnl7d": 6902.45345086,
             "dd": 0,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 162.30116427,
-            "aum": 62502.83633803,
+            "roi7d": 161.91013563,
+            "aum": 56407.50127497,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -10216,7 +10216,29 @@
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
+        },
+        {
+          "source": "BINANCE",
+          "venue": "BINANCE",
+          "traderId": "5246624605153762560",
+          "name": "小赚一点啊",
+          "stats": {
+            "trades7d": null,
+            "activeDays": null,
+            "wr": 83.3333,
+            "pf": null,
+            "pnl7d": 5843.39980789,
+            "dd": 0,
+            "avgHoldH": null,
+            "medianHoldH": null,
+            "roi7d": 21.64222151,
+            "aum": 15450.19882062,
+            "daysTrading": null
+          },
+          "coverage": "PARTIAL",
+          "position": null,
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -10238,7 +10260,7 @@
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -10250,17 +10272,17 @@
             "activeDays": null,
             "wr": 92.1053,
             "pf": null,
-            "pnl7d": 4752.04851876,
+            "pnl7d": 4774.16146232,
             "dd": 0,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 52.80053909,
-            "aum": 10024.09922063,
+            "roi7d": 53.04623847,
+            "aum": 10592.09813515,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -10282,7 +10304,7 @@
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -10294,17 +10316,17 @@
             "activeDays": null,
             "wr": 78.5714,
             "pf": null,
-            "pnl7d": 4275.96289046,
+            "pnl7d": 4258.35500028,
             "dd": 0,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 855.19257809,
-            "aum": 6148.41956063,
+            "roi7d": 851.67100005,
+            "aum": 6100.73484753,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -10326,7 +10348,7 @@
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -10338,17 +10360,61 @@
             "activeDays": null,
             "wr": 50,
             "pf": null,
-            "pnl7d": 3393.49368978,
+            "pnl7d": 3854.23730659,
             "dd": 0,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 121.1962032,
-            "aum": 7083.34443763,
+            "roi7d": 137.65133237,
+            "aum": 7357.41142097,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
+        },
+        {
+          "source": "BINANCE",
+          "venue": "BINANCE",
+          "traderId": "5247650199476020736",
+          "name": "難哄",
+          "stats": {
+            "trades7d": null,
+            "activeDays": null,
+            "wr": 25,
+            "pf": null,
+            "pnl7d": 3728.48510433,
+            "dd": 0,
+            "avgHoldH": null,
+            "medianHoldH": null,
+            "roi7d": 46.6060638,
+            "aum": 12367.36797837,
+            "daysTrading": null
+          },
+          "coverage": "PARTIAL",
+          "position": null,
+          "discoveredAt": 1791133504290
+        },
+        {
+          "source": "BINANCE",
+          "venue": "BINANCE",
+          "traderId": "5246078459429109760",
+          "name": "挥师北上剑指东南",
+          "stats": {
+            "trades7d": null,
+            "activeDays": null,
+            "wr": 50,
+            "pf": null,
+            "pnl7d": 3191.70921794,
+            "dd": 0,
+            "avgHoldH": null,
+            "medianHoldH": null,
+            "roi7d": 210.10804025,
+            "aum": 5671.60219638,
+            "daysTrading": null
+          },
+          "coverage": "PARTIAL",
+          "position": null,
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -10370,51 +10436,29 @@
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
           "venue": "BINANCE",
-          "traderId": "5246078459429109760",
-          "name": "挥师北上剑指东南",
+          "traderId": "5242425526731960833",
+          "name": "PSG-花荣",
           "stats": {
             "trades7d": null,
             "activeDays": null,
-            "wr": 50,
+            "wr": 96.9789,
             "pf": null,
-            "pnl7d": 2980.26588238,
+            "pnl7d": 3132.1957273,
             "dd": 0,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 196.18886973,
-            "aum": 5587.95490092,
+            "roi7d": 41.89443752,
+            "aum": 12233.03832026,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
-        },
-        {
-          "source": "BINANCE",
-          "venue": "BINANCE",
-          "traderId": "5243298998794159872",
-          "name": "Dangel7",
-          "stats": {
-            "trades7d": null,
-            "activeDays": null,
-            "wr": 88.2353,
-            "pf": null,
-            "pnl7d": 2795.32700782,
-            "dd": 0,
-            "avgHoldH": null,
-            "medianHoldH": null,
-            "roi7d": 27.95327007,
-            "aum": 12762.0659791,
-            "daysTrading": null
-          },
-          "coverage": "PARTIAL",
-          "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -10426,17 +10470,39 @@
             "activeDays": null,
             "wr": 73.3333,
             "pf": null,
-            "pnl7d": 2773.72839566,
+            "pnl7d": 2819.04101494,
             "dd": 0,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 277.37283956,
-            "aum": 4968.26850604,
+            "roi7d": 281.90410149,
+            "aum": 4969.80860914,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
+        },
+        {
+          "source": "BINANCE",
+          "venue": "BINANCE",
+          "traderId": "5243298998794159872",
+          "name": "Dangel7",
+          "stats": {
+            "trades7d": null,
+            "activeDays": null,
+            "wr": 88.2353,
+            "pf": null,
+            "pnl7d": 2786.13942282,
+            "dd": 0,
+            "avgHoldH": null,
+            "medianHoldH": null,
+            "roi7d": 27.86139422,
+            "aum": 12807.4275226,
+            "daysTrading": null
+          },
+          "coverage": "PARTIAL",
+          "position": null,
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -10453,34 +10519,56 @@
             "avgHoldH": null,
             "medianHoldH": null,
             "roi7d": 543.69112442,
-            "aum": 55562.46422194,
+            "aum": 55714.4680249,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
           "venue": "BINANCE",
-          "traderId": "5246377788973764097",
-          "name": "在有鱼的地方钓鱼",
+          "traderId": "5238131216214666752",
+          "name": "超级余额宝",
           "stats": {
             "trades7d": null,
             "activeDays": null,
-            "wr": 60,
+            "wr": 95.0617,
             "pf": null,
-            "pnl7d": 2573.92522918,
+            "pnl7d": 2463.40588429,
             "dd": 0,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 116.54448743,
-            "aum": 4863.74558191,
+            "roi7d": 246.34058842,
+            "aum": 18934.56372692,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
+        },
+        {
+          "source": "BINANCE",
+          "venue": "BINANCE",
+          "traderId": "5249812350309181185",
+          "name": "水木基金",
+          "stats": {
+            "trades7d": null,
+            "activeDays": null,
+            "wr": 93.75,
+            "pf": null,
+            "pnl7d": 2452.20297877,
+            "dd": 0,
+            "avgHoldH": null,
+            "medianHoldH": null,
+            "roi7d": 49.04405957,
+            "aum": 6867.48297878,
+            "daysTrading": null
+          },
+          "coverage": "PARTIAL",
+          "position": null,
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -10502,7 +10590,7 @@
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -10514,61 +10602,17 @@
             "activeDays": null,
             "wr": 75,
             "pf": null,
-            "pnl7d": 2389.05253349,
+            "pnl7d": 2395.81308187,
             "dd": 0,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 227.11999671,
-            "aum": 4461.05660985,
+            "roi7d": 227.7627016,
+            "aum": 4421.17049499,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
-        },
-        {
-          "source": "BINANCE",
-          "venue": "BINANCE",
-          "traderId": "5249812350309181185",
-          "name": "水木基金",
-          "stats": {
-            "trades7d": null,
-            "activeDays": null,
-            "wr": 100,
-            "pf": null,
-            "pnl7d": 2385.60285548,
-            "dd": 0,
-            "avgHoldH": null,
-            "medianHoldH": null,
-            "roi7d": 47.7120571,
-            "aum": 6871.85297878,
-            "daysTrading": null
-          },
-          "coverage": "PARTIAL",
-          "position": null,
-          "discoveredAt": 1791132078444
-        },
-        {
-          "source": "BINANCE",
-          "venue": "BINANCE",
-          "traderId": "5247650199476020736",
-          "name": "難哄",
-          "stats": {
-            "trades7d": null,
-            "activeDays": null,
-            "wr": 25,
-            "pf": null,
-            "pnl7d": 2304.79344473,
-            "dd": 0,
-            "avgHoldH": null,
-            "medianHoldH": null,
-            "roi7d": 28.80991805,
-            "aum": 10894.06127371,
-            "daysTrading": null
-          },
-          "coverage": "PARTIAL",
-          "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -10590,7 +10634,7 @@
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
         },
         {
           "source": "BINANCE",
@@ -10602,17 +10646,61 @@
             "activeDays": null,
             "wr": 62.5,
             "pf": null,
-            "pnl7d": 1502.91117371,
+            "pnl7d": 1556.85013332,
             "dd": 0,
             "avgHoldH": null,
             "medianHoldH": null,
-            "roi7d": 150.29111737,
-            "aum": 2325.28354432,
+            "roi7d": 155.68501333,
+            "aum": 2339.25013332,
             "daysTrading": null
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504290
+        },
+        {
+          "source": "BINANCE",
+          "venue": "BINANCE",
+          "traderId": "5251437214013425408",
+          "name": "Caramel machiato",
+          "stats": {
+            "trades7d": null,
+            "activeDays": null,
+            "wr": 33.3333,
+            "pf": null,
+            "pnl7d": 1548.57392174,
+            "dd": 0,
+            "avgHoldH": null,
+            "medianHoldH": null,
+            "roi7d": 61.94295686,
+            "aum": 4123.73305853,
+            "daysTrading": null
+          },
+          "coverage": "PARTIAL",
+          "position": null,
+          "discoveredAt": 1791133504291
+        },
+        {
+          "source": "BINANCE",
+          "venue": "BINANCE",
+          "traderId": "5233758979435132416",
+          "name": "曾美丽",
+          "stats": {
+            "trades7d": null,
+            "activeDays": null,
+            "wr": 98.8048,
+            "pf": null,
+            "pnl7d": 1493.69768189,
+            "dd": 0,
+            "avgHoldH": null,
+            "medianHoldH": null,
+            "roi7d": 74.68488409,
+            "aum": 198913.62612443,
+            "daysTrading": null
+          },
+          "coverage": "PARTIAL",
+          "position": null,
+          "discoveredAt": 1791133504291
         },
         {
           "source": "BINANCE",
@@ -10634,122 +10722,12 @@
           },
           "coverage": "PARTIAL",
           "position": null,
-          "discoveredAt": 1791132078444
-        },
-        {
-          "source": "BINANCE",
-          "venue": "BINANCE",
-          "traderId": "5251437214013425408",
-          "name": "Caramel machiato",
-          "stats": {
-            "trades7d": null,
-            "activeDays": null,
-            "wr": 33.8235,
-            "pf": null,
-            "pnl7d": 1416.35805962,
-            "dd": 0,
-            "avgHoldH": null,
-            "medianHoldH": null,
-            "roi7d": 56.65432238,
-            "aum": 4075.32999782,
-            "daysTrading": null
-          },
-          "coverage": "PARTIAL",
-          "position": null,
-          "discoveredAt": 1791132078444
-        },
-        {
-          "source": "BINANCE",
-          "venue": "BINANCE",
-          "traderId": "5107646046240277504",
-          "name": "ICryp",
-          "stats": {
-            "trades7d": null,
-            "activeDays": null,
-            "wr": 90.9091,
-            "pf": null,
-            "pnl7d": 1332.19968932,
-            "dd": 0,
-            "avgHoldH": null,
-            "medianHoldH": null,
-            "roi7d": 3.44267498,
-            "aum": 926.72388432,
-            "daysTrading": null
-          },
-          "coverage": "PARTIAL",
-          "position": null,
-          "discoveredAt": 1791132078444
-        },
-        {
-          "source": "BINANCE",
-          "venue": "BINANCE",
-          "traderId": "5249198707410132480",
-          "name": "焦虑的小宇11",
-          "stats": {
-            "trades7d": null,
-            "activeDays": null,
-            "wr": 81.8182,
-            "pf": null,
-            "pnl7d": 1304.93463121,
-            "dd": 0,
-            "avgHoldH": null,
-            "medianHoldH": null,
-            "roi7d": 65.24673156,
-            "aum": 3298.87976371,
-            "daysTrading": null
-          },
-          "coverage": "PARTIAL",
-          "position": null,
-          "discoveredAt": 1791132078444
-        },
-        {
-          "source": "BINANCE",
-          "venue": "BINANCE",
-          "traderId": "5251714750591628032",
-          "name": "榴莲大夫",
-          "stats": {
-            "trades7d": null,
-            "activeDays": null,
-            "wr": 66.6667,
-            "pf": null,
-            "pnl7d": 1297.81238281,
-            "dd": 0,
-            "avgHoldH": null,
-            "medianHoldH": null,
-            "roi7d": 259.56247656,
-            "aum": 2895.22976506,
-            "daysTrading": null
-          },
-          "coverage": "PARTIAL",
-          "position": null,
-          "discoveredAt": 1791132078444
-        },
-        {
-          "source": "BINANCE",
-          "venue": "BINANCE",
-          "traderId": "5249027591647322624",
-          "name": "回本之路886",
-          "stats": {
-            "trades7d": null,
-            "activeDays": null,
-            "wr": 90.9091,
-            "pf": null,
-            "pnl7d": 1252.06802491,
-            "dd": 0,
-            "avgHoldH": null,
-            "medianHoldH": null,
-            "roi7d": 25.72283465,
-            "aum": 500,
-            "daysTrading": null
-          },
-          "coverage": "PARTIAL",
-          "position": null,
-          "discoveredAt": 1791132078444
+          "discoveredAt": 1791133504291
         }
       ]
     },
     "OKX": {
-      "savedAt": 1791132087817,
+      "savedAt": 1791133511894,
       "items": [
         {
           "source": "OKX",
@@ -10771,7 +10749,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -10793,7 +10771,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -10815,7 +10793,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -10837,7 +10815,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -10859,7 +10837,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -10881,7 +10859,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -10903,7 +10881,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -10925,7 +10903,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -10947,7 +10925,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -10969,7 +10947,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -10991,7 +10969,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085948
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -11013,7 +10991,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085947
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -11035,7 +11013,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -11057,7 +11035,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -11079,7 +11057,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085948
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -11101,7 +11079,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -11123,7 +11101,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -11145,7 +11123,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -11167,7 +11145,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -11189,7 +11167,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -11211,7 +11189,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085948
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -11233,7 +11211,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -11255,7 +11233,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085948
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -11277,7 +11255,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085948
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -11299,7 +11277,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -11321,7 +11299,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -11343,7 +11321,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -11365,7 +11343,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -11387,7 +11365,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084258
+          "discoveredAt": 1791133509255
         },
         {
           "source": "OKX",
@@ -11409,7 +11387,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084258
+          "discoveredAt": 1791133509255
         },
         {
           "source": "OKX",
@@ -11431,7 +11409,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -11453,7 +11431,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -11475,7 +11453,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085948
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -11497,7 +11475,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -11519,7 +11497,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -11541,7 +11519,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -11563,7 +11541,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132081050
+          "discoveredAt": 1791133506575
         },
         {
           "source": "OKX",
@@ -11585,7 +11563,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084258
+          "discoveredAt": 1791133509255
         },
         {
           "source": "OKX",
@@ -11607,7 +11585,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -11629,7 +11607,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -11651,7 +11629,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -11673,7 +11651,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132080594
+          "discoveredAt": 1791133506383
         },
         {
           "source": "OKX",
@@ -11695,7 +11673,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085948
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -11717,7 +11695,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085948
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -11739,7 +11717,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084258
+          "discoveredAt": 1791133509255
         },
         {
           "source": "OKX",
@@ -11761,7 +11739,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -11783,7 +11761,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132081050
+          "discoveredAt": 1791133506575
         },
         {
           "source": "OKX",
@@ -11805,7 +11783,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -11827,7 +11805,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084740
+          "discoveredAt": 1791133509676
         },
         {
           "source": "OKX",
@@ -11849,7 +11827,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -11871,7 +11849,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -11893,7 +11871,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084258
+          "discoveredAt": 1791133509255
         },
         {
           "source": "OKX",
@@ -11915,7 +11893,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084502
+          "discoveredAt": 1791133509488
         },
         {
           "source": "OKX",
@@ -11937,7 +11915,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -11959,7 +11937,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -11981,7 +11959,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -12003,7 +11981,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132082780
+          "discoveredAt": 1791133507948
         },
         {
           "source": "OKX",
@@ -12025,7 +12003,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -12047,7 +12025,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084740
+          "discoveredAt": 1791133509676
         },
         {
           "source": "OKX",
@@ -12069,7 +12047,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132079334
+          "discoveredAt": 1791133505426
         },
         {
           "source": "OKX",
@@ -12091,7 +12069,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132080352
+          "discoveredAt": 1791133506195
         },
         {
           "source": "OKX",
@@ -12113,7 +12091,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084740
+          "discoveredAt": 1791133509676
         },
         {
           "source": "OKX",
@@ -12135,7 +12113,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084502
+          "discoveredAt": 1791133509488
         },
         {
           "source": "OKX",
@@ -12157,7 +12135,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084740
+          "discoveredAt": 1791133509676
         },
         {
           "source": "OKX",
@@ -12179,7 +12157,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084502
+          "discoveredAt": 1791133509488
         },
         {
           "source": "OKX",
@@ -12201,7 +12179,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -12223,7 +12201,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085948
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -12245,7 +12223,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -12267,7 +12245,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -12289,7 +12267,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -12311,7 +12289,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -12333,7 +12311,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084502
+          "discoveredAt": 1791133509488
         },
         {
           "source": "OKX",
@@ -12355,7 +12333,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -12377,7 +12355,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132079605
+          "discoveredAt": 1791133505616
         },
         {
           "source": "OKX",
@@ -12399,7 +12377,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -12421,7 +12399,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -12443,7 +12421,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132082780
+          "discoveredAt": 1791133507948
         },
         {
           "source": "OKX",
@@ -12465,7 +12443,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084740
+          "discoveredAt": 1791133509676
         },
         {
           "source": "OKX",
@@ -12487,7 +12465,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132079605
+          "discoveredAt": 1791133505616
         },
         {
           "source": "OKX",
@@ -12509,7 +12487,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -12531,7 +12509,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084502
+          "discoveredAt": 1791133509488
         },
         {
           "source": "OKX",
@@ -12553,7 +12531,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -12575,7 +12553,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -12597,7 +12575,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132081050
+          "discoveredAt": 1791133506575
         },
         {
           "source": "OKX",
@@ -12619,7 +12597,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -12641,7 +12619,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084982
+          "discoveredAt": 1791133509858
         },
         {
           "source": "OKX",
@@ -12663,7 +12641,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084740
+          "discoveredAt": 1791133509676
         },
         {
           "source": "OKX",
@@ -12685,7 +12663,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -12707,7 +12685,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -12729,7 +12707,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084740
+          "discoveredAt": 1791133509676
         },
         {
           "source": "OKX",
@@ -12751,7 +12729,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -12773,7 +12751,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084502
+          "discoveredAt": 1791133509488
         },
         {
           "source": "OKX",
@@ -12795,7 +12773,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -12817,7 +12795,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132082780
+          "discoveredAt": 1791133507948
         },
         {
           "source": "OKX",
@@ -12839,7 +12817,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -12861,7 +12839,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -12883,7 +12861,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -12905,7 +12883,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132082092
+          "discoveredAt": 1791133507426
         },
         {
           "source": "OKX",
@@ -12927,7 +12905,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -12949,7 +12927,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084258
+          "discoveredAt": 1791133509255
         },
         {
           "source": "OKX",
@@ -12971,7 +12949,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084982
+          "discoveredAt": 1791133509858
         },
         {
           "source": "OKX",
@@ -12993,7 +12971,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -13015,7 +12993,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -13037,7 +13015,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085948
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -13059,7 +13037,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085948
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -13081,7 +13059,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -13103,7 +13081,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -13125,7 +13103,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -13147,7 +13125,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084982
+          "discoveredAt": 1791133509858
         },
         {
           "source": "OKX",
@@ -13169,7 +13147,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132080594
+          "discoveredAt": 1791133506383
         },
         {
           "source": "OKX",
@@ -13191,7 +13169,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132080594
+          "discoveredAt": 1791133506383
         },
         {
           "source": "OKX",
@@ -13213,7 +13191,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085948
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -13235,7 +13213,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132081050
+          "discoveredAt": 1791133506575
         },
         {
           "source": "OKX",
@@ -13257,7 +13235,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084502
+          "discoveredAt": 1791133509488
         },
         {
           "source": "OKX",
@@ -13279,7 +13257,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084740
+          "discoveredAt": 1791133509676
         },
         {
           "source": "OKX",
@@ -13301,7 +13279,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084740
+          "discoveredAt": 1791133509676
         },
         {
           "source": "OKX",
@@ -13323,7 +13301,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -13345,7 +13323,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132081285
+          "discoveredAt": 1791133506764
         },
         {
           "source": "OKX",
@@ -13367,7 +13345,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132081285
+          "discoveredAt": 1791133506764
         },
         {
           "source": "OKX",
@@ -13389,7 +13367,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085948
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -13411,7 +13389,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132081285
+          "discoveredAt": 1791133506764
         },
         {
           "source": "OKX",
@@ -13433,7 +13411,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -13455,7 +13433,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -13477,7 +13455,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132081285
+          "discoveredAt": 1791133506764
         },
         {
           "source": "OKX",
@@ -13499,7 +13477,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132081285
+          "discoveredAt": 1791133506764
         },
         {
           "source": "OKX",
@@ -13521,7 +13499,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -13543,7 +13521,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085455
+          "discoveredAt": 1791133510229
         },
         {
           "source": "OKX",
@@ -13565,7 +13543,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084982
+          "discoveredAt": 1791133509858
         },
         {
           "source": "OKX",
@@ -13587,7 +13565,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084982
+          "discoveredAt": 1791133509858
         },
         {
           "source": "OKX",
@@ -13609,7 +13587,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132081821
+          "discoveredAt": 1791133507188
         },
         {
           "source": "OKX",
@@ -13631,7 +13609,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084982
+          "discoveredAt": 1791133509858
         },
         {
           "source": "OKX",
@@ -13653,7 +13631,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132081821
+          "discoveredAt": 1791133507188
         },
         {
           "source": "OKX",
@@ -13675,7 +13653,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132081821
+          "discoveredAt": 1791133507188
         },
         {
           "source": "OKX",
@@ -13697,7 +13675,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085208
+          "discoveredAt": 1791133510035
         },
         {
           "source": "OKX",
@@ -13719,7 +13697,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085208
+          "discoveredAt": 1791133510035
         },
         {
           "source": "OKX",
@@ -13741,7 +13719,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085208
+          "discoveredAt": 1791133510035
         },
         {
           "source": "OKX",
@@ -13763,7 +13741,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -13785,7 +13763,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132082092
+          "discoveredAt": 1791133507426
         },
         {
           "source": "OKX",
@@ -13807,7 +13785,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132082092
+          "discoveredAt": 1791133507426
         },
         {
           "source": "OKX",
@@ -13829,7 +13807,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132082092
+          "discoveredAt": 1791133507426
         },
         {
           "source": "OKX",
@@ -13851,7 +13829,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084982
+          "discoveredAt": 1791133509858
         },
         {
           "source": "OKX",
@@ -13873,7 +13851,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132082092
+          "discoveredAt": 1791133507426
         },
         {
           "source": "OKX",
@@ -13895,7 +13873,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085208
+          "discoveredAt": 1791133510035
         },
         {
           "source": "OKX",
@@ -13917,7 +13895,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132082541
+          "discoveredAt": 1791133507755
         },
         {
           "source": "OKX",
@@ -13939,7 +13917,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085208
+          "discoveredAt": 1791133510035
         },
         {
           "source": "OKX",
@@ -13961,7 +13939,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132082541
+          "discoveredAt": 1791133507755
         },
         {
           "source": "OKX",
@@ -13983,7 +13961,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132082541
+          "discoveredAt": 1791133507755
         },
         {
           "source": "OKX",
@@ -14005,7 +13983,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -14027,7 +14005,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132082541
+          "discoveredAt": 1791133507755
         },
         {
           "source": "OKX",
@@ -14049,7 +14027,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084982
+          "discoveredAt": 1791133509858
         },
         {
           "source": "OKX",
@@ -14071,7 +14049,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132082780
+          "discoveredAt": 1791133507948
         },
         {
           "source": "OKX",
@@ -14093,7 +14071,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132082780
+          "discoveredAt": 1791133507948
         },
         {
           "source": "OKX",
@@ -14115,7 +14093,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085948
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -14137,7 +14115,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084982
+          "discoveredAt": 1791133509858
         },
         {
           "source": "OKX",
@@ -14159,7 +14137,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -14181,7 +14159,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -14203,7 +14181,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132082780
+          "discoveredAt": 1791133507948
         },
         {
           "source": "OKX",
@@ -14225,7 +14203,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132082780
+          "discoveredAt": 1791133507948
         },
         {
           "source": "OKX",
@@ -14247,7 +14225,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -14269,7 +14247,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084982
+          "discoveredAt": 1791133509858
         },
         {
           "source": "OKX",
@@ -14291,7 +14269,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085947
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -14313,7 +14291,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -14335,7 +14313,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085948
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -14357,7 +14335,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085948
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -14379,7 +14357,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132084982
+          "discoveredAt": 1791133509858
         },
         {
           "source": "OKX",
@@ -14401,7 +14379,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085695
+          "discoveredAt": 1791133510414
         },
         {
           "source": "OKX",
@@ -14423,7 +14401,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085948
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -14445,7 +14423,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132085948
+          "discoveredAt": 1791133510600
         },
         {
           "source": "OKX",
@@ -14467,7 +14445,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -14489,7 +14467,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -14511,7 +14489,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086200
+          "discoveredAt": 1791133510842
         },
         {
           "source": "OKX",
@@ -14533,7 +14511,7 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         },
         {
           "source": "OKX",
@@ -14555,48 +14533,48 @@
           },
           "coverage": "DISCOVERY_ONLY",
           "position": null,
-          "discoveredAt": 1791132086436
+          "discoveredAt": 1791133511028
         }
       ]
     },
     "BYBIT": {
-      "savedAt": 1791132087817,
+      "savedAt": 1791133511894,
       "items": []
     },
     "BITGET": {
-      "savedAt": 1791132087817,
+      "savedAt": 1791133511894,
       "items": []
     },
     "KUCOIN": {
-      "savedAt": 1791132087817,
+      "savedAt": 1791133511894,
       "items": []
     },
     "GATE": {
-      "savedAt": 1791132087817,
+      "savedAt": 1791133511894,
       "items": []
     },
     "MEXC": {
-      "savedAt": 1791132087817,
+      "savedAt": 1791133511894,
       "items": []
     },
     "PHEMEX": {
-      "savedAt": 1791132087817,
+      "savedAt": 1791133511894,
       "items": []
     },
     "BINGX": {
-      "savedAt": 1791132087817,
+      "savedAt": 1791133511894,
       "items": []
     },
     "COINEX": {
-      "savedAt": 1791132087817,
+      "savedAt": 1791133511894,
       "items": []
     },
     "DYDX": {
-      "savedAt": 1791132087817,
+      "savedAt": 1791133511894,
       "items": []
     },
     "PARADEX": {
-      "savedAt": 1791132087817,
+      "savedAt": 1791133511894,
       "items": []
     }
   }

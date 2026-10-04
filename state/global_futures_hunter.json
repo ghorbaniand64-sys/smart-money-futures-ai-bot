@@ -1,6 +1,6 @@
 {
-  "version": "GFTSH-V1.4.0-GLOBAL-FUTURES-COVERAGE-AWARE",
-  "updatedAt": 1791132112865,
+  "version": "GFTSH-V1.5.0-GLOBAL-FUTURES-SOURCE-AUDIT",
+  "updatedAt": 1791133578276,
   "statuses": [
     {
       "source": "HYPERLIQUID",
@@ -13,7 +13,7 @@
       "source": "BINANCE",
       "class": "DISCOVERY",
       "state": "OK",
-      "discovered": 88,
+      "discovered": 87,
       "error": null
     },
     {
@@ -94,8 +94,8 @@
       "error": "NO_VERIFIED_PUBLIC_READ_ONLY_TRADER_DISCOVERY"
     }
   ],
-  "discovered": 661,
-  "verified": 200,
+  "discovered": 660,
+  "verified": 240,
   "signals": 0,
   "top": []
 }
