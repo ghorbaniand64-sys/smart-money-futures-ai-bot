@@ -1,51 +1,51 @@
-name: Global Futures Top Trader & Signal Hunter
-
+name: Global Futures Top-Trader & Signal Hunter
 on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
-
 permissions:
   contents: write
-
-env:
-  NODE_VERSION: '22'
-  EXECUTION_ENABLED: 'false'
-
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 5
     environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup Node
+      - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '22'
           package-manager-cache: false
-
-      - name: Verify worker
+      - name: Install worker
         shell: bash
         run: |
           set -e
           test -f crypto_whale_signal_engine.mjs
           node --check crypto_whale_signal_engine.mjs
-          grep -q 'GFTSH-V1.6.0-GLOBAL-FUTURES-RATE-LIMIT-AUDIT' crypto_whale_signal_engine.mjs
-
-      - name: Run GFTSH V1.6
+      - name: Verify V1.7 contract
         shell: bash
+        run: |
+          set -e
+          grep -q 'GFTSH-V1.7.0-GLOBAL-FUTURES-BOUNDED-AUDIT' crypto_whale_signal_engine.mjs
+          grep -q 'VERIFY_CONCURRENCY' crypto_whale_signal_engine.mjs
+          grep -q 'VERIFY_TIMEOUT_MS' crypto_whale_signal_engine.mjs
+          grep -q 'mapBounded' crypto_whale_signal_engine.mjs
+          grep -q 'READ-ONLY' crypto_whale_signal_engine.mjs
+          echo 'V1.7 CONTRACT PASS'
+      - name: Run GFTSH V1.7
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GFTSH_HL_VERIFY_LIMIT: '120'
-          GFTSH_OKX_VERIFY_LIMIT: '120'
-          GFTSH_VERIFY_LIMIT: '240'
-          GFTSH_MAX_RETRIES: '3'
-          GFTSH_HL_REQ_GAP_MS: '120'
-          GFTSH_OKX_REQ_GAP_MS: '450'
+          GFTSH_VERIFY_LIMIT: '80'
+          GFTSH_HL_VERIFY_LIMIT: '40'
+          GFTSH_OKX_VERIFY_LIMIT: '40'
+          GFTSH_VERIFY_CONCURRENCY: '4'
+          GFTSH_VERIFY_TIMEOUT_MS: '9000'
+          GFTSH_HTTP_TIMEOUT_MS: '9000'
+          GFTSH_MAX_RETRIES: '1'
+        shell: bash
         run: |
           set -e
           node crypto_whale_signal_engine.mjs
