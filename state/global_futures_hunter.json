@@ -1,6 +1,6 @@
 {
   "version": "GFTSH-V1.1.0-GLOBAL-FUTURES-MULTI-VENUE",
-  "updatedAt": 1791125086163,
+  "updatedAt": 1791128568283,
   "sources": [
     {
       "source": "HYPERLIQUID",
@@ -12,13 +12,13 @@
       "source": "BINANCE",
       "healthy": false,
       "discovered": 0,
-      "error": "binance:/bapi/futures/v1/friendly/future/copy-trade/lead-portfolio/query-lead-portfolio:HTTP_404:{\"error\":\"Not Found\",\"timestamp\":1791125079636,\"message\":\"No message available\",\"status\":404,\"path\":\"/v1/friendly/future/copy-trade/lead-portfolio/query-lead-portfolio\"}"
+      "error": "BINANCE_NO_PUBLIC_PORTFOLIOS"
     },
     {
       "source": "OKX",
       "healthy": false,
       "discovered": 0,
-      "error": "OKX:HTTP_400:{\"code\":\"51000\",\"data\":[],\"msg\":\"Parameter limit error\"}"
+      "error": "OKX_NO_PUBLIC_LEAD_TRADERS"
     },
     {
       "source": "BYBIT",
@@ -30,7 +30,7 @@
       "source": "BITGET",
       "healthy": false,
       "discovered": 0,
-      "error": "BITGET:HTTP_404:{\"code\":\"40404\",\"msg\":\"Request URL NOT FOUND\",\"requestTime\":1791125082558,\"data\":null}"
+      "error": "BITGET:HTTP_404:{\"code\":\"40404\",\"msg\":\"Request URL NOT FOUND\",\"requestTime\":1791128563710,\"data\":null}"
     },
     {
       "source": "KUCOIN",
