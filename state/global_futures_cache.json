@@ -1,0 +1,6406 @@
+{
+  "schema": "GFTSH-V1.0.0-GLOBAL-CEX-DEX-FUTURES-ONLY",
+  "generatedAt": 1791124284936,
+  "traders": [
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x24de6b77e8bc31c40aa452926daa6bbab7a71b0f",
+      "name": "0x24de6b…a71b0f",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x24de6b77e8bc31c40aa452926daa6bbab7a71b0f",
+        "accountValue": "3328227577.5287928581",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "222730721.8831830025",
+              "roi": "0.0717178927",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "693041326.2939059734",
+              "roi": "0.262916697",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "676456987.7990490198",
+              "roi": "0.2550129656",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-500.0",
+              "roi": "-0.1",
+              "vlm": "0.0"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x24de6b77e8bc31c40aa452926daa6bbab7a71b0f",
+        "pnl7d": "693041326.2939059734",
+        "roi7d": 26.291669699999996
+      },
+      "metrics": {
+        "pnl7d": 693041326.293906,
+        "roi7d": 26.291669699999996,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xb83de012dba672c76a7dbbbf3e459cb59d7d6e36",
+      "name": "0xb83de0…7d6e36",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xb83de012dba672c76a7dbbbf3e459cb59d7d6e36",
+        "accountValue": "225162065.4267390072",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-4620099.4786290005",
+              "roi": "-0.020106432",
+              "vlm": "18151830.4100000001"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "16617266.7172669992",
+              "roi": "0.125242262",
+              "vlm": "64302718.1700000018"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-17836432.5152949989",
+              "roi": "-0.0706418813",
+              "vlm": "544072298.9199999571"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "67987457.3967389911",
+              "roi": "0.4149202376",
+              "vlm": "5556970349.0"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xb83de012dba672c76a7dbbbf3e459cb59d7d6e36",
+        "pnl7d": "16617266.7172669992",
+        "roi7d": 12.5242262
+      },
+      "metrics": {
+        "pnl7d": 16617266.717267,
+        "roi7d": 12.5242262,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x5b5d51203a0f9079f8aeb098a6523a13f298c060",
+      "name": "0x5b5d51…98c060",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x5b5d51203a0f9079f8aeb098a6523a13f298c060",
+        "accountValue": "244129246.1121889949",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-6743923.6242730003",
+              "roi": "-0.026881805",
+              "vlm": "515135.49"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "15134305.0810029991",
+              "roi": "0.0865190299",
+              "vlm": "38662924.5700000003"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-29590698.7428199984",
+              "roi": "-0.0990583293",
+              "vlm": "446333909.9700000286"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "93594606.7521889955",
+              "roi": "0.2523146728",
+              "vlm": "5677124512.3800001144"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x5b5d51203a0f9079f8aeb098a6523a13f298c060",
+        "pnl7d": "15134305.0810029991",
+        "roi7d": 8.65190299
+      },
+      "metrics": {
+        "pnl7d": 15134305.081003,
+        "roi7d": 8.65190299,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x936cf4fb95c30ce83f658b5bbb247e4bb381bb0f",
+      "name": "0x936cf4…81bb0f",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x936cf4fb95c30ce83f658b5bbb247e4bb381bb0f",
+        "accountValue": "26130428.8159300014",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-300767.089016",
+              "roi": "-0.0117338661",
+              "vlm": "20774654.7100000009"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "7153707.8415839998",
+              "roi": "0.1977357273",
+              "vlm": "350564317.6299999952"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-330848.357599",
+              "roi": "-0.0071910435",
+              "vlm": "1012929955.5299999714"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "5357897.79593",
+              "roi": "0.1385158356",
+              "vlm": "3890283236.5700001717"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x936cf4fb95c30ce83f658b5bbb247e4bb381bb0f",
+        "pnl7d": "7153707.8415839998",
+        "roi7d": 19.773572729999998
+      },
+      "metrics": {
+        "pnl7d": 7153707.841584,
+        "roi7d": 19.773572729999998,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xdd53c5297309130ab5fe5623dc905752e3342b13",
+      "name": "0xdd53c5…342b13",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xdd53c5297309130ab5fe5623dc905752e3342b13",
+        "accountValue": "51342159.9248889983",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-2684662.5128819998",
+              "roi": "-0.0496912902",
+              "vlm": "832329.59"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "6873746.4156170003",
+              "roi": "0.1545759309",
+              "vlm": "16572354.8599999994"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-24491900.6584330015",
+              "roi": "-0.3229670213",
+              "vlm": "127890718.1899999976"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-40208031.4751110002",
+              "roi": "-0.4391911241",
+              "vlm": "240148299.7800000012"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xdd53c5297309130ab5fe5623dc905752e3342b13",
+        "pnl7d": "6873746.4156170003",
+        "roi7d": 15.45759309
+      },
+      "metrics": {
+        "pnl7d": 6873746.415617,
+        "roi7d": 15.45759309,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x7fdafde5cfb5465924316eced2d3715494c517d1",
+      "name": "BobbyBigSize",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x7fdafde5cfb5465924316eced2d3715494c517d1",
+        "accountValue": "57529950.2765699923",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-1028096.585335",
+              "roi": "-0.0145708506",
+              "vlm": "41714215.3400000036"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "6564113.9600410005",
+              "roi": "0.1054775481",
+              "vlm": "619724850.9199999571"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-12775636.9221940003",
+              "roi": "-0.1363945898",
+              "vlm": "2464418607.6300001144"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "128542895.6665700078",
+              "roi": "1.9178801352",
+              "vlm": "19371449848.7000007629"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": "BobbyBigSize",
+        "address": "0x7fdafde5cfb5465924316eced2d3715494c517d1",
+        "pnl7d": "6564113.9600410005",
+        "roi7d": 10.54775481
+      },
+      "metrics": {
+        "pnl7d": 6564113.9600410005,
+        "roi7d": 10.54775481,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x87f9cd15f5050a9283b8896300f7c8cf69ece2cf",
+      "name": "0x87f9cd…ece2cf",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x87f9cd15f5050a9283b8896300f7c8cf69ece2cf",
+        "accountValue": "112232426.8827449381",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-56339.3367989998",
+              "roi": "-0.0004996233",
+              "vlm": "147546895.7499999702"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "5365207.8253840003",
+              "roi": "0.0719807232",
+              "vlm": "4233695789.4000005722"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-11558119.3580890018",
+              "roi": "-0.0739768918",
+              "vlm": "20339581803.0199966431"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "47598493.5827450007",
+              "roi": "0.2115984076",
+              "vlm": "602055261105.3802490234"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x87f9cd15f5050a9283b8896300f7c8cf69ece2cf",
+        "pnl7d": "5365207.8253840003",
+        "roi7d": 7.19807232
+      },
+      "metrics": {
+        "pnl7d": 5365207.825384,
+        "roi7d": 7.19807232,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xecb63caa47c7c4e77f60f1ce858cf28dc2b82b00",
+      "name": "0xecb63c…b82b00",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xecb63caa47c7c4e77f60f1ce858cf28dc2b82b00",
+        "accountValue": "121185700.8655039966",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-819420.732331",
+              "roi": "-0.0066988195",
+              "vlm": "128628852.0400000066"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "5172706.8808030002",
+              "roi": "0.0749307996",
+              "vlm": "2785256567.2399997711"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-7952616.1955519998",
+              "roi": "-0.0448388148",
+              "vlm": "13879713357.9899997711"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "198526444.9355039895",
+              "roi": "1.9668415164",
+              "vlm": "306159112823.2899780273"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xecb63caa47c7c4e77f60f1ce858cf28dc2b82b00",
+        "pnl7d": "5172706.8808030002",
+        "roi7d": 7.49307996
+      },
+      "metrics": {
+        "pnl7d": 5172706.880803,
+        "roi7d": 7.49307996,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xfc27136e42af1732ddc9ce2605ea9bff1b959d9d",
+      "name": "0xfc2713…959d9d",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xfc27136e42af1732ddc9ce2605ea9bff1b959d9d",
+        "accountValue": "21366122.5170149989",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-537406.43184",
+              "roi": "-0.0245351529",
+              "vlm": "7751046.8099999996"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "4948234.1543680001",
+              "roi": "0.2344027009",
+              "vlm": "613872268.4299999475"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-6393560.7765370002",
+              "roi": "-0.1392850143",
+              "vlm": "2733588678.5500001907"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-1860171.9629850001",
+              "roi": "-0.0449650015",
+              "vlm": "11226601164.9599990845"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xfc27136e42af1732ddc9ce2605ea9bff1b959d9d",
+        "pnl7d": "4948234.1543680001",
+        "roi7d": 23.440270090000002
+      },
+      "metrics": {
+        "pnl7d": 4948234.154368,
+        "roi7d": 23.440270090000002,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x484bc1608211d0604bf70bae72792a56884562f8",
+      "name": "0x484bc1…4562f8",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x484bc1608211d0604bf70bae72792a56884562f8",
+        "accountValue": "53989686.0461260006",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-140097.445684",
+              "roi": "-0.0025881719",
+              "vlm": "118315.14"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "4911411.5865420001",
+              "roi": "0.5861265385",
+              "vlm": "2305995.8300000001"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-4385960.2395400004",
+              "roi": "-0.0751332558",
+              "vlm": "8168021.0100000007"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-1821765.9738740001",
+              "roi": "-0.0326401025",
+              "vlm": "180975246.7600000203"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x484bc1608211d0604bf70bae72792a56884562f8",
+        "pnl7d": "4911411.5865420001",
+        "roi7d": 58.612653849999994
+      },
+      "metrics": {
+        "pnl7d": 4911411.586542,
+        "roi7d": 58.612653849999994,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x880ac484a1743862989a441d6d867238c7aa311c",
+      "name": "x.com/SilkBtc",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x880ac484a1743862989a441d6d867238c7aa311c",
+        "accountValue": "19763076.8187870011",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-124194.797642",
+              "roi": "-0.0056742933",
+              "vlm": "54093.94"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "4822749.2529030005",
+              "roi": "0.2317323348",
+              "vlm": "3310487.8500000001"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "3964788.2760979999",
+              "roi": "0.1357095662",
+              "vlm": "40980352.2800000012"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "119678292.028787002",
+              "roi": "1.7326280734",
+              "vlm": "6680151258.3900003433"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": "x.com/SilkBtc",
+        "address": "0x880ac484a1743862989a441d6d867238c7aa311c",
+        "pnl7d": "4822749.2529030005",
+        "roi7d": 23.17323348
+      },
+      "metrics": {
+        "pnl7d": 4822749.252903,
+        "roi7d": 23.17323348,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x023a3d058020fb76cca98f01b3c48c8938a22355",
+      "name": "Auros",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x023a3d058020fb76cca98f01b3c48c8938a22355",
+        "accountValue": "26310542.5750759989",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-286618.220228",
+              "roi": "-0.0107762713",
+              "vlm": "41593335.25"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "4209272.8007789999",
+              "roi": "0.1326335346",
+              "vlm": "606026303.3300000429"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-9171061.1684060004",
+              "roi": "-0.1820788371",
+              "vlm": "2667793657.3100004196"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "49617895.9450760037",
+              "roi": "1.2406098788",
+              "vlm": "243132318663.5299987793"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": "Auros",
+        "address": "0x023a3d058020fb76cca98f01b3c48c8938a22355",
+        "pnl7d": "4209272.8007789999",
+        "roi7d": 13.26335346
+      },
+      "metrics": {
+        "pnl7d": 4209272.800779,
+        "roi7d": 13.26335346,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x856c35038594767646266bc7fd68dc26480e910d",
+      "name": "0x856c35…0e910d",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x856c35038594767646266bc7fd68dc26480e910d",
+        "accountValue": "80501571.5572170019",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-683935.2299489999",
+              "roi": "-0.0084036084",
+              "vlm": "18983644.1800000034"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "3920613.0797989992",
+              "roi": "0.0849947886",
+              "vlm": "378417868.5699998736"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "1722219.862038",
+              "roi": "0.0211803787",
+              "vlm": "1823929065.0100002289"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "46096594.3172169998",
+              "roi": "0.570756503",
+              "vlm": "26527876644.7400016785"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x856c35038594767646266bc7fd68dc26480e910d",
+        "pnl7d": "3920613.0797989992",
+        "roi7d": 8.49947886
+      },
+      "metrics": {
+        "pnl7d": 3920613.0797989992,
+        "roi7d": 8.49947886,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xd47587702a91731dc1089b5db0932cf820151a91",
+      "name": "0xd47587…151a91",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xd47587702a91731dc1089b5db0932cf820151a91",
+        "accountValue": "27692165.2513509989",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-917066.2180240001",
+              "roi": "-0.0320549057",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "3525041.7706300002",
+              "roi": "0.1352228445",
+              "vlm": "5980236.5499999998"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-7906160.7028249996",
+              "roi": "-0.1896091638",
+              "vlm": "65797372.4399999976"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "60222036.8165949881",
+              "roi": "0.383550914",
+              "vlm": "5418513971.3000001907"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xd47587702a91731dc1089b5db0932cf820151a91",
+        "pnl7d": "3525041.7706300002",
+        "roi7d": 13.522284449999999
+      },
+      "metrics": {
+        "pnl7d": 3525041.77063,
+        "roi7d": 13.522284449999999,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xe0ffc829349c88c159462942ad885f12130e7610",
+      "name": "0xe0ffc8…0e7610",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xe0ffc829349c88c159462942ad885f12130e7610",
+        "accountValue": "8333856.8743319996",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-174663.896316",
+              "roi": "-0.0205281154",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "3201328.2966990001",
+              "roi": "0.6676176447",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "1654322.434265",
+              "roi": "0.2476703203",
+              "vlm": "16765705.5500000007"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-2982096.8647090001",
+              "roi": "-0.2640602071",
+              "vlm": "264214462.7199999988"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xe0ffc829349c88c159462942ad885f12130e7610",
+        "pnl7d": "3201328.2966990001",
+        "roi7d": 66.76176447
+      },
+      "metrics": {
+        "pnl7d": 3201328.296699,
+        "roi7d": 66.76176447,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xfc667adba8d4837586078f4fdcdc29804337ca06",
+      "name": "0xfc667a…37ca06",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xfc667adba8d4837586078f4fdcdc29804337ca06",
+        "accountValue": "111433507.5088319927",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-56685.839926",
+              "roi": "-0.0005084379",
+              "vlm": "37989565.1000000015"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "3163136.751433",
+              "roi": "0.0282496537",
+              "vlm": "1337147812.3800001144"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-417471.86124",
+              "roi": "-0.0033437612",
+              "vlm": "5143505996.0500001907"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "22163700.8688319996",
+              "roi": "0.2201093119",
+              "vlm": "53823425779.5899963379"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xfc667adba8d4837586078f4fdcdc29804337ca06",
+        "pnl7d": "3163136.751433",
+        "roi7d": 2.8249653699999997
+      },
+      "metrics": {
+        "pnl7d": 3163136.751433,
+        "roi7d": 2.8249653699999997,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xad59ed47c226987cf458a63428ca10887773ba81",
+      "name": "0xad59ed…73ba81",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xad59ed47c226987cf458a63428ca10887773ba81",
+        "accountValue": "7748490.2949090004",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-187756.366578",
+              "roi": "-0.023658081",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "2934292.8152319998",
+              "roi": "0.6095081948",
+              "vlm": "30474.81"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-3131806.5973399999",
+              "roi": "-0.2878420165",
+              "vlm": "831463.24"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-7506838.0835560001",
+              "roi": "-0.5929692366",
+              "vlm": "34317322.0"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xad59ed47c226987cf458a63428ca10887773ba81",
+        "pnl7d": "2934292.8152319998",
+        "roi7d": 60.95081947999999
+      },
+      "metrics": {
+        "pnl7d": 2934292.815232,
+        "roi7d": 60.95081947999999,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xd4c1f7e8d876c4749228d515473d36f919583d1d",
+      "name": "0xd4c1f7…583d1d",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xd4c1f7e8d876c4749228d515473d36f919583d1d",
+        "accountValue": "5517609.0362649998",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-368531.305901",
+              "roi": "-0.0583559009",
+              "vlm": "7790554.7199999997"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "2494489.7352550002",
+              "roi": "0.3011581434",
+              "vlm": "139034062.2899999917"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-3782674.4125660001",
+              "roi": "-0.2067261384",
+              "vlm": "751713548.8600001335"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "18954753.8562649973",
+              "roi": "1.3012147463",
+              "vlm": "8690477033.2000007629"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xd4c1f7e8d876c4749228d515473d36f919583d1d",
+        "pnl7d": "2494489.7352550002",
+        "roi7d": 30.115814340000004
+      },
+      "metrics": {
+        "pnl7d": 2494489.735255,
+        "roi7d": 30.115814340000004,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x85ecf584f25db6f146718b86d493e33c5af72052",
+      "name": "0x85ecf5…f72052",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x85ecf584f25db6f146718b86d493e33c5af72052",
+        "accountValue": "63100568.6371790022",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "315849.658319",
+              "roi": "0.0050122627",
+              "vlm": "337321859.810000062"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "2485363.5030449997",
+              "roi": "0.0430941691",
+              "vlm": "9093959842.0"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "700907.4378320004",
+              "roi": "0.0104263468",
+              "vlm": "40378787917.6000061035"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "6208847.3021109998",
+              "roi": "0.0514568297",
+              "vlm": "221192486283.8399658203"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x85ecf584f25db6f146718b86d493e33c5af72052",
+        "pnl7d": "2485363.5030449997",
+        "roi7d": 4.30941691
+      },
+      "metrics": {
+        "pnl7d": 2485363.5030449997,
+        "roi7d": 4.30941691,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x7717a7a245d9f950e586822b8c9b46863ed7bd7e",
+      "name": "0x7717a7…d7bd7e",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x7717a7a245d9f950e586822b8c9b46863ed7bd7e",
+        "accountValue": "12455881.8573730011",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-230242.875993",
+              "roi": "-0.0181489037",
+              "vlm": "47883561.5900000036"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "2424757.8411900001",
+              "roi": "0.2291432768",
+              "vlm": "573278258.0200001001"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "699483.521675",
+              "roi": "0.0527604334",
+              "vlm": "2396834423.5599999428"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "22245717.3673729971",
+              "roi": "1.0898423174",
+              "vlm": "30410093124.4399986267"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x7717a7a245d9f950e586822b8c9b46863ed7bd7e",
+        "pnl7d": "2424757.8411900001",
+        "roi7d": 22.91432768
+      },
+      "metrics": {
+        "pnl7d": 2424757.84119,
+        "roi7d": 22.91432768,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x99967871e6c4f9a5185abc57edede9e9540191f6",
+      "name": "0x999678…0191f6",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x99967871e6c4f9a5185abc57edede9e9540191f6",
+        "accountValue": "7290060.0830220003",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-246068.967353",
+              "roi": "-0.0326519381",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "2342151.6886519999",
+              "roi": "0.4733627134",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "443491.206756",
+              "roi": "0.0647757607",
+              "vlm": "16585453.9499999993"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "23227294.6230220012",
+              "roi": "6.4187229371",
+              "vlm": "105090487.0900000036"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x99967871e6c4f9a5185abc57edede9e9540191f6",
+        "pnl7d": "2342151.6886519999",
+        "roi7d": 47.33627134
+      },
+      "metrics": {
+        "pnl7d": 2342151.688652,
+        "roi7d": 47.33627134,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x45d26f28196d226497130c4bac709d808fed4029",
+      "name": "0x45d26f…ed4029",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x45d26f28196d226497130c4bac709d808fed4029",
+        "accountValue": "58913377.9006009996",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-2579358.7276960001",
+              "roi": "-0.0419457463",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "2315683.4062609999",
+              "roi": "0.0719297603",
+              "vlm": "555224.9300000001"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-14159917.7291960008",
+              "roi": "-0.1937769141",
+              "vlm": "3988546.1600000001"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "43840157.3106010035",
+              "roi": "0.9302675287",
+              "vlm": "762292964.1900000572"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x45d26f28196d226497130c4bac709d808fed4029",
+        "pnl7d": "2315683.4062609999",
+        "roi7d": 7.1929760300000005
+      },
+      "metrics": {
+        "pnl7d": 2315683.406261,
+        "roi7d": 7.1929760300000005,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xfe7ce058edc7cfcde9ef8262ba51f8d4796ab7ae",
+      "name": "0xfe7ce0…6ab7ae",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xfe7ce058edc7cfcde9ef8262ba51f8d4796ab7ae",
+        "accountValue": "25101262.0694870017",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-2889300.9845980001",
+              "roi": "-0.1032241109",
+              "vlm": "3388739.8799999999"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "2193269.8987449999",
+              "roi": "0.0737038932",
+              "vlm": "99237641.9900000095"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-20426864.0107659996",
+              "roi": "-0.3897169654",
+              "vlm": "368294561.0200000405"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-14051413.3705129996",
+              "roi": "-0.2943072652",
+              "vlm": "1029827206.7300000191"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xfe7ce058edc7cfcde9ef8262ba51f8d4796ab7ae",
+        "pnl7d": "2193269.8987449999",
+        "roi7d": 7.370389319999999
+      },
+      "metrics": {
+        "pnl7d": 2193269.898745,
+        "roi7d": 7.370389319999999,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x57dd78cd36e76e2011e8f6dc25cabbaba994494b",
+      "name": "0x57dd78…94494b",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x57dd78cd36e76e2011e8f6dc25cabbaba994494b",
+        "accountValue": "27661220.889458999",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "118943.65522",
+              "roi": "0.0041881442",
+              "vlm": "52866334.0799999982"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "2067495.908109",
+              "roi": "0.065010152",
+              "vlm": "1052543967.2099999189"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "3223136.7994799996",
+              "roi": "0.0925076111",
+              "vlm": "5039773140.9800004959"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-3830223.5821599988",
+              "roi": "-0.0657791507",
+              "vlm": "115128921678.3899993896"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x57dd78cd36e76e2011e8f6dc25cabbaba994494b",
+        "pnl7d": "2067495.908109",
+        "roi7d": 6.5010152
+      },
+      "metrics": {
+        "pnl7d": 2067495.908109,
+        "roi7d": 6.5010152,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x3ee505ba316879d246a8fd2b3d7ee63b51b44fab",
+      "name": "0x3ee505…b44fab",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x3ee505ba316879d246a8fd2b3d7ee63b51b44fab",
+        "accountValue": "6649857.8950770004",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-196170.173048",
+              "roi": "-0.0286545967",
+              "vlm": "992395.24"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1915808.3410189999",
+              "roi": "0.4046870062",
+              "vlm": "992395.24"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "4175198.3161220001",
+              "roi": "0.4548525522",
+              "vlm": "4160732.3999999999"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "10951044.2650770005",
+              "roi": "4.3866138332",
+              "vlm": "49883718.5"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x3ee505ba316879d246a8fd2b3d7ee63b51b44fab",
+        "pnl7d": "1915808.3410189999",
+        "roi7d": 40.46870062
+      },
+      "metrics": {
+        "pnl7d": 1915808.341019,
+        "roi7d": 40.46870062,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xff4cd3826ecee12acd4329aada4a2d3419fc463c",
+      "name": "0xff4cd3…fc463c",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xff4cd3826ecee12acd4329aada4a2d3419fc463c",
+        "accountValue": "44566496.300711982",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "229919.032479",
+              "roi": "0.0051855908",
+              "vlm": "106277824.2599999905"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1807214.1113290007",
+              "roi": "0.0588855264",
+              "vlm": "2591141009.1200008392"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-423168.5850590002",
+              "roi": "-0.0093087439",
+              "vlm": "11440464126.8400001526"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "29697477.3207120001",
+              "roi": "0.3747661534",
+              "vlm": "314616892155.3400268555"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xff4cd3826ecee12acd4329aada4a2d3419fc463c",
+        "pnl7d": "1807214.1113290007",
+        "roi7d": 5.88855264
+      },
+      "metrics": {
+        "pnl7d": 1807214.1113290007,
+        "roi7d": 5.88855264,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xdfd526409007db0d524a62dedaaba7706736d88e",
+      "name": "0xdfd526…36d88e",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xdfd526409007db0d524a62dedaaba7706736d88e",
+        "accountValue": "25935093.1005069986",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-88112.831146",
+              "roi": "-0.0033858814",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1803301.9673400002",
+              "roi": "0.3725870723",
+              "vlm": "6949051.6399999997"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-1488027.3110100001",
+              "roi": "-0.0477411762",
+              "vlm": "47155412.8599999994"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-3892666.9094929993",
+              "roi": "-0.0712016151",
+              "vlm": "288888980.9800000191"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xdfd526409007db0d524a62dedaaba7706736d88e",
+        "pnl7d": "1803301.9673400002",
+        "roi7d": 37.25870723
+      },
+      "metrics": {
+        "pnl7d": 1803301.9673400002,
+        "roi7d": 37.25870723,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x49e96e255ba418d08e66c35b588e2f2f3766e1d0",
+      "name": "2 freres 2 fauves",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x49e96e255ba418d08e66c35b588e2f2f3766e1d0",
+        "accountValue": "20835747.1562189981",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-204938.87479",
+              "roi": "-0.0097400312",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1754095.127047",
+              "roi": "0.0792192003",
+              "vlm": "326927776.3799999952"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-2084753.5620770003",
+              "roi": "-0.0542612063",
+              "vlm": "1260742100.3599998951"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "5687551.3062190004",
+              "roi": "0.1388292544",
+              "vlm": "7354174365.3100013733"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": "2 freres 2 fauves",
+        "address": "0x49e96e255ba418d08e66c35b588e2f2f3766e1d0",
+        "pnl7d": "1754095.127047",
+        "roi7d": 7.92192003
+      },
+      "metrics": {
+        "pnl7d": 1754095.127047,
+        "roi7d": 7.92192003,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x88560b720239179d7f3f9e49ca934a4861593d7f",
+      "name": "0x88560b…593d7f",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x88560b720239179d7f3f9e49ca934a4861593d7f",
+        "accountValue": "32558099.5298659988",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "3626.230808",
+              "roi": "0.0001113889",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1752302.0805130003",
+              "roi": "0.249668201",
+              "vlm": "857664.63"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "284934.482763",
+              "roi": "0.0082369",
+              "vlm": "6152097.3799999999"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "478290.0298660001",
+              "roi": "0.0116353161",
+              "vlm": "126819465.4100000113"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x88560b720239179d7f3f9e49ca934a4861593d7f",
+        "pnl7d": "1752302.0805130003",
+        "roi7d": 24.9668201
+      },
+      "metrics": {
+        "pnl7d": 1752302.0805130003,
+        "roi7d": 24.9668201,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x015354106478dda69c4aae3c0cf801290b738052",
+      "name": "0x015354…738052",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x015354106478dda69c4aae3c0cf801290b738052",
+        "accountValue": "8955509.2699490003",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "26738.044491",
+              "roi": "0.002994594",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1717439.891573",
+              "roi": "0.2555240311",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "171198.97925",
+              "roi": "0.0194891771",
+              "vlm": "15080803.1699999999"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "11781521.8399490006",
+              "roi": "2.9480448071",
+              "vlm": "253938800.1699999869"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x015354106478dda69c4aae3c0cf801290b738052",
+        "pnl7d": "1717439.891573",
+        "roi7d": 25.55240311
+      },
+      "metrics": {
+        "pnl7d": 1717439.891573,
+        "roi7d": 25.55240311,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x469e9a7f624b04c24f0e64edf8d8a277e6bf58a5",
+      "name": "0x469e9a…bf58a5",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x469e9a7f624b04c24f0e64edf8d8a277e6bf58a5",
+        "accountValue": "15170456.6028480008",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-500915.431768",
+              "roi": "-0.0319637254",
+              "vlm": "5280858.4400000004"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1640346.724594",
+              "roi": "0.1212781584",
+              "vlm": "436078250.7200000286"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "7011694.8052080004",
+              "roi": "0.3417984484",
+              "vlm": "1958965631.1300001144"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "28749207.6528480016",
+              "roi": "9.5393895088",
+              "vlm": "13846185200.9699993134"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x469e9a7f624b04c24f0e64edf8d8a277e6bf58a5",
+        "pnl7d": "1640346.724594",
+        "roi7d": 12.12781584
+      },
+      "metrics": {
+        "pnl7d": 1640346.724594,
+        "roi7d": 12.12781584,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x7a6d5fc57f6906f337c48fe2763c3a501304f79c",
+      "name": "0x7a6d5f…04f79c",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x7a6d5fc57f6906f337c48fe2763c3a501304f79c",
+        "accountValue": "4055694.1122339997",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-30954.452808",
+              "roi": "-0.0075743473",
+              "vlm": "659494.16"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1555421.1429310001",
+              "roi": "0.4597158482",
+              "vlm": "8872329.2599999998"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "259150.987694",
+              "roi": "0.0457437028",
+              "vlm": "33796226.75"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "14193380.7122339997",
+              "roi": "3.3621791787",
+              "vlm": "1340399667.4800000191"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x7a6d5fc57f6906f337c48fe2763c3a501304f79c",
+        "pnl7d": "1555421.1429310001",
+        "roi7d": 45.97158482
+      },
+      "metrics": {
+        "pnl7d": 1555421.142931,
+        "roi7d": 45.97158482,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x60a8c761f39696b3b419f31dcda20b405cb685f6",
+      "name": "0x60a8c7…b685f6",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x60a8c761f39696b3b419f31dcda20b405cb685f6",
+        "accountValue": "28124270.2348789982",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-98394.874284",
+              "roi": "-0.0034863778",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1539239.3717660001",
+              "roi": "0.150042478",
+              "vlm": "438171.53"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "1278764.6515919999",
+              "roi": "0.0445726835",
+              "vlm": "44391425.950000003"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-1458268.855121",
+              "roi": "-0.0464025834",
+              "vlm": "194506905.2199999988"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x60a8c761f39696b3b419f31dcda20b405cb685f6",
+        "pnl7d": "1539239.3717660001",
+        "roi7d": 15.0042478
+      },
+      "metrics": {
+        "pnl7d": 1539239.371766,
+        "roi7d": 15.0042478,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x61ceef212ff4a86933c69fb6aca2fe35d8f2a62b",
+      "name": "0x61ceef…f2a62b",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x61ceef212ff4a86933c69fb6aca2fe35d8f2a62b",
+        "accountValue": "7612561.7300359998",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-18172.512996",
+              "roi": "-0.0023814894",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1449112.3457200001",
+              "roi": "0.1347708459",
+              "vlm": "835384886.1900000572"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "165486.827233",
+              "roi": "0.0133141741",
+              "vlm": "1006596124.0800000429"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-5145545.4299640004",
+              "roi": "-0.290046678",
+              "vlm": "14281686324.1399993896"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x61ceef212ff4a86933c69fb6aca2fe35d8f2a62b",
+        "pnl7d": "1449112.3457200001",
+        "roi7d": 13.477084589999999
+      },
+      "metrics": {
+        "pnl7d": 1449112.34572,
+        "roi7d": 13.477084589999999,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xa61c57d0d1a83c02542092b431999b9870dd66b9",
+      "name": "0xa61c57…dd66b9",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xa61c57d0d1a83c02542092b431999b9870dd66b9",
+        "accountValue": "6834929.5643079998",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-232635.181004",
+              "roi": "-0.0329158896",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1446200.8315039999",
+              "roi": "0.2266946868",
+              "vlm": "9738498.0800000001"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "2326186.0551410001",
+              "roi": "0.3097968965",
+              "vlm": "249728010.099999994"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-227524.875692",
+              "roi": "-0.0226112657",
+              "vlm": "411556351.8700000048"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xa61c57d0d1a83c02542092b431999b9870dd66b9",
+        "pnl7d": "1446200.8315039999",
+        "roi7d": 22.669468679999998
+      },
+      "metrics": {
+        "pnl7d": 1446200.831504,
+        "roi7d": 22.669468679999998,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xbe19541903f64af97bcf8436f4d15bf3a56b8bd1",
+      "name": "0xbe1954…6b8bd1",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xbe19541903f64af97bcf8436f4d15bf3a56b8bd1",
+        "accountValue": "19635425.5150149986",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-118356.700697",
+              "roi": "-0.0059915969",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1425591.5732160001",
+              "roi": "0.2228101605",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-312897.687486",
+              "roi": "-0.015685413",
+              "vlm": "12178702.2400000002"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "6878365.3150150003",
+              "roi": "0.5391810658",
+              "vlm": "57243233.1400000006"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xbe19541903f64af97bcf8436f4d15bf3a56b8bd1",
+        "pnl7d": "1425591.5732160001",
+        "roi7d": 22.281016049999998
+      },
+      "metrics": {
+        "pnl7d": 1425591.573216,
+        "roi7d": 22.281016049999998,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x08c14b32c8a48894e4b933090ebcc9ce33b21135",
+      "name": "0x08c14b…b21135",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x08c14b32c8a48894e4b933090ebcc9ce33b21135",
+        "accountValue": "8234976.542773",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-51899.295971",
+              "roi": "-0.0062628302",
+              "vlm": "2253421.4399999999"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1414895.6208200001",
+              "roi": "0.2074602394",
+              "vlm": "4501694.9299999997"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "4268580.1315470003",
+              "roi": "0.7154368965",
+              "vlm": "16229837.5399999991"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "9525137.260915",
+              "roi": "4.0077182454",
+              "vlm": "110723958.900000006"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x08c14b32c8a48894e4b933090ebcc9ce33b21135",
+        "pnl7d": "1414895.6208200001",
+        "roi7d": 20.74602394
+      },
+      "metrics": {
+        "pnl7d": 1414895.62082,
+        "roi7d": 20.74602394,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x42eadf6fe45b51b729c165c3f636b8ccaa35d705",
+      "name": "0x42eadf…35d705",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x42eadf6fe45b51b729c165c3f636b8ccaa35d705",
+        "accountValue": "5003341.2969119996",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "385258.327832",
+              "roi": "0.0834238645",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1389940.5857530001",
+              "roi": "0.384662731",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "1600211.8730599999",
+              "roi": "0.4702177536",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "3279078.4969119998",
+              "roi": "1.5136731484",
+              "vlm": "4155270.3599999999"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x42eadf6fe45b51b729c165c3f636b8ccaa35d705",
+        "pnl7d": "1389940.5857530001",
+        "roi7d": 38.466273099999995
+      },
+      "metrics": {
+        "pnl7d": 1389940.585753,
+        "roi7d": 38.466273099999995,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xcac19662ec88d23fa1c81ac0e8570b0cf2ff26b3",
+      "name": "0xcac196…ff26b3",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xcac19662ec88d23fa1c81ac0e8570b0cf2ff26b3",
+        "accountValue": "20964688.5669759996",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-437753.930631",
+              "roi": "-0.0204532656",
+              "vlm": "76987.82"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1371726.8743720001",
+              "roi": "0.252466378",
+              "vlm": "1867598.6100000001"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-10508511.0884109996",
+              "roi": "-0.3338854781",
+              "vlm": "53284956.0099999979"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "23715367.6408849992",
+              "roi": "0.2240163069",
+              "vlm": "1136669028.7300000191"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xcac19662ec88d23fa1c81ac0e8570b0cf2ff26b3",
+        "pnl7d": "1371726.8743720001",
+        "roi7d": 25.2466378
+      },
+      "metrics": {
+        "pnl7d": 1371726.874372,
+        "roi7d": 25.2466378,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x93ab7dbdeb996806454de19c35c8247f4b2511f8",
+      "name": "0x93ab7d…2511f8",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x93ab7dbdeb996806454de19c35c8247f4b2511f8",
+        "accountValue": "14384215.8662940003",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "83445.369817",
+              "roi": "0.0534466114",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1354260.1810709999",
+              "roi": "0.1039343658",
+              "vlm": "67914519.3599999994"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "3802954.4642719999",
+              "roi": "0.3594046418",
+              "vlm": "110474150.150000006"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "10382913.5162940007",
+              "roi": "2.5948835174",
+              "vlm": "176174779.599999994"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x93ab7dbdeb996806454de19c35c8247f4b2511f8",
+        "pnl7d": "1354260.1810709999",
+        "roi7d": 10.39343658
+      },
+      "metrics": {
+        "pnl7d": 1354260.181071,
+        "roi7d": 10.39343658,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xf2500dbc34617daf22b5186a1bfb9f5f3a33ae13",
+      "name": "0xf2500d…33ae13",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xf2500dbc34617daf22b5186a1bfb9f5f3a33ae13",
+        "accountValue": "3467979.6911929999",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "0.0",
+              "roi": "0.0",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1276487.3407300001",
+              "roi": "0.5824740116",
+              "vlm": "5146968.0700000003"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-1470434.698083",
+              "roi": "-0.307120623",
+              "vlm": "8093139.7999999998"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-894938.4488069999",
+              "roi": "-0.1628463326",
+              "vlm": "54697376.5600000024"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xf2500dbc34617daf22b5186a1bfb9f5f3a33ae13",
+        "pnl7d": "1276487.3407300001",
+        "roi7d": 58.24740116
+      },
+      "metrics": {
+        "pnl7d": 1276487.34073,
+        "roi7d": 58.24740116,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x781e95fdc049433565cf8e05265361b8402196b7",
+      "name": "0x781e95…2196b7",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x781e95fdc049433565cf8e05265361b8402196b7",
+        "accountValue": "3845777.1681840001",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-283192.56683",
+              "roi": "-0.0685411546",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1268391.4910869999",
+              "roi": "0.2701839464",
+              "vlm": "8908647.6500000004"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-4988592.1700339997",
+              "roi": "-0.4555154793",
+              "vlm": "10293631.3300000001"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-6032563.1018160004",
+              "roi": "-0.5500968867",
+              "vlm": "90608579.9800000042"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x781e95fdc049433565cf8e05265361b8402196b7",
+        "pnl7d": "1268391.4910869999",
+        "roi7d": 27.018394639999997
+      },
+      "metrics": {
+        "pnl7d": 1268391.491087,
+        "roi7d": 27.018394639999997,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x2d99fe0f36c1aebd28a1a2c0e82e8ca13c2ea351",
+      "name": "0x2d99fe…2ea351",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x2d99fe0f36c1aebd28a1a2c0e82e8ca13c2ea351",
+        "accountValue": "5772599.9979130002",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "0.0",
+              "roi": "0.0",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1266057.0415739999",
+              "roi": "0.3936577952",
+              "vlm": "5506584.0"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-1091257.9663199999",
+              "roi": "-0.1680527159",
+              "vlm": "12309303.6799999997"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "9036441.7679130007",
+              "roi": "1.0393834345",
+              "vlm": "413330615.3999999762"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x2d99fe0f36c1aebd28a1a2c0e82e8ca13c2ea351",
+        "pnl7d": "1266057.0415739999",
+        "roi7d": 39.36577952
+      },
+      "metrics": {
+        "pnl7d": 1266057.041574,
+        "roi7d": 39.36577952,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xe554b76acda9ff3836fb04935bdbbaf59854c270",
+      "name": "0xe554b7…54c270",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xe554b76acda9ff3836fb04935bdbbaf59854c270",
+        "accountValue": "3200019.4276959999",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "1189000.3507089999",
+              "roi": "0.5912427009",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1188999.3124859999",
+              "roi": "0.5912418794",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "0.0",
+              "roi": "0.0",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "3204655.4476959999",
+              "roi": "32046.55447696",
+              "vlm": "0.0"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xe554b76acda9ff3836fb04935bdbbaf59854c270",
+        "pnl7d": "1188999.3124859999",
+        "roi7d": 59.12418793999999
+      },
+      "metrics": {
+        "pnl7d": 1188999.312486,
+        "roi7d": 59.12418793999999,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x020ca66c30bec2c4fe3861a94e4db4a498a35872",
+      "name": "MachiBigBrother",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x020ca66c30bec2c4fe3861a94e4db4a498a35872",
+        "accountValue": "10370568.0142039992",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "1993456.0183280001",
+              "roi": "0.2379645896",
+              "vlm": "35817156.3400000036"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1184268.0961519999",
+              "roi": "0.1289168463",
+              "vlm": "736940818.2100000381"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "264100.327035",
+              "roi": "0.0256624698",
+              "vlm": "2807979501.7199997902"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-24658992.2456919998",
+              "roi": "-0.7002532485",
+              "vlm": "15185876076.2800006866"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": "MachiBigBrother",
+        "address": "0x020ca66c30bec2c4fe3861a94e4db4a498a35872",
+        "pnl7d": "1184268.0961519999",
+        "roi7d": 12.89168463
+      },
+      "metrics": {
+        "pnl7d": 1184268.096152,
+        "roi7d": 12.89168463,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x9c062c0575c30a3b7614d0c6ea8de67faab00560",
+      "name": "0x9c062c…b00560",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x9c062c0575c30a3b7614d0c6ea8de67faab00560",
+        "accountValue": "2830149.683187",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-200802.138172",
+              "roi": "-0.0662483356",
+              "vlm": "199960.86"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1178917.4897749999",
+              "roi": "0.7139190373",
+              "vlm": "14658658.5199999996"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-1339084.030114",
+              "roi": "-0.3211745862",
+              "vlm": "58871497.0799999982"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-334207.955703",
+              "roi": "-0.0871906335",
+              "vlm": "365531618.7099999785"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x9c062c0575c30a3b7614d0c6ea8de67faab00560",
+        "pnl7d": "1178917.4897749999",
+        "roi7d": 71.39190373
+      },
+      "metrics": {
+        "pnl7d": 1178917.489775,
+        "roi7d": 71.39190373,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x024294c53a69c1e6b39810b3fac87385752fffa1",
+      "name": "0x024294…2fffa1",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x024294c53a69c1e6b39810b3fac87385752fffa1",
+        "accountValue": "12433376.8285060003",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-165196.37589",
+              "roi": "-0.0131123083",
+              "vlm": "583145.4300000001"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1150721.8728060001",
+              "roi": "0.1170397968",
+              "vlm": "127915170.8100000024"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-613001.409747",
+              "roi": "-0.0469863282",
+              "vlm": "590253419.8099999428"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-4566577.7614940004",
+              "roi": "-0.2686229388",
+              "vlm": "1154490755.5599999428"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x024294c53a69c1e6b39810b3fac87385752fffa1",
+        "pnl7d": "1150721.8728060001",
+        "roi7d": 11.70397968
+      },
+      "metrics": {
+        "pnl7d": 1150721.872806,
+        "roi7d": 11.70397968,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x77ee3604adbdefa66a817b3cf776412a6613a018",
+      "name": "0x77ee36…13a018",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x77ee3604adbdefa66a817b3cf776412a6613a018",
+        "accountValue": "3485882.1616199999",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-90191.000525",
+              "roi": "-0.0327203633",
+              "vlm": "333608.19"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1149811.670834",
+              "roi": "0.4886792872",
+              "vlm": "58196074.3599999994"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "1748636.5983589999",
+              "roi": "0.8002715117",
+              "vlm": "146546283.6399999857"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-987869.73838",
+              "roi": "-0.1614918385",
+              "vlm": "298869240.8700000048"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x77ee3604adbdefa66a817b3cf776412a6613a018",
+        "pnl7d": "1149811.670834",
+        "roi7d": 48.867928719999995
+      },
+      "metrics": {
+        "pnl7d": 1149811.670834,
+        "roi7d": 48.867928719999995,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xda3768e9299e1fd81708ec030dac5ea37125f7b5",
+      "name": "0xda3768…25f7b5",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xda3768e9299e1fd81708ec030dac5ea37125f7b5",
+        "accountValue": "13340083.2947999984",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-117966.240356",
+              "roi": "-0.0087654782",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1097802.089563",
+              "roi": "0.0896823035",
+              "vlm": "29403066.7800000012"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-341473.559299",
+              "roi": "-0.0249609939",
+              "vlm": "143960890.4300000072"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-2916988.7451999998",
+              "roi": "-0.1794289118",
+              "vlm": "1234560562.9800002575"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xda3768e9299e1fd81708ec030dac5ea37125f7b5",
+        "pnl7d": "1097802.089563",
+        "roi7d": 8.96823035
+      },
+      "metrics": {
+        "pnl7d": 1097802.089563,
+        "roi7d": 8.96823035,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x9eb4348964d9943fc8579734d1a6e2fb2d88c83e",
+      "name": "0x9eb434…88c83e",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x9eb4348964d9943fc8579734d1a6e2fb2d88c83e",
+        "accountValue": "2877046.6930180001",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "348364.749727",
+              "roi": "0.2111575392",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "1004178.801227",
+              "roi": "1.0102687639",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "1055409.374056",
+              "roi": "0.5593708008",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "1375023.593018",
+              "roi": "0.7848204701",
+              "vlm": "8021693.7000000002"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x9eb4348964d9943fc8579734d1a6e2fb2d88c83e",
+        "pnl7d": "1004178.801227",
+        "roi7d": 101.02687639000001
+      },
+      "metrics": {
+        "pnl7d": 1004178.801227,
+        "roi7d": 101.02687639000001,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xf5d81a135f756ca16544e53c20fc20643ec3ad53",
+      "name": "0xf5d81a…c3ad53",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xf5d81a135f756ca16544e53c20fc20643ec3ad53",
+        "accountValue": "70869440.1408060044",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-116878.088098",
+              "roi": "-0.0016464772",
+              "vlm": "204622049.4300000072"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "997788.8283650002",
+              "roi": "0.014097488",
+              "vlm": "6378431133.25"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-4766051.0313649997",
+              "roi": "-0.0605639609",
+              "vlm": "24169819942.3300056458"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-8836228.7791939974",
+              "roi": "-0.0820100226",
+              "vlm": "170340642476.1800231934"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xf5d81a135f756ca16544e53c20fc20643ec3ad53",
+        "pnl7d": "997788.8283650002",
+        "roi7d": 1.4097488
+      },
+      "metrics": {
+        "pnl7d": 997788.8283650002,
+        "roi7d": 1.4097488,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xdf954bbe619273a56e0cfa90dad8382195dc7d72",
+      "name": "0xdf954b…dc7d72",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xdf954bbe619273a56e0cfa90dad8382195dc7d72",
+        "accountValue": "41381285.6937720031",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-564070.5724170001",
+              "roi": "-0.0134477478",
+              "vlm": "3505003.73"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "952359.7751280001",
+              "roi": "0.0303713868",
+              "vlm": "69644966.9899999946"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-7866757.0367360003",
+              "roi": "-0.156966919",
+              "vlm": "250362041.5600000024"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-12012270.0962279998",
+              "roi": "-0.2213732569",
+              "vlm": "391877019.5899999738"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xdf954bbe619273a56e0cfa90dad8382195dc7d72",
+        "pnl7d": "952359.7751280001",
+        "roi7d": 3.03713868
+      },
+      "metrics": {
+        "pnl7d": 952359.7751280001,
+        "roi7d": 3.03713868,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x37b81ab9e3ab04b9e3738e4891621205aaa31fd5",
+      "name": "0x37b81a…a31fd5",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x37b81ab9e3ab04b9e3738e4891621205aaa31fd5",
+        "accountValue": "14144798.0117419995",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "118904.988722",
+              "roi": "0.0084775343",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "950903.712532",
+              "roi": "0.4084594941",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "512666.388042",
+              "roi": "0.0376072064",
+              "vlm": "6445.91"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "2648806.3517419999",
+              "roi": "0.2304112973",
+              "vlm": "33014971.8299999982"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x37b81ab9e3ab04b9e3738e4891621205aaa31fd5",
+        "pnl7d": "950903.712532",
+        "roi7d": 40.845949409999996
+      },
+      "metrics": {
+        "pnl7d": 950903.712532,
+        "roi7d": 40.845949409999996,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xeee0d806e4f0a427277433d6b580619918770b53",
+      "name": "0xeee0d8…770b53",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xeee0d806e4f0a427277433d6b580619918770b53",
+        "accountValue": "9992309.1378690004",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "403960.414024",
+              "roi": "0.0421303423",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "944213.308042",
+              "roi": "0.4327230464",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "1335519.9409980001",
+              "roi": "0.1542742824",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "5304482.4978689998",
+              "roi": "0.4359869605",
+              "vlm": "194752444.5699999928"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xeee0d806e4f0a427277433d6b580619918770b53",
+        "pnl7d": "944213.308042",
+        "roi7d": 43.272304639999994
+      },
+      "metrics": {
+        "pnl7d": 944213.308042,
+        "roi7d": 43.272304639999994,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xb695651daa495f59dd2725c6fe98322d8b51a92d",
+      "name": "0xb69565…51a92d",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xb695651daa495f59dd2725c6fe98322d8b51a92d",
+        "accountValue": "39881218.8650809973",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-1098725.5751060001",
+              "roi": "-0.0268112998",
+              "vlm": "24122.31"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "909727.651097",
+              "roi": "0.0239010663",
+              "vlm": "27774552.9299999997"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-8565412.9368590005",
+              "roi": "-0.1768009997",
+              "vlm": "137790658.9799999893"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-9493600.4049190003",
+              "roi": "-0.192276155",
+              "vlm": "164829960.8600000143"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xb695651daa495f59dd2725c6fe98322d8b51a92d",
+        "pnl7d": "909727.651097",
+        "roi7d": 2.39010663
+      },
+      "metrics": {
+        "pnl7d": 909727.651097,
+        "roi7d": 2.39010663,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x3dc908374e11623d8eb9f07dfc7a2e5e803a54b0",
+      "name": "0x3dc908…3a54b0",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x3dc908374e11623d8eb9f07dfc7a2e5e803a54b0",
+        "accountValue": "25618927.6874459982",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-553521.582472",
+              "roi": "-0.0211490173",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "898522.414135",
+              "roi": "0.0701365316",
+              "vlm": "4322563.2599999998"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-7527154.8646029998",
+              "roi": "-0.2270903312",
+              "vlm": "84466372.8799999952"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-7862769.4925539996",
+              "roi": "-0.2277845102",
+              "vlm": "298696593.4100000262"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x3dc908374e11623d8eb9f07dfc7a2e5e803a54b0",
+        "pnl7d": "898522.414135",
+        "roi7d": 7.01365316
+      },
+      "metrics": {
+        "pnl7d": 898522.414135,
+        "roi7d": 7.01365316,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xacb66d1996501bcc82a0e7819c9e041599f5efbd",
+      "name": "0xacb66d…f5efbd",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xacb66d1996501bcc82a0e7819c9e041599f5efbd",
+        "accountValue": "9487309.3236120008",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-47932.792546",
+              "roi": "-0.0050267507",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "883377.619893",
+              "roi": "0.1867976649",
+              "vlm": "650075.21"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "1714969.5066889999",
+              "roi": "0.220613451",
+              "vlm": "3469439.77"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "1442854.4136119999",
+              "roi": "0.0988236182",
+              "vlm": "187689077.9499999881"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xacb66d1996501bcc82a0e7819c9e041599f5efbd",
+        "pnl7d": "883377.619893",
+        "roi7d": 18.67976649
+      },
+      "metrics": {
+        "pnl7d": 883377.619893,
+        "roi7d": 18.67976649,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x45ab58a2034f03aa446baf3bb1d236706f866cbc",
+      "name": "0x45ab58…866cbc",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x45ab58a2034f03aa446baf3bb1d236706f866cbc",
+        "accountValue": "7240228.9186009998",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "314376.658914",
+              "roi": "0.1468156954",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "882910.33247",
+              "roi": "0.3142066129",
+              "vlm": "966569.3"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "994250.589903",
+              "roi": "0.3684282953",
+              "vlm": "19709396.1600000001"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "3467170.5286010001",
+              "roi": "0.1770982816",
+              "vlm": "992222730.5099999905"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x45ab58a2034f03aa446baf3bb1d236706f866cbc",
+        "pnl7d": "882910.33247",
+        "roi7d": 31.42066129
+      },
+      "metrics": {
+        "pnl7d": 882910.33247,
+        "roi7d": 31.42066129,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x519c721de735f7c9e6146d167852e60d60496a47",
+      "name": "0x519c72…496a47",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x519c721de735f7c9e6146d167852e60d60496a47",
+        "accountValue": "23888026.6384660006",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-129154.164496",
+              "roi": "-0.0053775515",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "879986.181094",
+              "roi": "0.1877771198",
+              "vlm": "9999679.7699999996"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "3834333.000403",
+              "roi": "0.1912023764",
+              "vlm": "184799791.5699999928"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "16683980.3484659996",
+              "roi": "0.7139180208",
+              "vlm": "1053914170.3400000334"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x519c721de735f7c9e6146d167852e60d60496a47",
+        "pnl7d": "879986.181094",
+        "roi7d": 18.77771198
+      },
+      "metrics": {
+        "pnl7d": 879986.181094,
+        "roi7d": 18.77771198,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xe187055ff406f8cdf59fbae53ec20d4ecd9b771d",
+      "name": "0xe18705…9b771d",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xe187055ff406f8cdf59fbae53ec20d4ecd9b771d",
+        "accountValue": "5472394.6053809999",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-142218.162451",
+              "roi": "-0.0253300037",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "873384.491974",
+              "roi": "0.1899070605",
+              "vlm": "54400.81"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "180415.858154",
+              "roi": "0.0340923248",
+              "vlm": "9529131.3000000007"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-3836640.1746189999",
+              "roi": "-0.4121415663",
+              "vlm": "47160893.5399999991"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xe187055ff406f8cdf59fbae53ec20d4ecd9b771d",
+        "pnl7d": "873384.491974",
+        "roi7d": 18.99070605
+      },
+      "metrics": {
+        "pnl7d": 873384.491974,
+        "roi7d": 18.99070605,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x6355f7cf36b24044cd5b089a845113327d0ee58e",
+      "name": "0x6355f7…0ee58e",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x6355f7cf36b24044cd5b089a845113327d0ee58e",
+        "accountValue": "13234106.6178179998",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-65617.167474",
+              "roi": "-0.0049336499",
+              "vlm": "6008266.4700000007"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "866309.594175",
+              "roi": "0.0704145862",
+              "vlm": "283257136.0899999738"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "815590.16972",
+              "roi": "0.0451552177",
+              "vlm": "1339553362.5499999523"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "7031379.1578179998",
+              "roi": "0.196478253",
+              "vlm": "9796799017.4200000763"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x6355f7cf36b24044cd5b089a845113327d0ee58e",
+        "pnl7d": "866309.594175",
+        "roi7d": 7.04145862
+      },
+      "metrics": {
+        "pnl7d": 866309.594175,
+        "roi7d": 7.04145862,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x8ed318c5eefd8c9b15b6ee351734c8a350b2f23a",
+      "name": "0x8ed318…b2f23a",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x8ed318c5eefd8c9b15b6ee351734c8a350b2f23a",
+        "accountValue": "5569191.1681079995",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-181184.419388",
+              "roi": "-0.0311934754",
+              "vlm": "1276931.5299999998"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "859629.471308",
+              "roi": "0.1955701689",
+              "vlm": "44082601.6400000006"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-1534471.197924",
+              "roi": "-0.1986453235",
+              "vlm": "161765371.3400000036"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "7396470.339931",
+              "roi": "0.7031609095",
+              "vlm": "932567745.6700000763"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x8ed318c5eefd8c9b15b6ee351734c8a350b2f23a",
+        "pnl7d": "859629.471308",
+        "roi7d": 19.55701689
+      },
+      "metrics": {
+        "pnl7d": 859629.471308,
+        "roi7d": 19.55701689,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x27c9fa86c91b84ddfa15de58c482ff662498d65d",
+      "name": "0x27c9fa…98d65d",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x27c9fa86c91b84ddfa15de58c482ff662498d65d",
+        "accountValue": "1488249.6167230001",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "76801.168529",
+              "roi": "0.0544130171",
+              "vlm": "10997533.6300000008"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "853747.607148",
+              "roi": "0.4901484763",
+              "vlm": "109498643.5799999982"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-1708150.583847",
+              "roi": "-0.341876254",
+              "vlm": "454459601.6600000262"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "3353905.1667229999",
+              "roi": "0.9226005785",
+              "vlm": "3156949069.8200001717"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x27c9fa86c91b84ddfa15de58c482ff662498d65d",
+        "pnl7d": "853747.607148",
+        "roi7d": 49.014847630000006
+      },
+      "metrics": {
+        "pnl7d": 853747.607148,
+        "roi7d": 49.014847630000006,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x92bbd8110393350dda7e9c32089e95af071a9b6f",
+      "name": "0x92bbd8…1a9b6f",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x92bbd8110393350dda7e9c32089e95af071a9b6f",
+        "accountValue": "5544100.5646299999",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-53589.615097",
+              "roi": "-0.0095735229",
+              "vlm": "3460567.4300000002"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "849130.511147",
+              "roi": "0.1396461928",
+              "vlm": "23805338.5100000016"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-1425127.62262",
+              "roi": "-0.1703833887",
+              "vlm": "70971517.4800000042"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "2435310.8246300002",
+              "roi": "0.6447747103",
+              "vlm": "194416640.3600000143"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x92bbd8110393350dda7e9c32089e95af071a9b6f",
+        "pnl7d": "849130.511147",
+        "roi7d": 13.96461928
+      },
+      "metrics": {
+        "pnl7d": 849130.511147,
+        "roi7d": 13.96461928,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x123dbca6a27005a3c4ce10cb66ee8ece8fc13bff",
+      "name": "0x123dbc…c13bff",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x123dbca6a27005a3c4ce10cb66ee8ece8fc13bff",
+        "accountValue": "7637910.0600979999",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-138795.145865",
+              "roi": "-0.0178475514",
+              "vlm": "662362.09"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "839944.693113",
+              "roi": "0.1235582484",
+              "vlm": "6925744.3300000001"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-6238652.3259279998",
+              "roi": "-0.4495819752",
+              "vlm": "22771796.6999999993"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "14746517.6400979999",
+              "roi": "0.8066677439",
+              "vlm": "756593168.5099999905"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x123dbca6a27005a3c4ce10cb66ee8ece8fc13bff",
+        "pnl7d": "839944.693113",
+        "roi7d": 12.35582484
+      },
+      "metrics": {
+        "pnl7d": 839944.693113,
+        "roi7d": 12.35582484,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x45f717946a3fb49054ebebecbb1ab8ce9325f166",
+      "name": "0x45f717…25f166",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x45f717946a3fb49054ebebecbb1ab8ce9325f166",
+        "accountValue": "3225153.4471550002",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-41362.24523",
+              "roi": "-0.012662497",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "839012.325097",
+              "roi": "0.3993648553",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "616559.142136",
+              "roi": "0.2363568536",
+              "vlm": "9854065.6300000008"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "592456.8171550001",
+              "roi": "0.2250380125",
+              "vlm": "40544386.8400000036"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x45f717946a3fb49054ebebecbb1ab8ce9325f166",
+        "pnl7d": "839012.325097",
+        "roi7d": 39.93648553
+      },
+      "metrics": {
+        "pnl7d": 839012.325097,
+        "roi7d": 39.93648553,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x3e2fbe61f37f11d68e3d1e4f25c53c73f414b269",
+      "name": "0x3e2fbe…14b269",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x3e2fbe61f37f11d68e3d1e4f25c53c73f414b269",
+        "accountValue": "2886350.8862350001",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-63094.865393",
+              "roi": "-0.0213921091",
+              "vlm": "199990.38"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "809490.0605650001",
+              "roi": "0.3816799531",
+              "vlm": "585867.42"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-900691.35571",
+              "roi": "-0.1911645571",
+              "vlm": "6536420.3300000001"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-1089765.2937650001",
+              "roi": "-0.2223703942",
+              "vlm": "51303595.2299999967"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x3e2fbe61f37f11d68e3d1e4f25c53c73f414b269",
+        "pnl7d": "809490.0605650001",
+        "roi7d": 38.16799531
+      },
+      "metrics": {
+        "pnl7d": 809490.060565,
+        "roi7d": 38.16799531,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xf02d028ffeddc120a3ec59602a6617303ca55eb3",
+      "name": "0xf02d02…a55eb3",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xf02d028ffeddc120a3ec59602a6617303ca55eb3",
+        "accountValue": "15236953.4215900004",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "182570.135343",
+              "roi": "0.0121273739",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "791303.02009",
+              "roi": "0.2561841996",
+              "vlm": "238749.99"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "461986.556327",
+              "roi": "0.0312681958",
+              "vlm": "19249960.7800000012"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "2405917.1615900001",
+              "roi": "0.187507627",
+              "vlm": "58538616.2400000021"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xf02d028ffeddc120a3ec59602a6617303ca55eb3",
+        "pnl7d": "791303.02009",
+        "roi7d": 25.61841996
+      },
+      "metrics": {
+        "pnl7d": 791303.02009,
+        "roi7d": 25.61841996,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x939f95036d2e7b6d7419ec072bf9d967352204d2",
+      "name": "0x939f95…2204d2",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x939f95036d2e7b6d7419ec072bf9d967352204d2",
+        "accountValue": "7046309.7108549997",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-595026.839705",
+              "roi": "-0.0778694716",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "789594.912559",
+              "roi": "0.1342480215",
+              "vlm": "33555621.0600000024"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-1196701.3349649999",
+              "roi": "-0.1400795331",
+              "vlm": "67769767.3900000006"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "46959286.9008549973",
+              "roi": "4.0684049206",
+              "vlm": "2448942669.5500001907"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x939f95036d2e7b6d7419ec072bf9d967352204d2",
+        "pnl7d": "789594.912559",
+        "roi7d": 13.424802150000001
+      },
+      "metrics": {
+        "pnl7d": 789594.912559,
+        "roi7d": 13.424802150000001,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x7839e2f2c375dd2935193f2736167514efff9916",
+      "name": "0x7839e2…ff9916",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x7839e2f2c375dd2935193f2736167514efff9916",
+        "accountValue": "8920163.3803680018",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "51325.817934",
+              "roi": "0.0057175695",
+              "vlm": "153672289.1599999666"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "746199.888832",
+              "roi": "0.0841336518",
+              "vlm": "4266132815.6400003433"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "831583.626546",
+              "roi": "0.0546293167",
+              "vlm": "19323357358.7100028992"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "22247036.8203679956",
+              "roi": "2.0288402361",
+              "vlm": "274760723415.7600097656"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x7839e2f2c375dd2935193f2736167514efff9916",
+        "pnl7d": "746199.888832",
+        "roi7d": 8.41336518
+      },
+      "metrics": {
+        "pnl7d": 746199.888832,
+        "roi7d": 8.41336518,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x5b53358eca5790fa4c268ad6813386b3a86549c7",
+      "name": "0x5b5335…6549c7",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x5b53358eca5790fa4c268ad6813386b3a86549c7",
+        "accountValue": "21113067.1390579976",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-28427.719672",
+              "roi": "-0.0013446091",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "738212.7336940001",
+              "roi": "0.337604388",
+              "vlm": "1800.35"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-281198.503121",
+              "roi": "-0.0125564388",
+              "vlm": "11178826.25"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "8294047.279058001",
+              "roi": "0.2534539938",
+              "vlm": "208064674.1800000072"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x5b53358eca5790fa4c268ad6813386b3a86549c7",
+        "pnl7d": "738212.7336940001",
+        "roi7d": 33.760438799999996
+      },
+      "metrics": {
+        "pnl7d": 738212.733694,
+        "roi7d": 33.760438799999996,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x7ee6b077b59f4417bc36d41bb65365644315db10",
+      "name": "0x7ee6b0…15db10",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x7ee6b077b59f4417bc36d41bb65365644315db10",
+        "accountValue": "1816783.0841430002",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-124054.820204",
+              "roi": "-0.0619629602",
+              "vlm": "58450.84"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "736746.4637799999",
+              "roi": "0.3216780279",
+              "vlm": "1296189.78"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-1986769.4385170003",
+              "roi": "-0.3880804841",
+              "vlm": "13649911.0099999998"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-1446536.7158570001",
+              "roi": "-0.1831984697",
+              "vlm": "138116211.8400000036"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x7ee6b077b59f4417bc36d41bb65365644315db10",
+        "pnl7d": "736746.4637799999",
+        "roi7d": 32.167802789999996
+      },
+      "metrics": {
+        "pnl7d": 736746.4637799999,
+        "roi7d": 32.167802789999996,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x6859da14835424957a1e6b397d8026b1d9ff7e1e",
+      "name": "0x6859da…ff7e1e",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x6859da14835424957a1e6b397d8026b1d9ff7e1e",
+        "accountValue": "8566246.5226610005",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-138656.049245",
+              "roi": "-0.015928501",
+              "vlm": "4385.58"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "722885.882054",
+              "roi": "0.0851438157",
+              "vlm": "9350862.4600000009"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "178345.960076",
+              "roi": "0.0195560897",
+              "vlm": "19345632.8299999982"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "23365352.6026610024",
+              "roi": "3.1830094604",
+              "vlm": "2498250681.3099999428"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x6859da14835424957a1e6b397d8026b1d9ff7e1e",
+        "pnl7d": "722885.882054",
+        "roi7d": 8.51438157
+      },
+      "metrics": {
+        "pnl7d": 722885.882054,
+        "roi7d": 8.51438157,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xf1e2783541c3edbe783c6b89e7cfd493c7894af5",
+      "name": "0xf1e278…894af5",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xf1e2783541c3edbe783c6b89e7cfd493c7894af5",
+        "accountValue": "1437980.130623",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-72464.070214",
+              "roi": "-0.0479753374",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "705488.095567",
+              "roi": "0.6933598213",
+              "vlm": "5601315.54"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-411258.139257",
+              "roi": "-0.1707004842",
+              "vlm": "41280258.8299999982"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-194610.045851",
+              "roi": "-0.1014867886",
+              "vlm": "153477516.2700000107"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xf1e2783541c3edbe783c6b89e7cfd493c7894af5",
+        "pnl7d": "705488.095567",
+        "roi7d": 69.33598212999999
+      },
+      "metrics": {
+        "pnl7d": 705488.095567,
+        "roi7d": 69.33598212999999,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xaecfe4eff84a1cd9a24accc1914ac537af7f6e1b",
+      "name": "chrollo",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xaecfe4eff84a1cd9a24accc1914ac537af7f6e1b",
+        "accountValue": "1612837.668629",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "213404.564753",
+              "roi": "0.1733434536",
+              "vlm": "533349.55"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "704477.277812",
+              "roi": "0.5279339447",
+              "vlm": "2331374.9399999999"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "634431.523913",
+              "roi": "0.4517295316",
+              "vlm": "8369797.79"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "7592951.1486290004",
+              "roi": "85.0591575362",
+              "vlm": "550201411.6299999952"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": "chrollo",
+        "address": "0xaecfe4eff84a1cd9a24accc1914ac537af7f6e1b",
+        "pnl7d": "704477.277812",
+        "roi7d": 52.793394469999996
+      },
+      "metrics": {
+        "pnl7d": 704477.277812,
+        "roi7d": 52.793394469999996,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xae6446c95cc4e455e9cf56f28757ab728d88e81e",
+      "name": "0xae6446…88e81e",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xae6446c95cc4e455e9cf56f28757ab728d88e81e",
+        "accountValue": "11448959.4253830034",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-197312.609008",
+              "roi": "-0.0169421261",
+              "vlm": "18997892.4300000034"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "685416.1486910002",
+              "roi": "0.0634128013",
+              "vlm": "160300840.2200000584"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-2985537.7159510003",
+              "roi": "-0.2031796928",
+              "vlm": "689097649.910000205"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "671710.8853830004",
+              "roi": "0.0515035204",
+              "vlm": "8112077397.1600008011"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xae6446c95cc4e455e9cf56f28757ab728d88e81e",
+        "pnl7d": "685416.1486910002",
+        "roi7d": 6.34128013
+      },
+      "metrics": {
+        "pnl7d": 685416.1486910002,
+        "roi7d": 6.34128013,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xf818fa41af44a1b42ba7433f4ec472be40a2c268",
+      "name": "0xf818fa…a2c268",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xf818fa41af44a1b42ba7433f4ec472be40a2c268",
+        "accountValue": "19569152.689670004",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-189079.790964",
+              "roi": "-0.0095696713",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "681432.3031070001",
+              "roi": "0.0475187104",
+              "vlm": "11465783.5"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-1394163.321795",
+              "roi": "-0.0665049029",
+              "vlm": "40446086.4200000018"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-4927596.7103300011",
+              "roi": "-0.2011432201",
+              "vlm": "114473469.1400000006"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xf818fa41af44a1b42ba7433f4ec472be40a2c268",
+        "pnl7d": "681432.3031070001",
+        "roi7d": 4.751871039999999
+      },
+      "metrics": {
+        "pnl7d": 681432.3031070001,
+        "roi7d": 4.751871039999999,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xb3e475368ed0fa0ad23c04de0423d48a0758806f",
+      "name": "0xb3e475…58806f",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xb3e475368ed0fa0ad23c04de0423d48a0758806f",
+        "accountValue": "6403785.3519839998",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-1160.580119",
+              "roi": "-0.0001811978",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "665410.22189",
+              "roi": "0.5899738721",
+              "vlm": "421548.19"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "645719.789469",
+              "roi": "0.3514242643",
+              "vlm": "14564718.7899999991"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "13505112.3519839998",
+              "roi": "1.9308662959",
+              "vlm": "2608508668.4699997902"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xb3e475368ed0fa0ad23c04de0423d48a0758806f",
+        "pnl7d": "665410.22189",
+        "roi7d": 58.99738721
+      },
+      "metrics": {
+        "pnl7d": 665410.22189,
+        "roi7d": 58.99738721,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x64a4fbb71858f681f3fa10a42b34180a9a48088d",
+      "name": "0x64a4fb…48088d",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x64a4fbb71858f681f3fa10a42b34180a9a48088d",
+        "accountValue": "23716846.1254210025",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-69801.255832",
+              "roi": "-0.0029319946",
+              "vlm": "634506.1800000001"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "655028.1684209999",
+              "roi": "0.0419059229",
+              "vlm": "31407970.1799999997"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-1338948.8340799999",
+              "roi": "-0.052716295",
+              "vlm": "171694472.5299999714"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-4053086.0345790009",
+              "roi": "-0.1000396439",
+              "vlm": "2286728543.4799995422"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x64a4fbb71858f681f3fa10a42b34180a9a48088d",
+        "pnl7d": "655028.1684209999",
+        "roi7d": 4.1905922900000006
+      },
+      "metrics": {
+        "pnl7d": 655028.1684209999,
+        "roi7d": 4.1905922900000006,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x3e516cf3c9d4f29fae6c1324c2414dc872fc9c09",
+      "name": "0x3e516c…fc9c09",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x3e516cf3c9d4f29fae6c1324c2414dc872fc9c09",
+        "accountValue": "2239513.1450120001",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "71738.984541",
+              "roi": "0.0330933848",
+              "vlm": "39540.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "653048.0537310001",
+              "roi": "0.3682391341",
+              "vlm": "4394056.0899999999"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-764060.971489",
+              "roi": "-0.2339065812",
+              "vlm": "8619232.3200000003"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "1393430.725012",
+              "roi": "0.8096490497",
+              "vlm": "160746565.349999994"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x3e516cf3c9d4f29fae6c1324c2414dc872fc9c09",
+        "pnl7d": "653048.0537310001",
+        "roi7d": 36.823913409999996
+      },
+      "metrics": {
+        "pnl7d": 653048.053731,
+        "roi7d": 36.823913409999996,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x1858987516bef70d9c3d9208ff7bfc65f00320b4",
+      "name": "0x185898…0320b4",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x1858987516bef70d9c3d9208ff7bfc65f00320b4",
+        "accountValue": "1698870.333694",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "243776.218562",
+              "roi": "0.1675329561",
+              "vlm": "1798159.0800000001"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "634668.025927",
+              "roi": "1.1171904326",
+              "vlm": "5341869.5899999999"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "901796.9175409999",
+              "roi": "0.9385445343",
+              "vlm": "7495318.7599999998"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "1071564.073694",
+              "roi": "1.3545601137",
+              "vlm": "7495318.7599999998"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x1858987516bef70d9c3d9208ff7bfc65f00320b4",
+        "pnl7d": "634668.025927",
+        "roi7d": 111.71904325999999
+      },
+      "metrics": {
+        "pnl7d": 634668.025927,
+        "roi7d": 111.71904325999999,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x601ced9aa14005d645d0b495acc60f21edab4f54",
+      "name": "0x601ced…ab4f54",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x601ced9aa14005d645d0b495acc60f21edab4f54",
+        "accountValue": "1404345.290177",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-65928.273493",
+              "roi": "-0.0448408209",
+              "vlm": "999.95"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "631709.801063",
+              "roi": "0.9070491717",
+              "vlm": "127755.63"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-335316.41866",
+              "roi": "-0.1927480596",
+              "vlm": "952190.55"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-2069604.8298229999",
+              "roi": "-0.5957497253",
+              "vlm": "40211661.2899999991"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x601ced9aa14005d645d0b495acc60f21edab4f54",
+        "pnl7d": "631709.801063",
+        "roi7d": 90.70491717
+      },
+      "metrics": {
+        "pnl7d": 631709.801063,
+        "roi7d": 90.70491717,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xd1dd6d99c5fb5d31ff52eacce5046c7158859e85",
+      "name": "0xd1dd6d…859e85",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xd1dd6d99c5fb5d31ff52eacce5046c7158859e85",
+        "accountValue": "7471607.6499189995",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-130850.89612",
+              "roi": "-0.0172112026",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "621621.650297",
+              "roi": "0.1502239369",
+              "vlm": "50001130.8599999994"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "350753.745593",
+              "roi": "0.0795570204",
+              "vlm": "179583621.0300000012"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "1610078.7899190001",
+              "roi": "0.2077329192",
+              "vlm": "475315511.4700000286"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xd1dd6d99c5fb5d31ff52eacce5046c7158859e85",
+        "pnl7d": "621621.650297",
+        "roi7d": 15.02239369
+      },
+      "metrics": {
+        "pnl7d": 621621.650297,
+        "roi7d": 15.02239369,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x4d21e561c54302a4e6646fa9051aae68960d10fe",
+      "name": "0x4d21e5…0d10fe",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x4d21e561c54302a4e6646fa9051aae68960d10fe",
+        "accountValue": "4180880.9767450001",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "0.0",
+              "roi": "0.0",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "605839.068495",
+              "roi": "0.1694592581",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "4186180.9467449998",
+              "roi": "41861.80946745",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "4186180.9467449998",
+              "roi": "41861.80946745",
+              "vlm": "0.0"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x4d21e561c54302a4e6646fa9051aae68960d10fe",
+        "pnl7d": "605839.068495",
+        "roi7d": 16.945925810000002
+      },
+      "metrics": {
+        "pnl7d": 605839.068495,
+        "roi7d": 16.945925810000002,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x0c4a3a7ac74d43732f9b5ea507f01ab72a381b19",
+      "name": "0x0c4a3a…381b19",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x0c4a3a7ac74d43732f9b5ea507f01ab72a381b19",
+        "accountValue": "4094572.5147119998",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "305824.049674",
+              "roi": "0.0807190165",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "599231.517389",
+              "roi": "0.1714372125",
+              "vlm": "74899805.5600000024"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "289534.159425",
+              "roi": "0.0760923104",
+              "vlm": "593864700.2100000381"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "1389198.024712",
+              "roi": "0.5134956472",
+              "vlm": "1353947229.0699999332"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x0c4a3a7ac74d43732f9b5ea507f01ab72a381b19",
+        "pnl7d": "599231.517389",
+        "roi7d": 17.14372125
+      },
+      "metrics": {
+        "pnl7d": 599231.517389,
+        "roi7d": 17.14372125,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x0d21f939c96a13ccb9cccbf2911545d009a2e34a",
+      "name": "0x0d21f9…a2e34a",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x0d21f939c96a13ccb9cccbf2911545d009a2e34a",
+        "accountValue": "3122951.039928",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "199141.537708",
+              "roi": "0.0681102984",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "584969.905587",
+              "roi": "0.2304863096",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "909122.477116",
+              "roi": "0.4106562235",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "11765679.4799279999",
+              "roi": "0.4706314779",
+              "vlm": "208018972.9399999976"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x0d21f939c96a13ccb9cccbf2911545d009a2e34a",
+        "pnl7d": "584969.905587",
+        "roi7d": 23.04863096
+      },
+      "metrics": {
+        "pnl7d": 584969.905587,
+        "roi7d": 23.04863096,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xf2925cb0779a741fe33037cbd88fca5382e41244",
+      "name": "0xf2925c…e41244",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xf2925cb0779a741fe33037cbd88fca5382e41244",
+        "accountValue": "0.737158",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "0.002926",
+              "roi": "0.00002926",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "584436.197289",
+              "roi": "0.0549376422",
+              "vlm": "13487407.7100000009"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-981215.574809",
+              "roi": "-0.0471645731",
+              "vlm": "24666278.879999999"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-10789230.0828419998",
+              "roi": "-0.3380921821",
+              "vlm": "51034323.2400000021"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xf2925cb0779a741fe33037cbd88fca5382e41244",
+        "pnl7d": "584436.197289",
+        "roi7d": 5.49376422
+      },
+      "metrics": {
+        "pnl7d": 584436.197289,
+        "roi7d": 5.49376422,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x12d20c01962ded876994daa3f5dd144ef432f97f",
+      "name": "0x12d20c…32f97f",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x12d20c01962ded876994daa3f5dd144ef432f97f",
+        "accountValue": "3694972.2293779999",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-3031.503141",
+              "roi": "-0.0008197453",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "579161.26278",
+              "roi": "0.1858722117",
+              "vlm": "33188228.0799999982"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "53009.980484",
+              "roi": "0.0170024034",
+              "vlm": "66182661.2100000009"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "53009.980484",
+              "roi": "0.0169696225",
+              "vlm": "66182661.2100000009"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x12d20c01962ded876994daa3f5dd144ef432f97f",
+        "pnl7d": "579161.26278",
+        "roi7d": 18.58722117
+      },
+      "metrics": {
+        "pnl7d": 579161.26278,
+        "roi7d": 18.58722117,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xf382f419448b471da26225c4f849bb240be5578c",
+      "name": "0xf382f4…e5578c",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xf382f419448b471da26225c4f849bb240be5578c",
+        "accountValue": "2735580.4739930001",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "8319.961903",
+              "roi": "0.003050219",
+              "vlm": "5644461.4400000004"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "576900.419921",
+              "roi": "0.6794476455",
+              "vlm": "154736380.6299999952"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "1214886.3947700001",
+              "roi": "0.2193688451",
+              "vlm": "871738232.8900001049"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-1639798.1497870001",
+              "roi": "-0.2963416534",
+              "vlm": "2100260526.1900000572"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xf382f419448b471da26225c4f849bb240be5578c",
+        "pnl7d": "576900.419921",
+        "roi7d": 67.94476455
+      },
+      "metrics": {
+        "pnl7d": 576900.419921,
+        "roi7d": 67.94476455,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xa9ff08af55b24bb5d064d776a078e8a292b8dfe2",
+      "name": "0xa9ff08…b8dfe2",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xa9ff08af55b24bb5d064d776a078e8a292b8dfe2",
+        "accountValue": "9055490.6672249995",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "125172.887017",
+              "roi": "0.0140164649",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "560941.5760260001",
+              "roi": "0.0660346967",
+              "vlm": "133621.09"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "339446.396569",
+              "roi": "0.0389445592",
+              "vlm": "1457538.28"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "6806660.2872249996",
+              "roi": "0.4747114734",
+              "vlm": "26415980.9800000004"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xa9ff08af55b24bb5d064d776a078e8a292b8dfe2",
+        "pnl7d": "560941.5760260001",
+        "roi7d": 6.603469670000001
+      },
+      "metrics": {
+        "pnl7d": 560941.5760260001,
+        "roi7d": 6.603469670000001,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x83ffcfb1f2ad843c474b2e28df86c721cb869d3a",
+      "name": "0x83ffcf…869d3a",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x83ffcfb1f2ad843c474b2e28df86c721cb869d3a",
+        "accountValue": "1215091.2554850001",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "10501.821038",
+              "roi": "0.0087181819",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "554848.706751",
+              "roi": "0.8403722968",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "1215090.2554850001",
+              "roi": "12150.90255485",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "1215090.2554850001",
+              "roi": "12150.90255485",
+              "vlm": "0.0"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x83ffcfb1f2ad843c474b2e28df86c721cb869d3a",
+        "pnl7d": "554848.706751",
+        "roi7d": 84.03722968
+      },
+      "metrics": {
+        "pnl7d": 554848.706751,
+        "roi7d": 84.03722968,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x4fe260d11bf48ba3a94459771259c910a398ac59",
+      "name": "0x4fe260…98ac59",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x4fe260d11bf48ba3a94459771259c910a398ac59",
+        "accountValue": "1368969.6694420003",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-79274.623908",
+              "roi": "-0.0547119901",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "551306.758243",
+              "roi": "0.6736707408",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "193882.026474",
+              "roi": "0.1648954497",
+              "vlm": "50968567.0399999991"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-2529932.5505579999",
+              "roi": "-0.5852095408",
+              "vlm": "485252137.8199999928"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x4fe260d11bf48ba3a94459771259c910a398ac59",
+        "pnl7d": "551306.758243",
+        "roi7d": 67.36707408
+      },
+      "metrics": {
+        "pnl7d": 551306.758243,
+        "roi7d": 67.36707408,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x4f12b217aa59e6d3e1f91ca2dc96f9543576618b",
+      "name": "0x4f12b2…76618b",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x4f12b217aa59e6d3e1f91ca2dc96f9543576618b",
+        "accountValue": "1682999.35589",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-35746.859474",
+              "roi": "-0.0207982186",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "541916.6070280001",
+              "roi": "0.1725254157",
+              "vlm": "3049782.29"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "311459.940145",
+              "roi": "0.0923791484",
+              "vlm": "23537620.6900000013"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "1720764.4458900001",
+              "roi": "0.323858582",
+              "vlm": "833294219.6200000048"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x4f12b217aa59e6d3e1f91ca2dc96f9543576618b",
+        "pnl7d": "541916.6070280001",
+        "roi7d": 17.252541569999998
+      },
+      "metrics": {
+        "pnl7d": 541916.607028,
+        "roi7d": 17.252541569999998,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xe86b057f5eb764c9738d6b0d38170befd0723664",
+      "name": "0xe86b05…723664",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xe86b057f5eb764c9738d6b0d38170befd0723664",
+        "accountValue": "6756362.0375899989",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-242979.590039",
+              "roi": "-0.034714635",
+              "vlm": "12680138.6900000013"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "526529.059467",
+              "roi": "0.0921460228",
+              "vlm": "195651087.3600000441"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-1476966.8540029998",
+              "roi": "-0.1461137985",
+              "vlm": "864554974.9299998283"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "20968901.4476770014",
+              "roi": "0.8384053989",
+              "vlm": "48357117011.0299987793"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xe86b057f5eb764c9738d6b0d38170befd0723664",
+        "pnl7d": "526529.059467",
+        "roi7d": 9.214602280000001
+      },
+      "metrics": {
+        "pnl7d": 526529.059467,
+        "roi7d": 9.214602280000001,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x065fb6cfdb32ccaa5747122fd979b88b3844b68c",
+      "name": "0x065fb6…44b68c",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x065fb6cfdb32ccaa5747122fd979b88b3844b68c",
+        "accountValue": "2893847.5760360002",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-26614.784904",
+              "roi": "-0.0091132094",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "526205.057327",
+              "roi": "0.2533238409",
+              "vlm": "1072856.3999999999"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-9798.483964",
+              "roi": "-0.0033745449",
+              "vlm": "4739521.3600000003"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-9798.483964",
+              "roi": "-0.0033745449",
+              "vlm": "4739521.3600000003"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x065fb6cfdb32ccaa5747122fd979b88b3844b68c",
+        "pnl7d": "526205.057327",
+        "roi7d": 25.332384089999998
+      },
+      "metrics": {
+        "pnl7d": 526205.057327,
+        "roi7d": 25.332384089999998,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xbbf7fbc7fa97a88c83c1b8a825692f84ef9d4b13",
+      "name": "0xbbf7fb…9d4b13",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xbbf7fbc7fa97a88c83c1b8a825692f84ef9d4b13",
+        "accountValue": "1925009.8339849999",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "16919.384677",
+              "roi": "0.0088671817",
+              "vlm": "234630.57"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "512298.174724",
+              "roi": "0.5146917493",
+              "vlm": "2122217.6000000001"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "535780.951074",
+              "roi": "0.3435332504",
+              "vlm": "10529928.3900000006"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "2201711.1939849998",
+              "roi": "3.1159764501",
+              "vlm": "100666710.7300000042"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xbbf7fbc7fa97a88c83c1b8a825692f84ef9d4b13",
+        "pnl7d": "512298.174724",
+        "roi7d": 51.469174929999994
+      },
+      "metrics": {
+        "pnl7d": 512298.174724,
+        "roi7d": 51.469174929999994,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xa31441e058492bc7cfffda9aa7623c407ae83a81",
+      "name": "0xa31441…e83a81",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xa31441e058492bc7cfffda9aa7623c407ae83a81",
+        "accountValue": "1814872.5343510001",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-2394.700376",
+              "roi": "-0.0013177481",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "511212.577701",
+              "roi": "0.0709048969",
+              "vlm": "30325959.25"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "265629.778584",
+              "roi": "0.0310705622",
+              "vlm": "80761772.6400000006"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "7873421.407811",
+              "roi": "0.8941674639",
+              "vlm": "2065219728.9500000477"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xa31441e058492bc7cfffda9aa7623c407ae83a81",
+        "pnl7d": "511212.577701",
+        "roi7d": 7.09048969
+      },
+      "metrics": {
+        "pnl7d": 511212.577701,
+        "roi7d": 7.09048969,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x75d415edcb3c3782e5952470821e983f9053a209",
+      "name": "0x75d415…53a209",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x75d415edcb3c3782e5952470821e983f9053a209",
+        "accountValue": "2435139.7395210001",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-144818.835097",
+              "roi": "-0.0561322327",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "507729.129706",
+              "roi": "0.328502451",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "1289562.7832599999",
+              "roi": "1.6884544304",
+              "vlm": "0.0"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "-781218.8537569999",
+              "roi": "-0.2666158358",
+              "vlm": "2023166126.2000000477"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x75d415edcb3c3782e5952470821e983f9053a209",
+        "pnl7d": "507729.129706",
+        "roi7d": 32.850245099999995
+      },
+      "metrics": {
+        "pnl7d": 507729.129706,
+        "roi7d": 32.850245099999995,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0xaf0fdd39e5d92499b0ed9f68693da99c0ec1e92e",
+      "name": "0xaf0fdd…c1e92e",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0xaf0fdd39e5d92499b0ed9f68693da99c0ec1e92e",
+        "accountValue": "21335606.0598529987",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "517408.687247",
+              "roi": "0.0248531963",
+              "vlm": "46988.05"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "505075.537001",
+              "roi": "0.1755951467",
+              "vlm": "17823365.2300000004"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "2437311.7330959998",
+              "roi": "0.1250158619",
+              "vlm": "75664119.950000003"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "27426881.0098530017",
+              "roi": "4.7861677838",
+              "vlm": "899469831.7800000906"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0xaf0fdd39e5d92499b0ed9f68693da99c0ec1e92e",
+        "pnl7d": "505075.537001",
+        "roi7d": 17.559514670000002
+      },
+      "metrics": {
+        "pnl7d": 505075.537001,
+        "roi7d": 17.559514670000002,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "id": "0x7f1950ce02f9f60634ba39b81844911a6c2f05bf",
+      "name": "0x7f1950…2f05bf",
+      "profile": "",
+      "encryptedUid": "",
+      "uniqueCode": "",
+      "raw": {
+        "ethAddress": "0x7f1950ce02f9f60634ba39b81844911a6c2f05bf",
+        "accountValue": "3121114.6017569997",
+        "windowPerformances": [
+          [
+            "day",
+            {
+              "pnl": "-7661.961949",
+              "roi": "-0.0024485555",
+              "vlm": "11722825.9000000004"
+            }
+          ],
+          [
+            "week",
+            {
+              "pnl": "503729.088483",
+              "roi": "0.2046103704",
+              "vlm": "125191716.5100000054"
+            }
+          ],
+          [
+            "month",
+            {
+              "pnl": "-173634.828482",
+              "roi": "-0.0490968945",
+              "vlm": "418241478.2899999619"
+            }
+          ],
+          [
+            "allTime",
+            {
+              "pnl": "283370.4017570001",
+              "roi": "0.0479996935",
+              "vlm": "2186341012.4400005341"
+            }
+          ]
+        ],
+        "prize": 0,
+        "displayName": null,
+        "address": "0x7f1950ce02f9f60634ba39b81844911a6c2f05bf",
+        "pnl7d": "503729.088483",
+        "roi7d": 20.46103704
+      },
+      "metrics": {
+        "pnl7d": 503729.088483,
+        "roi7d": 20.46103704,
+        "winRate": 0,
+        "trades7d": 0,
+        "activeDays": 0,
+        "maxDD": 0,
+        "pf": 0,
+        "avgHoldH": 0,
+        "medianHoldH": 0,
+        "sharpe": 0
+      }
+    }
+  ]
+}
