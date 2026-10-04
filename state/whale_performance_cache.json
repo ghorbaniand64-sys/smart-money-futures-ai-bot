@@ -4803,5 +4803,197 @@
       },
       "updatedAt": 1791047904557
     }
+  },
+  "FUTURES:0x92cbb22a9b9fc01da9914c9b39ed904dd61b859c": {
+    "updatedAt": 1791080343772,
+    "data": {
+      "market": "FUTURES",
+      "complete": false,
+      "pages": 2,
+      "fillCount": 1998,
+      "coverageStart": 1790533448199,
+      "coverageDays": 6.3298098726851855,
+      "coverage7d": false,
+      "coverage30d": false,
+      "w7": {
+        "pnl": 23502.651395,
+        "observedPnl": 23502.651395,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "grossProfit": 0,
+        "grossLoss": 0,
+        "coinPnl": {
+          "DOGE": -2586.8210349999995,
+          "ETH": 8518.804287000006,
+          "SOL": 559.1455620000005,
+          "XRP": -2435.4801049999996,
+          "HYPE": -4284.2783420000005,
+          "WLD": 1079.0192059999993,
+          "AAVE": -2792.4220320000004,
+          "BTC": 25891.76566099998,
+          "ZEC": -1495.0846360000003,
+          "NEAR": 1048.002829
+        },
+        "topCoin": {
+          "coin": "BTC",
+          "pnl": 25891.76566099998
+        },
+        "fillCount": 1998,
+        "observedFills": 1998
+      },
+      "w30": {
+        "pnl": 23502.651395,
+        "observedPnl": 23502.651395,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "grossProfit": 0,
+        "grossLoss": 0,
+        "coinPnl": {
+          "DOGE": -2586.8210349999995,
+          "ETH": 8518.804287000006,
+          "SOL": 559.1455620000005,
+          "XRP": -2435.4801049999996,
+          "HYPE": -4284.2783420000005,
+          "WLD": 1079.0192059999993,
+          "AAVE": -2792.4220320000004,
+          "BTC": 25891.76566099998,
+          "ZEC": -1495.0846360000003,
+          "NEAR": 1048.002829
+        },
+        "topCoin": {
+          "coin": "BTC",
+          "pnl": 25891.76566099998
+        },
+        "fillCount": 1998,
+        "observedFills": 1998
+      },
+      "updatedAt": 1791080343772
+    }
+  },
+  "FUTURES:0x48ec0004494081e8332589faf0747d568da79faf": {
+    "updatedAt": 1791080344674,
+    "data": {
+      "market": "FUTURES",
+      "complete": true,
+      "pages": 2,
+      "fillCount": 1953,
+      "coverageStart": 1788488699170,
+      "coverageDays": 29.995897037037036,
+      "coverage7d": true,
+      "coverage30d": true,
+      "w7": {
+        "pnl": 0,
+        "observedPnl": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "grossProfit": 0,
+        "grossLoss": 0,
+        "coinPnl": {},
+        "topCoin": null,
+        "fillCount": 0,
+        "observedFills": 0
+      },
+      "w30": {
+        "pnl": 4127.340477000018,
+        "observedPnl": 4127.340477000018,
+        "closedTrades": 12,
+        "wins": 6,
+        "losses": 6,
+        "wr": 50,
+        "pf": 1.0246760853193664,
+        "maxDrawdown": 22923.396283000002,
+        "grossProfit": 26337.641252999994,
+        "grossLoss": 25703.382396,
+        "coinPnl": {
+          "ZRO": -5854.536235,
+          "BTC": 9201.026246000001,
+          "ETH": -11015.784155999998,
+          "ARB": -8833.062005,
+          "NEAR": 12444.086278999996,
+          "MON": 2779.9861130000004,
+          "WLD": 3493.0816199999995,
+          "AR": 418.43776700000006,
+          "xyz:LITE": 672.5953000000001,
+          "xyz:ARM": 821.5095479999998
+        },
+        "topCoin": {
+          "coin": "NEAR",
+          "pnl": 12444.086278999996
+        },
+        "fillCount": 1953,
+        "observedFills": 1953
+      },
+      "updatedAt": 1791080344674
+    }
+  },
+  "FUTURES:0x7689a1d1872214cc69cd0f09427642dfdbb5d93c": {
+    "updatedAt": 1791080345640,
+    "data": {
+      "market": "FUTURES",
+      "complete": false,
+      "pages": 2,
+      "fillCount": 1773,
+      "coverageStart": 1788911080416,
+      "coverageDays": 25.10723638888889,
+      "coverage7d": true,
+      "coverage30d": false,
+      "w7": {
+        "pnl": 0,
+        "observedPnl": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "grossProfit": 0,
+        "grossLoss": 0,
+        "coinPnl": {},
+        "topCoin": null,
+        "fillCount": 0,
+        "observedFills": 0
+      },
+      "w30": {
+        "pnl": 112597.03179100002,
+        "observedPnl": 112597.03179100002,
+        "closedTrades": 13,
+        "wins": 9,
+        "losses": 4,
+        "wr": 69.23076923076923,
+        "pf": 5.500118814051819,
+        "maxDrawdown": 15872.53992,
+        "grossProfit": 115290.31245200003,
+        "grossLoss": 20961.422171,
+        "coinPnl": {
+          "BTC": 76627.49540600003,
+          "ZEC": 14986.345278,
+          "xyz:ORCL": 6472.67577,
+          "xyz:CL": 1053.391579,
+          "PUMP": 11061.522168,
+          "@188": 0,
+          "HYPE": -15872.53992,
+          "ETH": 18268.14151
+        },
+        "topCoin": {
+          "coin": "BTC",
+          "pnl": 76627.49540600003
+        },
+        "fillCount": 1773,
+        "observedFills": 1773
+      },
+      "updatedAt": 1791080345640
+    }
   }
 }
