@@ -1,6 +1,6 @@
 {
-  "version": "GFTSH-V1.3.0-GLOBAL-FUTURES-REAL-DISCOVERY",
-  "updatedAt": 1791131490979,
+  "version": "GFTSH-V1.4.0-GLOBAL-FUTURES-COVERAGE-AWARE",
+  "updatedAt": 1791131861303,
   "statuses": [
     {
       "source": "HYPERLIQUID",
@@ -19,9 +19,9 @@
     {
       "source": "OKX",
       "class": "FULL_SIGNAL",
-      "state": "EMPTY",
-      "discovered": 0,
-      "error": "OKX_NO_PUBLIC_LEAD_TRADERS"
+      "state": "OK",
+      "discovered": 173,
+      "error": null
     },
     {
       "source": "BYBIT",
@@ -94,7 +94,7 @@
       "error": "NO_VERIFIED_PUBLIC_READ_ONLY_TRADER_DISCOVERY"
     }
   ],
-  "discovered": 488,
+  "discovered": 661,
   "verified": 200,
   "signals": 0,
   "top": []
