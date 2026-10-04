@@ -1,464 +1,233 @@
-'use strict';
-
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-/**
- * GLOBAL FUTURES TOP-TRADER & SIGNAL HUNTER
- * Futures-only | CEX + DEX | READ-ONLY | NO ORDERS
- *
- * Sources with built-in public adapters:
- *   - Hyperliquid
- *   - Binance Futures Leaderboard / Smart Money
- *   - OKX Futures Copy-Trading Lead Traders
- *
- * Additional exchanges are represented as optional adapters via environment URLs.
- * They are never treated as healthy unless their endpoint returns verifiable data.
- */
+const VERSION='GFTSH-V1.1.0-GLOBAL-FUTURES-MULTI-VENUE';
+const STATE_FILE=process.env.GLOBAL_STATE_FILE||'state/global_futures_hunter.json';
+const CACHE_FILE=process.env.GLOBAL_CACHE_FILE||'state/global_futures_cache.json';
+const TELEGRAM_TOKEN=process.env.TELEGRAM_TOKEN||'';
+const TELEGRAM_CHAT_ID=process.env.TELEGRAM_CHAT_ID||'';
+const LOOKBACK_DAYS=7;
+const DISCOVERY_LIMIT=Number(process.env.GFTSH_DISCOVERY_LIMIT||250);
+const VERIFY_LIMIT=Number(process.env.GFTSH_VERIFY_LIMIT||150);
+const TOP_SIGNALS=Number(process.env.GFTSH_TOP_SIGNALS||10);
+const FRESH_MIN=Number(process.env.GFTSH_FRESH_MIN||15);
+const ENTRY_MAX=Number(process.env.GFTSH_ENTRY_MAX_PCT||0.5);
+const MIN_RR=Number(process.env.GFTSH_MIN_RR||1.5);
+const MODEL_SL_PCT=Number(process.env.GFTSH_MODEL_SL_PCT||0.5);
+const MODEL_TP_R=Number(process.env.GFTSH_MODEL_TP_R||2);
+const HL_VERIFY_CONCURRENCY=Number(process.env.GFTSH_HL_VERIFY_CONCURRENCY||8);
+const MIN_TRADES=Number(process.env.GFTSH_MIN_7D_TRADES||30);
+const MIN_DAYS=Number(process.env.GFTSH_MIN_ACTIVE_DAYS||4);
+const MIN_WR=Number(process.env.GFTSH_MIN_WR||55);
+const MIN_PF=Number(process.env.GFTSH_MIN_PF||1.5);
+const MAX_MEDIAN_H=Number(process.env.GFTSH_MAX_MEDIAN_HOURS||4);
+const MAX_AVG_H=Number(process.env.GFTSH_MAX_AVG_HOURS||8);
+const MAX_DD=Number(process.env.GFTSH_MAX_DD||40);
+const TIMEOUT_MS=Number(process.env.GFTSH_HTTP_TIMEOUT_MS||12000);
+const USER_AGENT='GFTSH/1.1 read-only futures trader research';
 
-const VERSION = 'GFTSH-V1.0.0-GLOBAL-CEX-DEX-FUTURES-ONLY';
-const STATE_FILE = process.env.GLOBAL_STATE_FILE || 'state/global_futures_hunter.json';
-const CACHE_FILE = process.env.GLOBAL_CACHE_FILE || 'state/global_futures_cache.json';
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || '';
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
-const TG_LIMIT = 3900;
-const LOOKBACK_DAYS = Number(process.env.GLOBAL_LOOKBACK_DAYS || 7);
-const MAX_DISCOVERED_PER_SOURCE = Number(process.env.GLOBAL_MAX_DISCOVERED_PER_SOURCE || 100);
-const MAX_VERIFY_PER_SOURCE = Number(process.env.GLOBAL_MAX_VERIFY_PER_SOURCE || 25);
-const TOP_SIGNALS = Number(process.env.GLOBAL_TOP_SIGNALS || 10);
-const CACHE_TTL_MIN = Number(process.env.GLOBAL_CACHE_TTL_MIN || 60);
-const POSITION_FRESH_MIN = Number(process.env.GLOBAL_POSITION_FRESH_MIN || 15);
-const MAX_ENTRY_DISTANCE_PCT = Number(process.env.GLOBAL_MAX_ENTRY_DISTANCE_PCT || 0.5);
-const MIN_TRADES_7D = Number(process.env.GLOBAL_MIN_TRADES_7D || 30);
-const MIN_ACTIVE_DAYS = Number(process.env.GLOBAL_MIN_ACTIVE_DAYS || 4);
-const MIN_WR = Number(process.env.GLOBAL_MIN_WR || 55);
-const MIN_PF = Number(process.env.GLOBAL_MIN_PF || 1.5);
-const MIN_MEDIAN_HOLD_H = Number(process.env.GLOBAL_MIN_MEDIAN_HOLD_H || 0);
-const MAX_MEDIAN_HOLD_H = Number(process.env.GLOBAL_MAX_MEDIAN_HOLD_H || 4);
-const MAX_AVG_HOLD_H = Number(process.env.GLOBAL_MAX_AVG_HOLD_H || 8);
-const MIN_RR = Number(process.env.GLOBAL_MIN_RR || 1.5);
-const MAX_DD = Number(process.env.GLOBAL_MAX_DD || 40);
-const FETCH_TIMEOUT_MS = Number(process.env.GLOBAL_FETCH_TIMEOUT_MS || 12000);
-const HL_URL = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
-const BINANCE_RANK_URL = process.env.BINANCE_LEADERBOARD_RANK_URL || 'https://www.binance.com/bapi/futures/v3/public/future/leaderboard/getLeaderboardRank';
-const BINANCE_POS_URL = process.env.BINANCE_LEADERBOARD_POSITION_URL || 'https://www.binance.com/bapi/futures/v1/public/future/leaderboard/getOtherPosition';
-const OKX_URL = process.env.OKX_API_URL || 'https://www.okx.com';
-
-const OPTIONAL_SOURCES = {
-  BYBIT: process.env.BYBIT_LEADERBOARD_URL || '',
-  BITGET: process.env.BITGET_LEADERBOARD_URL || '',
-  KUCOIN: process.env.KUCOIN_LEADERBOARD_URL || '',
-  GATE: process.env.GATE_LEADERBOARD_URL || '',
-  MEXC: process.env.MEXC_LEADERBOARD_URL || '',
-  PHEMEX: process.env.PHEMEX_LEADERBOARD_URL || '',
-  BINGX: process.env.BINGX_LEADERBOARD_URL || '',
-  COINEX: process.env.COINEX_LEADERBOARD_URL || '',
-  DYDX: process.env.DYDX_LEADERBOARD_URL || '',
-  PARADEX: process.env.PARADEX_LEADERBOARD_URL || '',
+const SOURCES={
+ HYPERLIQUID:{label:'HYPERLIQUID',kind:'DEX',base:'https://api.hyperliquid.xyz/info'},
+ BINANCE:{label:'BINANCE',kind:'CEX',base:'https://www.binance.com'},
+ OKX:{label:'OKX',kind:'CEX',base:'https://www.okx.com'},
+ BYBIT:{label:'BYBIT',kind:'CEX',base:'https://www.bybit.com'},
+ BITGET:{label:'BITGET',kind:'CEX',base:'https://api.bitget.com'},
+ KUCOIN:{label:'KUCOIN',kind:'CEX',base:'https://www.kucoin.com'},
+ GATE:{label:'GATE',kind:'CEX',base:'https://www.gate.com'},
+ MEXC:{label:'MEXC',kind:'CEX',base:'https://www.mexc.com'},
+ PHEMEX:{label:'PHEMEX',kind:'CEX',base:'https://phemex.com'},
+ BINGX:{label:'BINGX',kind:'CEX',base:'https://bingx.com'},
+ COINEX:{label:'COINEX',kind:'CEX',base:'https://www.coinex.com'},
+ DYDX:{label:'DYDX',kind:'DEX',base:'https://indexer.dydx.trade'},
+ PARADEX:{label:'PARADEX',kind:'DEX',base:'https://api.prod.paradex.trade'}
 };
 
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-const num = v => { const x = Number(v); return Number.isFinite(x) ? x : null; };
-const str = v => v == null ? '' : String(v);
-const now = () => Date.now();
-const pct = (v, d=2) => num(v) == null ? '—' : `${num(v).toFixed(d)}%`;
-const usd = (v, d=0) => num(v) == null ? '—' : `$${num(v).toLocaleString('en-US',{maximumFractionDigits:d})}`;
-const hours = v => num(v) == null ? '—' : `${num(v).toFixed(1)}h`;
-const short = v => { const s=str(v); return s.length>18 ? `${s.slice(0,8)}…${s.slice(-6)}` : s; };
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+function num(v,d=NaN){const x=Number(v);return Number.isFinite(x)?x:d;}
+function finite(v){return Number.isFinite(num(v));}
+function pct(v,d=2){return finite(v)?`${num(v).toFixed(d)}%`:'—';}
+function usd(v){return finite(v)?`$${num(v).toLocaleString('en-US',{maximumFractionDigits:0})}`:'—';}
+function trunc(s,n=12){s=String(s??'');return s.length>n?`${s.slice(0,n/2)}…${s.slice(-n/2)}`:s;}
+function sleepJitter(){return sleep(50+Math.floor(Math.random()*80));}
 
-async function ensureDir(file){ await fs.mkdir(path.dirname(file), {recursive:true}); }
-async function readJson(file, fallback){ try{return JSON.parse(await fs.readFile(file,'utf8'));}catch{return fallback;} }
-async function writeJson(file, value){ await ensureDir(file); await fs.writeFile(file, JSON.stringify(value,null,2)); }
+async function ensureState(){await fs.mkdir(path.dirname(STATE_FILE),{recursive:true});await fs.mkdir(path.dirname(CACHE_FILE),{recursive:true});}
+async function readJson(file,fallback){try{return JSON.parse(await fs.readFile(file,'utf8'));}catch{return fallback;}}
+async function writeJson(file,obj){await fs.writeFile(file,JSON.stringify(obj,null,2));}
 
-async function fetchJson(url, options={}, label='http'){
-  const controller = new AbortController();
-  const timer = setTimeout(()=>controller.abort(), FETCH_TIMEOUT_MS);
-  try{
-    const res = await fetch(url, {...options, signal:controller.signal, headers:{accept:'application/json',...(options.headers||{})}});
-    const text = await res.text();
-    if(!res.ok) throw new Error(`${label}:HTTP_${res.status}:${text.slice(0,180)}`);
-    try{return JSON.parse(text);}catch{throw new Error(`${label}:INVALID_JSON`);}
-  }finally{clearTimeout(timer);}
+async function requestJson(url,opts={}){
+ const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),TIMEOUT_MS);
+ try{
+  const headers={'accept':'application/json,text/plain,*/*','user-agent':USER_AGENT,...(opts.headers||{})};
+  const r=await fetch(url,{...opts,headers,signal:ctl.signal});
+  const text=await r.text();
+  let data;try{data=JSON.parse(text);}catch{data=text.slice(0,500);}
+  if(!r.ok)throw new Error(`HTTP_${r.status}:${JSON.stringify(data).slice(0,280)}`);
+  return data;
+ }finally{clearTimeout(t);}
+}
+async function postJson(url,body){return requestJson(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});}
+
+function normalized({source,id,name,stats={},position=null}){
+ return {source,venue:SOURCES[source]?.label||source,traderId:String(id),name:name||String(id),accountType:stats.accountType||'FUTURES_LEAD',
+  stats:{trades7d:num(stats.trades7d),activeDays:num(stats.activeDays),wr:num(stats.wr),pf:num(stats.pf),pnl7d:num(stats.pnl7d),dd:num(stats.dd),avgHoldH:num(stats.avgHoldH),medianHoldH:num(stats.medianHoldH),roi7d:num(stats.roi7d),aum:num(stats.aum),daysTrading:num(stats.daysTrading)},
+  position:position?{symbol:position.symbol||position.instId||'',side:String(position.side||'').toUpperCase(),entry:num(position.entry),mark:num(position.mark),openedAt:num(position.openedAt),size:num(position.size),tp:num(position.tp),sl:num(position.sl),source:position.source||source}:null,
+  discoveredAt:Date.now()};
 }
 
-function arr(v){
-  if(Array.isArray(v)) return v;
-  if(v && Array.isArray(v.data)) return v.data;
-  if(v && Array.isArray(v.rows)) return v.rows;
-  if(v && Array.isArray(v.list)) return v.list;
-  if(v && Array.isArray(v.data?.list)) return v.data.list;
-  return [];
+function gate(t){const s=t.stats,r=[];
+ if(!finite(s.trades7d)||s.trades7d<MIN_TRADES)r.push('TRADES_7D<30');
+ if(!finite(s.activeDays)||s.activeDays<MIN_DAYS)r.push('ACTIVE_DAYS<4');
+ if(!finite(s.wr)||s.wr<MIN_WR)r.push('WR<55%');
+ if(!finite(s.pf)||s.pf<MIN_PF)r.push('PF<1.5');
+ if(finite(s.medianHoldH)&&s.medianHoldH>MAX_MEDIAN_H)r.push('MEDIAN_HOLD>4H');
+ if(finite(s.avgHoldH)&&s.avgHoldH>MAX_AVG_H)r.push('AVG_HOLD>8H');
+ if(finite(s.dd)&&s.dd>MAX_DD)r.push('DD>40%');
+ return r;
 }
+function positionGate(t){const p=t.position;if(!p)return ['NO_CURRENT_POSITION'];const r=[];
+ const age=finite(p.openedAt)?(Date.now()-p.openedAt)/60000:NaN;
+ if(!finite(age)||age>FRESH_MIN)r.push('STALE>15M');
+ if(!finite(p.entry)||!finite(p.mark)||p.entry<=0)r.push('NO_ENTRY_MARK');
+ else {const d=(p.mark-p.entry)/p.entry*100*(p.side==='SHORT'?-1:1);p.distancePct=d;if(Math.abs(d)>ENTRY_MAX)r.push('ENTRY_DISTANCE>0.5%');}
+ if(!['LONG','SHORT'].includes(p.side))r.push('SIDE_UNKNOWN');
+ const risk=finite(p.sl)?Math.abs(p.entry-p.sl):NaN, reward=finite(p.tp)?Math.abs(p.tp-p.entry):NaN;
+ if(finite(risk)&&risk>0&&finite(reward))p.rr=reward/risk;
+ if(!finite(p.rr)||p.rr<MIN_RR)r.push('RR<1.5');
+ return r;
+}
+function score(t){const s=t.stats;return (finite(s.pf)?Math.min(s.pf,8)*20:0)+(finite(s.wr)?Math.min(Math.max(s.wr-50,0),45):0)+(finite(s.trades7d)?Math.min(s.trades7d,150)/5:0)+(finite(s.pnl7d)?Math.max(Math.min(s.pnl7d/1000,20),-20):0)-(finite(s.dd)?Math.min(s.dd,40)*.5:20)-(finite(s.medianHoldH)?Math.min(s.medianHoldH,12):0);}
 
-function first(o, keys){
-  for(const k of keys){
-    const v = o?.[k];
-    if(v !== undefined && v !== null && v !== '') return v;
+async function hyperliquid(){
+ const status={source:'HYPERLIQUID',healthy:false,discovered:0,error:null};let out=[];
+ try{
+  const lb=await requestJson('https://stats-data.hyperliquid.xyz/Mainnet/leaderboard');
+  const rows=Array.isArray(lb)?lb:(lb?.leaderboardRows||lb?.leaderboard||lb?.data||[]);
+  for(const x of rows.slice(0,DISCOVERY_LIMIT)){
+   const a=x?.ethAddress||x?.address;if(!a)continue;
+   const perf=new Map((x?.windowPerformances||[]).map(v=>[v?.[0],v?.[1]]));
+   const w=perf.get('week')||{};
+   out.push(normalized({source:'HYPERLIQUID',id:a,name:x?.displayName||a,stats:{pnl7d:num(w.pnl),roi7d:num(w.roi)*100,aum:num(x?.accountValue),accountType:'DEX_PERP'}}));
   }
-  return null;
+  status.healthy=true;status.discovered=out.length;
+ }catch(e){status.error=String(e.message||e);}
+ return {status,out};
 }
 
-function normalizeTrader(x, source){
-  const metrics = {
-    pnl7d: num(first(x,['pnl7d','pnl','profit','profitAndLoss','totalPnl','profitLoss','pnlValue'])),
-    roi7d: num(first(x,['roi7d','roi','returnRate','roiRate','rate'])),
-    winRate: num(first(x,['winRate','win_rate','winRatio','profitRate'])),
-    trades7d: num(first(x,['trades7d','tradeCount','totalTrades','closedTrades','positionCount'])),
-    activeDays: num(first(x,['activeDays','tradingDays','daysTrading','tradeDays'])),
-    maxDD: num(first(x,['maxDrawdown','mdd','maxDD','drawdown'])),
-    pf: num(first(x,['profitFactor','pf'])),
-    avgHoldH: num(first(x,['avgHoldHours','averageHoldHours','avgHoldingHours'])),
-    medianHoldH: num(first(x,['medianHoldHours','medianHoldingHours'])),
-    sharpe: num(first(x,['sharpe','sharpeRatio'])),
-  };
-  const id = str(first(x,['address','wallet','walletAddress','uniqueCode','encryptedUid','futureUid','traderId','uid','id','accountId']));
-  return {
-    source,
-    venue: source,
-    id,
-    name: str(first(x,['nickName','nickname','name','alias','userName','displayName'])) || short(id),
-    profile: str(first(x,['profile','profileUrl','url'])),
-    encryptedUid: str(x?.encryptedUid || ''),
-    uniqueCode: str(x?.uniqueCode || ''),
-    raw: x,
-    metrics
-  };
+function deriveHyperliquidStats(fills){
+ const closed=fills.filter(f=>finite(f.closedPnl)&&Math.abs(f.closedPnl)>0);
+ const wins=closed.filter(f=>f.closedPnl>0).length;
+ const gp=closed.filter(f=>f.closedPnl>0).reduce((a,f)=>a+f.closedPnl,0);
+ const gl=Math.abs(closed.filter(f=>f.closedPnl<0).reduce((a,f)=>a+f.closedPnl,0));
+ const days=new Set(closed.map(f=>new Date(f.time).toISOString().slice(0,10)));
+ const trades=closed.length;
+ const wr=trades?wins/trades*100:NaN;
+ const pf=gl>0?gp/gl:(gp>0?Infinity:NaN);
+ const queues=new Map(), holds=[];
+ for(const f of fills.sort((a,b)=>a.time-b.time)){
+  const side=String(f.dir||'').toUpperCase().includes('SELL')?'SHORT':'LONG';
+  const key=`${f.coin}|${side}`;
+  const isClose=finite(f.closedPnl)&&Math.abs(f.closedPnl)>0;
+  if(!queues.has(key))queues.set(key,[]);
+  if(!isClose)queues.get(key).push(f.time);
+  else {const q=queues.get(key);const open=q.shift();if(finite(open))holds.push((f.time-open)/3600000);}
+ }
+ const avgHoldH=holds.length?holds.reduce((a,b)=>a+b,0)/holds.length:NaN;
+ const sorted=holds.slice().sort((a,b)=>a-b);const medianHoldH=sorted.length?sorted[Math.floor(sorted.length/2)]:NaN;
+ // Intraperiod drawdown from cumulative closed PnL.
+ let eq=0,peak=0,maxDD=0;for(const f of closed){eq+=f.closedPnl;peak=Math.max(peak,eq);if(peak>0)maxDD=Math.max(maxDD,(peak-eq)/peak*100);}
+ return {trades7d:trades,activeDays:days.size,wr,pf,avgHoldH,medianHoldH,dd:maxDD};
 }
 
-function mergeMetric(a,b){
-  if(a!=null) return a; return b;
-}
-function mergeTrader(a,b){
-  const out={...a,...b,metrics:{...a.metrics}};
-  for(const k of Object.keys(out.metrics)) out.metrics[k]=mergeMetric(a.metrics?.[k],b.metrics?.[k]);
-  for(const k of ['encryptedUid','uniqueCode','profile','name']) if(!out[k] && b[k]) out[k]=b[k];
-  return out;
-}
-
-function windowPerf(row, names=['week','7d','7D']){
-  const wp=Array.isArray(row?.windowPerformances)?row.windowPerformances:[];
-  for(const name of names){
-    const hit=wp.find(x=>Array.isArray(x)&&String(x[0]).toLowerCase()===name.toLowerCase());
-    if(hit?.[1]) return hit[1];
+async function hlVerify(t){try{
+ const end=Date.now(),start=end-7*86400000;
+ const [state,fills]=await Promise.all([
+  postJson(SOURCES.HYPERLIQUID.base,{type:'clearinghouseState',user:t.traderId}),
+  postJson(SOURCES.HYPERLIQUID.base,{type:'userFillsByTime',user:t.traderId,startTime:start,endTime:end})
+ ]);
+ const fs=Array.isArray(fills)?fills:[];const ds=deriveHyperliquidStats(fs);t.stats={...t.stats,...ds};
+ const positions=(state?.assetPositions||[]).map(x=>x?.position).filter(Boolean);
+ let best=null;
+ for(const p of positions){const size=num(p?.szi);if(!size)continue;const symbol=p?.coin||'';const side=size>0?'LONG':'SHORT';const entry=num(p?.entryPx);const mark=num(p?.markPx);const liq=num(p?.liquidationPx);const last=fs.filter(f=>f?.coin===symbol).sort((a,b)=>b.time-a.time)[0];best={symbol,side,entry,mark,size:Math.abs(size),openedAt:num(last?.time,Date.now()),tp:NaN,sl:liq,source:'HYPERLIQUID',leverage:num(p?.leverage?.value)};break;}
+ if(best){
+   const risk=best.entry*MODEL_SL_PCT/100;
+   best.sl=best.side==='LONG'?best.entry-risk:best.entry+risk;
+   best.tp=best.side==='LONG'?best.entry+risk*MODEL_TP_R:best.entry-risk*MODEL_TP_R;
+   best.tpSlModel=true;
+   t.position=best;
   }
-  return null;
+  t.meta={openFills:fs.length};return t;
+ }catch(e){t.verifyError=String(e.message||e);return t;}}
+
+function extractArray(x){if(Array.isArray(x))return x;for(const k of ['data','result','rows','list','items','leaderboard','dataList','leaderList'])if(Array.isArray(x?.[k]))return x[k];return [];}
+function firstNumber(o,keys){for(const k of keys){const v=num(o?.[k]);if(finite(v))return v;}return NaN;}
+
+async function binance(){
+ const status={source:'BINANCE',healthy:false,discovered:0,error:null};let rows=[];
+ const endpoints=[
+  '/bapi/futures/v1/friendly/future/copy-trade/lead-portfolio/query-list',
+  '/bapi/futures/v1/friendly/future/copy-trade/lead-portfolio/query-lead-portfolio-list',
+  '/bapi/futures/v1/friendly/future/copy-trade/lead-portfolio/query-lead-portfolio'
+ ];
+ for(const ep of endpoints){try{const x=await requestJson(SOURCES.BINANCE.base+ep,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pageNumber:1,pageSize:DISCOVERY_LIMIT,sortType:'PNL',periodType:'30D'})});rows=extractArray(x);if(rows.length){status.healthy=true;break;}}catch(e){status.error=`binance:${ep}:${e.message}`;}}
+ for(const x of rows.slice(0,DISCOVERY_LIMIT)){const id=x?.portfolioId||x?.leadPortfolioId||x?.uid||x?.traderId||x?.userId;if(!id)continue;outPush:out.push;}
+ const out=[];for(const x of rows.slice(0,DISCOVERY_LIMIT)){const id=x?.portfolioId||x?.leadPortfolioId||x?.uid||x?.traderId||x?.userId;if(!id)continue;out.push(normalized({source:'BINANCE',id,name:x?.nickName||x?.nickname||x?.portfolioName||id,stats:{trades7d:firstNumber(x,['tradeCount7d','totalTrades7d','tradeCount']),activeDays:firstNumber(x,['daysTrading','activeDays']),wr:firstNumber(x,['winRate','winRate7d']),pf:firstNumber(x,['profitFactor']),pnl7d:firstNumber(x,['pnl7d','profitLoss7d','pnl']),dd:firstNumber(x,['mdd','maxDrawdown']),avgHoldH:firstNumber(x,['avgHoldHours','averageHoldingHours']),medianHoldH:firstNumber(x,['medianHoldHours']),roi7d:firstNumber(x,['roi7d','roi']),aum:firstNumber(x,['aum','aumValue'])}}));}
+ status.discovered=out.length;return {status,out};
 }
 
-async function discoverHyperliquid(){
-  try{
-    const statsUrl=process.env.HYPERLIQUID_LEADERBOARD_URL || 'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';
-    const data=await fetchJson(statsUrl,{},'hyperliquid:leaderboard');
-    const rows=arr(data?.leaderboardRows||data);
-    const out=[];
-    for(const r of rows){
-      const perf=windowPerf(r);
-      const x=normalizeTrader({...r, address:r.ethAddress, pnl7d:perf?.pnl, roi7d:perf?.roi!=null?Number(perf.roi)*100:null},'HYPERLIQUID');
-      if(x.id) out.push(x);
-    }
-    out.sort((a,b)=>(b.metrics.pnl7d??-Infinity)-(a.metrics.pnl7d??-Infinity));
-    return {source:'HYPERLIQUID',ok:true,rows:out.slice(0,MAX_DISCOVERED_PER_SOURCE)};
-  }catch(e){return {source:'HYPERLIQUID',ok:false,error:e.message,rows:[]};}
+async function genericCex(name,urls,parser){const status={source:name,healthy:false,discovered:0,error:null};let data=[];
+ for(const u of urls){try{const x=await requestJson(u);data=extractArray(x);if(data.length){status.healthy=true;break;}}catch(e){status.error=`${name}:${e.message}`;}}
+ const out=parser(data);status.discovered=out.length;return {status,out};}
+
+async function okx(){return genericCex('OKX',[
+ 'https://www.okx.com/api/v5/copytrading/public-lead-traders?instType=SWAP&sortType=1&dataType=1&limit=100',
+ 'https://www.okx.com/api/v5/copytrading/public-lead-traders?instType=SWAP&limit=100'
+ ],rows=>rows.slice(0,DISCOVERY_LIMIT).map(x=>normalized({source:'OKX',id:x?.uniqueCode||x?.traderId||x?.nickName||x?.uid,name:x?.nickName||x?.uniqueCode,stats:{wr:firstNumber(x,['winRatio','winRate']),pnl7d:firstNumber(x,['pnl','pnl7D']),roi7d:firstNumber(x,['pnlRatio','roi']),aum:firstNumber(x,['aum']),daysTrading:firstNumber(x,['daysTrading'])}})).filter(x=>x.traderId));}
+
+async function bybit(){return genericCex('BYBIT',[
+ 'https://www.bybit.com/x-api/fapi/public/v1/copy-trade/leader-board?limit=100',
+ 'https://api2.bybit.com/fapi/contract/v5/copytrade/public/v1/leader-board?limit=100'
+ ],rows=>rows.slice(0,DISCOVERY_LIMIT).map(x=>normalized({source:'BYBIT',id:x?.uid||x?.userId||x?.leaderId||x?.masterTraderId,name:x?.nickName||x?.nickname||x?.uid,stats:{wr:firstNumber(x,['winRate','winRate7D']),pnl7d:firstNumber(x,['pnl','pnl7D']),roi7d:firstNumber(x,['roi','roi7D']),dd:firstNumber(x,['mdd','maxDrawdown']),daysTrading:firstNumber(x,['daysTrading','activeDays'])}})).filter(x=>x.traderId));}
+
+async function bitget(){return genericCex('BITGET',[
+ 'https://api.bitget.com/api/v2/copy/mix-trader/config-query?productType=USDT-FUTURES',
+ 'https://api.bitget.com/api/v2/copy/mix-trader/trader-list?productType=USDT-FUTURES&pageNo=1&pageSize=100'
+ ],rows=>rows.slice(0,DISCOVERY_LIMIT).map(x=>normalized({source:'BITGET',id:x?.traderId||x?.uid||x?.id,name:x?.nickName||x?.traderName||x?.traderId,stats:{wr:firstNumber(x,['winRate']),pnl7d:firstNumber(x,['profit','pnl','profit7d']),roi7d:firstNumber(x,['roi','roi7d']),aum:firstNumber(x,['aum','totalAssets']),daysTrading:firstNumber(x,['daysTrading'])}})).filter(x=>x.traderId));}
+
+async function unsupported(name){return {status:{source:name,healthy:false,discovered:0,error:'NO_VERIFIED_PUBLIC_READ-ONLY_LEADERBOARD_ADAPTER'},out:[]};}
+
+async function verifyCex(t){
+ // Current public leaderboard records are authoritative for ranking fields only.
+ // Do not invent a position when the venue does not expose it publicly.
+ return t;
 }
 
-async function discoverBinance(){
-  try{
-    const body={isShared:true,isTrader:true,periodType:'WEEKLY',statisticsType:'PNL',tradeType:'PERPETUAL'};
-    const data=await fetchJson(BINANCE_RANK_URL,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)},'binance:leaderboard');
-    const rows=arr(data);
-    const out=[];
-    for(const r of rows.slice(0,MAX_DISCOVERED_PER_SOURCE)){
-      const x=normalizeTrader(r,'BINANCE');
-      if(x.id || x.encryptedUid) out.push(x);
-    }
-    return {source:'BINANCE',ok:true,rows:out};
-  }catch(e){return {source:'BINANCE',ok:false,error:e.message,rows:[]};}
+async function telegram(text){if(!TELEGRAM_TOKEN||!TELEGRAM_CHAT_ID)return false;try{await requestJson(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:TELEGRAM_CHAT_ID,text,disable_web_page_preview:true})});return true;}catch(e){console.log('[TELEGRAM] ERROR',e.message);return false;}}
+
+function report(statuses,all,verified,signals,blocked,runtime){
+ const healthy=statuses.filter(s=>s.healthy).length;
+ const lines=[`🌐 GLOBAL FUTURES TOP-TRADER & SIGNAL HUNTER`,`🧠 ${VERSION}`,`📡 READ-ONLY | NO ORDERS | FUTURES ONLY`,`━━━━━━━━━━━━━━━━━━`,`🔎 Sources: ${healthy}/${statuses.length} healthy | Traders discovered: ${all.length}`,`🛡️ Verified: ${verified.length} | Actionable signals: ${signals.length}/${TOP_SIGNALS}`,`🎯 Gate: 7D trades≥${MIN_TRADES} | active days≥${MIN_DAYS} | WR≥${MIN_WR}% | PF≥${MIN_PF} | median hold≤${MAX_MEDIAN_H}h | avg hold≤${MAX_AVG_H}h | DD≤${MAX_DD}%`,`⚡ Signal gate: fresh≤${FRESH_MIN}m | entry distance≤${ENTRY_MAX}% | RR≥${MIN_RR} | TP/SL=model ${MODEL_TP_R}R/${MODEL_SL_PCT}%`,`⏱ Runtime: ${runtime.toFixed(1)}s`,``,`📡 SOURCE STATUS`];
+ for(const s of statuses)lines.push(`${s.source}: ${s.healthy?'OK':'ERROR'} | discovered=${s.discovered}${s.error?` | ${s.error.slice(0,150)}`:''}`);
+ lines.push('','🏆 TOP ACTIONABLE FUTURES SIGNALS');
+ if(!signals.length)lines.push('No trader passed BOTH the statistical quality gate and current-position signal gate this cycle.');
+ else signals.forEach((t,i)=>{const p=t.position;lines.push(`${i+1}. ${t.venue} ${trunc(t.name,20)} | ${p.side} ${p.symbol} | Entry ${p.entry.toFixed(6)} | Now ${p.mark.toFixed(6)} | Dist ${pct(p.distancePct)} | RR ${p.rr.toFixed(2)} | Age ${((Date.now()-p.openedAt)/60000).toFixed(1)}m | WR ${pct(t.stats.wr,1)} | PF ${t.stats.pf.toFixed(2)} | Score ${score(t).toFixed(1)}`);});
+ lines.push('','🧱 TOP BLOCKED TRADERS');
+ blocked.slice(0,10).forEach(t=>lines.push(`${t.venue} ${trunc(t.name,22)}: ${t.reasons.join(' | ')}`));
+ return lines.join('\n');
 }
 
-async function discoverOKX(){
-  try{
-    const u=`${OKX_URL.replace(/\/$/,'')}/api/v5/copytrading/public-lead-traders?instType=SWAP`;
-    const data=await fetchJson(u,{},'okx:lead-traders');
-    const rows=arr(data);
-    const out=[];
-    for(const r of rows.slice(0,MAX_DISCOVERED_PER_SOURCE)){
-      const x=normalizeTrader(r,'OKX');
-      if(x.id || x.uniqueCode) out.push(x);
-    }
-    return {source:'OKX',ok:true,rows:out};
-  }catch(e){return {source:'OKX',ok:false,error:e.message,rows:[]};}
+async function main(){const start=Date.now();await ensureState();console.log('========================================');console.log('GLOBAL FUTURES TOP-TRADER & SIGNAL HUNTER');console.log(`Version: ${VERSION}`);console.log('Mode: READ-ONLY / NO ORDERS / FUTURES ONLY');console.log('========================================');
+ const adapters=[hyperliquid,binance,okx,bybit,bitget,()=>unsupported('KUCOIN'),()=>unsupported('GATE'),()=>unsupported('MEXC'),()=>unsupported('PHEMEX'),()=>unsupported('BINGX'),()=>unsupported('COINEX'),()=>unsupported('DYDX'),()=>unsupported('PARADEX')];
+ const results=[];for(const fn of adapters){try{results.push(await fn());}catch(e){results.push({status:{source:'UNKNOWN',healthy:false,discovered:0,error:String(e.message||e)},out:[]});}}
+ const statuses=results.map(x=>x.status);let all=results.flatMap(x=>x.out);
+ const dedup=new Map();for(const t of all){const k=`${t.source}:${t.traderId}`;if(!dedup.has(k))dedup.set(k,t);}all=[...dedup.values()];
+ all.sort((a,b)=>score(b)-score(a));const verifyPool=all.slice(0,VERIFY_LIMIT);const verified=[];
+ const queue=verifyPool.slice();
+ async function worker(){while(queue.length){const t=queue.shift();const v=t.source==='HYPERLIQUID'?await hlVerify(t):await verifyCex(t);v.gate=gate(v);verified.push(v);}}
+ await Promise.all(Array.from({length:Math.min(HL_VERIFY_CONCURRENCY,verifyPool.length||1)},worker));
+ const quality=verified.filter(t=>t.gate.length===0);for(const t of quality)positionGate(t);
+ const signals=quality.filter(t=>positionGate(t).length===0).sort((a,b)=>score(b)-score(a)).slice(0,TOP_SIGNALS);
+ const blocked=verified.filter(t=>t.gate.length||positionGate(t).length).map(t=>({venue:t.venue,name:t.name,reasons:[...t.gate,...(t.gate.length?[]:positionGate(t))]}));
+ const state={version:VERSION,updatedAt:Date.now(),sources:statuses,discovered:all.length,verified:verified.length,signals:signals.length,signalsSnapshot:signals.map(x=>({source:x.source,traderId:x.traderId,name:x.name,position:x.position,stats:x.stats,score:score(x)}))};await writeJson(STATE_FILE,state);await writeJson(CACHE_FILE,{generatedAt:Date.now(),candidates:all.slice(0,DISCOVERY_LIMIT),version:VERSION});
+ const text=report(statuses,all,verified,signals,blocked,(Date.now()-start)/1000);console.log(text);await telegram(text);
 }
-
-async function discoverOptional(name,url){
-  if(!url) return {source:name,ok:false,disabled:true,rows:[]};
-  try{
-    const data=await fetchJson(url,{},`${name}:leaderboard`);
-    const rows=arr(data);
-    const out=rows.slice(0,MAX_DISCOVERED_PER_SOURCE).map(r=>normalizeTrader(r,name)).filter(x=>x.id);
-    return {source:name,ok:true,rows:out};
-  }catch(e){return {source:name,ok:false,error:e.message,rows:[]};}
-}
-
-async function hlFillStats(address){
-  try{
-    const fills=await fetchJson(HL_URL,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type:'userFills',user:address})},'hyperliquid:fills');
-    const rows=Array.isArray(fills)?fills:[];
-    const cutoff=now()-LOOKBACK_DAYS*86400000;
-    const recent=rows.filter(f=>num(f?.time)>=cutoff);
-    const closed=recent.filter(f=>num(f?.closedPnl)!=null && Math.abs(num(f.closedPnl))>1e-12);
-    if(!closed.length) return {};
-    const wins=closed.filter(f=>num(f.closedPnl)>0);
-    const losses=closed.filter(f=>num(f.closedPnl)<0);
-    const grossWin=wins.reduce((a,f)=>a+num(f.closedPnl),0);
-    const grossLoss=Math.abs(losses.reduce((a,f)=>a+num(f.closedPnl),0));
-    const days=new Set(closed.map(f=>new Date(num(f.time)).toISOString().slice(0,10)));
-    const byCoin=new Map();
-    for(const f of recent){
-      const coin=str(f.coin); if(!coin) continue;
-      if(!byCoin.has(coin)) byCoin.set(coin,[]);
-      byCoin.get(coin).push(f);
-    }
-    const holds=[];
-    for(const fs of byCoin.values()){
-      fs.sort((a,b)=>num(a.time)-num(b.time));
-      const opens=[];
-      for(const f of fs){
-        const dir=str(f.dir).toLowerCase();
-        const isOpen=dir.includes('open');
-        const isClose=dir.includes('close');
-        if(isOpen) opens.push(num(f.time));
-        else if(isClose && opens.length){
-          const ot=opens.shift(); const h=(num(f.time)-ot)/3600000;
-          if(h>=0 && h<=168) holds.push(h);
-        }
-      }
-    }
-    holds.sort((a,b)=>a-b);
-    const medianHoldH=holds.length ? (holds.length%2?holds[(holds.length-1)/2]:(holds[holds.length/2-1]+holds[holds.length/2])/2) : null;
-    const avgHoldH=holds.length ? holds.reduce((a,b)=>a+b,0)/holds.length : null;
-    return {trades7d:closed.length,winRate:wins.length/closed.length*100,pf:grossLoss>0?grossWin/grossLoss:null,activeDays:days.size,medianHoldH,avgHoldH};
-  }catch(e){return {};}
-}
-
-async function hlPositions(trader){
-  const address=trader.id;
-  if(!/^0x[0-9a-fA-F]{20,}$/.test(address)) return [];
-  try{
-    const data=await fetchJson(HL_URL,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type:'clearinghouseState',user:address})},'hyperliquid:positions');
-    const p=data?.assetPositions || [];
-    return p.map(z=>z?.position||z).filter(z=>num(z?.szi)!==0).map(z=>({
-      symbol:str(z.coin), side:num(z.szi)>0?'LONG':'SHORT', qty:Math.abs(num(z.szi)),
-      entry:num(z.entryPx), mark:num(z.positionValue)/Math.abs(num(z.szi)) || null,
-      unrealized:num(z.unrealizedPnl), leverage:num(z.leverage?.value),
-      openedAt:null, lastActivityAt:null, source:'HYPERLIQUID'
-    }));
-  }catch(e){return [];}
-}
-
-async function binancePositions(trader){
-  const encryptedUid=trader.encryptedUid || trader.id;
-  if(!encryptedUid) return [];
-  try{
-    const data=await fetchJson(BINANCE_POS_URL,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({encryptedUid})},'binance:positions');
-    const rows=arr(data);
-    return rows.map(z=>({
-      symbol:str(first(z,['symbol','pair','ticker'])), side:str(first(z,['positionSide','side','direction'])).toUpperCase().includes('SHORT')?'SHORT':'LONG',
-      qty:Math.abs(num(first(z,['positionAmt','amount','qty','position']))||0),
-      entry:num(first(z,['entryPrice','avgPrice','openAvgPx'])), mark:num(first(z,['markPrice','markPx','currentPrice'])),
-      unrealized:num(first(z,['unRealizedProfit','unrealizedPnl','upl'])), leverage:num(first(z,['leverage'])),
-      openedAt:num(first(z,['openTime','openTimestamp','ctime'])), lastActivityAt:num(first(z,['updateTime','utime','time'])), source:'BINANCE'
-    })).filter(z=>z.symbol && (z.qty>0 || z.entry!=null));
-  }catch(e){return [];}
-}
-
-async function okxPositions(trader){
-  const code=trader.uniqueCode || trader.id;
-  if(!code) return [];
-  try{
-    const u=`${OKX_URL.replace(/\/$/,'')}/api/v5/copytrading/public-current-subpositions?instType=SWAP&uniqueCode=${encodeURIComponent(code)}`;
-    const data=await fetchJson(u,{},'okx:positions');
-    const rows=arr(data);
-    return rows.map(z=>({
-      symbol:str(first(z,['instId','instIdCode','symbol'])), side:str(first(z,['posSide','side','direction'])).toUpperCase().includes('SHORT')?'SHORT':'LONG',
-      qty:Math.abs(num(first(z,['subPos','pos','sz','quantity']))||0), entry:num(first(z,['openAvgPx','avgPx','entryPx'])),
-      mark:num(first(z,['markPx','markPrice'])), unrealized:num(first(z,['upl','unrealizedPnl'])), leverage:num(first(z,['lever','leverage'])),
-      openedAt:num(first(z,['openTime','ctime'])), lastActivityAt:num(first(z,['updateTime','utime'])), source:'OKX'
-    })).filter(z=>z.symbol && (z.qty>0 || z.entry!=null));
-  }catch(e){return [];}
-}
-
-function estimateStats(t){
-  const m=t.metrics||{};
-  const trades=m.trades7d;
-  const wr=m.winRate;
-  const pf=m.pf;
-  const dd=m.maxDD;
-  const active=m.activeDays;
-  const scoreParts=[];
-  if(wr!=null) scoreParts.push(Math.min(25,Math.max(0,(wr-50)*0.5)));
-  if(pf!=null) scoreParts.push(Math.min(25,Math.max(0,(pf-1)*10)));
-  if(trades!=null) scoreParts.push(Math.min(15,trades/4));
-  if(active!=null) scoreParts.push(Math.min(10,active*1.5));
-  if(dd!=null) scoreParts.push(Math.max(0,10-dd/5));
-  if(m.sharpe!=null) scoreParts.push(Math.min(10,Math.max(0,m.sharpe*3)));
-  return scoreParts.reduce((a,b)=>a+b,0);
-}
-
-function qualityGate(t){
-  const m=t.metrics||{}; const r=[];
-  if(m.trades7d==null) r.push('MISSING_7D_TRADES'); else if(m.trades7d<MIN_TRADES_7D) r.push(`TRADES_7D<${MIN_TRADES_7D}`);
-  if(m.activeDays==null) r.push('MISSING_ACTIVE_DAYS'); else if(m.activeDays<MIN_ACTIVE_DAYS) r.push(`ACTIVE_DAYS<${MIN_ACTIVE_DAYS}`);
-  if(m.winRate==null) r.push('MISSING_WR'); else if(m.winRate<MIN_WR) r.push(`WR<${MIN_WR}%`);
-  if(m.pf==null) r.push('MISSING_PF'); else if(m.pf<MIN_PF) r.push(`PF<${MIN_PF}`);
-  if(m.maxDD!=null && Math.abs(m.maxDD)>MAX_DD) r.push(`DD>${MAX_DD}%`);
-  if(m.medianHoldH!=null && m.medianHoldH>MAX_MEDIAN_HOLD_H) r.push(`MEDIAN_HOLD>${MAX_MEDIAN_HOLD_H}H`);
-  if(m.avgHoldH!=null && m.avgHoldH>MAX_AVG_HOLD_H) r.push(`AVG_HOLD>${MAX_AVG_HOLD_H}H`);
-  if(m.pnl7d!=null && m.pnl7d<=0) r.push('PNL<=0');
-  return r;
-}
-
-function currentSignal(t,positions){
-  if(!positions.length) return null;
-  let best=null;
-  for(const p of positions){
-    if(!(p.entry>0)) continue;
-    const price=p.mark;
-    const distance=price>0 ? Math.abs(price-p.entry)/p.entry*100 : null;
-    const ageMs=p.lastActivityAt || p.openedAt ? now()-(p.lastActivityAt||p.openedAt) : null;
-    const ageMin=ageMs!=null ? ageMs/60000 : null;
-    if(distance!=null && distance>MAX_ENTRY_DISTANCE_PCT) continue;
-    if(ageMin!=null && ageMin>POSITION_FRESH_MIN) continue;
-    const riskPct=0.8;
-    const rewardPct=Math.max(1.2,riskPct*2);
-    const side=p.side;
-    const sl=side==='LONG' ? p.entry*(1-riskPct/100) : p.entry*(1+riskPct/100);
-    const tp=side==='LONG' ? p.entry*(1+rewardPct/100) : p.entry*(1-rewardPct/100);
-    const rr=rewardPct/riskPct;
-    const candidate={...p,distancePct:distance,ageMin,sl,tp,rr,signalReason:`${t.source} top-trader current ${side} position | ${distance==null?'entry distance unavailable':`entry distance ${distance.toFixed(2)}%`} | activity ${ageMin==null?'freshness unavailable':`${ageMin.toFixed(1)}m`}`};
-    if(!best || (distance??999)<(best.distancePct??999)) best=candidate;
-  }
-  return best;
-}
-
-async function verifyTrader(t){
-  let positions=[];
-  let metrics={...t.metrics};
-  if(t.source==='HYPERLIQUID'){
-    positions=await hlPositions(t);
-    metrics={...metrics,...(await hlFillStats(t.id))};
-  } else if(t.source==='BINANCE') positions=await binancePositions(t);
-  else if(t.source==='OKX') positions=await okxPositions(t);
-  const enriched={...t,metrics};
-  const gate=qualityGate(enriched);
-  const signal=currentSignal(enriched,positions);
-  return {...enriched,positions,qualityBlocks:gate,signal,verifiedAt:now(),copyabilityScore:Math.round(estimateStats(enriched)+(signal?25:0)-(gate.length*4))};
-}
-
-function dedupe(rows){
-  const m=new Map();
-  for(const r of rows){
-    const key=`${r.source}:${r.id||r.uniqueCode||r.encryptedUid}`;
-    m.set(key,m.has(key)?mergeTrader(m.get(key),r):r);
-  }
-  return [...m.values()];
-}
-
-function formatSignal(x,i){
-  const s=x.signal, m=x.metrics;
-  return [
-    `#${i+1} ${x.source} | ${x.name}`,
-    `Trader: ${short(x.id||x.uniqueCode||x.encryptedUid)}`,
-    `Signal: ${s.side} ${s.symbol} | Entry ${s.entry??'—'} | SL ${s.sl?.toPrecision(8)??'—'} | TP ${s.tp?.toPrecision(8)??'—'} | RR ${s.rr.toFixed(2)}`,
-    `Distance: ${pct(s.distancePct)} | Freshness: ${s.ageMin==null?'—':s.ageMin.toFixed(1)+'m'}`,
-    `7D: trades ${m.trades7d??'—'} | WR ${pct(m.winRate,1)} | PF ${m.pf??'—'} | PnL ${usd(m.pnl7d)} | DD ${pct(m.maxDD,1)}`,
-    `Hold: median ${hours(m.medianHoldH)} | avg ${hours(m.avgHoldH)} | Active days ${m.activeDays??'—'}`,
-    `Reason: ${s.signalReason}`
-  ].join('\n');
-}
-
-function sourceLine(r){
-  if(r.disabled) return `${r.source}: DISABLED (no adapter URL)`;
-  return `${r.source}: ${r.ok?'OK':'ERROR'}${r.error?' | '+r.error.slice(0,100):''} | discovered=${r.rows.length}`;
-}
-
-function buildTelegram({results,verified,signals,elapsed}){
-  const lines=[
-    `🌐 GLOBAL FUTURES TOP-TRADER & SIGNAL HUNTER`,
-    `🧠 ${VERSION}`,
-    `📡 READ-ONLY | NO ORDERS | FUTURES ONLY`,
-    '━━━━━━━━━━━━━━━━━━',
-    `🔎 Sources: ${results.filter(x=>x.ok).length}/${results.length} healthy | Traders discovered: ${results.reduce((n,x)=>n+x.rows.length,0)}`,
-    `🛡️ Verified: ${verified.length} | Actionable signals: ${signals.length}/${TOP_SIGNALS}`,
-    `🎯 Gate: 7D trades≥${MIN_TRADES_7D} | active days≥${MIN_ACTIVE_DAYS} | WR≥${MIN_WR}% | PF≥${MIN_PF} | median hold≤${MAX_MEDIAN_HOLD_H}h | avg hold≤${MAX_AVG_HOLD_H}h | DD≤${MAX_DD}%`,
-    `⚡ Signal gate: fresh≤${POSITION_FRESH_MIN}m | entry distance≤${MAX_ENTRY_DISTANCE_PCT}% | RR≥${MIN_RR}`,
-    `⏱ Runtime: ${elapsed.toFixed(1)}s`,
-    ''
-  ];
-  lines.push('📡 SOURCE STATUS');
-  for(const r of results) lines.push(sourceLine(r));
-  lines.push('','🏆 TOP ACTIONABLE FUTURES SIGNALS');
-  if(!signals.length) lines.push('No trader passed BOTH the statistical quality gate and current-position signal gate this cycle.');
-  signals.forEach((x,i)=>lines.push('',formatSignal(x,i)));
-  const blocked=verified.filter(x=>x.qualityBlocks?.length).slice(0,8);
-  if(blocked.length){
-    lines.push('','🧱 TOP BLOCKED TRADERS');
-    for(const x of blocked) lines.push(`${x.source} ${x.name}: ${x.qualityBlocks.join(' | ')}`);
-  }
-  return lines.join('\n');
-}
-
-async function telegram(text){
-  if(!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID){console.log('[TELEGRAM] credentials missing; report printed only');return;}
-  for(let i=0;i<text.length;i+=TG_LIMIT){
-    await fetchJson(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:TELEGRAM_CHAT_ID,text:text.slice(i,i+TG_LIMIT),disable_web_page_preview:true})},'telegram');
-  }
-}
-
-async function main(){
-  const t0=now();
-  console.log(`========================================`);
-  console.log(`GLOBAL FUTURES TOP-TRADER & SIGNAL HUNTER`);
-  console.log(`Version: ${VERSION}`);
-  console.log(`Mode: READ-ONLY / NO ORDERS / FUTURES ONLY`);
-  console.log(`========================================`);
-
-  const cache=await readJson(CACHE_FILE,{schema:VERSION,generatedAt:0,traders:[]});
-  const cacheFresh=cache.generatedAt && (now()-cache.generatedAt)<CACHE_TTL_MIN*60000 && Array.isArray(cache.traders);
-  let results=[];
-  if(cacheFresh){
-    console.log(`[CACHE] Using candidate pool age=${((now()-cache.generatedAt)/60000).toFixed(1)}m`);
-    results=[{source:'CACHE',ok:true,rows:cache.traders}];
-  }else{
-    const built=[discoverHyperliquid(),discoverBinance(),discoverOKX(),...Object.entries(OPTIONAL_SOURCES).map(([k,u])=>discoverOptional(k,u))];
-    results=await Promise.all(built);
-    const pool=dedupe(results.flatMap(r=>r.rows));
-    await writeJson(CACHE_FILE,{schema:VERSION,generatedAt:now(),traders:pool});
-  }
-
-  const pool=dedupe(results.flatMap(r=>r.rows));
-  pool.sort((a,b)=>estimateStats(b)-estimateStats(a));
-  const verifyPool=pool.slice(0,MAX_VERIFY_PER_SOURCE*3);
-  console.log(`[POOL] candidates=${pool.length} verify=${verifyPool.length}`);
-  const verified=[];
-  for(const trader of verifyPool){
-    try{
-      const v=await verifyTrader(trader);
-      verified.push(v);
-      console.log(`[VERIFY] ${v.source} ${short(v.id)} positions=${v.positions.length} gate=${v.qualityBlocks.length?'BLOCK':'PASS'} signal=${v.signal?'YES':'NO'}`);
-    }catch(e){console.log(`[VERIFY][ERROR] ${trader.source} ${short(trader.id)} ${e.message}`);}
-    await sleep(50);
-  }
-
-  const signals=verified.filter(x=>x.qualityBlocks.length===0 && x.signal && x.signal.rr>=MIN_RR).sort((a,b)=>{
-    const da=a.signal?.distancePct??999, db=b.signal?.distancePct??999;
-    return (b.copyabilityScore-a.copyabilityScore) || (da-db);
-  }).slice(0,TOP_SIGNALS);
-
-  const report=buildTelegram({results,verified,signals,elapsed:(now()-t0)/1000});
-  console.log(report);
-  await telegram(report);
-
-  await writeJson(STATE_FILE,{schema:VERSION,generatedAt:now(),sources:results.map(r=>({source:r.source,ok:r.ok,disabled:r.disabled||false,discovered:r.rows.length,error:r.error||null})),verified:verified.slice(0,100).map(x=>({source:x.source,id:x.id,name:x.name,metrics:x.metrics,positions:x.positions,qualityBlocks:x.qualityBlocks,signal:x.signal,copyabilityScore:x.copyabilityScore})),signals:signals.map(x=>({source:x.source,id:x.id,name:x.name,signal:x.signal,metrics:x.metrics,copyabilityScore:x.copyabilityScore}))});
-  console.log(`[DONE] signals=${signals.length} runtime=${((now()-t0)/1000).toFixed(1)}s`);
-}
-
-main().catch(async e=>{console.error('[FATAL]',e.stack||e);process.exitCode=1;});
+main().catch(e=>{console.error('[FATAL]',e);process.exitCode=1;});
