@@ -4805,14 +4805,14 @@
     }
   },
   "FUTURES:0x92cbb22a9b9fc01da9914c9b39ed904dd61b859c": {
-    "updatedAt": 1791080343772,
+    "updatedAt": 1791092311269,
     "data": {
       "market": "FUTURES",
       "complete": false,
       "pages": 2,
       "fillCount": 1998,
       "coverageStart": 1790533448199,
-      "coverageDays": 6.3298098726851855,
+      "coverageDays": 6.468322569444444,
       "coverage7d": false,
       "coverage30d": false,
       "w7": {
@@ -4875,7 +4875,7 @@
         "fillCount": 1998,
         "observedFills": 1998
       },
-      "updatedAt": 1791080343772
+      "updatedAt": 1791092311269
     }
   },
   "FUTURES:0x48ec0004494081e8332589faf0747d568da79faf": {
@@ -4939,14 +4939,14 @@
     }
   },
   "FUTURES:0x7689a1d1872214cc69cd0f09427642dfdbb5d93c": {
-    "updatedAt": 1791080345640,
+    "updatedAt": 1791092310083,
     "data": {
       "market": "FUTURES",
       "complete": false,
       "pages": 2,
       "fillCount": 1773,
       "coverageStart": 1788911080416,
-      "coverageDays": 25.10723638888889,
+      "coverageDays": 25.245713738425927,
       "coverage7d": true,
       "coverage30d": false,
       "w7": {
@@ -4993,7 +4993,111 @@
         "fillCount": 1773,
         "observedFills": 1773
       },
-      "updatedAt": 1791080345640
+      "updatedAt": 1791092310083
+    }
+  },
+  "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:99mRw3EzdJZWEUjgp1nrU4WeHsukUBjbh7gYE7pm4F3c": {
+    "updatedAt": 1791092310005,
+    "data": {
+      "schema": "V6.1-SPOT-FIFO-PERFORMANCE-V3",
+      "market": "SPOT",
+      "complete": false,
+      "pages": 1,
+      "txCount": 0,
+      "closedTrades": 0,
+      "coverageStart": 0,
+      "coverageDays": 0,
+      "rateLimited": true,
+      "coverage7d": false,
+      "coverage30d": false,
+      "w7": {
+        "roi": null,
+        "realizedPnl": 0,
+        "observedPnl": 0,
+        "investedUsd": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "maxDrawdownPct": null,
+        "avgHoldHours": null,
+        "coinPnl": {},
+        "topCoin": null,
+        "observedTrades": 0
+      },
+      "w30": {
+        "roi": null,
+        "realizedPnl": 0,
+        "observedPnl": 0,
+        "investedUsd": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "maxDrawdownPct": null,
+        "avgHoldHours": null,
+        "coinPnl": {},
+        "topCoin": null,
+        "observedTrades": 0
+      },
+      "updatedAt": 1791092310005,
+      "noClosedTrades": true
+    }
+  },
+  "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:GJvewfRjqTUPtx6WsBSUnaFbdgXwgXnWfpDyLm65T4YA": {
+    "updatedAt": 1791092310064,
+    "data": {
+      "schema": "V6.1-SPOT-FIFO-PERFORMANCE-V3",
+      "market": "SPOT",
+      "complete": false,
+      "pages": 1,
+      "txCount": 0,
+      "closedTrades": 0,
+      "coverageStart": 0,
+      "coverageDays": 0,
+      "rateLimited": true,
+      "coverage7d": false,
+      "coverage30d": false,
+      "w7": {
+        "roi": null,
+        "realizedPnl": 0,
+        "observedPnl": 0,
+        "investedUsd": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "maxDrawdownPct": null,
+        "avgHoldHours": null,
+        "coinPnl": {},
+        "topCoin": null,
+        "observedTrades": 0
+      },
+      "w30": {
+        "roi": null,
+        "realizedPnl": 0,
+        "observedPnl": 0,
+        "investedUsd": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "maxDrawdownPct": null,
+        "avgHoldHours": null,
+        "coinPnl": {},
+        "topCoin": null,
+        "observedTrades": 0
+      },
+      "updatedAt": 1791092310064,
+      "noClosedTrades": true
     }
   }
 }
