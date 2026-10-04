@@ -1,5 +1,8 @@
 'use strict';
 
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
 /**
  * GLOBAL FUTURES TOP-TRADER & SIGNAL HUNTER
  * Futures-only | CEX + DEX | READ-ONLY | NO ORDERS
@@ -12,9 +15,6 @@
  * Additional exchanges are represented as optional adapters via environment URLs.
  * They are never treated as healthy unless their endpoint returns verifiable data.
  */
-
-const fs = require('fs/promises');
-const path = require('path');
 
 const VERSION = 'GFTSH-V1.0.0-GLOBAL-CEX-DEX-FUTURES-ONLY';
 const STATE_FILE = process.env.GLOBAL_STATE_FILE || 'state/global_futures_hunter.json';
