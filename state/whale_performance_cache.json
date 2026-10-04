@@ -4997,7 +4997,7 @@
     }
   },
   "V6.1-SPOT-FIFO-PERFORMANCE-V3:SPOT:99mRw3EzdJZWEUjgp1nrU4WeHsukUBjbh7gYE7pm4F3c": {
-    "updatedAt": 1791092310005,
+    "updatedAt": 1791102898178,
     "data": {
       "schema": "V6.1-SPOT-FIFO-PERFORMANCE-V3",
       "market": "SPOT",
@@ -5044,7 +5044,7 @@
         "topCoin": null,
         "observedTrades": 0
       },
-      "updatedAt": 1791092310005,
+      "updatedAt": 1791102898178,
       "noClosedTrades": true
     }
   },
@@ -5098,6 +5098,59 @@
       },
       "updatedAt": 1791092310064,
       "noClosedTrades": true
+    }
+  },
+  "FUTURES:0x53d46373a2431cb7d79da4dfa4a2739cc53dd6d8": {
+    "updatedAt": 1791102898260,
+    "data": {
+      "market": "FUTURES",
+      "complete": true,
+      "pages": 2,
+      "fillCount": 1896,
+      "coverageStart": 1788518866512,
+      "coverageDays": 29.90777486111111,
+      "coverage7d": true,
+      "coverage30d": true,
+      "w7": {
+        "pnl": 0,
+        "observedPnl": 0,
+        "closedTrades": 0,
+        "wins": 0,
+        "losses": 0,
+        "wr": null,
+        "pf": null,
+        "maxDrawdown": 0,
+        "grossProfit": 0,
+        "grossLoss": 0,
+        "coinPnl": {},
+        "topCoin": null,
+        "fillCount": 0,
+        "observedFills": 0
+      },
+      "w30": {
+        "pnl": -9574.471283000004,
+        "observedPnl": -9574.471283000004,
+        "closedTrades": 12,
+        "wins": 7,
+        "losses": 5,
+        "wr": 58.333333333333336,
+        "pf": 0.5524507786285993,
+        "maxDrawdown": 12318.860431000003,
+        "grossProfit": 11510.425803,
+        "grossLoss": 20835.206046000003,
+        "coinPnl": {
+          "HYPE": -17229.368272999996,
+          "ETH": 4815.101166000002,
+          "BTC": 2839.7958240000007
+        },
+        "topCoin": {
+          "coin": "HYPE",
+          "pnl": -17229.368272999996
+        },
+        "fillCount": 1896,
+        "observedFills": 1896
+      },
+      "updatedAt": 1791102898260
     }
   }
 }
