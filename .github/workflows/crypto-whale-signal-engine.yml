@@ -34,12 +34,12 @@ jobs:
           set -euo pipefail
           test -f crypto_whale_signal_engine.mjs
           node --check crypto_whale_signal_engine.mjs
-          grep -q "GFTSH-V1.2.0-GLOBAL-FUTURES-ADAPTERS" crypto_whale_signal_engine.mjs
+          grep -q "GFTSH-V1.3.0-GLOBAL-FUTURES-REAL-DISCOVERY" crypto_whale_signal_engine.mjs
           if grep -Eiq 'HELIUS|SOLANA_RPC|SPOT|JUPITER|RAYDIUM|PUMPFUN' crypto_whale_signal_engine.mjs; then
             echo 'FATAL: forbidden legacy Spot/Solana/Helius code detected'
             exit 1
           fi
-          echo 'PASS | GFTSH V1.1 worker contract'
+          echo 'PASS | GFTSH V1.3 worker contract'
 
       - name: Run global futures hunter
         env:
