@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-const VERSION='GFTSH-V1.5.0-GLOBAL-FUTURES-SOURCE-AUDIT';
+const VERSION='GFTSH-V1.6.0-GLOBAL-FUTURES-RATE-LIMIT-AUDIT';
 const STATE_FILE=process.env.GLOBAL_STATE_FILE||'state/global_futures_hunter.json';
 const CACHE_FILE=process.env.GLOBAL_CACHE_FILE||'state/global_futures_cache.json';
 const TELEGRAM_TOKEN=process.env.TELEGRAM_TOKEN||'';
@@ -24,7 +24,14 @@ const MIN_PF=Number(process.env.GFTSH_MIN_PF||1.5);
 const MAX_MEDIAN_H=Number(process.env.GFTSH_MAX_MEDIAN_HOURS||4);
 const MAX_AVG_H=Number(process.env.GFTSH_MAX_AVG_HOURS||8);
 const MAX_DD=Number(process.env.GFTSH_MAX_DD||40);
-const HTTP_TIMEOUT=Number(process.env.GFTSH_HTTP_TIMEOUT_MS||12000);
+const HTTP_TIMEOUT=Number(process.env.GFTSH_HTTP_TIMEOUT_MS||15000);
+const HL_REQ_GAP_MS=Number(process.env.GFTSH_HL_REQ_GAP_MS||120);
+const OKX_REQ_GAP_MS=Number(process.env.GFTSH_OKX_REQ_GAP_MS||450);
+const MAX_RETRIES=Number(process.env.GFTSH_MAX_RETRIES||3);
+let HL_NEXT_REQ=0, OKX_NEXT_REQ=0;
+async function rateGate(kind,gap){const now=Date.now();let next=kind==='HL'?HL_NEXT_REQ:OKX_NEXT_REQ;const wait=Math.max(0,next-now);if(wait>0)await sleep(wait);const stamp=Date.now()+gap;if(kind==='HL')HL_NEXT_REQ=stamp;else OKX_NEXT_REQ=stamp;}
+async function fetchTextRetry(url,opts={},kind='GEN'){let last='';for(let i=0;i<=MAX_RETRIES;i++){try{if(kind==='HL')await rateGate('HL',HL_REQ_GAP_MS);else if(kind==='OKX')await rateGate('OKX',OKX_REQ_GAP_MS);const c=new AbortController(),t=setTimeout(()=>c.abort(),HTTP_TIMEOUT);try{const r=await fetch(url,{...opts,signal:c.signal,headers:{accept:'application/json,text/html,*/*','user-agent':UA,...(opts.headers||{})}});const text=await r.text();if(r.ok)return text;last=`HTTP_${r.status}:${text.slice(0,240)}`;const retryable=[408,425,429,500,502,503,504].includes(r.status);if(!retryable||i>=MAX_RETRIES)throw new Error(last);const ra=Number(r.headers.get('retry-after')||0);await sleep(Math.max(ra*1000,300*(i+1)));}finally{clearTimeout(t)}}catch(e){last=String(e.message||e);if(i>=MAX_RETRIES)throw new Error(last);await sleep(350*(i+1));}}throw new Error(last||'REQUEST_FAILED')}
+
 const CACHE_TTL_H=Number(process.env.GFTSH_DISCOVERY_CACHE_HOURS||12);
 const UA='Mozilla/5.0 (compatible; GFTSH/1.2; +https://github.com/)';
 
@@ -51,9 +58,9 @@ function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
 async function ensure(){await fs.mkdir(path.dirname(STATE_FILE),{recursive:true});await fs.mkdir(path.dirname(CACHE_FILE),{recursive:true})}
 async function readJson(f,d){try{return JSON.parse(await fs.readFile(f,'utf8'))}catch{return d}}
 async function writeJson(f,x){await fs.writeFile(f,JSON.stringify(x,null,2))}
-async function fetchText(url,opts={}){const c=new AbortController(),t=setTimeout(()=>c.abort(),HTTP_TIMEOUT);try{const r=await fetch(url,{...opts,signal:c.signal,headers:{accept:'application/json,text/html,*/*','user-agent':UA,...(opts.headers||{})}});const text=await r.text();if(!r.ok)throw new Error(`HTTP_${r.status}:${text.slice(0,240)}`);return text}finally{clearTimeout(t)}}
-async function json(url,opts={}){const t=await fetchText(url,opts);try{return JSON.parse(t)}catch{throw new Error(`NON_JSON:${t.slice(0,180)}`)}}
-async function postJson(url,body){return json(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})}
+async function fetchText(url,opts={}){return fetchTextRetry(url,opts,'GEN')}
+async function json(url,opts={}){const kind=url.includes('hyperliquid.xyz')?'HL':url.includes('okx.com/api/')?'OKX':'GEN';const t=await fetchTextRetry(url,opts,kind);try{const x=JSON.parse(t);if(x&&x.code&&String(x.code)!=='0')throw new Error(`API_${x.code}:${x.msg||'OKX_ERROR'}`);return x}catch(e){if(String(e.message||e).startsWith('API_'))throw e;throw new Error(`NON_JSON:${t.slice(0,180)}`)}}
+async function postJson(url,body){const kind=url.includes('hyperliquid.xyz')?'HL':'GEN';const t=await fetchTextRetry(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)},kind);try{return JSON.parse(t)}catch{throw new Error(`NON_JSON:${t.slice(0,180)}`)}}
 function arr(x){
   if(Array.isArray(x))return x;
   if(Array.isArray(x?.leaderboardRows))return x.leaderboardRows;
@@ -81,38 +88,19 @@ function hlStats(fills){const c=fills.filter(f=>ok(f.closedPnl)&&Math.abs(n(f.cl
 async function hlVerify(t){
   try{
     const end=Date.now(),start=end-LOOKBACK_MS;
-    const [state,fills]=await Promise.all([
-      postJson('https://api.hyperliquid.xyz/info',{type:'clearinghouseState',user:t.traderId}),
-      postJson('https://api.hyperliquid.xyz/info',{type:'userFillsByTime',user:t.traderId,startTime:start,endTime:end})
-    ]);
+    const fills=await postJson('https://api.hyperliquid.xyz/info',{type:'userFillsByTime',user:t.traderId,startTime:start,endTime:end});
     const fs=Array.isArray(fills)?fills:[];
-    if(!fs.length){
-      t.coverage='VERIFY_EMPTY';
-      t.verifyError='HL_NO_FILLS_7D';
-      t.stats={...t.stats,trades7d:0,activeDays:0};
-      return t;
+    if(!fs.length){t.coverage='VERIFY_EMPTY';t.verifyError='HL_NO_FILLS_7D';t.stats={...t.stats,trades7d:0,activeDays:0};return t}
+    t.stats={...t.stats,...hlStats(fs)};t.coverage='COMPLETE';t.audit={fills7d:fs.length,verifiedAt:Date.now()};
+    const preGate=gate(t);
+    if(preGate.length===0){
+      const state=await postJson('https://api.hyperliquid.xyz/info',{type:'clearinghouseState',user:t.traderId});
+      const positions=(state?.assetPositions||[]).map(x=>x?.position).filter(Boolean);
+      let best=null;
+      for(const p of positions){const sz=n(p?.szi);if(!sz)continue;const side=sz>0?'LONG':'SHORT',symbol=p?.coin||'',entry=n(p?.entryPx),mark=n(p?.markPx);if(!ok(entry)||!ok(mark)||!symbol)continue;const recent=fs.filter(f=>f?.coin===symbol).sort((a,b)=>n(b?.time)-n(a?.time));const last=recent[0];best={symbol,side,entry,mark,size:Math.abs(sz),openedAt:n(last?.time,n(p?.timestamp,Date.now())),lastActivityAt:n(last?.time,n(p?.timestamp,Date.now())),source:'HYPERLIQUID'};break}if(best)t.position=best;t.audit.currentPositions=positions.length;
     }
-    t.stats={...t.stats,...hlStats(fs)};
-    t.coverage='COMPLETE';
-    let best=null;
-    const positions=(state?.assetPositions||[]).map(x=>x?.position).filter(Boolean);
-    for(const p of positions){
-      const sz=n(p?.szi); if(!sz)continue;
-      const side=sz>0?'LONG':'SHORT',symbol=p?.coin||'',entry=n(p?.entryPx),mark=n(p?.markPx);
-      if(!ok(entry)||!ok(mark)||!symbol)continue;
-      const recent=fs.filter(f=>f?.coin===symbol).sort((a,b)=>n(b?.time)-n(a?.time));
-      const last=recent[0];
-      best={symbol,side,entry,mark,size:Math.abs(sz),openedAt:n(last?.time,n(p?.timestamp,Date.now())),lastActivityAt:n(last?.time,n(p?.timestamp,Date.now())),source:'HYPERLIQUID'};
-      break;
-    }
-    if(best)t.position=best;
-    t.audit={fills7d:fs.length,currentPositions:positions.length,verifiedAt:Date.now()};
     return t;
-  }catch(e){
-    t.coverage='VERIFY_ERROR';
-    t.verifyError='HL:'+String(e.message||e);
-    return t;
-  }
+  }catch(e){t.coverage='VERIFY_ERROR';t.verifyError='HL:'+String(e.message||e);return t}
 }
 
 async function binance(){const status={source:'BINANCE',class:'DISCOVERY',state:'UNAVAILABLE',discovered:0,error:null};const out=new Map();const url='https://www.binance.com/bapi/futures/v1/friendly/future/copy-trade/home-page/query-list';try{for(const dataType of ['ROI','PNL','MDD']){const x=await postJson(url,{pageNumber:1,pageSize:100,timeRange:'90D',dataType,favoriteOnly:false,hideFull:false,nickname:'',order:'DESC',apiKeyOnly:false});for(const r of arr(x)){const id=r?.leadPortfolioId||r?.portfolioId;if(!id)continue;out.set(String(id),normalized('BINANCE',id,r?.nickname||r?.nickName||id,{trades7d:first(r,['tradeCount7d','tradeCount7dTotal']),activeDays:first(r,['activeDays','daysTrading']),wr:first(r,['winRate']),pf:first(r,['profitFactor']),pnl7d:first(r,['pnl7d','pnl']),dd:first(r,['mdd','maxDrawdown','maxDrawdownRate']),roi7d:first(r,['roi7d','roi']),aum:first(r,['aum','totalAssets']),coverage:'PARTIAL'}))}if(out.size>=DISCOVERY_LIMIT)break}const list=[...out.values()].slice(0,DISCOVERY_LIMIT);status.discovered=list.length;status.state=list.length?'OK':'EMPTY';if(!list.length)status.error='BINANCE_NO_PUBLIC_PORTFOLIOS';return{status,out:list}}catch(e){status.error='BINANCE:'+String(e.message||e);return{status,out:[]}}}
@@ -164,55 +152,27 @@ async function okx(){
   }catch(e){status.error='OKX:'+String(e.message||e);return{status,out:[]}}
 }
 async function okxVerify(t){
-  const bases=['https://eea.okx.com','https://openapi.okx.com'];
-  let lastErr='';
-  for(const base of bases){
-    try{
-      const b=`${base}/api/v5/copytrading`;
-      const [st,weekly,pos,hist]=await Promise.all([
-        json(`${b}/public-stats?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}&lastDays=7`),
-        json(`${b}/public-weekly-pnl?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}`),
-        json(`${b}/public-current-subpositions?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}`),
-        json(`${b}/public-subpositions-history?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}&limit=100`)
-      ]);
-      const h=arr(hist).filter(x=>{
-        const ct=n(x?.closeTime||x?.cTime||x?.uTime); return !ct || ct>=Date.now()-LOOKBACK_MS;
-      });
-      const wins=h.filter(x=>n(x?.pnl||x?.closedPnl)>0),loss=h.filter(x=>n(x?.pnl||x?.closedPnl)<0);
-      const gp=wins.reduce((a,x)=>a+n(x?.pnl??x?.closedPnl),0),gl=Math.abs(loss.reduce((a,x)=>a+n(x?.pnl??x?.closedPnl),0));
-      const holds=h.map(x=>{const a=n(x?.openTime||x?.openTimeMs||x?.cTime),b=n(x?.closeTime||x?.closeTimeMs||x?.uTime);return a&&b>=a?(b-a)/3600000:NaN}).filter(ok).sort((a,b)=>a-b);
-      let e=0,peak=0,dd=0;
-      for(const x of h){e+=n(x?.pnl??x?.closedPnl);peak=Math.max(peak,e);if(peak>0)dd=Math.max(dd,(peak-e)/peak*100)}
-      const statWr=first(st,['winRatio','winRate']);
-      const statPnl=first(st,['pnl','totalPnl','profit']);
-      const statRoi=first(st,['pnlRatio','roi']);
-      const statPf=first(st,['profitLossRatio','profitLossRate']);
-      t.coverage=h.length?'COMPLETE':'PARTIAL';
-      t.stats={...t.stats,
-        trades7d:h.length||t.stats.trades7d,
-        activeDays:h.length?new Set(h.map(x=>{const ts=n(x?.closeTime||x?.cTime||x?.uTime);return ts?new Date(ts).toISOString().slice(0,10):'x'})).size:t.stats.activeDays,
-        wr:h.length?wins.length/h.length*100:(ok(statWr)?(statWr<=1?statWr*100:statWr):t.stats.wr),
-        pf:gl?gp/gl:(ok(statPf)?statPf:t.stats.pf),
-        pnl7d:ok(statPnl)?statPnl:t.stats.pnl7d,
-        roi7d:ok(statRoi)?(statRoi<=1?statRoi*100:statRoi):t.stats.roi7d,
-        avgHoldH:holds.length?holds.reduce((a,b)=>a+b,0)/holds.length:t.stats.avgHoldH,
-        medianHoldH:holds.length?holds[Math.floor(holds.length/2)]:t.stats.medianHoldH,
-        dd:dd||t.stats.dd
-      };
-      const ps=arr(pos); let best=null;
-      for(const x of ps){
-        const entry=first(x,['openAvgPx','avgPx','openPx']),mark=first(x,['markPx','markPrice']),opened=first(x,['openTime','openTimeMs','cTime','uTime']);
-        if(!ok(entry)||!ok(mark))continue;
-        const side=String(x?.posSide||x?.side||'').toLowerCase().includes('short')?'SHORT':'LONG';
-        const openedAt=ok(opened)?opened:Date.now();
-        const age=(Date.now()-openedAt)/60000;if(age<0)continue;
-        if(!best||age<(Date.now()-best.openedAt)/60000)best={symbol:x?.instId||x?.ccy||'',side,entry,mark,openedAt,size:Math.abs(n(x?.subPos||x?.pos||x?.sz)),source:'OKX'};
-      }
-      if(best)t.position=best;
-      t.audit={history7d:h.length,currentPositions:ps.length,verifiedAt:Date.now(),region:base.includes('eea')?'EEA':'GLOBAL'};
-      return t;
-    }catch(e){lastErr=String(e.message||e)}
-  }
+  const bases=['https://eea.okx.com','https://openapi.okx.com'];let lastErr='';
+  for(const base of bases){try{
+    const b=`${base}/api/v5/copytrading`;
+    const [st,hist]=await Promise.all([
+      json(`${b}/public-stats?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}&lastDays=7`),
+      json(`${b}/public-subpositions-history?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}&limit=100`)
+    ]);
+    const h=arr(hist).filter(x=>{const ct=n(x?.closeTime||x?.cTime||x?.uTime);return !ct||ct>=Date.now()-LOOKBACK_MS});
+    const wins=h.filter(x=>n(x?.pnl||x?.closedPnl)>0),loss=h.filter(x=>n(x?.pnl||x?.closedPnl)<0);const gp=wins.reduce((a,x)=>a+n(x?.pnl??x?.closedPnl),0),gl=Math.abs(loss.reduce((a,x)=>a+n(x?.pnl??x?.closedPnl),0));
+    const holds=h.map(x=>{const a=n(x?.openTime||x?.openTimeMs),b2=n(x?.closeTime||x?.closeTimeMs);return a&&b2>=a?(b2-a)/3600000:NaN}).filter(ok).sort((a,b)=>a-b);
+    let e=0,peak=0,dd=0;for(const x of h){e+=n(x?.pnl??x?.closedPnl);peak=Math.max(peak,e);if(peak>0)dd=Math.max(dd,(peak-e)/peak*100)}
+    const statWr=first(st,['winRatio','winRate']),statPnl=first(st,['pnl','totalPnl','profit']),statRoi=first(st,['pnlRatio','roi']),statPf=first(st,['profitLossRatio','profitLossRate']);
+    t.coverage=h.length?'COMPLETE':'PARTIAL';t.stats={...t.stats,trades7d:h.length||t.stats.trades7d,activeDays:h.length?new Set(h.map(x=>{const ts=n(x?.closeTime||x?.cTime||x?.uTime);return ts?new Date(ts).toISOString().slice(0,10):'x'})).size:t.stats.activeDays,wr:h.length?wins.length/h.length*100:(ok(statWr)?(statWr<=1?statWr*100:statWr):t.stats.wr),pf:gl?gp/gl:(ok(statPf)?statPf:t.stats.pf),pnl7d:ok(statPnl)?statPnl:t.stats.pnl7d,roi7d:ok(statRoi)?(statRoi<=1?statRoi*100:statRoi):t.stats.roi7d,avgHoldH:holds.length?holds.reduce((a,b)=>a+b,0)/holds.length:t.stats.avgHoldH,medianHoldH:holds.length?holds[Math.floor(holds.length/2)]:t.stats.medianHoldH,dd:dd||t.stats.dd};
+    t.audit={history7d:h.length,verifiedAt:Date.now(),region:base.includes('eea')?'EEA':'GLOBAL'};
+    const preGate=gate(t);
+    if(preGate.length===0){
+      const pos=await json(`${b}/public-current-subpositions?instType=SWAP&uniqueCode=${encodeURIComponent(t.traderId)}`);const ps=arr(pos);let best=null;
+      for(const x of ps){const entry=first(x,['openAvgPx','avgPx','openPx']),mark=first(x,['markPx','markPrice']),opened=first(x,['openTime','openTimeMs','cTime','uTime']);if(!ok(entry)||!ok(mark))continue;const side=String(x?.posSide||x?.side||'').toLowerCase().includes('short')?'SHORT':'LONG';const openedAt=ok(opened)?opened:Date.now();if(openedAt>Date.now())continue;const age=(Date.now()-openedAt)/60000;if(!best||age<(Date.now()-best.openedAt)/60000)best={symbol:x?.instId||x?.ccy||'',side,entry,mark,openedAt,size:Math.abs(n(x?.subPos||x?.pos||x?.sz)),source:'OKX'}}if(best)t.position=best;t.audit.currentPositions=ps.length;
+    }
+    return t;
+  }catch(e){lastErr=String(e.message||e)}}
   t.coverage='VERIFY_ERROR';t.verifyError='OKX:'+lastErr;return t;
 }
 
@@ -220,8 +180,8 @@ async function cacheLoad(){const c=await readJson(CACHE_FILE,{sources:{}});retur
 async function cacheSave(sources){await writeJson(CACHE_FILE,{version:VERSION,generatedAt:Date.now(),sources})}
 async function withCache(result,cache){const s=result.status;if(result.out.length){cache[s.source]={savedAt:Date.now(),items:result.out};return result}const old=cache[s.source];if(old?.items?.length&&(Date.now()-n(old.savedAt))/3600000<=CACHE_TTL_H){s.state='CACHE';s.error=(s.error?s.error+' | ':'')+'USING_LAST_GOOD_DISCOVERY';return{status:s,out:old.items.map(x=>({...x,fromCache:true}))}}return result}
 async function unsupported(source){return{status:{source,class:'UNSUPPORTED',state:'UNSUPPORTED',discovered:0,error:'NO_VERIFIED_PUBLIC_READ_ONLY_TRADER_DISCOVERY'},out:[]}}
-async function telegram(text){if(!TELEGRAM_TOKEN||!TELEGRAM_CHAT_ID)return;try{await fetchText(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:TELEGRAM_CHAT_ID,text,disable_web_page_preview:true})})}catch(e){console.log('[TELEGRAM]',e.message)}}
-function report(statuses,all,verified,signals,blocked,runtime){const full=statuses.filter(s=>s.class==='FULL_SIGNAL'&&['OK','CACHE'].includes(s.state)).length,disc=statuses.filter(s=>s.class==='DISCOVERY'&&['OK','CACHE'].includes(s.state)).length,uns=statuses.filter(s=>s.state==='UNSUPPORTED').length;const L=[`🌐 GLOBAL FUTURES TOP-TRADER & SIGNAL HUNTER`,`🧠 ${VERSION}`,`📡 READ-ONLY | NO ORDERS | FUTURES ONLY`,`━━━━━━━━━━━━━━━━━━`,`🔎 Full-signal sources: ${full}/${statuses.length} | Discovery sources: ${disc}/${statuses.length} | Unsupported: ${uns}/${statuses.length}`,`👥 Traders discovered: ${all.length} | Full-signal audited: ${verified.length} | Actionable: ${signals.length}/${TOP_SIGNALS}`,`🎯 Quality: 7D trades≥${MIN_TRADES} | active days≥${MIN_DAYS} | WR≥${MIN_WR}% | PF≥${MIN_PF} | median hold≤${MAX_MEDIAN_H}h | avg hold≤${MAX_AVG_H}h | DD≤${MAX_DD}%`,`⚡ Signal: fresh≤${FRESH_MIN}m | entry≤${ENTRY_MAX}% | RR≥${MIN_RR} | TP/SL=model ${MODEL_TP_R}R/${MODEL_SL_PCT}%`,`⏱ Runtime: ${runtime.toFixed(1)}s`,'','📡 SOURCE STATUS'];for(const s of statuses)L.push(`${s.source}: ${s.state} | ${s.class} | discovered=${s.discovered}${s.error?' | '+s.error.slice(0,110):''}`);const cov={COMPLETE:verified.filter(t=>t.coverage==='COMPLETE').length,PARTIAL:verified.filter(t=>t.coverage==='PARTIAL').length,EMPTY:verified.filter(t=>t.coverage==='VERIFY_EMPTY').length,ERROR:verified.filter(t=>t.coverage==='VERIFY_ERROR').length,UNKNOWN:verified.filter(t=>!t.coverage||t.coverage==='UNKNOWN').length};L.push(`🧾 Audit coverage: complete=${cov.COMPLETE} | partial=${cov.PARTIAL} | empty=${cov.EMPTY} | verify-error=${cov.ERROR} | unknown=${cov.UNKNOWN}`,'','🏆 TOP ACTIONABLE FUTURES SIGNALS');if(!signals.length)L.push('No trader passed BOTH the statistical quality gate and current-position signal gate this cycle.');else signals.forEach((t,i)=>{const p=t.position;L.push(`${i+1}. ${t.venue} ${trunc(t.name)} | ${p.side} ${p.symbol} | Entry ${p.entry} | Now ${p.mark} | Dist ${pct(p.distancePct)} | RR ${p.rr.toFixed(2)} | Age ${((Date.now()-p.openedAt)/60000).toFixed(1)}m | WR ${pct(t.stats.wr,1)} | PF ${t.stats.pf.toFixed(2)} | Score ${score(t).toFixed(1)}`)});L.push('','🧱 TOP BLOCKED TRADERS');blocked.slice(0,10).forEach(t=>L.push(`${t.venue} ${trunc(t.name,22)}: ${t.reasons.join(' | ')}`));return L.join('\n')}
+async function telegram(text){if(!TELEGRAM_TOKEN||!TELEGRAM_CHAT_ID){console.log('[TELEGRAM] skipped: missing TELEGRAM_TOKEN or TELEGRAM_CHAT_ID');return}try{const raw=await fetchText(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:TELEGRAM_CHAT_ID,text,disable_web_page_preview:true})});let x;try{x=JSON.parse(raw)}catch{}if(x&&!x.ok)throw new Error(`TELEGRAM_API:${x.error_code||''}:${x.description||'unknown'}`);console.log('[TELEGRAM] sent')}catch(e){console.log('[TELEGRAM]',e.message)}}
+function report(statuses,all,verified,signals,blocked,runtime){const full=statuses.filter(s=>s.class==='FULL_SIGNAL'&&['OK','CACHE'].includes(s.state)).length,disc=statuses.filter(s=>s.class==='DISCOVERY'&&['OK','CACHE'].includes(s.state)).length,uns=statuses.filter(s=>s.state==='UNSUPPORTED').length;const L=[`🌐 GLOBAL FUTURES TOP-TRADER & SIGNAL HUNTER`,`🧠 ${VERSION}`,`📡 READ-ONLY | NO ORDERS | FUTURES ONLY`,`━━━━━━━━━━━━━━━━━━`,`🔎 Full-signal sources: ${full}/${statuses.length} | Discovery sources: ${disc}/${statuses.length} | Unsupported: ${uns}/${statuses.length}`,`👥 Traders discovered: ${all.length} | Full-signal audited: ${verified.length} | Actionable: ${signals.length}/${TOP_SIGNALS}`,`🎯 Quality: 7D trades≥${MIN_TRADES} | active days≥${MIN_DAYS} | WR≥${MIN_WR}% | PF≥${MIN_PF} | median hold≤${MAX_MEDIAN_H}h | avg hold≤${MAX_AVG_H}h | DD≤${MAX_DD}%`,`⚡ Signal: fresh≤${FRESH_MIN}m | entry≤${ENTRY_MAX}% | RR≥${MIN_RR} | TP/SL=model ${MODEL_TP_R}R/${MODEL_SL_PCT}%`,`⏱ Runtime: ${runtime.toFixed(1)}s`,'','📡 SOURCE STATUS'];for(const s of statuses)L.push(`${s.source}: ${s.state} | ${s.class} | discovered=${s.discovered}${s.error?' | '+s.error.slice(0,110):''}`);const cov={COMPLETE:verified.filter(t=>t.coverage==='COMPLETE').length,PARTIAL:verified.filter(t=>t.coverage==='PARTIAL').length,EMPTY:verified.filter(t=>t.coverage==='VERIFY_EMPTY').length,ERROR:verified.filter(t=>t.coverage==='VERIFY_ERROR').length,UNKNOWN:verified.filter(t=>!t.coverage||t.coverage==='UNKNOWN').length};const he=verified.filter(t=>t.coverage==='VERIFY_ERROR'&&t.source==='HYPERLIQUID').length,oe=verified.filter(t=>t.coverage==='VERIFY_ERROR'&&t.source==='OKX').length;L.push(`🧾 Audit coverage: complete=${cov.COMPLETE} | partial=${cov.PARTIAL} | empty=${cov.EMPTY} | verify-error=${cov.ERROR} | unknown=${cov.UNKNOWN}`,`   Verify errors: Hyperliquid=${he} | OKX=${oe}`,'','🏆 TOP ACTIONABLE FUTURES SIGNALS');if(!signals.length)L.push('No trader passed BOTH the statistical quality gate and current-position signal gate this cycle.');else signals.forEach((t,i)=>{const p=t.position;L.push(`${i+1}. ${t.venue} ${trunc(t.name)} | ${p.side} ${p.symbol} | Entry ${p.entry} | Now ${p.mark} | Dist ${pct(p.distancePct)} | RR ${p.rr.toFixed(2)} | Age ${((Date.now()-p.openedAt)/60000).toFixed(1)}m | WR ${pct(t.stats.wr,1)} | PF ${t.stats.pf.toFixed(2)} | Score ${score(t).toFixed(1)}`)});L.push('','🧱 TOP BLOCKED TRADERS');blocked.slice(0,10).forEach(t=>L.push(`${t.venue} ${trunc(t.name,22)}: ${t.reasons.join(' | ')}`));return L.join('\n')}
 
-async function main(){const started=Date.now();await ensure();console.log(`GFTSH ${VERSION} | READ-ONLY | FUTURES ONLY`);const cache=await cacheLoad();const fns=[hyperliquid,binance,okx,bybit,bitget,()=>unsupported('KUCOIN'),()=>unsupported('GATE'),()=>unsupported('MEXC'),()=>unsupported('PHEMEX'),()=>unsupported('BINGX'),()=>unsupported('COINEX'),()=>unsupported('DYDX'),()=>unsupported('PARADEX')];const results=[];for(const fn of fns){let r;try{r=await fn()}catch(e){r={status:{source:'UNKNOWN',class:'DISCOVERY',state:'UNAVAILABLE',discovered:0,error:String(e.message||e)},out:[]}}results.push(await withCache(r,cache));await sleep(40)}await cacheSave(Object.fromEntries(results.map(r=>[r.status.source,{savedAt:Date.now(),items:r.out}])));const statuses=results.map(r=>r.status);const map=new Map();for(const r of results)for(const t of r.out){const k=`${t.source}:${t.traderId}`;if(!map.has(k))map.set(k,t)}const all=[...map.values()].sort((a,b)=>score(b)-score(a));const hlPool=all.filter(t=>t.source==='HYPERLIQUID').slice(0,HL_VERIFY_LIMIT);const okxPool=all.filter(t=>t.source==='OKX').slice(0,OKX_VERIFY_LIMIT);const verifyPool=[...hlPool,...okxPool].slice(0,VERIFY_LIMIT);const verified=[];for(const t of verifyPool){const v=t.source==='HYPERLIQUID'?await hlVerify(t):await okxVerify(t);v.gate=gate(v);if(v.verifyError)v.gate.push(v.coverage==='VERIFY_EMPTY'?'VERIFY_EMPTY':`VERIFY_ERROR:${v.verifyError.slice(0,90)}`);verified.push(v)}const quality=verified.filter(t=>t.gate.length===0);const signals=[];for(const t of quality){const pg=positionGate(t);if(pg.length===0)signals.push(t)}signals.sort((a,b)=>score(b)-score(a));const blocked=verified.filter(t=>t.gate.length||positionGate(t).length).map(t=>({venue:t.venue,name:t.name,reasons:[...t.gate,...(t.gate.length?[]:positionGate(t))]}));const text=report(statuses,all,verified,signals.slice(0,TOP_SIGNALS),blocked,(Date.now()-started)/1000);console.log(text);await writeJson(STATE_FILE,{version:VERSION,updatedAt:Date.now(),statuses,discovered:all.length,verified:verified.length,signals:signals.length,top:signals.slice(0,TOP_SIGNALS)});await telegram(text)}
+async function main(){const started=Date.now();await ensure();console.log(`GFTSH ${VERSION} | READ-ONLY | FUTURES ONLY`);const cache=await cacheLoad();const fns=[hyperliquid,binance,okx,bybit,bitget,()=>unsupported('KUCOIN'),()=>unsupported('GATE'),()=>unsupported('MEXC'),()=>unsupported('PHEMEX'),()=>unsupported('BINGX'),()=>unsupported('COINEX'),()=>unsupported('DYDX'),()=>unsupported('PARADEX')];const results=[];for(const fn of fns){let r;try{r=await fn()}catch(e){r={status:{source:'UNKNOWN',class:'DISCOVERY',state:'UNAVAILABLE',discovered:0,error:String(e.message||e)},out:[]}}results.push(await withCache(r,cache));await sleep(40)}await cacheSave(Object.fromEntries(results.map(r=>[r.status.source,{savedAt:Date.now(),items:r.out}])));const statuses=results.map(r=>r.status);const map=new Map();for(const r of results)for(const t of r.out){const k=`${t.source}:${t.traderId}`;if(!map.has(k))map.set(k,t)}const all=[...map.values()].sort((a,b)=>score(b)-score(a));const hlPool=all.filter(t=>t.source==='HYPERLIQUID').slice(0,HL_VERIFY_LIMIT);const okxPool=all.filter(t=>t.source==='OKX').slice(0,OKX_VERIFY_LIMIT);const verifyPool=[...hlPool,...okxPool];const verified=[];for(const t of verifyPool){const v=t.source==='HYPERLIQUID'?await hlVerify(t):await okxVerify(t);v.gate=gate(v);if(v.verifyError)v.gate.push(v.coverage==='VERIFY_EMPTY'?'VERIFY_EMPTY':`VERIFY_ERROR:${v.verifyError.slice(0,90)}`);verified.push(v)}const quality=verified.filter(t=>t.gate.length===0);const signals=[];for(const t of quality){const pg=positionGate(t);if(pg.length===0)signals.push(t)}signals.sort((a,b)=>score(b)-score(a));const blocked=verified.filter(t=>t.gate.length||positionGate(t).length).map(t=>({venue:t.venue,name:t.name,reasons:[...t.gate,...(t.gate.length?[]:positionGate(t))]}));const text=report(statuses,all,verified,signals.slice(0,TOP_SIGNALS),blocked,(Date.now()-started)/1000);console.log(text);await writeJson(STATE_FILE,{version:VERSION,updatedAt:Date.now(),statuses,discovered:all.length,verified:verified.length,signals:signals.length,top:signals.slice(0,TOP_SIGNALS)});await telegram(text)}
 main().catch(e=>{console.error('[FATAL]',e);process.exitCode=1});
