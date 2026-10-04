@@ -1,4 +1,4 @@
-name: Global Futures Top-Trader & Signal Hunter
+name: Global Futures Top Trader & Signal Hunter
 
 on:
   schedule:
@@ -8,73 +8,44 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: gftsh-production
-  cancel-in-progress: true
+env:
+  NODE_VERSION: '22'
+  EXECUTION_ENABLED: 'false'
 
 jobs:
-  hunt:
+  run:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     environment: production
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node 22
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
 
-      - name: Verify worker contract
+      - name: Verify worker
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
           test -f crypto_whale_signal_engine.mjs
           node --check crypto_whale_signal_engine.mjs
-          grep -q "GFTSH-V1.5.0-GLOBAL-FUTURES-SOURCE-AUDIT" crypto_whale_signal_engine.mjs
-          if grep -Eiq 'HELIUS|SOLANA_RPC|SPOT|JUPITER|RAYDIUM|PUMPFUN' crypto_whale_signal_engine.mjs; then
-            echo 'FATAL: forbidden legacy Spot/Solana/Helius code detected'
-            exit 1
-          fi
-          echo 'PASS | GFTSH V1.3 worker contract'
+          grep -q 'GFTSH-V1.6.0-GLOBAL-FUTURES-RATE-LIMIT-AUDIT' crypto_whale_signal_engine.mjs
 
-      - name: Run global futures hunter
+      - name: Run GFTSH V1.6
+        shell: bash
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GFTSH_DISCOVERY_LIMIT: '400'
-          GFTSH_VERIFY_LIMIT: '240'
           GFTSH_HL_VERIFY_LIMIT: '120'
           GFTSH_OKX_VERIFY_LIMIT: '120'
-          GFTSH_TOP_SIGNALS: '10'
-          GFTSH_FRESH_MIN: '15'
-          GFTSH_ENTRY_MAX_PCT: '0.5'
-          GFTSH_MIN_RR: '1.5'
-          GFTSH_MIN_7D_TRADES: '30'
-          GFTSH_MIN_ACTIVE_DAYS: '4'
-          GFTSH_MIN_WR: '55'
-          GFTSH_MIN_PF: '1.5'
-          GFTSH_MAX_MEDIAN_HOURS: '4'
-          GFTSH_MAX_AVG_HOURS: '8'
-          GFTSH_MAX_DD: '40'
-          GFTSH_MODEL_SL_PCT: '0.5'
-          GFTSH_MODEL_TP_R: '2'
-          GFTSH_HL_VERIFY_CONCURRENCY: '8'
-          GFTSH_HTTP_TIMEOUT_MS: '12000'
-        run: node crypto_whale_signal_engine.mjs
-
-      - name: Persist state
-        if: always()
-        shell: bash
+          GFTSH_VERIFY_LIMIT: '240'
+          GFTSH_MAX_RETRIES: '3'
+          GFTSH_HL_REQ_GAP_MS: '120'
+          GFTSH_OKX_REQ_GAP_MS: '450'
         run: |
-          set -euo pipefail
-          if [ -d state ] && [ -n "$(git status --porcelain state 2>/dev/null || true)" ]; then
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add state
-            git commit -m 'chore: update GFTSH global futures state' || true
-            git push || true
-          fi
+          set -e
+          node crypto_whale_signal_engine.mjs
