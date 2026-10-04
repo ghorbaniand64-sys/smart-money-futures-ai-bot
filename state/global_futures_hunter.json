@@ -1,12 +1,12 @@
 {
-  "version": "GFTSH-V1.2.0-GLOBAL-FUTURES-ADAPTERS",
-  "updatedAt": 1791130722132,
+  "version": "GFTSH-V1.3.0-GLOBAL-FUTURES-REAL-DISCOVERY",
+  "updatedAt": 1791131490979,
   "statuses": [
     {
       "source": "HYPERLIQUID",
       "class": "FULL_SIGNAL",
-      "state": "EMPTY",
-      "discovered": 0,
+      "state": "OK",
+      "discovered": 400,
       "error": null
     },
     {
@@ -94,8 +94,8 @@
       "error": "NO_VERIFIED_PUBLIC_READ_ONLY_TRADER_DISCOVERY"
     }
   ],
-  "discovered": 88,
-  "verified": 88,
+  "discovered": 488,
+  "verified": 200,
   "signals": 0,
   "top": []
 }
