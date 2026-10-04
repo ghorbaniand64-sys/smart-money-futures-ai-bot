@@ -1,88 +1,101 @@
 {
-  "version": "GFTSH-V1.1.0-GLOBAL-FUTURES-MULTI-VENUE",
-  "updatedAt": 1791128568283,
-  "sources": [
+  "version": "GFTSH-V1.2.0-GLOBAL-FUTURES-ADAPTERS",
+  "updatedAt": 1791130722132,
+  "statuses": [
     {
       "source": "HYPERLIQUID",
-      "healthy": true,
-      "discovered": 250,
+      "class": "FULL_SIGNAL",
+      "state": "EMPTY",
+      "discovered": 0,
       "error": null
     },
     {
       "source": "BINANCE",
-      "healthy": false,
-      "discovered": 0,
-      "error": "BINANCE_NO_PUBLIC_PORTFOLIOS"
+      "class": "DISCOVERY",
+      "state": "OK",
+      "discovered": 88,
+      "error": null
     },
     {
       "source": "OKX",
-      "healthy": false,
+      "class": "FULL_SIGNAL",
+      "state": "EMPTY",
       "discovered": 0,
       "error": "OKX_NO_PUBLIC_LEAD_TRADERS"
     },
     {
       "source": "BYBIT",
-      "healthy": false,
+      "class": "DISCOVERY",
+      "state": "UNAVAILABLE",
       "discovered": 0,
-      "error": "BYBIT:HTTP_404:\"<html>\\r\\n<head><title>404 Not Found</title></head>\\r\\n<body>\\r\\n<center><h1>404 Not Found</h1></center>\\r\\n<hr><center>nginx</center>\\r\\n<script type=\\\"text/javascript\\\"  src=\\\"/zkESA0_R8252cIqnRA/riEJkz0r5mJhtc7JQO/aE0gZA/WHQddCRW/Iig\\\"></script></body>\\r\\n</html>\\r\\n\""
+      "error": "HTTP_403:<HTML><HEAD>\n<TITLE>Access Denied</TITLE>\n</HEAD><BODY>\n<H1>Access Denied</H1>\n \nYou don't have permission to access \"http&#58;&#47;&#47;www&#46;bybit&#46;com&#47;copyTrading&#47;en&#47;leader&#45;board\" on this server.<P>\nReference&#32;&#3"
     },
     {
       "source": "BITGET",
-      "healthy": false,
+      "class": "DISCOVERY",
+      "state": "EMPTY",
       "discovered": 0,
-      "error": "BITGET:HTTP_404:{\"code\":\"40404\",\"msg\":\"Request URL NOT FOUND\",\"requestTime\":1791128563710,\"data\":null}"
+      "error": "PUBLIC_PAGE_NO_MACHINE_READABLE_TRADER_IDS"
     },
     {
       "source": "KUCOIN",
-      "healthy": false,
+      "class": "UNSUPPORTED",
+      "state": "UNSUPPORTED",
       "discovered": 0,
-      "error": "NO_VERIFIED_PUBLIC_READ-ONLY_LEADERBOARD_ADAPTER"
+      "error": "NO_VERIFIED_PUBLIC_READ_ONLY_TRADER_DISCOVERY"
     },
     {
       "source": "GATE",
-      "healthy": false,
+      "class": "UNSUPPORTED",
+      "state": "UNSUPPORTED",
       "discovered": 0,
-      "error": "NO_VERIFIED_PUBLIC_READ-ONLY_LEADERBOARD_ADAPTER"
+      "error": "NO_VERIFIED_PUBLIC_READ_ONLY_TRADER_DISCOVERY"
     },
     {
       "source": "MEXC",
-      "healthy": false,
+      "class": "UNSUPPORTED",
+      "state": "UNSUPPORTED",
       "discovered": 0,
-      "error": "NO_VERIFIED_PUBLIC_READ-ONLY_LEADERBOARD_ADAPTER"
+      "error": "NO_VERIFIED_PUBLIC_READ_ONLY_TRADER_DISCOVERY"
     },
     {
       "source": "PHEMEX",
-      "healthy": false,
+      "class": "UNSUPPORTED",
+      "state": "UNSUPPORTED",
       "discovered": 0,
-      "error": "NO_VERIFIED_PUBLIC_READ-ONLY_LEADERBOARD_ADAPTER"
+      "error": "NO_VERIFIED_PUBLIC_READ_ONLY_TRADER_DISCOVERY"
     },
     {
       "source": "BINGX",
-      "healthy": false,
+      "class": "UNSUPPORTED",
+      "state": "UNSUPPORTED",
       "discovered": 0,
-      "error": "NO_VERIFIED_PUBLIC_READ-ONLY_LEADERBOARD_ADAPTER"
+      "error": "NO_VERIFIED_PUBLIC_READ_ONLY_TRADER_DISCOVERY"
     },
     {
       "source": "COINEX",
-      "healthy": false,
+      "class": "UNSUPPORTED",
+      "state": "UNSUPPORTED",
       "discovered": 0,
-      "error": "NO_VERIFIED_PUBLIC_READ-ONLY_LEADERBOARD_ADAPTER"
+      "error": "NO_VERIFIED_PUBLIC_READ_ONLY_TRADER_DISCOVERY"
     },
     {
       "source": "DYDX",
-      "healthy": false,
+      "class": "UNSUPPORTED",
+      "state": "UNSUPPORTED",
       "discovered": 0,
-      "error": "NO_VERIFIED_PUBLIC_READ-ONLY_LEADERBOARD_ADAPTER"
+      "error": "NO_VERIFIED_PUBLIC_READ_ONLY_TRADER_DISCOVERY"
     },
     {
       "source": "PARADEX",
-      "healthy": false,
+      "class": "UNSUPPORTED",
+      "state": "UNSUPPORTED",
       "discovered": 0,
-      "error": "NO_VERIFIED_PUBLIC_READ-ONLY_LEADERBOARD_ADAPTER"
+      "error": "NO_VERIFIED_PUBLIC_READ_ONLY_TRADER_DISCOVERY"
     }
   ],
-  "discovered": 250,
-  "verified": 150,
+  "discovered": 88,
+  "verified": 88,
   "signals": 0,
-  "signalsSnapshot": []
+  "top": []
 }
