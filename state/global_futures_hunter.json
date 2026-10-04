@@ -1,6 +1,6 @@
 {
-  "version": "GFTSH-V1.5.0-GLOBAL-FUTURES-SOURCE-AUDIT",
-  "updatedAt": 1791133578276,
+  "version": "GFTSH-V1.9.0-GLOBAL-FUTURES-ACTIVE-TRADER-HUNTER",
+  "updatedAt": 1791146448415,
   "statuses": [
     {
       "source": "HYPERLIQUID",
@@ -18,9 +18,9 @@
     },
     {
       "source": "OKX",
-      "class": "FULL_SIGNAL",
+      "class": "DISCOVERY",
       "state": "OK",
-      "discovered": 173,
+      "discovered": 141,
       "error": null
     },
     {
@@ -28,7 +28,7 @@
       "class": "DISCOVERY",
       "state": "UNAVAILABLE",
       "discovered": 0,
-      "error": "HTTP_403:<HTML><HEAD>\n<TITLE>Access Denied</TITLE>\n</HEAD><BODY>\n<H1>Access Denied</H1>\n \nYou don't have permission to access \"http&#58;&#47;&#47;www&#46;bybit&#46;com&#47;copyTrading&#47;en&#47;leader&#45;board\" on this server.<P>\nReference&#32;&#3"
+      "error": "HTTP_403:<HTML><HEAD>\n<TITLE>Access Denied</TITLE>\n</HEAD><BODY>\n<H1>Access Denied</H1>\n \nYou don't have permission to access \"http&#58;&#47;&#47;www&#46;bybit&#46;com&#47;copyTrading&#47;en&#47;leader&#45;board\" on this server.<"
     },
     {
       "source": "BITGET",
@@ -94,8 +94,11 @@
       "error": "NO_VERIFIED_PUBLIC_READ_ONLY_TRADER_DISCOVERY"
     }
   ],
-  "discovered": 660,
-  "verified": 240,
+  "discovered": 628,
+  "hlAuditCandidates": 100,
+  "audited": 100,
+  "qualityPass": 0,
+  "positionChecked": 0,
   "signals": 0,
   "top": []
 }
