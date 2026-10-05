@@ -1,46 +1,43 @@
-# GFTSH V2.1 — Global Futures Actual Trade Reconstruction Hunter
+# GFTSH V2.1.1
 
-Exact worker filename:
-`crypto_whale_signal_engine.mjs`
+`GFTSH-V2.1.1-GLOBAL-FUTURES-ACTUAL-TRADE-RECON-V2`
 
-Scope:
-- FUTURES ONLY
-- READ-ONLY
-- NO ORDERS
-- NO AUTO-COPY
+Read-only futures hunter. No orders. No auto-copy.
 
-## V2.1 core correction
-V2.0 treated individual Hyperliquid fills with non-zero `closedPnl` as individual trades. V2.1 does not. It reconstructs position lifecycles from fills using `startPosition`, `dir`, size and timestamps, and counts a completed lifecycle as one actual trade.
+## V2.1.1 changes
 
-## V2.1 upgrades
-- `aggregateByTime: true` to reduce partial-fill inflation.
-- Paginated `userFillsByTime` retrieval, bounded to protect runtime/rate limits.
-- Actual completed-trade reconstruction by coin and position direction.
-- Partial reductions and adds are included in the same lifecycle instead of becoming separate trades.
-- Reversal (`LONG -> SHORT` / `SHORT -> LONG`) closes the old lifecycle and starts a new one.
-- PF is calculated from reconstructed trade PnL, not raw fill count.
-- WR is calculated from reconstructed completed trades.
-- No-loss samples are explicitly rejected from strong tiers.
-- PF > 20, WR=100% without loss samples, low loss count, high fill/trade ratio and one-day PnL concentration are flagged as anomalies.
-- `DDcurve` remains a reconstructed trade-PnL curve, NOT true account drawdown.
-- Follow Score is separate from current-position signal gating.
-- Current position verification is limited to the strongest verified candidates.
-- Freshness uses the latest fill associated with the current open position.
-- Discovery remains multi-venue; actionable signals require independently verified current position data.
+- Actual closed trade lifecycle is the performance unit.
+- Partial fills / adds are aggregated into one lifecycle.
+- Current position authority comes from Hyperliquid `clearinghouseState`.
+- Trader Quality and Current Position Quality are separate gates.
+- PF unavailable is distinct from LOW_PF.
+- PF/WR anomaly guard flags suspicious combinations instead of fabricating zeroes.
+- Every blocked current position has an explicit reason.
+- Nullable metrics use safe formatting and cannot call `toFixed()` on null.
+- Missing current position is reported as `NO_CURRENT_POSITION`.
+- Entry distance gate is 0.5% by default.
+- Model SL is 0.5%, TP is 2R.
 
-## Signal gate
-- Tier S or A
-- actual completed-trade sample >= 15
-- loss sample >= 3
-- no quality anomaly flags
-- current position exists
-- latest activity <= 15 minutes
-- entry distance <= 0.5%
-- model SL = 0.5%
-- model TP = 2R
+## Required GitHub Environment: production
 
-## Required GitHub Environment secrets
-- `TELEGRAM_TOKEN`
-- `TELEGRAM_CHAT_ID`
+Secrets:
 
-No private exchange API keys are required.
+- `HYPERLIQUID_API_URL` = `https://api.hyperliquid.xyz/info`
+- `TELEGRAM_TOKEN` = your Telegram bot token
+- `TELEGRAM_CHAT_ID` = your Telegram chat ID
+
+No private key is required. This worker cannot place orders.
+
+## Optional configuration
+
+- `GFTSH_LOOKBACK_DAYS` default `30`
+- `GFTSH_LEADERBOARD_LIMIT` default `400`
+- `GFTSH_AUDIT_LIMIT` default `100`
+- `GFTSH_TOP_WATCH` default `10`
+- `GFTSH_FILL_MAX_PAGES` default `20`
+- `GFTSH_MAX_ENTRY_DISTANCE_PCT` default `0.5`
+- `GFTSH_MODEL_SL_PCT` default `0.5`
+- `GFTSH_MODEL_TP_R` default `2`
+- `GFTSH_SIGNAL_FRESHNESS_MIN` default `15`
+
+The non-Hyperliquid venues remain discovery-only unless an independently verified public trader-data adapter is configured. They never become actionable from discovery alone.
