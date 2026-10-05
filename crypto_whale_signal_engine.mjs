@@ -6,8 +6,8 @@ import path from 'node:path';
 // Source authority: Hyperliquid public leaderboard + public user fills + clearinghouseState.
 // Current position authority: clearinghouseState ONLY. Stale fills never become a live position.
 
-const VERSION='GFTSH-V2.1.9-GLOBAL-FUTURES-ACTUAL-TRADE-RECON-COPYABILITY-PERFORMANCE-FORENSICS';
-const BUILD='V2.1.9-COPYABILITY-PERFORMANCE-FORENSICS-RECENT-VS-HISTORICAL-POSITION-CONCENTRATION-ANOMALY-AUDIT';
+const VERSION='GFTSH-V2.1.10-GLOBAL-FUTURES-ACTUAL-TRADE-RECON-STRATEGY-AWARE-QUALITY-COPYABILITY';
+const BUILD='V2.1.10-STRATEGY-AWARE-QUALITY-HIGH-WR-ASYMMETRIC-PROFIT-COPYABILITY-CONCENTRATION-DRIFT-AUDIT';
 const API=process.env.HYPERLIQUID_API_URL||'https://api.hyperliquid.xyz/info';
 const LEADERBOARD=process.env.HL_LEADERBOARD_URL||process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL||'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';
 const TG_TOKEN=process.env.TELEGRAM_TOKEN||process.env.TELEGRAM_BOT_TOKEN||'';
@@ -31,6 +31,18 @@ const MIN_TRADES=Number(process.env.GFTSH_MIN_CLOSED_TRADES||8);
 const MIN_WR=Number(process.env.GFTSH_MIN_WR||58);
 const MIN_PF=Number(process.env.GFTSH_MIN_PF||1.8);
 const MAX_DD=Number(process.env.GFTSH_MAX_DD_PCT||25);
+const ASYM_MIN_TRADES=Number(process.env.GFTSH_ASYM_MIN_TRADES||20);
+const ASYM_MIN_PF=Number(process.env.GFTSH_ASYM_MIN_PF||2.0);
+const ASYM_MAX_DD=Number(process.env.GFTSH_ASYM_MAX_DD_PCT||20);
+const ASYM_MIN_RECOVERY=Number(process.env.GFTSH_ASYM_MIN_RECOVERY||2);
+const ASYM_MAX_TOP1_CONC=Number(process.env.GFTSH_ASYM_MAX_TOP1_CONC_PCT||40);
+const ASYM_MAX_TOP3_CONC=Number(process.env.GFTSH_ASYM_MAX_TOP3_CONC_PCT||70);
+const COPY_MAX_POSITION=Number(process.env.GFTSH_COPY_MAX_POSITION_PCT||20);
+const COPY_MAX_COIN=Number(process.env.GFTSH_COPY_MAX_COIN_PCT||20);
+const COPY_MAX_LEVERAGE=Number(process.env.GFTSH_COPY_MAX_LEVERAGE||40);
+const ASYM_MIN_RECENT_PF=Number(process.env.GFTSH_ASYM_MIN_RECENT_PF||1.25);
+const ASYM_MIN_RECENT_PNL=Number(process.env.GFTSH_ASYM_MIN_RECENT_PNL||0);
+const ASYM_MAX_DRIFT_DD=Number(process.env.GFTSH_ASYM_MAX_DRIFT_DD_PCT||30);
 const MIN_NOTIONAL=Number(process.env.GFTSH_MIN_SIGNAL_NOTIONAL_USD||100);
 const MIN_24H_VOL=Number(process.env.GFTSH_MIN_24H_VOLUME_USD||1000000);
 const TOP_WATCH=Math.max(5,Number(process.env.GFTSH_WATCHLIST_SIZE||10));
@@ -282,8 +294,8 @@ function reconstruct(fills){
  const currentBooks=[...books].filter(([,b])=>b.size>0).map(([coin,b])=>({coin,...b}));
  return {closedTrades:closed.length,wins,losses,wr,pf,realizedPnl:realized,grossWin,grossLoss,maxDrawdown:maxDD,activeDays,recentClosed:recent24.trades,recent24,recent7,avgHoldHours,medianHoldHours,tradesPerDay,recognizedFills:recognized,unknownFills:unknown,reversalFills:reversals,invalidFills:invalid,distribution:dist,longestWinStreak:sk.maxWin,longestLossStreak:sk.maxLoss,recoveryFactor,pnlConcentrationPct:pnlConcentration,openBooks:currentBooks,closed};
 }
-function quality(perf,lb){
- const reasons=[];
+function quality(perf,lb,cp=null){
+ const classicReasons=[], asymReasons=[], copyReasons=[];
  const tradesFail=perf.closedTrades<MIN_TRADES;
  const wrFail=!(perf.wr>=MIN_WR);
  const pfUnavailable=perf.pf===null;
@@ -293,19 +305,57 @@ function quality(perf,lb){
  const ddPct=perf.maxDrawdown/ddBase*100;
  const ddFail=ddPct>MAX_DD;
  const anomaly=(perf.pf!==null&&perf.pf>30)||(perf.wr!==null&&perf.wr>99.5&&perf.closedTrades<20);
- if(tradesFail)reasons.push(`TRADES<${MIN_TRADES}`);
- if(wrFail)reasons.push(`WR<${MIN_WR}%`);
- if(pfUnavailable)reasons.push('PF_UNAVAILABLE');else if(pfFail)reasons.push(`LOW_PF<${MIN_PF}`);
- if(pnlFail)reasons.push('NON_POSITIVE_REALIZED_PNL');
- if(ddFail)reasons.push(`DD>${MAX_DD}%`);
- if(anomaly)reasons.push('PF_WR_ANOMALY_REVIEW');
- const hardFails=[tradesFail,wrFail,pfUnavailable,pfFail,ddFail,anomaly];
- const score=Math.max(0,Math.min(100,100-hardFails.filter(Boolean).length*8+Math.min(10,perf.closedTrades/10)+Math.min(5,Math.max(0,(perf.wr||0)-60)/8)));
+ if(tradesFail)classicReasons.push(`TRADES<${MIN_TRADES}`);
+ if(wrFail)classicReasons.push(`WR<${MIN_WR}%`);
+ if(pfUnavailable)classicReasons.push('PF_UNAVAILABLE');else if(pfFail)classicReasons.push(`LOW_PF<${MIN_PF}`);
+ if(pnlFail)classicReasons.push('NON_POSITIVE_REALIZED_PNL');
+ if(ddFail)classicReasons.push(`DD>${MAX_DD}%`);
+ if(anomaly)classicReasons.push('PF_WR_ANOMALY_REVIEW');
+ const d=perf.distribution||{};
+ const asymTradeFail=perf.closedTrades<ASYM_MIN_TRADES;
+ const asymPfFail=pfUnavailable||!(perf.pf>=ASYM_MIN_PF);
+ const asymDdFail=!(ddPct<=ASYM_MAX_DD);
+ const asymRecoveryFail=!(finite(perf.recoveryFactor)&&perf.recoveryFactor>=ASYM_MIN_RECOVERY);
+ const asymPnlFail=!(perf.realizedPnl>0);
+ const asymTop1Fail=!(finite(d.profitConcentrationPct)&&d.profitConcentrationPct<=ASYM_MAX_TOP1_CONC);
+ const asymTop3Fail=!(finite(d.top3ProfitConcentrationPct)&&d.top3ProfitConcentrationPct<=ASYM_MAX_TOP3_CONC);
+ const recent=perf.recent24||{};
+ const asymRecentPfFail=!(finite(recent.pf)&&recent.pf>=ASYM_MIN_RECENT_PF);
+ const asymRecentPnlFail=!(finite(recent.pnl)&&recent.pnl>ASYM_MIN_RECENT_PNL);
+ const asymDriftFail=finite(perf.recent7?.pf)&&finite(recent.pf)&&perf.recent7.pf>0&&recent.pf < perf.recent7.pf*0.35 && recent.trades>=5;
+ if(asymTradeFail)asymReasons.push(`ASYM_TRADES<${ASYM_MIN_TRADES}`);
+ if(asymPfFail)asymReasons.push(`ASYM_PF<${ASYM_MIN_PF}`);
+ if(asymDdFail)asymReasons.push(`ASYM_DD>${ASYM_MAX_DD}%`);
+ if(asymRecoveryFail)asymReasons.push(`RECOVERY<${ASYM_MIN_RECOVERY}`);
+ if(asymPnlFail)asymReasons.push('ASYM_NON_POSITIVE_PNL');
+ if(asymTop1Fail)asymReasons.push(`TOP1_CONC>${ASYM_MAX_TOP1_CONC}%`);
+ if(asymTop3Fail)asymReasons.push(`TOP3_CONC>${ASYM_MAX_TOP3_CONC}%`);
+ if(asymRecentPfFail)asymReasons.push(`RECENT24H_PF<${ASYM_MIN_RECENT_PF}`);
+ if(asymRecentPnlFail)asymReasons.push('RECENT24H_NON_POSITIVE_PNL');
+ if(asymDriftFail)asymReasons.push('RECENT_PF_DRIFT');
+ if(cp){
+   if(finite(cp.maxPositionSharePct)&&cp.maxPositionSharePct>COPY_MAX_POSITION)copyReasons.push(`MAX_POS>${COPY_MAX_POSITION}%`);
+   if(finite(cp.maxCoinSharePct)&&cp.maxCoinSharePct>COPY_MAX_COIN)copyReasons.push(`MAX_COIN>${COPY_MAX_COIN}%`);
+   if(finite(cp.maxLeverage)&&cp.maxLeverage>COPY_MAX_LEVERAGE)copyReasons.push(`MAX_LEV>${COPY_MAX_LEVERAGE}x`);
+ }
+ const classicPass=!tradesFail&&!wrFail&&!pfUnavailable&&!pfFail&&!pnlFail&&!ddFail&&!anomaly;
+ const asymPass=!asymTradeFail&&!asymPfFail&&!asymDdFail&&!asymRecoveryFail&&!asymPnlFail&&!asymTop1Fail&&!asymTop3Fail&&!asymRecentPfFail&&!asymRecentPnlFail&&!asymDriftFail;
+ const copyPass=copyReasons.length===0;
+ const strategy=classicPass?'HIGH-WR':asymPass?'ASYMMETRIC':'NONE';
+ const strategyPass=(classicPass||asymPass)&&copyPass;
+ const hardFails=classicReasons.length;
+ let score=100-hardFails*7;
+ if(asymPass&&!classicPass)score=Math.max(score,84);
+ if(!copyPass)score-=copyReasons.length*8;
+ score=Math.max(0,Math.min(100,score+Math.min(8,perf.closedTrades/10)));
  let tier=score>=82?'S':score>=72?'A':score>=60?'B':'C';
- if(anomaly)tier=score>=72?'A':'B';
- return {score,tier,reasons,ddPct,anomaly,tradesFail,wrFail,pfUnavailable,pfFail,pnlFail,ddFail,hardFailCount:hardFails.filter(Boolean).length};
+ if(!strategyPass&&tier==='S')tier='A';
+ const reasons=strategyPass?copyReasons.length?copyReasons:['QUALITY_PASS']:([...classicReasons,...asymReasons,...copyReasons]);
+ return {score,tier,reasons,ddPct,anomaly,tradesFail,wrFail,pfUnavailable,pfFail,pnlFail,ddFail,hardFailCount:hardFails,
+   classicPass,asymPass,copyPass,strategy,strategyPass,classicReasons,asymReasons,copyReasons,
+   asymMetrics:{minTrades:ASYM_MIN_TRADES,minPf:ASYM_MIN_PF,maxDd:ASYM_MAX_DD,minRecovery:ASYM_MIN_RECOVERY,maxTop1:ASYM_MAX_TOP1_CONC,maxTop3:ASYM_MAX_TOP3_CONC,minRecentPf:ASYM_MIN_RECENT_PF},
+   copyabilityGate:{maxPosition:COPY_MAX_POSITION,maxCoin:COPY_MAX_COIN,maxLeverage:COPY_MAX_LEVERAGE}};
 }
-
 async function stateFor(address){return hl({type:'clearinghouseState',user:address},`state:${short(address)}`)}
 function positions(state){return (state?.assetPositions||[]).map(x=>x?.position||x).filter(p=>Math.abs(num(p?.szi))>0).map(p=>({coin:String(p.coin),side:num(p.szi)>0?'LONG':'SHORT',size:Math.abs(num(p.szi)),entry:num(p.entryPx),value:Math.abs(num(p.positionValue)),unrealized:num(p.unrealizedPnl),liq:num(p.liquidationPx),leverage:num(p.leverage?.value||p.leverage),margin:num(p.marginUsed)}));}
 function copyability(ps,perf,adds){
@@ -356,17 +406,7 @@ async function auditTrader(c,start,end,midsMap){
     return {...c,performance:{closedTrades:0,wins:0,losses:0,wr:null,pf:null,realizedPnl:0,grossWin:0,grossLoss:0,maxDrawdown:0,activeDays:0,recentClosed:0,recent24:{trades:0,wins:0,losses:0,wr:null,pf:null,pnl:0},recent7:{trades:0,wins:0,losses:0,wr:null,pf:null,pnl:0},avgHoldHours:null,medianHoldHours:null,tradesPerDay:0,recognizedFills:0,unknownFills:0,reversalFills:0,invalidFills:0,distribution:{},longestWinStreak:0,longestLossStreak:0,recoveryFactor:null,pnlConcentrationPct:null,openBooks:[],closed:[]},quality:{score:0,tier:'C',reasons:['NO_FRESH_POSITION_INCREASE_15M'],ddPct:0,anomaly:false},positions:[],copyability:{livePositions:0,liveNotional:0,maxPositionSharePct:null,maxCoinSharePct:null,avgLeverage:null,maxLeverage:null,positionAgeHours:null,avgPositionAgeHours:null,positionDetails:[]},latestAdd:null,currentSignal:null,blockReason:'NO_FRESH_POSITION_INCREASE_15M',diagnostics:diag};
   }
   const fills=await fillsFor(c.address,start,probeStart-1,probe);diag.fills=fills.length;diag.historyLoaded=true;
-  const perf=reconstruct(fills);const q=quality(perf,c.lb);
-  diag.quality={
-    tradesFail:perf.closedTrades<MIN_TRADES,
-    wrFail:!(perf.wr>=MIN_WR),
-    pfUnavailable:perf.pf===null,
-    pfFail:perf.pf!==null&&perf.pf<MIN_PF,
-    pnlFail:perf.realizedPnl<=0,
-    ddFail:q.ddPct>MAX_DD,
-    anomaly:Boolean(q.anomaly)
-  };
-  diag.qualityPass=!diag.quality.tradesFail&&!diag.quality.wrFail&&!diag.quality.pfUnavailable&&!diag.quality.pfFail&&!diag.quality.ddFail&&!diag.quality.anomaly&&q.tier!=='C';
+  const perf=reconstruct(fills);
   const state=await stateFor(c.address);diag.stateChecked=true;
   const ps=positions(state);diag.livePositions=ps.length;const posByCoin=new Map(ps.map(p=>[p.coin,p]));
   const adds=latestOpenAdds(fills);diag.fresh15=adds.filter(x=>x.__fresh).length;diag.increasing=adds.filter(x=>x.__positionDelta!==0&&Math.abs(x.__positionAfter)>Math.abs(x.__positionBefore)+1e-10).length;
@@ -379,21 +419,30 @@ async function auditTrader(c,start,end,midsMap){
     if(!(mid>0)){diag.missingMid++;continue}
     const entry=num(p.entry)||num(f.px);
     if(!(entry>0)){diag.invalidEntry++;continue}
-    const sig=makeSignal({...c,quality:q,performance:perf},q,p,f,mid);
-    if(!sig) {diag.invalidEntry++;continue}
+    const sig=makeSignal({...c,performance:perf},null,p,f,mid);
+    if(!sig){diag.invalidEntry++;continue}
     if(sig.absDistancePct>WATCH_MAX)diag.watchDistanceFail++;
     if(sig.absDistancePct>ENTRY_MAX)diag.entryDistanceFail++;
     else if(sig.rr<MIN_RR)diag.rrFail++;
     else diag.entryWindow++;
-    if(sig?.entryReady&&diag.qualityPass){candidate=sig;break}
-    if(sig?.blocked)block=sig.blocked;else if(sig?.reason)block=sig.reason;
   }
-  if(!candidate&&ps.length===0)block='NO_CURRENT_POSITION';
-  else if(!candidate&&diag.matched===0)block='FRESH_INCREASE_NO_LIVE_POSITION_MATCH';
-  else if(!candidate&&!diag.qualityPass)block='TRADER_QUALITY_GATE_FAILED';
-  else if(!candidate&&diag.entryWindow===0)block=`ENTRY_DISTANCE_GT_${ENTRY_MAX}%`;
+  const cp=copyability(ps,perf,adds);
+  const q=quality(perf,c.lb,cp);
+  diag.quality={tradesFail:q.tradesFail,wrFail:q.wrFail,pfUnavailable:q.pfUnavailable,pfFail:q.pfFail,pnlFail:q.pnlFail,ddFail:q.ddFail,anomaly:Boolean(q.anomaly),asymPass:q.asymPass,copyPass:q.copyPass};
+  diag.qualityPass=Boolean(q.strategyPass);
+  for(const f of adds){
+    if(!f.__fresh)continue;
+    const p=posByCoin.get(String(f.coin));if(!p)continue;
+    const mid=num(midsMap[String(f.coin)]);if(!(mid>0))continue;
+    const sig=makeSignal({...c,quality:q,performance:perf},q,p,f,mid);
+    if(sig?.entryReady&&diag.qualityPass){candidate=sig;break;}
+  }
+  if(candidate)block='QUALITY_PASS';
+  else if(ps.length===0)block='NO_CURRENT_POSITION';
+  else if(!diag.qualityPass)block='TRADER_QUALITY_GATE_FAILED';
+  else if(diag.entryWindow===0)block=`ENTRY_DISTANCE_GT_${ENTRY_MAX}%`;
   diag.signalPass=Boolean(candidate);
-  const cp=copyability(ps,perf,adds); return {...c,performance:perf,quality:q,positions:ps,copyability:cp,latestAdd:adds[0]||null,currentSignal:candidate,blockReason:block,diagnostics:diag};
+  return {...c,performance:perf,quality:q,positions:ps,copyability:cp,latestAdd:adds[0]||null,currentSignal:candidate,blockReason:block,diagnostics:diag};
 }
 function sortCandidates(rows){return rows.slice().sort((a,b)=>{
  const as=a.currentSignal?1:0,bs=b.currentSignal?1:0;if(bs!==as)return bs-as;
@@ -466,12 +515,14 @@ async function main(){
  report.push(`🔎 Leaderboard: ${lb.rows.length} | Valid trader IDs: ${lb.traders.length} | Activity candidates: ${activityPool.length} | Audited: ${audited.length} | Complete: ${complete.length} | Errors: ${errors}`,
  `🧪 AUDIT PIPELINE: fresh≤${DIAG_WINDOW_MIN}m=${dsum('fresh15')} | history-fills=${dsum('fills')} | pos-increase=${dsum('increasing')} | live-match=${dsum('matched')} | entry-window=${dsum('entryWindow')} | quality-pass=${diagRows.filter(x=>x.qualityPass).length}`,
  `🔬 DECISION DIAG: missing-mid=${dsum('missingMid')} | invalid-entry=${dsum('invalidEntry')} | >watch=${dsum('watchDistanceFail')} | >entry=${dsum('entryDistanceFail')} | RR-fail=${dsum('rrFail')}`,
- `🧬 QUALITY DIAG: trades<${MIN_TRADES}=${qsum('tradesFail')} | WR<${MIN_WR}%=${qsum('wrFail')} | PF-unavailable=${qsum('pfUnavailable')} | PF<${MIN_PF}=${qsum('pfFail')} | DD>${MAX_DD}%=${qsum('ddFail')} | anomaly=${qsum('anomaly')}`, `🧪 FORENSICS: near-miss=${nearMiss.length} | anomalies=${audited.filter(x=>x.quality?.anomaly).length} | evidence-live=${evidenceTop.length}`,
+ `🧬 QUALITY DIAG: classic WR<${MIN_WR}%=${qsum('wrFail')} | PF<${MIN_PF}=${qsum('pfFail')} | DD>${MAX_DD}%=${qsum('ddFail')} | asym-pass=${qsum('asymPass')} | copy-pass=${qsum('copyPass')} | anomaly=${qsum('anomaly')}`,
+ `🧠 STRATEGY GATE: HIGH-WR OR ASYMMETRIC | ASYM PF≥${ASYM_MIN_PF} | Recovery≥${ASYM_MIN_RECOVERY} | Top1≤${ASYM_MAX_TOP1_CONC}% | Top3≤${ASYM_MAX_TOP3_CONC}% | 24H PF≥${ASYM_MIN_RECENT_PF}`,
+ `📦 COPY GATE: maxPos≤${COPY_MAX_POSITION}% | maxCoin≤${COPY_MAX_COIN}% | maxLev≤${COPY_MAX_LEVERAGE}x`, `🧪 FORENSICS: near-miss=${nearMiss.length} | anomalies=${audited.filter(x=>x.quality?.anomaly).length} | evidence-live=${evidenceTop.length}`,
  `📊 EVIDENCE DEPTH: live-position traders=${audited.filter(x=>(x.diagnostics?.livePositions||0)>0).length} | live-match traders=${liveMatched.length} | entry-ready traders=${entryCandidates.length} | quality-pass traders=${eligible.length}`,
  `🧯 ERROR BREAKDOWN: ${errText}`,`🎯 Quality eligible: ${eligible.length} | Watchlist: ${watch.length} | Actionable signals: ${signals.length}/${MAX_SIGNALS}`,`🧾 TRADE RECON: actual closed lifecycles | partial fills aggregated | PF/WR anomaly guard ON`,`🛡 CURRENT POSITION: Hyperliquid clearinghouseState ONLY | stale fills cannot create a position`,`⚡ SIGNAL: fresh open activity ≤${FRESH_MIN}m | entry distance ≤${ENTRY_MAX}% | SL ${SL_PCT}% | TP ${TP_R}R | RR ≥${MIN_RR}`,'');
  report.push('📡 SOURCE STATUS',`HYPERLIQUID: OK | FULL_SIGNAL | discovered=${lb.traders.length} | audited=${audited.length}`,'');
  report.push('🔬 QUALITY EVIDENCE MATRIX');
- evidenceTop.slice(0,10).forEach((x,i)=>report.push(`${i+1}. ${evidenceLine(x)}`));
+ evidenceTop.slice(0,10).forEach((x,i)=>report.push(`${i+1}. ${evidenceLine(x)} | ${x.quality.strategy||'NONE'} | Copy ${x.quality.copyPass?'PASS':'FAIL'}`));
  if(!evidenceTop.length)report.push('No trader reached live-position matching for evidence ranking.');
  report.push('','🎯 NEAR-MISS — LIVE POSITION + ENTRY PASSED, QUALITY FAILED');
  nearMiss.slice(0,10).forEach((x,i)=>{const p=x.performance,q=x.quality,d=x.diagnostics;report.push(`${i+1}. ${short(x.address)} | Score ${q.score.toFixed(1)} | Trades ${p.closedTrades} | WR ${finite(p.wr)?p.wr.toFixed(1)+'%':'—'} | PF ${p.pf===null?'—':p.pf.toFixed(2)} | DD ${pct(q.ddPct,1)} | FAIL ${failureText(x)} | live=${d.livePositions||0} match=${d.matched||0} entry=${d.entryWindow||0}`)});
@@ -494,10 +545,10 @@ async function main(){
  if(signals.length){signals.forEach((s,i)=>report.push(...signalLine(s,i+1),'━━━━━━━━━━━━━━━━━━'))}else report.push('No verified trader has a fresh copyable-quality current position this cycle.');
  report.push('','🧱 TOP BLOCK REASONS');
  sortCandidates(audited.filter(x=>!used.has(x.address))).slice(0,10).forEach(x=>{const d=x.diagnostics||{};report.push(`${short(x.address)} | ${x.quality.tier} ${x.quality.score.toFixed(1)} | ${x.blockReason||x.quality.reasons.join(' | ')||'NOT_SIGNAL_READY'} | fresh=${d.fresh15||0} match=${d.matched||0}`)});
- report.push('','🛡️ V2.1.9 CONTRACTS',`• Discovery returns real Hyperliquid trader IDs and reports numeric discovered count.`,`• Performance unit = actual closed lifecycle; no synthetic trades.`,`• PF unavailable is shown as — and never becomes LOW_PF.`,`• Current position = clearinghouseState; position side/entry must exist now.`,`• Signal requires fresh open activity + live position + entry distance + RR.`,`• Null metrics are rendered as — and never passed to toFixed().`,`• Multiple independent traders/signals may be emitted; MAX_SIGNALS=${MAX_SIGNALS}.`,`• Audit is activity-first: fresh probe → history only for active traders → state only after fresh activity.`,`• Decision diagnostics separate missing-mid, invalid-entry, watch/entry distance and RR failures; Entry validation uses the live position entry price with fill fallback.`,`• Quality diagnostics separate trade-count, WR, PF-unavailable, PF, PnL, DD and anomaly failures.`,`• Evidence matrix shows Trades/WR/PF/DD plus recent 24H performance, win/loss distribution, streaks and position concentration.`,
+ report.push('','🛡️ V2.1.10 CONTRACTS',`• Discovery returns real Hyperliquid trader IDs and reports numeric discovered count.`,`• Performance unit = actual closed lifecycle; no synthetic trades.`,`• PF unavailable is shown as — and never becomes LOW_PF.`,`• Current position = clearinghouseState; position side/entry must exist now.`,`• Signal requires fresh open activity + live position + entry distance + RR.`,`• Null metrics are rendered as — and never passed to toFixed().`,`• Multiple independent traders/signals may be emitted; MAX_SIGNALS=${MAX_SIGNALS}.`,`• Audit is activity-first: fresh probe → history only for active traders → state only after fresh activity.`,`• Decision diagnostics separate missing-mid, invalid-entry, watch/entry distance and RR failures; Entry validation uses the live position entry price with fill fallback.`,`• Quality diagnostics separate trade-count, WR, PF-unavailable, PF, PnL, DD and anomaly failures.`,`• Evidence matrix shows Trades/WR/PF/DD plus recent 24H performance, win/loss distribution, streaks and position concentration.`,
  `• Performance forensics compares the current audit window with 24H and 7D activity; no synthetic performance is created.`,
  `• Copyability forensics reports live notional, max position/coin concentration, leverage and reconstructed position age.`,
- `• Anomaly forensics explains PF/WR outliers and profit concentration instead of silently suppressing them.`,`• Near-miss analysis isolates traders that passed live-position + entry validation but failed historical quality.`,`• Live-position count, live-match count and entry-ready count are reported separately to expose pipeline attrition.`,`• No quality threshold is relaxed to manufacture actionable signals.`,
+ `• Anomaly forensics explains PF/WR outliers and profit concentration instead of silently suppressing them.`,`• Near-miss analysis isolates traders that passed live-position + entry validation but failed historical quality.`,`• Live-position count, live-match count and entry-ready count are reported separately to expose pipeline attrition.`,`• Quality is strategy-aware: HIGH-WR classic path OR ASYMMETRIC profit-specialist path; no blind WR relaxation.`,`• ASYMMETRIC path requires trades, PF, DD, recovery, profit concentration and recent-performance gates.`,`• Copyability is an independent hard gate on live position/coin concentration and leverage.`,`• Recent-vs-historical drift can reject an otherwise profitable asymmetric trader.`,`• No quality threshold is relaxed to manufacture actionable signals.`,
  `• Global 429 cooldown + bounded concurrency + minimum request gap protect the Hyperliquid API.`,`• HTTP 429/5xx/timeout requests use bounded exponential retry/backoff.`,`• Freshness is real fill time ≤${DIAG_WINDOW_MIN}m; no synthetic freshness is created.`,`⏱ Runtime: ${((Date.now()-started)/1000).toFixed(1)}s`,
  `⚙️ Rate safety: candidates=${activityPool.length} | concurrency=${MAX_CONCURRENCY} | gap=${MIN_REQUEST_GAP_MS}ms | 429 cooldown=${GLOBAL_429_COOLDOWN_MS}ms`,`🕒 ${new Date().toISOString()}`);
  const text=report.join('\n');console.log(text);await fs.mkdir(path.dirname(STATE_FILE),{recursive:true});await fs.writeFile(STATE_FILE,JSON.stringify({version:VERSION,build:BUILD,generatedAt:Date.now(),discovered:lb.traders.length,audited:audited.length,eligible:eligible.length,signals:signals.map(s=>({address:s.trader.address,coin:s.coin,side:s.side,entry:s.entry,mark:s.mark,sl:s.sl,tp:s.tp,rr:s.rr,ageMin:s.ageMin})),watch:watch.map(x=>({address:x.address,name:x.name,score:x.quality.score,tier:x.quality.tier,blockReason:x.blockReason,performance:x.performance,quality:x.quality,positions:x.positions,copyability:x.copyability,diagnostics:x.diagnostics})),evidenceTop:evidenceTop.slice(0,20).map(x=>({address:x.address,name:x.name,score:x.quality.score,tier:x.quality.tier,performance:x.performance,quality:x.quality,positions:x.positions,copyability:x.copyability,diagnostics:x.diagnostics,blockReason:x.blockReason})),nearMiss:nearMiss.slice(0,20).map(x=>({address:x.address,name:x.name,performance:x.performance,quality:x.quality,positions:x.positions,copyability:x.copyability,diagnostics:x.diagnostics,blockReason:x.blockReason})),errors,errorBreakdown,pipeline:{fills:dsum('fills'),fresh15:dsum('fresh15'),increasing:dsum('increasing'),livePositions:dsum('livePositions'),matched:dsum('matched'),entryWindow:dsum('entryWindow'),qualityPass:diagRows.filter(x=>x.qualityPass).length}},null,2));await telegram(text);

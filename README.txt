@@ -1,72 +1,42 @@
-GFTSH V2.1.8 — COMPLETE EVIDENCE AUDIT
+GFTSH V2.1.10 — STRATEGY-AWARE QUALITY & COPYABILITY
 
-Worker filename (EXACT):
-crypto_whale_signal_engine.mjs
+READ-ONLY / NO ORDERS / NO AUTO-COPY / FUTURES ONLY
 
-Workflow filename (EXACT):
-.github/workflows/crypto-whale-signal-engine.yml
+Worker: crypto_whale_signal_engine.mjs
+Workflow: .github/workflows/crypto-whale-signal-engine.yml
+Environment: production
+Schedule: */5 * * * * + workflow_dispatch
 
-Mode:
-READ-ONLY | NO ORDERS | NO AUTO-COPY | FUTURES ONLY
+V2.1.10 keeps V2.1.9 actual-trade reconstruction, current-position authority and entry validation, then adds two quality paths:
 
-Source authority:
-Hyperliquid public leaderboard + public user fills + clearinghouseState + allMids.
-Current position authority is clearinghouseState ONLY.
+1) HIGH-WR CLASSIC
+   Existing strict gate remains:
+   trades >= 8, WR >= 58%, PF >= 1.8, positive realized PnL, DD <= 25%.
 
-V2.1.8 adds:
-- Complete quality evidence matrix with Trades / WR / PF / DD / PnL.
-- Exact quality failure combinations per live candidate.
-- Near-miss report for traders that pass live-position + entry validation but fail historical quality.
-- Separate live-position, live-match and entry-ready counts.
-- Expanded lifecycle metrics: active days, recent closed trades, average/median hold and trades/day in persisted state.
-- Richer persisted state with top evidence and near-miss candidates.
-- Preserves strict quality thresholds; no gate is relaxed to manufacture signals.
-- Preserves activity-first audit and rate-limit protection.
-- Preserves real freshness <=15m and real current-position verification.
-- Preserves entry <=0.75%, model SL 0.5%, TP 2R, RR >=1.5.
-- MAX_SIGNALS remains 5.
+2) ASYMMETRIC PROFIT SPECIALIST
+   Allows low-WR strategies only when all of these hold:
+   trades >= 20
+   PF >= 2.0
+   DD <= 20%
+   recovery factor >= 2
+   positive realized PnL
+   top-1 profit concentration <= 40%
+   top-3 profit concentration <= 70%
+   recent 24H PF >= 1.25
+   recent 24H PnL > 0
+   no material recent PF drift
 
-Production GitHub environment:
-production
+COPYABILITY HARD GATE:
+   max live position concentration <= 20%
+   max coin concentration <= 20%
+   max leverage <= 40x
 
-Required secrets:
-TELEGRAM_TOKEN
-TELEGRAM_CHAT_ID
+A trader must pass either HIGH-WR or ASYMMETRIC and the independent COPYABILITY gate.
+No threshold is relaxed merely to manufacture signals.
 
-Optional secrets:
-HYPERLIQUID_API_URL (default: https://api.hyperliquid.xyz/info)
-HL_LEADERBOARD_URL (default: https://stats-data.hyperliquid.xyz/Mainnet/leaderboard)
+Current position authority remains Hyperliquid clearinghouseState only.
+Freshness remains real fill time <= 15 minutes.
+Entry distance remains <= 0.75%; model SL 0.5%; TP 2R; RR >= 1.5.
+PF unavailable remains distinct from low PF.
 
-Default runtime limits in workflow:
-Discovery leaderboard: 250 source rows considered
-Audit ranked pool: 60
-Activity audit: 40
-Concurrency: 2
-Minimum request gap: 350ms
-Global 429 cooldown: 5000ms
-Performance lookback: 168h / 7d
-Max fill pages: 8
-
-Quality gates in workflow:
-Closed trades >= 8
-WR >= 60%
-PF >= 1.35
-DD <= 25%
-
-Signal gates in workflow:
-Freshness <= 15m
-Entry distance <= 0.75%
-Model SL = 0.5%
-TP = 2R
-RR >= 1.5
-Minimum signal notional = $100
-
-Validation performed before packaging:
-- node --check PASS
-- deterministic mocked runtime PASS
-- actionable signal path PASS
-- quality evidence matrix PASS
-- near-miss/state schema PASS
-- ZIP integrity PASS
-
-No live Hyperliquid trading or order execution is performed by this package.
+The report explicitly shows STRATEGY GATE and COPY GATE diagnostics.
