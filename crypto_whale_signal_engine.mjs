@@ -6,8 +6,8 @@ import path from 'node:path';
 // Source authority: Hyperliquid public leaderboard + public user fills + clearinghouseState.
 // Current position authority: clearinghouseState ONLY. Stale fills never become a live position.
 
-const VERSION='GFTSH-V2.1.8-GLOBAL-FUTURES-ACTUAL-TRADE-RECON-COMPLETE-EVIDENCE-AUDIT';
-const BUILD='V2.1.8-COMPLETE-EVIDENCE-AUDIT-QUALITY-MATRIX-NEAR-MISS-LIVE-POSITION-DIAGNOSTICS';
+const VERSION='GFTSH-V2.1.9-GLOBAL-FUTURES-ACTUAL-TRADE-RECON-COPYABILITY-PERFORMANCE-FORENSICS';
+const BUILD='V2.1.9-COPYABILITY-PERFORMANCE-FORENSICS-RECENT-VS-HISTORICAL-POSITION-CONCENTRATION-ANOMALY-AUDIT';
 const API=process.env.HYPERLIQUID_API_URL||'https://api.hyperliquid.xyz/info';
 const LEADERBOARD=process.env.HL_LEADERBOARD_URL||process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL||'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';
 const TG_TOKEN=process.env.TELEGRAM_TOKEN||process.env.TELEGRAM_BOT_TOKEN||'';
@@ -28,8 +28,8 @@ const MIN_RR=Number(process.env.GFTSH_MIN_RR||2);
 const SL_PCT=Number(process.env.GFTSH_MODEL_SL_PCT||0.5);
 const TP_R=Number(process.env.GFTSH_MODEL_TP_R||2);
 const MIN_TRADES=Number(process.env.GFTSH_MIN_CLOSED_TRADES||8);
-const MIN_WR=Number(process.env.GFTSH_MIN_WR||60);
-const MIN_PF=Number(process.env.GFTSH_MIN_PF||1.35);
+const MIN_WR=Number(process.env.GFTSH_MIN_WR||58);
+const MIN_PF=Number(process.env.GFTSH_MIN_PF||1.8);
 const MAX_DD=Number(process.env.GFTSH_MAX_DD_PCT||25);
 const MIN_NOTIONAL=Number(process.env.GFTSH_MIN_SIGNAL_NOTIONAL_USD||100);
 const MIN_24H_VOL=Number(process.env.GFTSH_MIN_24H_VOLUME_USD||1000000);
@@ -38,7 +38,7 @@ const MAX_SIGNALS=Math.max(2,Number(process.env.GFTSH_MAX_SIGNALS||5));
 const BETWEEN_MS=Number(process.env.GFTSH_BETWEEN_TRADERS_MS||120);
 const HL_RETRIES=Math.max(1,Number(process.env.GFTSH_HL_RETRIES||4));
 const HL_RETRY_BASE_MS=Math.max(100,Number(process.env.GFTSH_HL_RETRY_BASE_MS||500));
-const STATE_FILE=process.env.GFTSH_STATE_FILE||'state/gftsh_v2_1_8_state.json';
+const STATE_FILE=process.env.GFTSH_STATE_FILE||'state/gftsh_v2_1_9_state.json';
 const TG_STATE=process.env.GFTSH_TELEGRAM_STATE_FILE||'state/gftsh_telegram_state.json';
 const DIAG_WINDOW_MIN=Math.min(FRESH_MIN,15);
 
@@ -201,8 +201,47 @@ function latestOpenAdds(fills){
  }
  return out.sort((a,b)=>num(b.time)-num(a.time));
 }
+function median(values){
+ const a=values.filter(finite).map(Number).sort((x,y)=>x-y);
+ if(!a.length)return null;
+ return a.length%2?a[(a.length-1)/2]:(a[a.length/2-1]+a[a.length/2])/2;
+}
+function stdev(values){
+ const a=values.filter(finite).map(Number);if(a.length<2)return 0;
+ const m=a.reduce((x,y)=>x+y,0)/a.length;
+ return Math.sqrt(a.reduce((x,y)=>x+(y-m)**2,0)/a.length);
+}
+function streaks(closed){
+ let win=0,loss=0,maxWin=0,maxLoss=0;
+ for(const t of closed){
+   if(t.pnl>0){win++;loss=0;maxWin=Math.max(maxWin,win)}
+   else if(t.pnl<0){loss++;win=0;maxLoss=Math.max(maxLoss,loss)}
+ }
+ return {maxWin,maxLoss};
+}
+function distribution(closed){
+ const wins=closed.filter(x=>x.pnl>0).map(x=>x.pnl);
+ const losses=closed.filter(x=>x.pnl<0).map(x=>Math.abs(x.pnl));
+ const all=closed.map(x=>x.pnl);
+ const topWin=wins.length?Math.max(...wins):0;
+ const top3=wins.length?wins.slice().sort((a,b)=>b-a).slice(0,3).reduce((a,b)=>a+b,0):0;
+ const grossWin=wins.reduce((a,b)=>a+b,0),grossLoss=losses.reduce((a,b)=>a+b,0);
+ return {
+   avgWin:wins.length?grossWin/wins.length:null,avgLoss:losses.length?grossLoss/losses.length:null,
+   medianWin:median(wins),medianLoss:median(losses),largestWin:topWin,largestLoss:losses.length?Math.max(...losses):null,
+   profitConcentrationPct:grossWin>0?topWin/grossWin*100:null,top3ProfitConcentrationPct:grossWin>0?top3/grossWin*100:null,
+   avgTrade:all.length?all.reduce((a,b)=>a+b,0)/all.length:null,equityVolatility:stdev(all),
+   winLossRatio:(wins.length&&losses.length)?wins.length/losses.length:null
+ };
+}
+function windowStats(closed,ms){
+ const cutoff=Date.now()-ms;const rows=closed.filter(x=>x.closeTime>=cutoff);
+ const wins=rows.filter(x=>x.pnl>0).length,losses=rows.filter(x=>x.pnl<0).length;
+ const gw=rows.filter(x=>x.pnl>0).reduce((a,x)=>a+x.pnl,0),gl=rows.filter(x=>x.pnl<0).reduce((a,x)=>a+Math.abs(x.pnl),0);
+ return {trades:rows.length,wins,losses,wr:rows.length?wins/rows.length*100:null,pf:gl>0?gw/gl:null,pnl:rows.reduce((a,x)=>a+x.pnl,0)};
+}
 function reconstruct(fills){
- const books=new Map();const closed=[];let realized=0,grossWin=0,grossLoss=0,peak=0,maxDD=0;
+ const books=new Map(),closed=[];let realized=0,grossWin=0,grossLoss=0,peak=0,maxDD=0;
  let recognized=0,unknown=0,reversals=0,invalid=0;
  for(const f of fills){
    const coin=String(f?.coin||'');const size=Math.abs(num(f?.sz));const price=num(f?.px);const fd=fillDirection(f);
@@ -211,19 +250,19 @@ function reconstruct(fills){
    const delta=fillPositionDelta(f);if(!delta){unknown++;continue}
    recognized++;if(fd.kind==='LONG_TO_SHORT'||fd.kind==='SHORT_TO_LONG')reversals++;
    let b=books.get(coin);if(!b)b={side:0,size:0,avg:0,startTime:0,notional:0};
-   let remaining=size;
+   let remaining=Math.abs(delta);
    if(Math.sign(delta)===b.side||b.side===0){
-     const old=b.size;b.avg=(old*b.avg+Math.abs(delta)*price)/(old+Math.abs(delta));b.size=old+Math.abs(delta);b.side=Math.sign(delta);b.startTime=b.startTime||num(f.time);b.notional+=Math.abs(delta)*price;
+     const old=b.size;b.avg=(old*b.avg+remaining*price)/(old+remaining);b.size=old+remaining;b.side=Math.sign(delta);b.startTime=b.startTime||num(f.time);b.notional+=remaining*price;
    }else{
-     const closeSize=Math.min(Math.abs(delta),b.size);let closePnl=num(f?.closedPnl,NaN);
+     const closeSize=Math.min(remaining,b.size);let closePnl=num(f?.closedPnl,NaN);
      if(!finite(closePnl))closePnl=(price-b.avg)*closeSize*(b.side>0?1:-1);
      const lifecycleClose=closeSize>=b.size*0.999999;
      if(lifecycleClose){
-       const holdH=Math.max(0,(num(f.time)-b.startTime)/3600000);closed.push({coin,side:b.side>0?'LONG':'SHORT',entry:b.avg,exit:price,size:closeSize,pnl:closePnl,holdHours:holdH,closeTime:num(f.time),notional:b.notional});
+       const holdH=Math.max(0,(num(f.time)-b.startTime)/3600000);
+       closed.push({coin,side:b.side>0?'LONG':'SHORT',entry:b.avg,exit:price,size:closeSize,pnl:closePnl,holdHours:holdH,closeTime:num(f.time),notional:b.notional});
      }
      realized+=closePnl;if(closePnl>0)grossWin+=closePnl;else if(closePnl<0)grossLoss+=Math.abs(closePnl);
-     b.size-=closeSize;
-     remaining=Math.abs(delta)-closeSize;
+     b.size-=closeSize;remaining-=closeSize;
      if(b.size<=1e-12)b={side:0,size:0,avg:0,startTime:0,notional:0};
      if(remaining>1e-12){b.side=Math.sign(delta);b.size=remaining;b.avg=price;b.startTime=num(f.time);b.notional=remaining*price}
    }
@@ -231,14 +270,18 @@ function reconstruct(fills){
  }
  const wins=closed.filter(x=>x.pnl>0).length,losses=closed.filter(x=>x.pnl<0).length;
  const pf=grossLoss>0?grossWin/grossLoss:null,wr=closed.length?wins/closed.length*100:null;
- const recent=closed.filter(x=>x.closeTime>=Date.now()-24*3600000),activeDays=new Set(closed.map(x=>new Date(x.closeTime).toISOString().slice(0,10))).size;
- const holds=closed.map(x=>num(x.holdHours)).filter(x=>x>=0).sort((a,b)=>a-b);
- const avgHoldHours=holds.length?holds.reduce((a,b)=>a+b,0)/holds.length:null;
- const medianHoldHours=holds.length?(holds.length%2?holds[(holds.length-1)/2]:(holds[holds.length/2-1]+holds[holds.length/2])/2):null;
+ const recent24=windowStats(closed,24*3600000),recent7=windowStats(closed,7*24*3600000);
+ const activeDays=new Set(closed.map(x=>new Date(x.closeTime).toISOString().slice(0,10))).size;
+ const holds=closed.map(x=>num(x.holdHours)).filter(x=>x>=0);
+ const avgHoldHours=holds.length?holds.reduce((a,b)=>a+b,0)/holds.length:null,medianHoldHours=median(holds);
  const lookbackDays=Math.max(1,LOOKBACK_HOURS/24),tradesPerDay=closed.length/lookbackDays;
- return {closedTrades:closed.length,wins,losses,wr,pf,realizedPnl:realized,grossWin,grossLoss,maxDrawdown:maxDD,activeDays,recentClosed:recent.length,avgHoldHours,medianHoldHours,tradesPerDay,recognizedFills:recognized,unknownFills:unknown,reversalFills:reversals,invalidFills:invalid,openBooks:[...books].filter(([,b])=>b.size>0).map(([coin,b])=>({coin,...b}))};
+ const byCoin=new Map();for(const t of closed)byCoin.set(t.coin,(byCoin.get(t.coin)||0)+Math.abs(t.pnl));
+ const pnlConcentration=closed.length?Math.max(0,...byCoin.values())/Math.max(1,Math.abs(realized)+grossLoss)*100:null;
+ const dist=distribution(closed),sk=streaks(closed);
+ const recoveryFactor=maxDD>0?realized/maxDD:null;
+ const currentBooks=[...books].filter(([,b])=>b.size>0).map(([coin,b])=>({coin,...b}));
+ return {closedTrades:closed.length,wins,losses,wr,pf,realizedPnl:realized,grossWin,grossLoss,maxDrawdown:maxDD,activeDays,recentClosed:recent24.trades,recent24,recent7,avgHoldHours,medianHoldHours,tradesPerDay,recognizedFills:recognized,unknownFills:unknown,reversalFills:reversals,invalidFills:invalid,distribution:dist,longestWinStreak:sk.maxWin,longestLossStreak:sk.maxLoss,recoveryFactor,pnlConcentrationPct:pnlConcentration,openBooks:currentBooks,closed};
 }
-
 function quality(perf,lb){
  const reasons=[];
  const tradesFail=perf.closedTrades<MIN_TRADES;
@@ -265,6 +308,17 @@ function quality(perf,lb){
 
 async function stateFor(address){return hl({type:'clearinghouseState',user:address},`state:${short(address)}`)}
 function positions(state){return (state?.assetPositions||[]).map(x=>x?.position||x).filter(p=>Math.abs(num(p?.szi))>0).map(p=>({coin:String(p.coin),side:num(p.szi)>0?'LONG':'SHORT',size:Math.abs(num(p.szi)),entry:num(p.entryPx),value:Math.abs(num(p.positionValue)),unrealized:num(p.unrealizedPnl),liq:num(p.liquidationPx),leverage:num(p.leverage?.value||p.leverage),margin:num(p.marginUsed)}));}
+function copyability(ps,perf,adds){
+ const liveValue=ps.reduce((a,p)=>a+Math.abs(num(p.value)),0);
+ const maxLive=ps.reduce((a,p)=>Math.max(a,Math.abs(num(p.value))),0);
+ const coinValue=new Map();for(const p of ps)coinValue.set(p.coin,(coinValue.get(p.coin)||0)+Math.abs(num(p.value)));
+ const topCoin=coinValue.size?Math.max(...coinValue.values()):0;
+ const lev=ps.map(p=>num(p.leverage)).filter(x=>x>0);
+ const holds=perf.openBooks.map(b=>Math.max(0,(Date.now()-num(b.startTime))/3600000)).filter(finite);
+ const freshByCoin=new Map();for(const f of adds)if(f.__fresh&&!freshByCoin.has(String(f.coin)))freshByCoin.set(String(f.coin),f);
+ const positionDetails=ps.map(p=>{const b=perf.openBooks.find(x=>x.coin===p.coin);const f=freshByCoin.get(p.coin);return {coin:p.coin,side:p.side,value:p.value,leverage:p.leverage,unrealized:p.unrealized,entry:p.entry,positionAgeHours:b&&num(b.startTime)>0?Math.max(0,(Date.now()-num(b.startTime))/3600000):null,freshFillAgeMin:f?Math.max(0,(Date.now()-num(f.time))/60000):null};});
+ return {livePositions:ps.length,liveNotional:liveValue,maxPositionSharePct:liveValue>0?maxLive/liveValue*100:null,maxCoinSharePct:liveValue>0?topCoin/liveValue*100:null,avgLeverage:lev.length?lev.reduce((a,b)=>a+b,0)/lev.length:null,maxLeverage:lev.length?Math.max(...lev):null,positionAgeHours:holds.length?Math.max(...holds):null,avgPositionAgeHours:holds.length?holds.reduce((a,b)=>a+b,0)/holds.length:null,positionDetails};
+}
 async function mids(){const x=await hl({type:'allMids'},'allMids');return x||{}}
 
 function makeSignal(trader,perfQ,pos,fill,mid){
@@ -299,7 +353,7 @@ async function auditTrader(c,start,end,midsMap){
   diag.fresh15=probeAdds.filter(x=>x.__fresh).length;
   diag.increasing=probeAdds.filter(x=>x.__positionDelta!==0&&Math.abs(x.__positionAfter)>Math.abs(x.__positionBefore)+1e-10).length;
   if(!diag.fresh15){
-    return {...c,performance:{closedTrades:0,wins:0,losses:0,wr:null,pf:null,realizedPnl:0,grossWin:0,grossLoss:0,maxDrawdown:0,activeDays:0,recentClosed:0,avgHoldHours:null,medianHoldHours:null,tradesPerDay:0,recognizedFills:0,unknownFills:0,reversalFills:0,invalidFills:0,openBooks:[]},quality:{score:0,tier:'C',reasons:['NO_FRESH_POSITION_INCREASE_15M'],ddPct:0,anomaly:false},positions:[],latestAdd:null,currentSignal:null,blockReason:'NO_FRESH_POSITION_INCREASE_15M',diagnostics:diag};
+    return {...c,performance:{closedTrades:0,wins:0,losses:0,wr:null,pf:null,realizedPnl:0,grossWin:0,grossLoss:0,maxDrawdown:0,activeDays:0,recentClosed:0,recent24:{trades:0,wins:0,losses:0,wr:null,pf:null,pnl:0},recent7:{trades:0,wins:0,losses:0,wr:null,pf:null,pnl:0},avgHoldHours:null,medianHoldHours:null,tradesPerDay:0,recognizedFills:0,unknownFills:0,reversalFills:0,invalidFills:0,distribution:{},longestWinStreak:0,longestLossStreak:0,recoveryFactor:null,pnlConcentrationPct:null,openBooks:[],closed:[]},quality:{score:0,tier:'C',reasons:['NO_FRESH_POSITION_INCREASE_15M'],ddPct:0,anomaly:false},positions:[],copyability:{livePositions:0,liveNotional:0,maxPositionSharePct:null,maxCoinSharePct:null,avgLeverage:null,maxLeverage:null,positionAgeHours:null,avgPositionAgeHours:null,positionDetails:[]},latestAdd:null,currentSignal:null,blockReason:'NO_FRESH_POSITION_INCREASE_15M',diagnostics:diag};
   }
   const fills=await fillsFor(c.address,start,probeStart-1,probe);diag.fills=fills.length;diag.historyLoaded=true;
   const perf=reconstruct(fills);const q=quality(perf,c.lb);
@@ -339,7 +393,7 @@ async function auditTrader(c,start,end,midsMap){
   else if(!candidate&&!diag.qualityPass)block='TRADER_QUALITY_GATE_FAILED';
   else if(!candidate&&diag.entryWindow===0)block=`ENTRY_DISTANCE_GT_${ENTRY_MAX}%`;
   diag.signalPass=Boolean(candidate);
-  return {...c,performance:perf,quality:q,positions:ps,latestAdd:adds[0]||null,currentSignal:candidate,blockReason:block,diagnostics:diag};
+  const cp=copyability(ps,perf,adds); return {...c,performance:perf,quality:q,positions:ps,copyability:cp,latestAdd:adds[0]||null,currentSignal:candidate,blockReason:block,diagnostics:diag};
 }
 function sortCandidates(rows){return rows.slice().sort((a,b)=>{
  const as=a.currentSignal?1:0,bs=b.currentSignal?1:0;if(bs!==as)return bs-as;
@@ -349,17 +403,24 @@ function sortCandidates(rows){return rows.slice().sort((a,b)=>{
 function fmtTrader(x){const p=x.performance,q=x.quality;return `${short(x.address)} | ${q.tier} ${q.score.toFixed(1)} | Trades ${p.closedTrades} | WR ${finite(p.wr)?p.wr.toFixed(1)+'%':'—'} | PF ${p.pf===null?'—':p.pf.toFixed(2)} | DD ${pct(q.ddPct,1)} | PnL ${usd(p.realizedPnl)}`}
 function signalLine(s,i){return [`${i}. ${s.trader.name||short(s.trader.address)} | ${short(s.trader.address)}`,`   ${s.side} ${s.coin} | Entry ${px(s.entry)} | Mark ${px(s.mark)} | Dist ${pct(s.distancePct,2)}`,`   SL ${px(s.sl)} | TP ${px(s.tp)} | RR ${s.rr.toFixed(2)} | Age ${s.ageMin.toFixed(1)}m | Notional ${usd(s.notional)}`,`   Trader ${s.trader.quality.tier}-TIER ${s.trader.quality.score.toFixed(1)} | WR ${finite(s.trader.performance.wr)?s.trader.performance.wr.toFixed(1)+'%':'—'} | PF ${s.trader.performance.pf===null?'—':s.trader.performance.pf.toFixed(2)} | Trades ${s.trader.performance.closedTrades}`,`   VALID: CURRENT_POSITION_VERIFIED + FRESH_OPEN_ADD + ENTRY_WINDOW + RR_GATE`];}
 
+function anomalyReason(x){
+ const p=x?.performance||{},d=p.distribution||{};const a=[];
+ if(finite(p.pf)&&p.pf>30)a.push('PF>30');
+ if(finite(p.wr)&&p.wr>99.5&&p.closedTrades<20)a.push('WR>99.5%_LOW_SAMPLE');
+ if(finite(d.profitConcentrationPct)&&d.profitConcentrationPct>70)a.push('SINGLE_WIN_CONCENTRATION>70%');
+ if(finite(d.top3ProfitConcentrationPct)&&d.top3ProfitConcentrationPct>90)a.push('TOP3_PROFIT_CONCENTRATION>90%');
+ return a.join('+')||'REVIEW_REQUIRED';
+}
 function failureText(x){
  const q=x?.quality||{};
  const reasons=Array.isArray(q.reasons)?q.reasons:[];
  return reasons.length?reasons.join('+'):'QUALITY_PASS';
 }
 function evidenceLine(x){
- const p=x.performance||{},q=x.quality||{},d=x.diagnostics||{};
- const live=(d.livePositions||0)>0?'LIVE':'NO-LIVE';
- const pos=d.matched>0?'MATCH':'NO-MATCH';
- const entry=d.entryWindow>0?'ENTRY':'NO-ENTRY';
- return `${short(x.address)} | ${q.tier} ${q.score.toFixed(1)} | ${live}/${pos}/${entry} | ${p.closedTrades}T | WR ${finite(p.wr)?p.wr.toFixed(1)+'%':'—'} | PF ${p.pf===null?'—':p.pf.toFixed(2)} | DD ${pct(q.ddPct,1)} | ${failureText(x)}`;
+ const p=x.performance||{},q=x.quality||{},d=x.diagnostics||{},c=x.copyability||{};
+ const live=(d.livePositions||0)>0?'LIVE':'NO-LIVE',pos=d.matched>0?'MATCH':'NO-MATCH',entry=d.entryWindow>0?'ENTRY':'NO-ENTRY';
+ const recent=p.recent24||{};const dist=p.distribution||{};
+ return `${short(x.address)} | ${q.tier} ${q.score.toFixed(1)} | ${live}/${pos}/${entry} | ${p.closedTrades}T | WR ${finite(p.wr)?p.wr.toFixed(1)+'%':'—'} | PF ${p.pf===null?'—':p.pf.toFixed(2)} | DD ${pct(q.ddPct,1)} | 24H ${recent.trades}T/${finite(recent.wr)?recent.wr.toFixed(0)+'%':'—'}/${recent.pf===null?'—':finite(recent.pf)?recent.pf.toFixed(2):'—'} | AvgW/L ${usd(dist.avgWin,0)}/${usd(dist.avgLoss,0)} | Streak L${p.longestLossStreak||0} | Conc ${finite(dist.profitConcentrationPct)?dist.profitConcentrationPct.toFixed(0)+'%':'—'} | PosConc ${finite(c.maxPositionSharePct)?c.maxPositionSharePct.toFixed(0)+'%':'—'} | ${failureText(x)}`;
 }
 function evidenceRank(x){
  const d=x.diagnostics||{};
@@ -405,7 +466,7 @@ async function main(){
  report.push(`🔎 Leaderboard: ${lb.rows.length} | Valid trader IDs: ${lb.traders.length} | Activity candidates: ${activityPool.length} | Audited: ${audited.length} | Complete: ${complete.length} | Errors: ${errors}`,
  `🧪 AUDIT PIPELINE: fresh≤${DIAG_WINDOW_MIN}m=${dsum('fresh15')} | history-fills=${dsum('fills')} | pos-increase=${dsum('increasing')} | live-match=${dsum('matched')} | entry-window=${dsum('entryWindow')} | quality-pass=${diagRows.filter(x=>x.qualityPass).length}`,
  `🔬 DECISION DIAG: missing-mid=${dsum('missingMid')} | invalid-entry=${dsum('invalidEntry')} | >watch=${dsum('watchDistanceFail')} | >entry=${dsum('entryDistanceFail')} | RR-fail=${dsum('rrFail')}`,
- `🧬 QUALITY DIAG: trades<${MIN_TRADES}=${qsum('tradesFail')} | WR<${MIN_WR}%=${qsum('wrFail')} | PF-unavailable=${qsum('pfUnavailable')} | PF<${MIN_PF}=${qsum('pfFail')} | DD>${MAX_DD}%=${qsum('ddFail')} | anomaly=${qsum('anomaly')}`,
+ `🧬 QUALITY DIAG: trades<${MIN_TRADES}=${qsum('tradesFail')} | WR<${MIN_WR}%=${qsum('wrFail')} | PF-unavailable=${qsum('pfUnavailable')} | PF<${MIN_PF}=${qsum('pfFail')} | DD>${MAX_DD}%=${qsum('ddFail')} | anomaly=${qsum('anomaly')}`, `🧪 FORENSICS: near-miss=${nearMiss.length} | anomalies=${audited.filter(x=>x.quality?.anomaly).length} | evidence-live=${evidenceTop.length}`,
  `📊 EVIDENCE DEPTH: live-position traders=${audited.filter(x=>(x.diagnostics?.livePositions||0)>0).length} | live-match traders=${liveMatched.length} | entry-ready traders=${entryCandidates.length} | quality-pass traders=${eligible.length}`,
  `🧯 ERROR BREAKDOWN: ${errText}`,`🎯 Quality eligible: ${eligible.length} | Watchlist: ${watch.length} | Actionable signals: ${signals.length}/${MAX_SIGNALS}`,`🧾 TRADE RECON: actual closed lifecycles | partial fills aggregated | PF/WR anomaly guard ON`,`🛡 CURRENT POSITION: Hyperliquid clearinghouseState ONLY | stale fills cannot create a position`,`⚡ SIGNAL: fresh open activity ≤${FRESH_MIN}m | entry distance ≤${ENTRY_MAX}% | SL ${SL_PCT}% | TP ${TP_R}R | RR ≥${MIN_RR}`,'');
  report.push('📡 SOURCE STATUS',`HYPERLIQUID: OK | FULL_SIGNAL | discovered=${lb.traders.length} | audited=${audited.length}`,'');
@@ -415,6 +476,17 @@ async function main(){
  report.push('','🎯 NEAR-MISS — LIVE POSITION + ENTRY PASSED, QUALITY FAILED');
  nearMiss.slice(0,10).forEach((x,i)=>{const p=x.performance,q=x.quality,d=x.diagnostics;report.push(`${i+1}. ${short(x.address)} | Score ${q.score.toFixed(1)} | Trades ${p.closedTrades} | WR ${finite(p.wr)?p.wr.toFixed(1)+'%':'—'} | PF ${p.pf===null?'—':p.pf.toFixed(2)} | DD ${pct(q.ddPct,1)} | FAIL ${failureText(x)} | live=${d.livePositions||0} match=${d.matched||0} entry=${d.entryWindow||0}`)});
  if(!nearMiss.length)report.push('No live-position + entry-window near-miss this cycle.');
+ report.push('','🧬 PERFORMANCE FORENSICS — NEAR-MISS');
+ nearMiss.slice(0,10).forEach((x,i)=>{const p=x.performance||{},d=p.distribution||{},r=p.recent24||{},r7=p.recent7||{},c=x.copyability||{};report.push(`${i+1}. ${short(x.address)} | ${x.quality.tier} ${x.quality.score.toFixed(1)} | ${failureText(x)}`,
+ `   All ${p.closedTrades}T WR ${finite(p.wr)?p.wr.toFixed(1)+'%':'—'} PF ${p.pf===null?'—':p.pf.toFixed(2)} PnL ${usd(p.realizedPnl)} | 24H ${r.trades}T/${finite(r.wr)?r.wr.toFixed(1)+'%':'—'}/${r.pf===null?'—':finite(r.pf)?r.pf.toFixed(2):'—'} ${usd(r.pnl)} | 7D ${r7.trades}T/${finite(r7.wr)?r7.wr.toFixed(1)+'%':'—'}/${r7.pf===null?'—':finite(r7.pf)?r7.pf.toFixed(2):'—'}`,
+ `   Avg W/L ${usd(d.avgWin,0)}/${usd(d.avgLoss,0)} | Med W/L ${usd(d.medianWin,0)}/${usd(d.medianLoss,0)} | Max W/L ${usd(d.largestWin,0)}/${usd(d.largestLoss,0)}`,
+ `   Profit concentration top-win=${pct(d.profitConcentrationPct,1)} top3=${pct(d.top3ProfitConcentrationPct,1)} | Streak W/L ${p.longestWinStreak||0}/${p.longestLossStreak||0} | Recovery ${finite(p.recoveryFactor)?p.recoveryFactor.toFixed(2):'—'}`,
+ `   Copyability live=${c.livePositions||0} notional=${usd(c.liveNotional)} maxPos=${pct(c.maxPositionSharePct,1)} maxCoin=${pct(c.maxCoinSharePct,1)} lev=${finite(c.avgLeverage)?c.avgLeverage.toFixed(1)+'x':'—'}/${finite(c.maxLeverage)?c.maxLeverage.toFixed(1)+'x':'—'} age=${finite(c.avgPositionAgeHours)?c.avgPositionAgeHours.toFixed(1)+'h':'—'}`);});
+ if(!nearMiss.length)report.push('No near-miss performance forensic sample this cycle.');
+ report.push('','🚨 ANOMALY FORENSICS');
+ const anomalies=audited.filter(x=>x.quality?.anomaly);
+ anomalies.slice(0,5).forEach((x,i)=>{const p=x.performance,d=p.distribution||{};report.push(`${i+1}. ${short(x.address)} | PF ${p.pf===null?'—':p.pf.toFixed(2)} | WR ${finite(p.wr)?p.wr.toFixed(1)+'%':'—'} | ${p.closedTrades}T | top-win concentration=${pct(d.profitConcentrationPct,1)} | top3=${pct(d.top3ProfitConcentrationPct,1)} | largestW/L=${usd(d.largestWin,0)}/${usd(d.largestLoss,0)} | reason=${anomalyReason(x)}`);});
+ if(!anomalies.length)report.push('No statistical anomaly flagged this cycle.');
  report.push('','👑 TOP VERIFIED TRADERS');
  watch.slice(0,TOP_WATCH).forEach((x,i)=>report.push(`${i+1}. ${fmtTrader(x)} | ${x.currentSignal?'POSITION READY':'BLOCK '+x.blockReason}`));
  if(!watch.length)report.push('No trader passed the minimum evidence gate this cycle.');
@@ -422,9 +494,12 @@ async function main(){
  if(signals.length){signals.forEach((s,i)=>report.push(...signalLine(s,i+1),'━━━━━━━━━━━━━━━━━━'))}else report.push('No verified trader has a fresh copyable-quality current position this cycle.');
  report.push('','🧱 TOP BLOCK REASONS');
  sortCandidates(audited.filter(x=>!used.has(x.address))).slice(0,10).forEach(x=>{const d=x.diagnostics||{};report.push(`${short(x.address)} | ${x.quality.tier} ${x.quality.score.toFixed(1)} | ${x.blockReason||x.quality.reasons.join(' | ')||'NOT_SIGNAL_READY'} | fresh=${d.fresh15||0} match=${d.matched||0}`)});
- report.push('','🛡️ V2.1.8 CONTRACTS',`• Discovery returns real Hyperliquid trader IDs and reports numeric discovered count.`,`• Performance unit = actual closed lifecycle; no synthetic trades.`,`• PF unavailable is shown as — and never becomes LOW_PF.`,`• Current position = clearinghouseState; position side/entry must exist now.`,`• Signal requires fresh open activity + live position + entry distance + RR.`,`• Null metrics are rendered as — and never passed to toFixed().`,`• Multiple independent traders/signals may be emitted; MAX_SIGNALS=${MAX_SIGNALS}.`,`• Audit is activity-first: fresh probe → history only for active traders → state only after fresh activity.`,`• Decision diagnostics separate missing-mid, invalid-entry, watch/entry distance and RR failures; Entry validation uses the live position entry price with fill fallback.`,`• Quality diagnostics separate trade-count, WR, PF-unavailable, PF, PnL, DD and anomaly failures.`,`• Evidence matrix shows the actual Trades/WR/PF/DD and exact quality-failure combination for live candidates.`,`• Near-miss analysis isolates traders that passed live-position + entry validation but failed historical quality.`,`• Live-position count, live-match count and entry-ready count are reported separately to expose pipeline attrition.`,`• No quality threshold is relaxed to manufacture actionable signals.`,
+ report.push('','🛡️ V2.1.9 CONTRACTS',`• Discovery returns real Hyperliquid trader IDs and reports numeric discovered count.`,`• Performance unit = actual closed lifecycle; no synthetic trades.`,`• PF unavailable is shown as — and never becomes LOW_PF.`,`• Current position = clearinghouseState; position side/entry must exist now.`,`• Signal requires fresh open activity + live position + entry distance + RR.`,`• Null metrics are rendered as — and never passed to toFixed().`,`• Multiple independent traders/signals may be emitted; MAX_SIGNALS=${MAX_SIGNALS}.`,`• Audit is activity-first: fresh probe → history only for active traders → state only after fresh activity.`,`• Decision diagnostics separate missing-mid, invalid-entry, watch/entry distance and RR failures; Entry validation uses the live position entry price with fill fallback.`,`• Quality diagnostics separate trade-count, WR, PF-unavailable, PF, PnL, DD and anomaly failures.`,`• Evidence matrix shows Trades/WR/PF/DD plus recent 24H performance, win/loss distribution, streaks and position concentration.`,
+ `• Performance forensics compares the current audit window with 24H and 7D activity; no synthetic performance is created.`,
+ `• Copyability forensics reports live notional, max position/coin concentration, leverage and reconstructed position age.`,
+ `• Anomaly forensics explains PF/WR outliers and profit concentration instead of silently suppressing them.`,`• Near-miss analysis isolates traders that passed live-position + entry validation but failed historical quality.`,`• Live-position count, live-match count and entry-ready count are reported separately to expose pipeline attrition.`,`• No quality threshold is relaxed to manufacture actionable signals.`,
  `• Global 429 cooldown + bounded concurrency + minimum request gap protect the Hyperliquid API.`,`• HTTP 429/5xx/timeout requests use bounded exponential retry/backoff.`,`• Freshness is real fill time ≤${DIAG_WINDOW_MIN}m; no synthetic freshness is created.`,`⏱ Runtime: ${((Date.now()-started)/1000).toFixed(1)}s`,
  `⚙️ Rate safety: candidates=${activityPool.length} | concurrency=${MAX_CONCURRENCY} | gap=${MIN_REQUEST_GAP_MS}ms | 429 cooldown=${GLOBAL_429_COOLDOWN_MS}ms`,`🕒 ${new Date().toISOString()}`);
- const text=report.join('\n');console.log(text);await fs.mkdir(path.dirname(STATE_FILE),{recursive:true});await fs.writeFile(STATE_FILE,JSON.stringify({version:VERSION,generatedAt:Date.now(),discovered:lb.traders.length,audited:audited.length,eligible:eligible.length,signals:signals.map(s=>({address:s.trader.address,coin:s.coin,side:s.side,entry:s.entry,mark:s.mark,sl:s.sl,tp:s.tp,rr:s.rr,ageMin:s.ageMin})),watch:watch.map(x=>({address:x.address,name:x.name,score:x.quality.score,tier:x.quality.tier,blockReason:x.blockReason,performance:x.performance,quality:x.quality,positions:x.positions,diagnostics:x.diagnostics})),evidenceTop:evidenceTop.slice(0,20).map(x=>({address:x.address,name:x.name,score:x.quality.score,tier:x.quality.tier,performance:x.performance,quality:x.quality,positions:x.positions,diagnostics:x.diagnostics,blockReason:x.blockReason})),nearMiss:nearMiss.slice(0,20).map(x=>({address:x.address,name:x.name,performance:x.performance,quality:x.quality,positions:x.positions,diagnostics:x.diagnostics,blockReason:x.blockReason})),errors,errorBreakdown,pipeline:{fills:dsum('fills'),fresh15:dsum('fresh15'),increasing:dsum('increasing'),livePositions:dsum('livePositions'),matched:dsum('matched'),entryWindow:dsum('entryWindow'),qualityPass:diagRows.filter(x=>x.qualityPass).length}},null,2));await telegram(text);
+ const text=report.join('\n');console.log(text);await fs.mkdir(path.dirname(STATE_FILE),{recursive:true});await fs.writeFile(STATE_FILE,JSON.stringify({version:VERSION,build:BUILD,generatedAt:Date.now(),discovered:lb.traders.length,audited:audited.length,eligible:eligible.length,signals:signals.map(s=>({address:s.trader.address,coin:s.coin,side:s.side,entry:s.entry,mark:s.mark,sl:s.sl,tp:s.tp,rr:s.rr,ageMin:s.ageMin})),watch:watch.map(x=>({address:x.address,name:x.name,score:x.quality.score,tier:x.quality.tier,blockReason:x.blockReason,performance:x.performance,quality:x.quality,positions:x.positions,copyability:x.copyability,diagnostics:x.diagnostics})),evidenceTop:evidenceTop.slice(0,20).map(x=>({address:x.address,name:x.name,score:x.quality.score,tier:x.quality.tier,performance:x.performance,quality:x.quality,positions:x.positions,copyability:x.copyability,diagnostics:x.diagnostics,blockReason:x.blockReason})),nearMiss:nearMiss.slice(0,20).map(x=>({address:x.address,name:x.name,performance:x.performance,quality:x.quality,positions:x.positions,copyability:x.copyability,diagnostics:x.diagnostics,blockReason:x.blockReason})),errors,errorBreakdown,pipeline:{fills:dsum('fills'),fresh15:dsum('fresh15'),increasing:dsum('increasing'),livePositions:dsum('livePositions'),matched:dsum('matched'),entryWindow:dsum('entryWindow'),qualityPass:diagRows.filter(x=>x.qualityPass).length}},null,2));await telegram(text);
 }
 main().catch(async e=>{console.error(`[GFTSH][FATAL] ${e.stack||e}`);await telegram(`🌐 GLOBAL FUTURES PRO HUNTER\n🧠 ${VERSION}\n💥 FATAL: ${String(e?.message||e).slice(0,1000)}`);process.exitCode=1});
