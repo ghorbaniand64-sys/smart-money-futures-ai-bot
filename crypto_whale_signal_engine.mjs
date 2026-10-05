@@ -6,8 +6,8 @@ import path from 'node:path';
 // Source authority: Hyperliquid public leaderboard + public user fills + clearinghouseState.
 // Current position authority: clearinghouseState ONLY. Stale fills never become a live position.
 
-const VERSION='GFTSH-V2.1.5-GLOBAL-FUTURES-ACTUAL-TRADE-RECON-RATE-LIMIT-SAFE-ACTIVITY-FIRST';
-const BUILD='V2.1.5-RATE-LIMIT-SAFE-ACTIVITY-FIRST-GLOBAL-429-GATE-BOUNDED-CONCURRENCY';
+const VERSION='GFTSH-V2.1.6-GLOBAL-FUTURES-ACTUAL-TRADE-RECON-DECISION-DIAGNOSTICS';
+const BUILD='V2.1.6-DECISION-DIAGNOSTICS-RATE-SAFE-ENTRY-QUALITY-BREAKDOWN';
 const API=process.env.HYPERLIQUID_API_URL||'https://api.hyperliquid.xyz/info';
 const LEADERBOARD=process.env.HL_LEADERBOARD_URL||process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL||'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';
 const TG_TOKEN=process.env.TELEGRAM_TOKEN||process.env.TELEGRAM_BOT_TOKEN||'';
@@ -38,7 +38,7 @@ const MAX_SIGNALS=Math.max(2,Number(process.env.GFTSH_MAX_SIGNALS||5));
 const BETWEEN_MS=Number(process.env.GFTSH_BETWEEN_TRADERS_MS||120);
 const HL_RETRIES=Math.max(1,Number(process.env.GFTSH_HL_RETRIES||4));
 const HL_RETRY_BASE_MS=Math.max(100,Number(process.env.GFTSH_HL_RETRY_BASE_MS||500));
-const STATE_FILE=process.env.GFTSH_STATE_FILE||'state/gftsh_v2_1_4_state.json';
+const STATE_FILE=process.env.GFTSH_STATE_FILE||'state/gftsh_v2_1_6_state.json';
 const TG_STATE=process.env.GFTSH_TELEGRAM_STATE_FILE||'state/gftsh_telegram_state.json';
 const DIAG_WINDOW_MIN=Math.min(FRESH_MIN,15);
 
@@ -280,7 +280,7 @@ function classifyError(e){
  return 'OTHER';
 }
 async function auditTrader(c,start,end,midsMap){
-  const diag={fills:0,fresh15:0,increasing:0,matched:0,entryWindow:0,qualityPass:false,signalPass:false,activityProbe:true,historyLoaded:false,stateChecked:false};
+  const diag={fills:0,fresh15:0,increasing:0,matched:0,entryWindow:0,missingMid:0,invalidEntry:0,watchDistanceFail:0,entryDistanceFail:0,rrFail:0,qualityPass:false,signalPass:false,activityProbe:true,historyLoaded:false,stateChecked:false,quality:{tradesFail:false,wrFail:false,pfUnavailable:false,pfFail:false,pnlFail:false,ddFail:false,anomaly:false}};
   // Activity-first: query only the last freshness window before touching full history or state.
   const probeStart=Math.max(start,end-DIAG_WINDOW_MIN*60000);
   const probe=await recentFillsFor(c.address,probeStart,end);
@@ -292,7 +292,16 @@ async function auditTrader(c,start,end,midsMap){
   }
   const fills=await fillsFor(c.address,start,probeStart-1,probe);diag.fills=fills.length;diag.historyLoaded=true;
   const perf=reconstruct(fills);const q=quality(perf,c.lb);
-  diag.qualityPass=q.tier!=='C'&&!q.anomaly&&perf.closedTrades>=MIN_TRADES&&perf.wr>=MIN_WR&&q.ddPct<=MAX_DD&&(perf.pf!==null&&perf.pf>=MIN_PF);
+  diag.quality={
+    tradesFail:perf.closedTrades<MIN_TRADES,
+    wrFail:!(perf.wr>=MIN_WR),
+    pfUnavailable:perf.pf===null,
+    pfFail:perf.pf!==null&&perf.pf<MIN_PF,
+    pnlFail:perf.realizedPnl<=0,
+    ddFail:q.ddPct>MAX_DD,
+    anomaly:Boolean(q.anomaly)
+  };
+  diag.qualityPass=!diag.quality.tradesFail&&!diag.quality.wrFail&&!diag.quality.pfUnavailable&&!diag.quality.pfFail&&!diag.quality.ddFail&&!diag.quality.anomaly&&q.tier!=='C';
   const state=await stateFor(c.address);diag.stateChecked=true;
   const ps=positions(state);const posByCoin=new Map(ps.map(p=>[p.coin,p]));
   const adds=latestOpenAdds(fills);diag.fresh15=adds.filter(x=>x.__fresh).length;diag.increasing=adds.filter(x=>x.__positionDelta!==0&&Math.abs(x.__positionAfter)>Math.abs(x.__positionBefore)+1e-10).length;
@@ -301,8 +310,16 @@ async function auditTrader(c,start,end,midsMap){
     if(!f.__fresh)continue;
     const p=posByCoin.get(String(f.coin));if(!p)continue;
     diag.matched++;
-    const mid=num(midsMap[String(f.coin)]);const sig=makeSignal({...c,quality:q,performance:perf},perf,q,p,f,mid);
-    if(sig?.absDistancePct<=WATCH_MAX&&sig?.absDistancePct<=ENTRY_MAX)diag.entryWindow++;
+    const mid=num(midsMap[String(f.coin)]);
+    if(!(mid>0)){diag.missingMid++;continue}
+    const entry=num(p.entry)||num(f.px);
+    if(!(entry>0)){diag.invalidEntry++;continue}
+    const sig=makeSignal({...c,quality:q,performance:perf},perf,q,p,f,mid);
+    if(!sig) {diag.invalidEntry++;continue}
+    if(sig.absDistancePct>WATCH_MAX)diag.watchDistanceFail++;
+    if(sig.absDistancePct>ENTRY_MAX)diag.entryDistanceFail++;
+    else if(sig.rr<MIN_RR)diag.rrFail++;
+    else diag.entryWindow++;
     if(sig?.entryReady&&diag.qualityPass){candidate=sig;break}
     if(sig?.blocked)block=sig.blocked;else if(sig?.reason)block=sig.reason;
   }
@@ -349,9 +366,11 @@ async function main(){
  const used=new Set(signals.map(s=>s.trader.address));
  const report=[];
  report.push('🌐 GLOBAL FUTURES PRO HUNTER',`🧠 ${VERSION}`,`🔧 ${BUILD}`,'📡 READ-ONLY | NO ORDERS | NO AUTO-COPY | FUTURES ONLY','━━━━━━━━━━━━━━━━━━');
- const diagRows=audited.map(x=>x.diagnostics||{});const dsum=k=>diagRows.reduce((a,x)=>a+num(x[k]),0);const errText=Object.entries(errorBreakdown).map(([k,v])=>`${k}=${v}`).join(' | ')||'none';
+ const diagRows=audited.map(x=>x.diagnostics||{});const dsum=k=>diagRows.reduce((a,x)=>a+num(x[k]),0);const qsum=k=>diagRows.reduce((a,x)=>a+num(x.quality?.[k]?1:0),0);const errText=Object.entries(errorBreakdown).map(([k,v])=>`${k}=${v}`).join(' | ')||'none';
  report.push(`🔎 Leaderboard: ${lb.rows.length} | Valid trader IDs: ${lb.traders.length} | Activity candidates: ${activityPool.length} | Audited: ${audited.length} | Complete: ${complete.length} | Errors: ${errors}`,
- `🧪 AUDIT PIPELINE: fresh-probe≤${DIAG_WINDOW_MIN}m=${dsum('fresh15')} | history-fills=${dsum('fills')} | pos-increase=${dsum('increasing')} | live-match=${dsum('matched')} | entry-window=${dsum('entryWindow')} | quality-pass=${diagRows.filter(x=>x.qualityPass).length}`,
+ `🧪 AUDIT PIPELINE: fresh≤${DIAG_WINDOW_MIN}m=${dsum('fresh15')} | history-fills=${dsum('fills')} | pos-increase=${dsum('increasing')} | live-match=${dsum('matched')} | entry-window=${dsum('entryWindow')} | quality-pass=${diagRows.filter(x=>x.qualityPass).length}`,
+ `🔬 DECISION DIAG: missing-mid=${dsum('missingMid')} | invalid-entry=${dsum('invalidEntry')} | >watch=${dsum('watchDistanceFail')} | >entry=${dsum('entryDistanceFail')} | RR-fail=${dsum('rrFail')}`,
+ `🧬 QUALITY DIAG: trades<${MIN_TRADES}=${qsum('tradesFail')} | WR<${MIN_WR}%=${qsum('wrFail')} | PF-unavailable=${qsum('pfUnavailable')} | PF<${MIN_PF}=${qsum('pfFail')} | DD>${MAX_DD}%=${qsum('ddFail')} | anomaly=${qsum('anomaly')}`,
  `🧯 ERROR BREAKDOWN: ${errText}`,`🎯 Quality eligible: ${eligible.length} | Watchlist: ${watch.length} | Actionable signals: ${signals.length}/${MAX_SIGNALS}`,`🧾 TRADE RECON: actual closed lifecycles | partial fills aggregated | PF/WR anomaly guard ON`,`🛡 CURRENT POSITION: Hyperliquid clearinghouseState ONLY | stale fills cannot create a position`,`⚡ SIGNAL: fresh open activity ≤${FRESH_MIN}m | entry distance ≤${ENTRY_MAX}% | SL ${SL_PCT}% | TP ${TP_R}R | RR ≥${MIN_RR}`,'');
  report.push('📡 SOURCE STATUS',`HYPERLIQUID: OK | FULL_SIGNAL | discovered=${lb.traders.length} | audited=${audited.length}`,'');
  report.push('👑 TOP VERIFIED TRADERS');
@@ -361,7 +380,7 @@ async function main(){
  if(signals.length){signals.forEach((s,i)=>report.push(...signalLine(s,i+1),'━━━━━━━━━━━━━━━━━━'))}else report.push('No verified trader has a fresh copyable-quality current position this cycle.');
  report.push('','🧱 TOP BLOCK REASONS');
  sortCandidates(audited.filter(x=>!used.has(x.address))).slice(0,10).forEach(x=>{const d=x.diagnostics||{};report.push(`${short(x.address)} | ${x.quality.tier} ${x.quality.score.toFixed(1)} | ${x.blockReason||x.quality.reasons.join(' | ')||'NOT_SIGNAL_READY'} | fresh=${d.fresh15||0} match=${d.matched||0}`)});
- report.push('','🛡️ V2.1.5 CONTRACTS',`• Discovery returns real Hyperliquid trader IDs and reports numeric discovered count.`,`• Performance unit = actual closed lifecycle; no synthetic trades.`,`• PF unavailable is shown as — and never becomes LOW_PF.`,`• Current position = clearinghouseState; position side/entry must exist now.`,`• Signal requires fresh open activity + live position + entry distance + RR.`,`• Null metrics are rendered as — and never passed to toFixed().`,`• Multiple independent traders/signals may be emitted; MAX_SIGNALS=${MAX_SIGNALS}.`,`• Audit is activity-first: fresh probe → history only for active traders → state only after fresh activity.`,
+ report.push('','🛡️ V2.1.6 CONTRACTS',`• Discovery returns real Hyperliquid trader IDs and reports numeric discovered count.`,`• Performance unit = actual closed lifecycle; no synthetic trades.`,`• PF unavailable is shown as — and never becomes LOW_PF.`,`• Current position = clearinghouseState; position side/entry must exist now.`,`• Signal requires fresh open activity + live position + entry distance + RR.`,`• Null metrics are rendered as — and never passed to toFixed().`,`• Multiple independent traders/signals may be emitted; MAX_SIGNALS=${MAX_SIGNALS}.`,`• Audit is activity-first: fresh probe → history only for active traders → state only after fresh activity.`,`• Decision diagnostics separate missing-mid, invalid-entry, watch/entry distance and RR failures.`,`• Quality diagnostics separate trade-count, WR, PF-unavailable, PF, DD and anomaly failures.`,
  `• Global 429 cooldown + bounded concurrency + minimum request gap protect the Hyperliquid API.`,`• HTTP 429/5xx/timeout requests use bounded exponential retry/backoff.`,`• Freshness is real fill time ≤${DIAG_WINDOW_MIN}m; no synthetic freshness is created.`,`⏱ Runtime: ${((Date.now()-started)/1000).toFixed(1)}s`,
  `⚙️ Rate safety: candidates=${activityPool.length} | concurrency=${MAX_CONCURRENCY} | gap=${MIN_REQUEST_GAP_MS}ms | 429 cooldown=${GLOBAL_429_COOLDOWN_MS}ms`,`🕒 ${new Date().toISOString()}`);
  const text=report.join('\n');console.log(text);await fs.mkdir(path.dirname(STATE_FILE),{recursive:true});await fs.writeFile(STATE_FILE,JSON.stringify({version:VERSION,generatedAt:Date.now(),discovered:lb.traders.length,audited:audited.length,eligible:eligible.length,signals:signals.map(s=>({address:s.trader.address,coin:s.coin,side:s.side,entry:s.entry,mark:s.mark,sl:s.sl,tp:s.tp,rr:s.rr,ageMin:s.ageMin})),watch:watch.map(x=>({address:x.address,score:x.quality.score,tier:x.quality.tier,blockReason:x.blockReason,diagnostics:x.diagnostics})),errors,errorBreakdown,pipeline:{fills:dsum('fills'),fresh15:dsum('fresh15'),increasing:dsum('increasing'),matched:dsum('matched'),entryWindow:dsum('entryWindow'),qualityPass:diagRows.filter(x=>x.qualityPass).length}},null,2));await telegram(text);
