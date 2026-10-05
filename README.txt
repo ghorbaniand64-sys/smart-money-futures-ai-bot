@@ -1,35 +1,28 @@
-GFTSH V2.1.4
-GLOBAL FUTURES ACTUAL-TRADE RECON / DIAGNOSTIC MULTI-SIGNAL
+GFTSH V2.1.4 — GLOBAL FUTURES PRO HUNTER
 
-Files:
-- crypto_whale_signal_engine.mjs
-- .github/workflows/crypto-whale-signal-engine.yml
+Worker: crypto_whale_signal_engine.mjs
+Workflow: .github/workflows/crypto-whale-signal-engine.yml
+Mode: READ-ONLY / NO ORDERS / NO AUTO-COPY / FUTURES ONLY
 
-Mode:
-- READ-ONLY
-- FUTURES ONLY
-- NO ORDERS
-- NO AUTO-COPY
+V2.1.4 is a corrected diagnostic build. It restores the complete working HTTP,
+leaderboard, fills and Telegram helpers and adds transparent audit diagnostics.
 
-V2.1.4 changes:
-1. Preserves the working Hyperliquid leaderboard discovery contract.
-2. Activity-first audit ranking using current-day and weekly activity.
-3. Robust fill position reconstruction using dir + startPosition + sz + px + time.
-4. Supports opens, adds, reductions, closes and direction flips without fabricating freshness.
-5. clearinghouseState remains the sole authority for the live position.
-6. Fresh signal activity remains <=15 minutes.
-7. Adds an explicit audit pipeline: fills -> fresh activity -> position increase -> live-position match -> entry window -> quality gate.
-8. Adds detailed error buckets for HTTP 429, HTTP 5xx, timeout, fills schema/API, state API and other failures.
-9. Adds bounded exponential retry/backoff for transient Hyperliquid failures.
-10. Separates trader-quality eligibility from current-position readiness.
-11. Supports up to 5 independent actionable signals.
-12. Nullable WR/PF/price values are rendered safely; no unsafe toFixed() calls.
+Key contracts:
+- Hyperliquid leaderboard returns real 0x trader IDs.
+- userFillsByTime is the historical trade authority.
+- clearinghouseState is the current-position authority.
+- Position increases are reconstructed from dir/startPosition/sz.
+- Fresh signal activity is genuinely <=15 minutes.
+- Entry distance <=0.75%; model SL 0.5%; TP 2R; RR >=1.5.
+- Quality gate: closed trades >=8, WR >=60%, PF >=1.35 when available, DD <=25%.
+- Up to 5 independent signals.
+- HTTP 429/5xx/timeouts use bounded retry/backoff.
+- Telegram failures cannot hide the primary engine failure.
+- Diagnostic pipeline reports fills -> fresh -> position increase -> live match -> entry window -> quality.
 
-Required GitHub Environment:
-production
-
-Secrets:
-- TELEGRAM_TOKEN
-- TELEGRAM_CHAT_ID
-- HYPERLIQUID_API_URL (optional; defaults to Hyperliquid info API)
-- HL_LEADERBOARD_URL (optional; defaults to Hyperliquid Mainnet leaderboard)
+Required production environment secrets:
+TELEGRAM_TOKEN
+TELEGRAM_CHAT_ID
+Optional:
+HYPERLIQUID_API_URL
+HL_LEADERBOARD_URL

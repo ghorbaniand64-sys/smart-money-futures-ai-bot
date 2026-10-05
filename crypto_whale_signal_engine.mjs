@@ -38,6 +38,90 @@ const STATE_FILE=process.env.GFTSH_STATE_FILE||'state/gftsh_v2_1_4_state.json';
 const TG_STATE=process.env.GFTSH_TELEGRAM_STATE_FILE||'state/gftsh_telegram_state.json';
 const DIAG_WINDOW_MIN=Math.min(FRESH_MIN,15);
 
+async function json(url,opts={},label='http'){
+  let lastErr=null;
+  for(let attempt=1;attempt<=HL_RETRIES;attempt++){
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),TIMEOUT);
+    try{
+      const res=await fetch(url,{...opts,signal:controller.signal});
+      const body=await res.text();
+      if(!res.ok){
+        const e=new Error(`${label}:HTTP_${res.status}${body?` ${body.slice(0,180)}`:''}`);e.status=res.status;throw e;
+      }
+      try{return JSON.parse(body)}catch(e){throw new Error(`${label}:INVALID_JSON`)}
+    }catch(e){
+      lastErr=e;
+      const m=String(e?.message||e);
+      const retryable=e?.name==='AbortError'||/HTTP_(429|5\d\d)/.test(m);
+      if(!retryable||attempt>=HL_RETRIES)break;
+      const wait=HL_RETRY_BASE_MS*Math.pow(2,attempt-1)+(/HTTP_429/.test(m)?250:0);
+      console.log(`[HTTP][RETRY] ${label} attempt=${attempt}/${HL_RETRIES} reason=${m.slice(0,120)} wait=${wait}ms`);
+      await sleep(wait);
+    }finally{clearTimeout(timer)}
+  }
+  throw lastErr||new Error(`${label}:REQUEST_FAILED`);
+}
+
+async function hl(body,label='hl'){
+  return json(API,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)},label);
+}
+
+function leaderboardMetrics(r){
+  const day=r?.day||r?.daily||r?.stats?.day||{};
+  const week=r?.week||r?.weekly||r?.stats?.week||{};
+  const pick=(obj,keys)=>{for(const k of keys){const v=Number(obj?.[k]);if(Number.isFinite(v))return v}return 0};
+  return {
+    day:{
+      vlm:pick(day,['vlm','volume','volumeUsd','accountValue','totalVolume']),
+      pnl:pick(day,['pnl','profit','pnlUsd','netPnl'])
+    },
+    week:{
+      vlm:pick(week,['vlm','volume','volumeUsd','accountValue','totalVolume']),
+      pnl:pick(week,['pnl','profit','pnlUsd','netPnl'])
+    }
+  };
+}
+
+async function fetchLeaderboard(){
+  const raw=await json(LEADERBOARD,{},'leaderboard');
+  const rows=Array.isArray(raw)?raw:
+    Array.isArray(raw?.leaderboardRows)?raw.leaderboardRows:
+    Array.isArray(raw?.rows)?raw.rows:
+    Array.isArray(raw?.data)?raw.data:[];
+  const traders=rows.map(r=>({
+    address:String(r?.ethAddress||r?.address||r?.user||''),
+    name:String(r?.displayName||r?.name||r?.username||'')
+  })).filter(x=>/^0x[a-fA-F0-9]{40}$/.test(x.address));
+  if(!traders.length)throw new Error('HL_LEADERBOARD_EMPTY_OR_INVALID');
+  return {rows,traders};
+}
+
+function fillNotional(f){
+  const sz=Math.abs(num(f?.sz));
+  const pxv=Math.abs(num(f?.px));
+  if(!(sz>0)||!(pxv>0))return 0;
+  return sz*pxv;
+}
+
+async function fillsFor(address,start,end){
+  let all=[],cursor=end;
+  for(let page=1;page<=MAX_FILL_PAGES;page++){
+    const rows=await hl({type:'userFillsByTime',user:address,startTime:start,endTime:cursor,aggregateByTime:false},`fills:${short(address)}:${page}`);
+    if(!Array.isArray(rows))throw new Error('FILLS_NOT_ARRAY');
+    all.push(...rows);
+    if(rows.length<2000)break;
+    const times=rows.map(x=>num(x?.time)).filter(Boolean);
+    const oldest=times.length?Math.min(...times):0;
+    if(!oldest||oldest<=start)break;
+    cursor=oldest-1;
+    await sleep(50);
+  }
+  const seen=new Set();
+  return all.filter(f=>{const k=`${f?.coin}|${f?.time}|${f?.tid||f?.hash||f?.oid||''}|${f?.px}|${f?.sz}|${f?.dir}`;if(seen.has(k))return false;seen.add(k);return true}).sort((a,b)=>num(a?.time)-num(b?.time));
+}
+
+
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const num=(x,d=0)=>{const n=Number(x);return Number.isFinite(n)?n:d};
 const finite=x=>Number.isFinite(Number(x));
