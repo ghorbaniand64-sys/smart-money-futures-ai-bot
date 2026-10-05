@@ -1,26 +1,72 @@
-GFTSH V2.1.6 — GLOBAL FUTURES PRO HUNTER
+GFTSH V2.1.8 — COMPLETE EVIDENCE AUDIT
 
-Worker: crypto_whale_signal_engine.mjs
-Workflow: .github/workflows/crypto-whale-signal-engine.yml
-Mode: READ-ONLY / NO ORDERS / NO AUTO-COPY / FUTURES ONLY
+Worker filename (EXACT):
+crypto_whale_signal_engine.mjs
 
-V2.1.6 changes
-- Activity-first audit: probe only the last freshness window first.
-- Full 7-day fill history is fetched only for traders with fresh position-increasing activity.
-- clearinghouseState is queried only after fresh activity is confirmed.
-- Global 429 cooldown prevents a thundering herd of retries.
-- Minimum inter-request gap and bounded concurrency protect Hyperliquid API limits.
-- Freshness remains real <=15 minutes; it is never synthesized.
-- Current position remains clearinghouseState-only.
-- Quality gates remain strict: closed trades, WR, PF, DD, anomaly guard.
-- PF unavailable never becomes LOW_PF.
-- Multiple independent signals remain supported.
+Workflow filename (EXACT):
+.github/workflows/crypto-whale-signal-engine.yml
 
-Why this architecture
-Hyperliquid documents a 1200-weight/minute REST limit per IP. userFills/userFillsByTime have base weight 20 plus additional weight per 20 returned items; clearinghouseState has weight 2. V2.1.6 therefore avoids historical fills and state calls for inactive traders.
+Mode:
+READ-ONLY | NO ORDERS | NO AUTO-COPY | FUTURES ONLY
 
-Production secrets (GitHub Environment: production)
-- TELEGRAM_TOKEN = Telegram bot token
-- TELEGRAM_CHAT_ID = destination chat ID
-- HYPERLIQUID_API_URL = https://api.hyperliquid.xyz/info (optional)
-- HL_LEADERBOARD_URL = https://stats-data.hyperliquid.xyz/Mainnet/leaderboard (optional)
+Source authority:
+Hyperliquid public leaderboard + public user fills + clearinghouseState + allMids.
+Current position authority is clearinghouseState ONLY.
+
+V2.1.8 adds:
+- Complete quality evidence matrix with Trades / WR / PF / DD / PnL.
+- Exact quality failure combinations per live candidate.
+- Near-miss report for traders that pass live-position + entry validation but fail historical quality.
+- Separate live-position, live-match and entry-ready counts.
+- Expanded lifecycle metrics: active days, recent closed trades, average/median hold and trades/day in persisted state.
+- Richer persisted state with top evidence and near-miss candidates.
+- Preserves strict quality thresholds; no gate is relaxed to manufacture signals.
+- Preserves activity-first audit and rate-limit protection.
+- Preserves real freshness <=15m and real current-position verification.
+- Preserves entry <=0.75%, model SL 0.5%, TP 2R, RR >=1.5.
+- MAX_SIGNALS remains 5.
+
+Production GitHub environment:
+production
+
+Required secrets:
+TELEGRAM_TOKEN
+TELEGRAM_CHAT_ID
+
+Optional secrets:
+HYPERLIQUID_API_URL (default: https://api.hyperliquid.xyz/info)
+HL_LEADERBOARD_URL (default: https://stats-data.hyperliquid.xyz/Mainnet/leaderboard)
+
+Default runtime limits in workflow:
+Discovery leaderboard: 250 source rows considered
+Audit ranked pool: 60
+Activity audit: 40
+Concurrency: 2
+Minimum request gap: 350ms
+Global 429 cooldown: 5000ms
+Performance lookback: 168h / 7d
+Max fill pages: 8
+
+Quality gates in workflow:
+Closed trades >= 8
+WR >= 60%
+PF >= 1.35
+DD <= 25%
+
+Signal gates in workflow:
+Freshness <= 15m
+Entry distance <= 0.75%
+Model SL = 0.5%
+TP = 2R
+RR >= 1.5
+Minimum signal notional = $100
+
+Validation performed before packaging:
+- node --check PASS
+- deterministic mocked runtime PASS
+- actionable signal path PASS
+- quality evidence matrix PASS
+- near-miss/state schema PASS
+- ZIP integrity PASS
+
+No live Hyperliquid trading or order execution is performed by this package.
