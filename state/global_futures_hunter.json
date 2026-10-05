@@ -1,6 +1,6 @@
 {
   "version": "GFTSH-V1.9.0-GLOBAL-FUTURES-ACTIVE-TRADER-HUNTER",
-  "updatedAt": 1791149706074,
+  "updatedAt": 1791158981038,
   "statuses": [
     {
       "source": "HYPERLIQUID",
@@ -20,7 +20,7 @@
       "source": "OKX",
       "class": "DISCOVERY",
       "state": "OK",
-      "discovered": 141,
+      "discovered": 143,
       "error": null
     },
     {
@@ -94,7 +94,7 @@
       "error": "NO_VERIFIED_PUBLIC_READ_ONLY_TRADER_DISCOVERY"
     }
   ],
-  "discovered": 628,
+  "discovered": 630,
   "hlAuditCandidates": 100,
   "audited": 100,
   "qualityPass": 0,
