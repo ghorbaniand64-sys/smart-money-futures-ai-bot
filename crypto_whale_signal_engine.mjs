@@ -6,15 +6,15 @@ import path from 'node:path';
 // Source authority: Hyperliquid public leaderboard + public user fills + clearinghouseState.
 // Current position authority: clearinghouseState ONLY. Stale fills never become a live position.
 
-const VERSION='GFTSH-V2.1.2-GLOBAL-FUTURES-ACTUAL-TRADE-RECON-MULTI-SIGNAL';
-const BUILD='V2.1.2-DISCOVERY-RESTORE-CURRENT-POSITION-VERIFIED-MULTI-SIGNAL';
+const VERSION='GFTSH-V2.1.3-GLOBAL-FUTURES-ACTUAL-TRADE-RECON-ACTIVE-MULTI-SIGNAL';
+const BUILD='V2.1.3-DISCOVERY-ACTIVE-TRADER-AUDIT-ROBUST-FRESH-ADD-MULTI-SIGNAL';
 const API=process.env.HYPERLIQUID_API_URL||'https://api.hyperliquid.xyz/info';
 const LEADERBOARD=process.env.HL_LEADERBOARD_URL||process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL||'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';
 const TG_TOKEN=process.env.TELEGRAM_TOKEN||process.env.TELEGRAM_BOT_TOKEN||'';
 const TG_CHAT=process.env.TELEGRAM_CHAT_ID||'';
 const TIMEOUT=Number(process.env.GFTSH_REQUEST_TIMEOUT_MS||20000);
 const DISCOVERY_LIMIT=Math.max(100,Number(process.env.GFTSH_DISCOVERY_LIMIT||100));
-const AUDIT_LIMIT=Math.max(DISCOVERY_LIMIT,Number(process.env.GFTSH_AUDIT_LIMIT||100));
+const AUDIT_LIMIT=Math.max(DISCOVERY_LIMIT,Number(process.env.GFTSH_AUDIT_LIMIT||250));
 const LOOKBACK_HOURS=Math.max(24,Number(process.env.GFTSH_PERFORMANCE_LOOKBACK_HOURS||168));
 const MAX_FILL_PAGES=Math.max(2,Number(process.env.GFTSH_MAX_FILL_PAGES||8));
 const ENTRY_MAX=Number(process.env.GFTSH_ENTRY_DISTANCE_PCT||0.75);
@@ -31,7 +31,7 @@ const MIN_NOTIONAL=Number(process.env.GFTSH_MIN_SIGNAL_NOTIONAL_USD||100);
 const MIN_24H_VOL=Number(process.env.GFTSH_MIN_24H_VOLUME_USD||1000000);
 const TOP_WATCH=Math.max(5,Number(process.env.GFTSH_WATCHLIST_SIZE||10));
 const MAX_SIGNALS=Math.max(2,Number(process.env.GFTSH_MAX_SIGNALS||5));
-const BETWEEN_MS=Number(process.env.GFTSH_BETWEEN_TRADERS_MS||120);
+const BETWEEN_MS=Number(process.env.GFTSH_BETWEEN_TRADERS_MS||80);
 const STATE_FILE=process.env.GFTSH_STATE_FILE||'state/gftsh_v2_1_2_state.json';
 const TG_STATE=process.env.GFTSH_TELEGRAM_STATE_FILE||'state/gftsh_telegram_state.json';
 
@@ -141,8 +141,31 @@ async function stateFor(address){return hl({type:'clearinghouseState',user:addre
 function positions(state){return (state?.assetPositions||[]).map(x=>x?.position||x).filter(p=>Math.abs(num(p?.szi))>0).map(p=>({coin:String(p.coin),side:num(p.szi)>0?'LONG':'SHORT',size:Math.abs(num(p.szi)),entry:num(p.entryPx),value:Math.abs(num(p.positionValue)),unrealized:num(p.unrealizedPnl),liq:num(p.liquidationPx),leverage:num(p.leverage?.value||p.leverage),margin:num(p.marginUsed)}));}
 async function mids(){const x=await hl({type:'allMids'},'allMids');return x||{}}
 
+function fillPositionDelta(f){
+ const dir=String(f?.dir||'').toLowerCase();
+ const sz=Math.abs(num(f?.sz)); if(!(sz>0))return 0;
+ if(dir.includes('open long'))return sz;
+ if(dir.includes('open short'))return -sz;
+ if(dir.includes('close long'))return -sz;
+ if(dir.includes('close short'))return sz;
+ const start=num(f?.startPosition);
+ if(dir==='buy'||dir==='buy long'||dir==='long')return start<0?-sz:sz;
+ if(dir==='sell'||dir==='sell short'||dir==='short')return start>0?-sz:-sz;
+ if(dir.includes('long > short'))return -Math.max(sz,Math.abs(start)+sz);
+ if(dir.includes('short > long'))return Math.max(sz,Math.abs(start)+sz);
+ return 0;
+}
 function latestOpenAdds(fills){
- const out=[];for(const f of fills){const d=String(f?.dir||'').toLowerCase();if(!(d.includes('open long')||d.includes('open short')))continue;const notional=fillNotional(f);if(notional<MIN_NOTIONAL)continue;out.push(f)}return out.sort((a,b)=>num(b.time)-num(a.time));
+ const out=[];
+ for(const f of fills){
+   const notional=fillNotional(f); if(notional<MIN_NOTIONAL)continue;
+   const start=num(f?.startPosition); const delta=fillPositionDelta(f); const after=start+delta;
+   const increasing=Math.abs(after)>Math.abs(start)+1e-10;
+   const explicit=/open long|open short|long > short|short > long/i.test(String(f?.dir||''));
+   if(!increasing&&!explicit)continue;
+   out.push({...f,__positionDelta:delta,__positionBefore:start,__positionAfter:after,__isAdd:start!==0});
+ }
+ return out.sort((a,b)=>num(b.time)-num(a.time));
 }
 function makeSignal(trader,perfQ,pos,fill,mid){
  const side=pos.side;const entry=num(pos.entry)||num(fill.px);if(!(entry>0)||!(mid>0))return null;
@@ -181,11 +204,11 @@ async function main(){
  console.log(`${VERSION} | READ-ONLY | NO ORDERS`);
  const lb=await fetchLeaderboard();
  // Preserve the working discovery contract: actual numeric trader IDs, not the source-name string.
- const ranked=lb.rows.map(r=>{const a=String(r?.ethAddress||r?.address||r?.user||'');const m=leaderboardMetrics(r);return {...r,address:a,name:String(r?.displayName||r?.name||r?.username||''),lb:m}}).filter(r=>/^0x[a-fA-F0-9]{40}$/.test(r.address)).sort((a,b)=>b.lb.score-a.lb.score).slice(0,AUDIT_LIMIT);
+ const ranked=lb.rows.map(r=>{const a=String(r?.ethAddress||r?.address||r?.user||'');const m=leaderboardMetrics(r);return {...r,address:a,name:String(r?.displayName||r?.name||r?.username||''),lb:m}}).filter(r=>/^0x[a-fA-F0-9]{40}$/.test(r.address)).sort((a,b)=>(b.lb.day.vlm*0.000002+b.lb.week.vlm*0.0000005+Math.max(0,b.lb.day.pnl)*0.002)-(a.lb.day.vlm*0.000002+a.lb.week.vlm*0.0000005+Math.max(0,a.lb.day.pnl)*0.002)).slice(0,AUDIT_LIMIT);
  console.log(`[DISCOVERY] leaderboardRows=${lb.rows.length} validTraderIds=${lb.traders.length} audit=${ranked.length}`);
  const midsMap=await mids();const audited=[];let errors=0;
  for(const c of ranked){try{audited.push(await auditTrader(c,start,end,midsMap))}catch(e){errors++;console.log(`[AUDIT][ERROR] ${short(c.address)} ${String(e?.message||e).slice(0,180)})`)}await sleep(BETWEEN_MS)}
- const complete=audited.filter(x=>x.performance.closedTrades>0);const eligible=complete.filter(x=>x.quality.tier!=='C'&&x.performance.closedTrades>=MIN_TRADES&&x.performance.wr>=MIN_WR&&(x.performance.pf===null||x.performance.pf>=MIN_PF)&&x.quality.ddPct<=MAX_DD&&!x.quality.anomaly);
+ const complete=audited.filter(x=>x.performance.closedTrades>0);const eligible=complete.filter(x=>x.quality.tier!=='C'&&!x.quality.anomaly&&x.performance.closedTrades>=MIN_TRADES&&x.performance.wr>=MIN_WR&&x.quality.ddPct<=MAX_DD&&(x.performance.pf===null||x.performance.pf>=MIN_PF));
  const watch=sortCandidates(eligible).slice(0,TOP_WATCH);const signals=watch.map(x=>x.currentSignal).filter(Boolean).sort((a,b)=>b.trader.quality.score-a.trader.quality.score).slice(0,MAX_SIGNALS);
  const used=new Set(signals.map(s=>s.trader.address));
  const report=[];
