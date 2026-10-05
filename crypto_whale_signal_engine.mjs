@@ -6,8 +6,8 @@ import path from 'node:path';
 // Source authority: Hyperliquid public leaderboard + public user fills + clearinghouseState.
 // Current position authority: clearinghouseState ONLY. Stale fills never become a live position.
 
-const VERSION='GFTSH-V2.1.3-GLOBAL-FUTURES-ACTUAL-TRADE-RECON-ACTIVE-MULTI-SIGNAL';
-const BUILD='V2.1.3-DISCOVERY-ACTIVE-TRADER-AUDIT-ROBUST-FRESH-ADD-MULTI-SIGNAL';
+const VERSION='GFTSH-V2.1.4-GLOBAL-FUTURES-ACTUAL-TRADE-RECON-DIAGNOSTIC-MULTI-SIGNAL';
+const BUILD='V2.1.4-DIAGNOSTIC-ACTIVITY-FIRST-ROBUST-RECON-RATE-LIMIT-AUDIT';
 const API=process.env.HYPERLIQUID_API_URL||'https://api.hyperliquid.xyz/info';
 const LEADERBOARD=process.env.HL_LEADERBOARD_URL||process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL||'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';
 const TG_TOKEN=process.env.TELEGRAM_TOKEN||process.env.TELEGRAM_BOT_TOKEN||'';
@@ -31,9 +31,12 @@ const MIN_NOTIONAL=Number(process.env.GFTSH_MIN_SIGNAL_NOTIONAL_USD||100);
 const MIN_24H_VOL=Number(process.env.GFTSH_MIN_24H_VOLUME_USD||1000000);
 const TOP_WATCH=Math.max(5,Number(process.env.GFTSH_WATCHLIST_SIZE||10));
 const MAX_SIGNALS=Math.max(2,Number(process.env.GFTSH_MAX_SIGNALS||5));
-const BETWEEN_MS=Number(process.env.GFTSH_BETWEEN_TRADERS_MS||80);
-const STATE_FILE=process.env.GFTSH_STATE_FILE||'state/gftsh_v2_1_2_state.json';
+const BETWEEN_MS=Number(process.env.GFTSH_BETWEEN_TRADERS_MS||120);
+const HL_RETRIES=Math.max(1,Number(process.env.GFTSH_HL_RETRIES||4));
+const HL_RETRY_BASE_MS=Math.max(100,Number(process.env.GFTSH_HL_RETRY_BASE_MS||500));
+const STATE_FILE=process.env.GFTSH_STATE_FILE||'state/gftsh_v2_1_4_state.json';
 const TG_STATE=process.env.GFTSH_TELEGRAM_STATE_FILE||'state/gftsh_telegram_state.json';
+const DIAG_WINDOW_MIN=Math.min(FRESH_MIN,15);
 
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const num=(x,d=0)=>{const n=Number(x);return Number.isFinite(n)?n:d};
@@ -43,81 +46,76 @@ function usd(x,d=0){return finite(x)?`$${num(x).toLocaleString('en-US',{maximumF
 function px(x){const n=num(x);if(!(n>0))return '—';if(n>=100)return n.toFixed(2);if(n>=1)return n.toFixed(4);if(n>=.01)return n.toFixed(6);if(n>=.0001)return n.toFixed(8);return n.toExponential(5)}
 function short(a){const s=String(a||'');return s.length>14?`${s.slice(0,8)}…${s.slice(-6)}`:s||'—'}
 function rr(sl,tp){const a=Math.abs(num(sl));return a>0?Math.abs(num(tp))/a:0}
-function signedDir(fill){const d=String(fill?.dir||'').toLowerCase();if(d.includes('open long'))return 1;if(d.includes('close long'))return -1;if(d.includes('open short'))return -1;if(d.includes('close short'))return 1;return 0}
-function fillNotional(f){return Math.abs(num(f?.sz)*num(f?.px))}
-
-async function json(url,opt={},label='http'){
- const c=new AbortController();const t=setTimeout(()=>c.abort(),TIMEOUT);
- try{const r=await fetch(url,{...opt,signal:c.signal,headers:{accept:'application/json',...(opt.headers||{})}});const body=await r.text();if(!r.ok)throw new Error(`${label}:HTTP_${r.status}`);return body?JSON.parse(body):null}
- finally{clearTimeout(t)}
+function fillDirection(f){
+ const d=String(f?.dir||'').toLowerCase().trim();
+ if(d.includes('open long'))return {delta:1,kind:'OPEN_LONG'};
+ if(d.includes('open short'))return {delta:-1,kind:'OPEN_SHORT'};
+ if(d.includes('close long'))return {delta:-1,kind:'CLOSE_LONG'};
+ if(d.includes('close short'))return {delta:1,kind:'CLOSE_SHORT'};
+ if(d.includes('long > short'))return {delta:-1,kind:'LONG_TO_SHORT'};
+ if(d.includes('short > long'))return {delta:1,kind:'SHORT_TO_LONG'};
+ const start=num(f?.startPosition);
+ if(d==='buy'||d==='buy long'||d==='long')return {delta:start<0?-1:1,kind:'INFERRED_BUY'};
+ if(d==='sell'||d==='sell short'||d==='short')return {delta:start>0?-1:-1,kind:'INFERRED_SELL'};
+ return {delta:0,kind:'UNKNOWN'};
 }
-async function hl(body,label='hl'){return json(API,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)},label)}
-
-async function fetchLeaderboard(){
- const raw=await json(LEADERBOARD,{},'leaderboard');
- // The old regression returned the literal source name as "discovered". This parser
- // only accepts the real array and validates every address before it enters discovery.
- const rows=Array.isArray(raw)?raw:Array.isArray(raw?.leaderboardRows)?raw.leaderboardRows:Array.isArray(raw?.rows)?raw.rows:[];
- const traders=rows.map(r=>({
-   address:String(r?.ethAddress||r?.address||r?.user||''),
-   name:String(r?.displayName||r?.name||r?.username||'')
- })).filter(x=>/^0x[a-fA-F0-9]{40}$/.test(x.address));
- if(!traders.length)throw new Error('HL_LEADERBOARD_EMPTY_OR_INVALID');
- return {rows,traders};
+function fillPositionDelta(f){
+ const sz=Math.abs(num(f?.sz));if(!(sz>0))return 0;
+ const d=fillDirection(f);if(!d.delta)return 0;
+ if(d.kind==='LONG_TO_SHORT')return -sz;
+ if(d.kind==='SHORT_TO_LONG')return sz;
+ return d.delta*sz;
 }
-function leaderboardMetrics(row){
- const wins=[];
- const arr=Array.isArray(row?.windowPerformances)?row.windowPerformances:[];
- for(const x of arr){if(!Array.isArray(x)||!x[1])continue;const k=String(x[0]);const v=x[1]||{};wins.push([k,v]);}
- const find=(key)=>{const v=wins.find(x=>x[0]===key)?.[1]||{};return {pnl:num(v?.pnl),vlm:num(v?.vlm),roi:num(v?.roi)}};
- const d=find('day'),w=find('week'),m=find('month');
- return {day:d,week:w,month:m,score:(w.vlm*0.000001)+(Math.max(0,w.pnl)*0.001)};
+function fillPostPosition(f){return num(f?.startPosition)+fillPositionDelta(f)}
+function isPositionIncreasing(f){
+ const before=num(f?.startPosition),after=fillPostPosition(f);
+ return Math.abs(after)>Math.abs(before)+1e-10;
 }
-
-async function fillsFor(address,start,end){
- let all=[],cursor=end;
- for(let page=1;page<=MAX_FILL_PAGES;page++){
-   let rows=await hl({type:'userFillsByTime',user:address,startTime:start,endTime:cursor,aggregateByTime:false},`fills:${short(address)}:${page}`);
-   if(!Array.isArray(rows))throw new Error('FILLS_NOT_ARRAY');
-   all.push(...rows);
-   if(rows.length<2000)break;
-   const oldest=Math.min(...rows.map(x=>num(x?.time)).filter(Boolean));
-   if(!oldest||oldest<=start)break;
-   cursor=oldest-1;await sleep(50);
- }
- const seen=new Set();
- return all.filter(f=>{const k=`${f?.hash}|${f?.time}|${f?.coin}|${f?.px}|${f?.sz}|${f?.dir}`;if(seen.has(k))return false;seen.add(k);return true}).sort((a,b)=>num(a.time)-num(b.time));
-}
-
-function reconstruct(fills){
- const books=new Map();const closed=[];let realized=0;let grossWin=0;let grossLoss=0;let equity=0;let peak=0;let maxDD=0;
+function isFreshFill(f,now=Date.now()){const t=num(f?.time);return t>0&&Math.max(0,(now-t)/60000)<=DIAG_WINDOW_MIN}
+function latestOpenAdds(fills){
+ const out=[];
  for(const f of fills){
-   const coin=String(f?.coin||'');const delta=signedDir(f);const size=Math.abs(num(f?.sz));const price=num(f?.px);if(!coin||!(size>0)||!(price>0)||!delta)continue;
+   const notional=fillNotional(f);if(notional<MIN_NOTIONAL)continue;
+   const before=num(f?.startPosition),after=fillPostPosition(f);
+   const increasing=Math.abs(after)>Math.abs(before)+1e-10;
+   const directionFlip=before!==0&&after!==0&&Math.sign(before)!==Math.sign(after);
+   if(!increasing&&!directionFlip)continue;
+   out.push({...f,__positionDelta:fillPositionDelta(f),__positionBefore:before,__positionAfter:after,__isAdd:before!==0,__fresh:isFreshFill(f)});
+ }
+ return out.sort((a,b)=>num(b.time)-num(a.time));
+}
+function reconstruct(fills){
+ const books=new Map();const closed=[];let realized=0,grossWin=0,grossLoss=0,peak=0,maxDD=0;
+ let recognized=0,unknown=0,reversals=0,invalid=0;
+ for(const f of fills){
+   const coin=String(f?.coin||'');const size=Math.abs(num(f?.sz));const price=num(f?.px);const fd=fillDirection(f);
+   if(!coin||!(size>0)||!(price>0)){invalid++;continue}
+   if(!fd.delta){unknown++;continue}
+   const delta=fillPositionDelta(f);if(!delta){unknown++;continue}
+   recognized++;if(fd.kind==='LONG_TO_SHORT'||fd.kind==='SHORT_TO_LONG')reversals++;
    let b=books.get(coin);if(!b)b={side:0,size:0,avg:0,startTime:0,notional:0};
-   const same=b.side===0||b.side===Math.sign(delta);
-   if(same){
-     const old=b.size; b.avg=(old*b.avg+size*price)/(old+size);b.size=old+size;b.side=Math.sign(delta);b.startTime=b.startTime||num(f.time);b.notional+=size*price;
+   let remaining=size;
+   if(Math.sign(delta)===b.side||b.side===0){
+     const old=b.size;b.avg=(old*b.avg+Math.abs(delta)*price)/(old+Math.abs(delta));b.size=old+Math.abs(delta);b.side=Math.sign(delta);b.startTime=b.startTime||num(f.time);b.notional+=Math.abs(delta)*price;
    }else{
-     let remaining=size;let closePnl=num(f?.closedPnl,NaN);const before=b.size;
-     if(!finite(closePnl))closePnl=(price-b.avg)*Math.min(size,b.size)*(b.side>0?1:-1);
-     const portion=Math.min(size,b.size); const lifecycleClose=portion>=b.size*0.999999;
+     const closeSize=Math.min(Math.abs(delta),b.size);let closePnl=num(f?.closedPnl,NaN);
+     if(!finite(closePnl))closePnl=(price-b.avg)*closeSize*(b.side>0?1:-1);
+     const lifecycleClose=closeSize>=b.size*0.999999;
      if(lifecycleClose){
-       const pnl=closePnl;const holdH=Math.max(0,(num(f.time)-b.startTime)/3600000);closed.push({coin,side:b.side>0?'LONG':'SHORT',entry:b.avg,exit:price,size:portion,pnl,holdHours:holdH,closeTime:num(f.time),notional:b.notional});
-       realized+=pnl;if(pnl>0)grossWin+=pnl;else grossLoss+=Math.abs(pnl);
-     }else{
-       realized+=closePnl;if(closePnl>0)grossWin+=closePnl;else grossLoss+=Math.abs(closePnl);
+       const holdH=Math.max(0,(num(f.time)-b.startTime)/3600000);closed.push({coin,side:b.side>0?'LONG':'SHORT',entry:b.avg,exit:price,size:closeSize,pnl:closePnl,holdHours:holdH,closeTime:num(f.time),notional:b.notional});
      }
-     b.size-=portion;remaining-=portion;
-     if(b.size<=1e-12){b={side:0,size:0,avg:0,startTime:0,notional:0}}
+     realized+=closePnl;if(closePnl>0)grossWin+=closePnl;else if(closePnl<0)grossLoss+=Math.abs(closePnl);
+     b.size-=closeSize;
+     remaining=Math.abs(delta)-closeSize;
+     if(b.size<=1e-12)b={side:0,size:0,avg:0,startTime:0,notional:0};
      if(remaining>1e-12){b.side=Math.sign(delta);b.size=remaining;b.avg=price;b.startTime=num(f.time);b.notional=remaining*price}
    }
-   books.set(coin,b);equity=realized;peak=Math.max(peak,equity);maxDD=Math.max(maxDD,peak-equity);
+   books.set(coin,b);peak=Math.max(peak,realized);maxDD=Math.max(maxDD,peak-realized);
  }
- const wins=closed.filter(x=>x.pnl>0).length;const losses=closed.filter(x=>x.pnl<0).length;
- const pf=grossLoss>0?grossWin/grossLoss:null;const wr=closed.length?wins/closed.length*100:null;
- const recent=closed.filter(x=>x.closeTime>=Date.now()-24*3600000);
- const activeDays=new Set(closed.map(x=>new Date(x.closeTime).toISOString().slice(0,10))).size;
- return {closedTrades:closed.length,wins,losses,wr,pf,realizedPnl:realized,grossWin,grossLoss,maxDrawdown:maxDD,activeDays,recentClosed:recent.length,openBooks:[...books].filter(([,b])=>b.size>0).map(([coin,b])=>({coin,...b}))};
+ const wins=closed.filter(x=>x.pnl>0).length,losses=closed.filter(x=>x.pnl<0).length;
+ const pf=grossLoss>0?grossWin/grossLoss:null,wr=closed.length?wins/closed.length*100:null;
+ const recent=closed.filter(x=>x.closeTime>=Date.now()-24*3600000),activeDays=new Set(closed.map(x=>new Date(x.closeTime).toISOString().slice(0,10))).size;
+ return {closedTrades:closed.length,wins,losses,wr,pf,realizedPnl:realized,grossWin,grossLoss,maxDrawdown:maxDD,activeDays,recentClosed:recent.length,recognizedFills:recognized,unknownFills:unknown,reversalFills:reversals,invalidFills:invalid,openBooks:[...books].filter(([,b])=>b.size>0).map(([coin,b])=>({coin,...b}))};
 }
 
 function quality(perf,lb){
@@ -141,32 +139,6 @@ async function stateFor(address){return hl({type:'clearinghouseState',user:addre
 function positions(state){return (state?.assetPositions||[]).map(x=>x?.position||x).filter(p=>Math.abs(num(p?.szi))>0).map(p=>({coin:String(p.coin),side:num(p.szi)>0?'LONG':'SHORT',size:Math.abs(num(p.szi)),entry:num(p.entryPx),value:Math.abs(num(p.positionValue)),unrealized:num(p.unrealizedPnl),liq:num(p.liquidationPx),leverage:num(p.leverage?.value||p.leverage),margin:num(p.marginUsed)}));}
 async function mids(){const x=await hl({type:'allMids'},'allMids');return x||{}}
 
-function fillPositionDelta(f){
- const dir=String(f?.dir||'').toLowerCase();
- const sz=Math.abs(num(f?.sz)); if(!(sz>0))return 0;
- if(dir.includes('open long'))return sz;
- if(dir.includes('open short'))return -sz;
- if(dir.includes('close long'))return -sz;
- if(dir.includes('close short'))return sz;
- const start=num(f?.startPosition);
- if(dir==='buy'||dir==='buy long'||dir==='long')return start<0?-sz:sz;
- if(dir==='sell'||dir==='sell short'||dir==='short')return start>0?-sz:-sz;
- if(dir.includes('long > short'))return -Math.max(sz,Math.abs(start)+sz);
- if(dir.includes('short > long'))return Math.max(sz,Math.abs(start)+sz);
- return 0;
-}
-function latestOpenAdds(fills){
- const out=[];
- for(const f of fills){
-   const notional=fillNotional(f); if(notional<MIN_NOTIONAL)continue;
-   const start=num(f?.startPosition); const delta=fillPositionDelta(f); const after=start+delta;
-   const increasing=Math.abs(after)>Math.abs(start)+1e-10;
-   const explicit=/open long|open short|long > short|short > long/i.test(String(f?.dir||''));
-   if(!increasing&&!explicit)continue;
-   out.push({...f,__positionDelta:delta,__positionBefore:start,__positionAfter:after,__isAdd:start!==0});
- }
- return out.sort((a,b)=>num(b.time)-num(a.time));
-}
 function makeSignal(trader,perfQ,pos,fill,mid){
  const side=pos.side;const entry=num(pos.entry)||num(fill.px);if(!(entry>0)||!(mid>0))return null;
  const distance=side==='LONG'?(mid/entry-1)*100:(1-mid/entry)*100;
@@ -180,13 +152,41 @@ function makeSignal(trader,perfQ,pos,fill,mid){
  return {trader,side,coin:pos.coin,entry,mark:mid,distancePct:distance,absDistancePct:absDist,sl,tp,rr:R,ageMin:age,notional:pos.value||fillNotional(fill),entryReady,reason:reasons.join('|')||'VERIFIED_POSITION_WITHIN_ENTRY_WINDOW'};
 }
 
+function classifyError(e){
+ const m=String(e?.message||e||'');
+ if(/HTTP_429/.test(m))return 'HTTP_429_RATE_LIMIT';
+ if(/HTTP_5\d\d/.test(m))return 'HTTP_5XX';
+ if(/AbortError|timeout/i.test(m))return 'TIMEOUT';
+ if(/FILLS_NOT_ARRAY/.test(m))return 'FILLS_SCHEMA';
+ if(/state:.*HTTP_/.test(m))return 'STATE_API';
+ if(/fills:.*HTTP_/.test(m))return 'FILLS_API';
+ return 'OTHER';
+}
 async function auditTrader(c,start,end,midsMap){
- const fills=await fillsFor(c.address,start,end);const perf=reconstruct(fills);const q=quality(perf,c.lb);const state=await stateFor(c.address);const ps=positions(state);const posByCoin=new Map(ps.map(p=>[p.coin,p]));
- const adds=latestOpenAdds(fills);let candidate=null;let block='NO_CURRENT_POSITION';
- for(const f of adds){const p=posByCoin.get(String(f.coin));if(!p)continue;const mid=num(midsMap[String(f.coin)]);const sig=makeSignal({...c,quality:q,performance:perf},perf,q,p,f,mid);if(sig?.entryReady){candidate=sig;break}if(sig?.blocked&&block==='NO_CURRENT_POSITION')block=sig.blocked}
+ const diag={fills:0,fresh15:0,increasing:0,matched:0,entryWindow:0,qualityPass:false,signalPass:false};
+ const fills=await fillsFor(c.address,start,end);diag.fills=fills.length;
+ const perf=reconstruct(fills);const q=quality(perf,c.lb);diag.qualityPass=q.tier!=='C'&&!q.anomaly&&perf.closedTrades>=MIN_TRADES&&perf.wr>=MIN_WR&&q.ddPct<=MAX_DD&&(perf.pf===null||perf.pf>=MIN_PF);
+ const state=await stateFor(c.address);const ps=positions(state);const posByCoin=new Map(ps.map(p=>[p.coin,p]));
+ const adds=latestOpenAdds(fills);diag.fresh15=adds.filter(x=>x.__fresh).length;diag.increasing=adds.filter(x=>x.__positionDelta!==0&&Math.abs(x.__positionAfter)>Math.abs(x.__positionBefore)+1e-10).length;
+ let candidate=null;let block=ps.length?'POSITION_EXISTS_BUT_NO_FRESH_OPEN_ADD':'NO_CURRENT_POSITION';
+ for(const f of adds){
+   if(!f.__fresh)continue;
+   const p=posByCoin.get(String(f.coin));if(!p)continue;
+   diag.matched++;
+   const mid=num(midsMap[String(f.coin)]);const sig=makeSignal({...c,quality:q,performance:perf},perf,q,p,f,mid);
+   if(sig?.absDistancePct<=WATCH_MAX&&sig?.absDistancePct<=ENTRY_MAX)diag.entryWindow++;
+   if(sig?.entryReady&&diag.qualityPass){candidate=sig;break}
+   if(sig?.blocked)block=sig.blocked;
+   else if(sig?.reason)block=sig.reason;
+ }
  if(!candidate&&ps.length===0)block='NO_CURRENT_POSITION';
- if(!candidate&&ps.length>0&&block==='NO_CURRENT_POSITION')block='POSITION_EXISTS_BUT_NO_FRESH_OPEN_ADD';
- return {...c,performance:perf,quality:q,positions:ps,latestAdd:adds[0]||null,currentSignal:candidate,blockReason:block};
+ else if(!candidate&&diag.fresh15===0)block='NO_FRESH_POSITION_INCREASE_15M';
+ else if(!candidate&&diag.matched===0)block='FRESH_INCREASE_NO_LIVE_POSITION_MATCH';
+ else if(!candidate&&!diag.qualityPass)block='TRADER_QUALITY_GATE_FAILED';
+ else if(!candidate&&diag.entryWindow===0)block='ENTRY_DISTANCE_GT_0.75%';
+ else if(!candidate&&ps.length>0&&block==='POSITION_EXISTS_BUT_NO_FRESH_OPEN_ADD')block='POSITION_EXISTS_BUT_NO_FRESH_OPEN_ADD';
+ diag.signalPass=Boolean(candidate);
+ return {...c,performance:perf,quality:q,positions:ps,latestAdd:adds[0]||null,currentSignal:candidate,blockReason:block,diagnostics:diag};
 }
 
 function sortCandidates(rows){return rows.slice().sort((a,b)=>{
@@ -195,7 +195,7 @@ function sortCandidates(rows){return rows.slice().sort((a,b)=>{
  return num(b.performance.closedTrades)-num(a.performance.closedTrades);
 })}
 function fmtTrader(x){const p=x.performance,q=x.quality;return `${short(x.address)} | ${q.tier} ${q.score.toFixed(1)} | ACT ${p.closedTrades} | WR ${finite(p.wr)?p.wr.toFixed(1)+'%':'—'} | PF ${p.pf===null?'—':p.pf.toFixed(2)} | PnL ${usd(p.realizedPnl)} | DD ${pct(q.ddPct,1)}`}
-function signalLine(s,i){return [`${i}. ${s.trader.name||short(s.trader.address)} | ${short(s.trader.address)}`,`   ${s.side} ${s.coin} | Entry ${px(s.entry)} | Mark ${px(s.mark)} | Dist ${pct(s.distancePct,2)}`,`   SL ${px(s.sl)} | TP ${px(s.tp)} | RR ${s.rr.toFixed(2)} | Age ${s.ageMin.toFixed(1)}m | Notional ${usd(s.notional)}`,`   Trader ${s.trader.quality.tier}-TIER ${s.trader.quality.score.toFixed(1)} | WR ${s.trader.performance.wr.toFixed(1)}% | PF ${s.trader.performance.pf===null?'—':s.trader.performance.pf.toFixed(2)} | Trades ${s.trader.performance.closedTrades}`,`   VALID: CURRENT_POSITION_VERIFIED + FRESH_OPEN_ADD + ENTRY_WINDOW + RR_GATE`];}
+function signalLine(s,i){return [`${i}. ${s.trader.name||short(s.trader.address)} | ${short(s.trader.address)}`,`   ${s.side} ${s.coin} | Entry ${px(s.entry)} | Mark ${px(s.mark)} | Dist ${pct(s.distancePct,2)}`,`   SL ${px(s.sl)} | TP ${px(s.tp)} | RR ${s.rr.toFixed(2)} | Age ${s.ageMin.toFixed(1)}m | Notional ${usd(s.notional)}`,`   Trader ${s.trader.quality.tier}-TIER ${s.trader.quality.score.toFixed(1)} | WR ${finite(s.trader.performance.wr)?s.trader.performance.wr.toFixed(1)+'%':'—'} | PF ${s.trader.performance.pf===null?'—':s.trader.performance.pf.toFixed(2)} | Trades ${s.trader.performance.closedTrades}`,`   VALID: CURRENT_POSITION_VERIFIED + FRESH_OPEN_ADD + ENTRY_WINDOW + RR_GATE`];}
 
 async function telegram(text){if(!TG_TOKEN||!TG_CHAT){console.log('[TELEGRAM] credentials missing');return}try{const crypto=await import('node:crypto');const hash=crypto.createHash('sha256').update(text.replace(/^🕒.*$/m,'<TIME>')).digest('hex');let old={};try{old=JSON.parse(await fs.readFile(TG_STATE,'utf8'))}catch{}if(old.hash===hash&&Date.now()-num(old.sentAt)<10*60000)return;for(let i=0;i<text.length;i+=3800)await json(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:TG_CHAT,text:text.slice(i,i+3800),disable_web_page_preview:true})},'telegram');await fs.mkdir(path.dirname(TG_STATE),{recursive:true});await fs.writeFile(TG_STATE,JSON.stringify({hash,sentAt:Date.now()}))}catch(e){console.error('[TELEGRAM]',e.message)}}
 
@@ -206,14 +206,17 @@ async function main(){
  // Preserve the working discovery contract: actual numeric trader IDs, not the source-name string.
  const ranked=lb.rows.map(r=>{const a=String(r?.ethAddress||r?.address||r?.user||'');const m=leaderboardMetrics(r);return {...r,address:a,name:String(r?.displayName||r?.name||r?.username||''),lb:m}}).filter(r=>/^0x[a-fA-F0-9]{40}$/.test(r.address)).sort((a,b)=>(b.lb.day.vlm*0.000002+b.lb.week.vlm*0.0000005+Math.max(0,b.lb.day.pnl)*0.002)-(a.lb.day.vlm*0.000002+a.lb.week.vlm*0.0000005+Math.max(0,a.lb.day.pnl)*0.002)).slice(0,AUDIT_LIMIT);
  console.log(`[DISCOVERY] leaderboardRows=${lb.rows.length} validTraderIds=${lb.traders.length} audit=${ranked.length}`);
- const midsMap=await mids();const audited=[];let errors=0;
- for(const c of ranked){try{audited.push(await auditTrader(c,start,end,midsMap))}catch(e){errors++;console.log(`[AUDIT][ERROR] ${short(c.address)} ${String(e?.message||e).slice(0,180)})`)}await sleep(BETWEEN_MS)}
- const complete=audited.filter(x=>x.performance.closedTrades>0);const eligible=complete.filter(x=>x.quality.tier!=='C'&&!x.quality.anomaly&&x.performance.closedTrades>=MIN_TRADES&&x.performance.wr>=MIN_WR&&x.quality.ddPct<=MAX_DD&&(x.performance.pf===null||x.performance.pf>=MIN_PF));
+ const midsMap=await mids();const audited=[];let errors=0;const errorBreakdown={};
+ for(const c of ranked){try{audited.push(await auditTrader(c,start,end,midsMap))}catch(e){errors++;const k=classifyError(e);errorBreakdown[k]=(errorBreakdown[k]||0)+1;console.log(`[AUDIT][ERROR] ${short(c.address)} | ${k} | ${String(e?.message||e).slice(0,180)}`)}await sleep(BETWEEN_MS)}
+ const complete=audited.filter(x=>x.performance.closedTrades>0);const eligible=audited.filter(x=>x.diagnostics?.qualityPass);
  const watch=sortCandidates(eligible).slice(0,TOP_WATCH);const signals=watch.map(x=>x.currentSignal).filter(Boolean).sort((a,b)=>b.trader.quality.score-a.trader.quality.score).slice(0,MAX_SIGNALS);
  const used=new Set(signals.map(s=>s.trader.address));
  const report=[];
  report.push('🌐 GLOBAL FUTURES PRO HUNTER',`🧠 ${VERSION}`,`🔧 ${BUILD}`,'📡 READ-ONLY | NO ORDERS | NO AUTO-COPY | FUTURES ONLY','━━━━━━━━━━━━━━━━━━');
- report.push(`🔎 Leaderboard: ${lb.rows.length} | Valid trader IDs: ${lb.traders.length} | Audited: ${audited.length} | Complete: ${complete.length} | Errors: ${errors}`,`🎯 Quality eligible: ${eligible.length} | Watchlist: ${watch.length} | Actionable signals: ${signals.length}/${MAX_SIGNALS}`,`🧾 TRADE RECON: actual closed lifecycles | partial fills aggregated | PF/WR anomaly guard ON`,`🛡 CURRENT POSITION: Hyperliquid clearinghouseState ONLY | stale fills cannot create a position`,`⚡ SIGNAL: fresh open activity ≤${FRESH_MIN}m | entry distance ≤${ENTRY_MAX}% | SL ${SL_PCT}% | TP ${TP_R}R | RR ≥${MIN_RR}`,'');
+ const diagRows=audited.map(x=>x.diagnostics||{});const dsum=k=>diagRows.reduce((a,x)=>a+num(x[k]),0);const errText=Object.entries(errorBreakdown).map(([k,v])=>`${k}=${v}`).join(' | ')||'none';
+ report.push(`🔎 Leaderboard: ${lb.rows.length} | Valid trader IDs: ${lb.traders.length} | Audited: ${audited.length} | Complete: ${complete.length} | Errors: ${errors}`,
+ `🧪 AUDIT PIPELINE: fills=${dsum('fills')} | fresh≤${DIAG_WINDOW_MIN}m=${dsum('fresh15')} | pos-increase=${dsum('increasing')} | live-match=${dsum('matched')} | entry-window=${dsum('entryWindow')} | quality-pass=${diagRows.filter(x=>x.qualityPass).length}`,
+ `🧯 ERROR BREAKDOWN: ${errText}`,`🎯 Quality eligible: ${eligible.length} | Watchlist: ${watch.length} | Actionable signals: ${signals.length}/${MAX_SIGNALS}`,`🧾 TRADE RECON: actual closed lifecycles | partial fills aggregated | PF/WR anomaly guard ON`,`🛡 CURRENT POSITION: Hyperliquid clearinghouseState ONLY | stale fills cannot create a position`,`⚡ SIGNAL: fresh open activity ≤${FRESH_MIN}m | entry distance ≤${ENTRY_MAX}% | SL ${SL_PCT}% | TP ${TP_R}R | RR ≥${MIN_RR}`,'');
  report.push('📡 SOURCE STATUS',`HYPERLIQUID: OK | FULL_SIGNAL | discovered=${lb.traders.length} | audited=${audited.length}`,'');
  report.push('👑 TOP VERIFIED TRADERS');
  watch.slice(0,TOP_WATCH).forEach((x,i)=>report.push(`${i+1}. ${fmtTrader(x)} | ${x.currentSignal?'POSITION READY':'BLOCK '+x.blockReason}`));
@@ -221,8 +224,8 @@ async function main(){
  report.push('','🔥 ACTIONABLE NOW');
  if(signals.length){signals.forEach((s,i)=>report.push(...signalLine(s,i+1),'━━━━━━━━━━━━━━━━━━'))}else report.push('No verified trader has a fresh copyable-quality current position this cycle.');
  report.push('','🧱 TOP BLOCK REASONS');
- sortCandidates(audited.filter(x=>!used.has(x.address))).slice(0,10).forEach(x=>report.push(`${short(x.address)} | ${x.quality.tier} ${x.quality.score.toFixed(1)} | ${x.blockReason||x.quality.reasons.join(' | ')||'NOT_SIGNAL_READY'}`));
- report.push('','🛡️ V2.1.2 CONTRACTS',`• Discovery returns real Hyperliquid trader IDs and reports numeric discovered count.`,`• Performance unit = actual closed lifecycle; no synthetic trades.`,`• PF unavailable is shown as — and never becomes LOW_PF.`,`• Current position = clearinghouseState; position side/entry must exist now.`,`• Signal requires fresh open activity + live position + entry distance + RR.`,`• Null metrics are rendered as — and never passed to toFixed().`,`• Multiple independent traders/signals may be emitted; MAX_SIGNALS=${MAX_SIGNALS}.`,`⏱ Runtime: ${((Date.now()-started)/1000).toFixed(1)}s`,`🕒 ${new Date().toISOString()}`);
- const text=report.join('\n');console.log(text);await fs.mkdir(path.dirname(STATE_FILE),{recursive:true});await fs.writeFile(STATE_FILE,JSON.stringify({version:VERSION,generatedAt:Date.now(),discovered:lb.traders.length,audited:audited.length,eligible:eligible.length,signals:signals.map(s=>({address:s.trader.address,coin:s.coin,side:s.side,entry:s.entry,mark:s.mark,sl:s.sl,tp:s.tp,rr:s.rr,ageMin:s.ageMin})),watch:watch.map(x=>({address:x.address,score:x.quality.score,tier:x.quality.tier})),errors},null,2));await telegram(text);
+ sortCandidates(audited.filter(x=>!used.has(x.address))).slice(0,10).forEach(x=>{const d=x.diagnostics||{};report.push(`${short(x.address)} | ${x.quality.tier} ${x.quality.score.toFixed(1)} | ${x.blockReason||x.quality.reasons.join(' | ')||'NOT_SIGNAL_READY'} | fresh=${d.fresh15||0} match=${d.matched||0}`)});
+ report.push('','🛡️ V2.1.4 CONTRACTS',`• Discovery returns real Hyperliquid trader IDs and reports numeric discovered count.`,`• Performance unit = actual closed lifecycle; no synthetic trades.`,`• PF unavailable is shown as — and never becomes LOW_PF.`,`• Current position = clearinghouseState; position side/entry must exist now.`,`• Signal requires fresh open activity + live position + entry distance + RR.`,`• Null metrics are rendered as — and never passed to toFixed().`,`• Multiple independent traders/signals may be emitted; MAX_SIGNALS=${MAX_SIGNALS}.`,`• Audit diagnostics expose fills → fresh activity → position match → entry window → quality.`,`• HTTP 429/5xx/timeout requests use bounded exponential retry/backoff.`,`• Freshness is real fill time ≤${DIAG_WINDOW_MIN}m; no synthetic freshness is created.`,`⏱ Runtime: ${((Date.now()-started)/1000).toFixed(1)}s`,`🕒 ${new Date().toISOString()}`);
+ const text=report.join('\n');console.log(text);await fs.mkdir(path.dirname(STATE_FILE),{recursive:true});await fs.writeFile(STATE_FILE,JSON.stringify({version:VERSION,generatedAt:Date.now(),discovered:lb.traders.length,audited:audited.length,eligible:eligible.length,signals:signals.map(s=>({address:s.trader.address,coin:s.coin,side:s.side,entry:s.entry,mark:s.mark,sl:s.sl,tp:s.tp,rr:s.rr,ageMin:s.ageMin})),watch:watch.map(x=>({address:x.address,score:x.quality.score,tier:x.quality.tier,blockReason:x.blockReason,diagnostics:x.diagnostics})),errors,errorBreakdown,pipeline:{fills:dsum('fills'),fresh15:dsum('fresh15'),increasing:dsum('increasing'),matched:dsum('matched'),entryWindow:dsum('entryWindow'),qualityPass:diagRows.filter(x=>x.qualityPass).length}},null,2));await telegram(text);
 }
 main().catch(async e=>{console.error(`[GFTSH][FATAL] ${e.stack||e}`);await telegram(`🌐 GLOBAL FUTURES PRO HUNTER\n🧠 ${VERSION}\n💥 FATAL: ${String(e?.message||e).slice(0,1000)}`);process.exitCode=1});

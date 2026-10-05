@@ -1,27 +1,35 @@
-GFTSH V2.1.2
+GFTSH V2.1.4
+GLOBAL FUTURES ACTUAL-TRADE RECON / DIAGNOSTIC MULTI-SIGNAL
 
-Worker filename (must remain exact):
-crypto_whale_signal_engine.mjs
-
-Workflow:
-.github/workflows/crypto-whale-signal-engine.yml
+Files:
+- crypto_whale_signal_engine.mjs
+- .github/workflows/crypto-whale-signal-engine.yml
 
 Mode:
-READ-ONLY / NO ORDERS / NO AUTO-COPY / FUTURES ONLY
+- READ-ONLY
+- FUTURES ONLY
+- NO ORDERS
+- NO AUTO-COPY
 
-Production environment secrets:
-TELEGRAM_TOKEN = your Telegram bot token
-TELEGRAM_CHAT_ID = your Telegram chat ID
-HYPERLIQUID_API_URL = optional; leave unset to use https://api.hyperliquid.xyz/info
-HL_LEADERBOARD_URL = optional; leave unset to use https://stats-data.hyperliquid.xyz/Mainnet/leaderboard
+V2.1.4 changes:
+1. Preserves the working Hyperliquid leaderboard discovery contract.
+2. Activity-first audit ranking using current-day and weekly activity.
+3. Robust fill position reconstruction using dir + startPosition + sz + px + time.
+4. Supports opens, adds, reductions, closes and direction flips without fabricating freshness.
+5. clearinghouseState remains the sole authority for the live position.
+6. Fresh signal activity remains <=15 minutes.
+7. Adds an explicit audit pipeline: fills -> fresh activity -> position increase -> live-position match -> entry window -> quality gate.
+8. Adds detailed error buckets for HTTP 429, HTTP 5xx, timeout, fills schema/API, state API and other failures.
+9. Adds bounded exponential retry/backoff for transient Hyperliquid failures.
+10. Separates trader-quality eligibility from current-position readiness.
+11. Supports up to 5 independent actionable signals.
+12. Nullable WR/PF/price values are rendered safely; no unsafe toFixed() calls.
 
-The engine never fabricates a signal. A signal requires:
-1) real Hyperliquid trader ID from leaderboard discovery
-2) actual reconstructed closed-trade evidence
-3) trader quality gate
-4) current position from clearinghouseState
-5) fresh open activity
-6) entry distance gate
-7) model SL/TP and RR gate
+Required GitHub Environment:
+production
 
-Multiple independent signals can be emitted, up to 5 per cycle by default.
+Secrets:
+- TELEGRAM_TOKEN
+- TELEGRAM_CHAT_ID
+- HYPERLIQUID_API_URL (optional; defaults to Hyperliquid info API)
+- HL_LEADERBOARD_URL (optional; defaults to Hyperliquid Mainnet leaderboard)
