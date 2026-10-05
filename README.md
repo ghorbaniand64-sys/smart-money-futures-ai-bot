@@ -1,46 +1,46 @@
-# GFTSH V1.9 — Global Futures Active-Trader Hunter
+# GFTSH V2.1 — Global Futures Actual Trade Reconstruction Hunter
 
-Read-only futures intelligence engine. No orders, no API trading keys, no auto-copy.
+Exact worker filename:
+`crypto_whale_signal_engine.mjs`
 
-## Core objective
-Find traders who are:
-- active across many trading days
-- high trade-count / high average trades per active day
-- high win-rate (low observed error rate)
-- positive profit factor
-- controlled drawdown
-- relatively short holding periods
-- currently opening fresh positions when an actionable signal is emitted
+Scope:
+- FUTURES ONLY
+- READ-ONLY
+- NO ORDERS
+- NO AUTO-COPY
 
-## Global architecture
-Discovery is global across supported public sources. A venue can remain in the global watchlist even when it cannot expose a verified public live position. Only verified live positions can become actionable signals.
+## V2.1 core correction
+V2.0 treated individual Hyperliquid fills with non-zero `closedPnl` as individual trades. V2.1 does not. It reconstructs position lifecycles from fills using `startPosition`, `dir`, size and timestamps, and counts a completed lifecycle as one actual trade.
 
-## Hyperliquid verification
-Hyperliquid is the current fully verified public signal source. The engine reconstructs 7D trade statistics from public fills and checks current positions before emitting a signal.
+## V2.1 upgrades
+- `aggregateByTime: true` to reduce partial-fill inflation.
+- Paginated `userFillsByTime` retrieval, bounded to protect runtime/rate limits.
+- Actual completed-trade reconstruction by coin and position direction.
+- Partial reductions and adds are included in the same lifecycle instead of becoming separate trades.
+- Reversal (`LONG -> SHORT` / `SHORT -> LONG`) closes the old lifecycle and starts a new one.
+- PF is calculated from reconstructed trade PnL, not raw fill count.
+- WR is calculated from reconstructed completed trades.
+- No-loss samples are explicitly rejected from strong tiers.
+- PF > 20, WR=100% without loss samples, low loss count, high fill/trade ratio and one-day PnL concentration are flagged as anomalies.
+- `DDcurve` remains a reconstructed trade-PnL curve, NOT true account drawdown.
+- Follow Score is separate from current-position signal gating.
+- Current position verification is limited to the strongest verified candidates.
+- Freshness uses the latest fill associated with the current open position.
+- Discovery remains multi-venue; actionable signals require independently verified current position data.
 
-## Candidate selection
-Hyperliquid audit is stratified across:
-1. quality score
-2. trades/day activity
-3. ROI
-4. PnL
-
-This prevents the engine from repeatedly auditing only one leaderboard slice.
-
-## Default quality gate
-- 7D trades >= 40
-- active days >= 5
-- average trades/day >= 4
-- win rate >= 58%
-- profit factor >= 1.8
-- median hold <= 6h
-- average hold <= 12h
-- max drawdown <= 30%
-
-## Default live signal gate
-- current position
-- position freshness <= 15m
+## Signal gate
+- Tier S or A
+- actual completed-trade sample >= 15
+- loss sample >= 3
+- no quality anomaly flags
+- current position exists
+- latest activity <= 15 minutes
 - entry distance <= 0.5%
-- modeled RR >= 1.5
+- model SL = 0.5%
+- model TP = 2R
 
-TP/SL are model levels for signal framing only; the engine does not place or modify orders.
+## Required GitHub Environment secrets
+- `TELEGRAM_TOKEN`
+- `TELEGRAM_CHAT_ID`
+
+No private exchange API keys are required.
