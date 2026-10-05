@@ -39,7 +39,7 @@ const VENUES={
  BINGX:{label:'BINGX',kind:'CEX',cap:'UNSUPPORTED'},COINEX:{label:'COINEX',kind:'CEX',cap:'UNSUPPORTED'},
  DYDX:{label:'DYDX',kind:'DEX',cap:'UNSUPPORTED'},PARADEX:{label:'PARADEX',kind:'DEX',cap:'UNSUPPORTED'}
 };
-function n(v,d=NaN){const x=Number(v);return Number.isFinite(x)?x:d}
+function n(v,d=NaN){if(v===null||v===undefined||v==='')return d;const x=Number(v);return Number.isFinite(x)?x:d}
 function ok(v){return Number.isFinite(n(v))}
 function pct(v,d=1){return ok(v)?`${n(v).toFixed(d)}%`:'—'}
 function trunc(s,nc=18){s=String(s??'');return s.length>nc?s.slice(0,Math.ceil(nc/2))+'…'+s.slice(-Math.floor(nc/2)):s}
@@ -244,18 +244,18 @@ function report(statuses,all,watch,signals,blocked,runtime,stats){
  if(watch.length){
   watch.slice(0,TOP_WATCH).forEach((t,i)=>{
    const s=t.stats,d=activityPerDay(t);
-   L.push(`${i+1}. ${t.venue} ${trunc(t.name,20)} | ${t.tier}-TIER | Score ${followScore(t).toFixed(1)} | ACT ${ok(s.trades7d)?s.trades7d:'—'} | FILL ${ok(s.fillCount7d)?s.fillCount7d:'—'} | ${ok(d)?d.toFixed(1):'—'}/day | WR ${pct(s.wr)} | PF ${ok(s.pf)?s.pf.toFixed(2):'—'} | DDcurve ${pct(s.dd)}`);
+   L.push(`${i+1}. ${t.venue} ${trunc(t.name,20)} | ${t.tier}-TIER | Score ${followScore(t).toFixed(1)} | ACT ${ok(s.trades7d)?s.trades7d:'—'} | FILL ${ok(s.fillCount7d)?s.fillCount7d:'—'} | ${ok(d)?d.toFixed(1):'—'}/day | WR ${pct(s.wr)} | PF ${ok(s.pf)?n(s.pf).toFixed(2):'—'} | DDcurve ${pct(s.dd)}`);
   });
  } else L.push('No verified follow candidates yet.');
  L.push('', '🔥 ACTIONABLE NOW');
  if(signals.length){
   signals.slice(0,TOP_SIGNALS).forEach((t,i)=>{
    const p=t.position,s=t.stats,d=activityPerDay(t);
-   L.push(`${i+1}. ${t.venue} ${trunc(t.name)} | ${t.tier}-TIER ${t.followScore.toFixed(1)} | ${p.side} ${p.symbol} | Entry ${p.entry} | Now ${p.mark} | Dist ${pct(p.distancePct)} | Age ${((Date.now()-p.lastActivityAt)/60000).toFixed(1)}m | ACT ${s.trades7d} | WR ${pct(s.wr)} | ${d.toFixed(1)}/day | PF ${s.pf.toFixed(2)} | SL ${p.sl.toFixed(6)} | TP ${p.tp.toFixed(6)} | RR ${p.rr.toFixed(2)}`);
+   L.push(`${i+1}. ${t.venue} ${trunc(t.name)} | ${t.tier}-TIER ${n(t.followScore).toFixed(1)} | ${p.side} ${p.symbol} | Entry ${p.entry} | Now ${p.mark} | Dist ${pct(p.distancePct)} | Age ${((Date.now()-p.lastActivityAt)/60000).toFixed(1)}m | ACT ${s.trades7d} | WR ${pct(s.wr)} | ${ok(d)?n(d).toFixed(1):'—'}/day | PF ${ok(s.pf)?n(s.pf).toFixed(2):'—'} | SL ${p.sl.toFixed(6)} | TP ${p.tp.toFixed(6)} | RR ${p.rr.toFixed(2)}`);
   });
  } else L.push('No verified trader has a fresh, copyable-quality current position this cycle.');
  L.push('', '🧱 TOP WATCH / BLOCK REASONS');
- blocked.slice(0,10).forEach(t=>L.push(`${t.venue} ${trunc(t.name,20)} | ${t.tier||'—'} | Score ${ok(t.followScore)?t.followScore.toFixed(1):'—'} | ${t.reasons.join(' | ')}`));
+ blocked.slice(0,10).forEach(t=>L.push(`${t.venue} ${trunc(t.name,20)} | ${t.tier||'—'} | Score ${ok(t.followScore)?n(t.followScore).toFixed(1):'—'} | ${t.reasons.join(' | ')}`));
  L.push('', 'ℹ️ Discovery-only venues remain monitored but never become actionable without independently verified public position data.');
  return L.join('\n');
 }
