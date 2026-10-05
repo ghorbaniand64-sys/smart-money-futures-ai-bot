@@ -1,6 +1,6 @@
 {
-  "version": "GFTSH-V1.9.0-GLOBAL-FUTURES-ACTIVE-TRADER-HUNTER",
-  "updatedAt": 1791178719267,
+  "version": "GFTSH-V2.0.0-GLOBAL-FUTURES-PRO-HUNTER",
+  "updatedAt": 1791185019723,
   "statuses": [
     {
       "source": "HYPERLIQUID",
@@ -26,9 +26,9 @@
     {
       "source": "BYBIT",
       "class": "DISCOVERY",
-      "state": "UNAVAILABLE",
+      "state": "EMPTY",
       "discovered": 0,
-      "error": "HTTP_403:<HTML><HEAD>\n<TITLE>Access Denied</TITLE>\n</HEAD><BODY>\n<H1>Access Denied</H1>\n \nYou don't have permission to access \"http&#58;&#47;&#47;www&#46;bybit&#46;com&#47;copyTrading&#47;en&#47;leader&#45;board\" on this server.<"
+      "error": "PUBLIC_PAGE_NO_MACHINE_READABLE_TRADER_IDS"
     },
     {
       "source": "BITGET",
@@ -95,10 +95,321 @@
     }
   ],
   "discovered": 629,
-  "hlAuditCandidates": 100,
+  "auditCandidates": 100,
   "audited": 100,
-  "qualityPass": 1,
-  "positionChecked": 0,
-  "signals": 0,
-  "top": []
+  "complete": 32,
+  "errors": 63,
+  "watchlist": [
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "traderId": "0x92a7bc9b107bdd35e3db97dc171d5a8c1ee33fea",
+      "name": "0x92a7bc9b107bdd35e3db97dc171d5a8c1ee33fea",
+      "stats": {
+        "trades7d": 622,
+        "activeDays": 6,
+        "wr": 96.94533762057877,
+        "pf": 83.6935673127322,
+        "pnl7d": 159146.451312,
+        "dd": 1.1807272166343956,
+        "ddKnown": false,
+        "ddUsd": 1732.3320000000022,
+        "avgHoldH": 40.794423199754135,
+        "medianHoldH": 55.2224025,
+        "roi7d": 42.24037829,
+        "aum": 535910.244044,
+        "dailyConsistency": 1,
+        "dailyLossRate": 0
+      },
+      "coverage": "COMPLETE",
+      "discoveredAt": 1791184991682,
+      "audit": {
+        "fills7d": 1243,
+        "verifiedAt": 1791185003638,
+        "sampleQuality": 1
+      },
+      "tier": "S",
+      "followScore": 98
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "traderId": "0xa445a0a15b1d50fa0c4bfe6796d9447e0da5329d",
+      "name": "0xa445a0a15b1d50fa0c4bfe6796d9447e0da5329d",
+      "stats": {
+        "trades7d": 964,
+        "activeDays": 2,
+        "wr": 98.65145228215768,
+        "pf": 32040.934198670064,
+        "pnl7d": 650473.05748,
+        "dd": 0.0031209102228515135,
+        "ddKnown": false,
+        "ddUsd": 1.6771942100094748,
+        "avgHoldH": 2.1030378805916308,
+        "medianHoldH": 0.24284694444444443,
+        "roi7d": 3.26520815,
+        "aum": 20571708.133825,
+        "dailyConsistency": 1,
+        "dailyLossRate": 0
+      },
+      "coverage": "COMPLETE",
+      "discoveredAt": 1791184991683,
+      "audit": {
+        "fills7d": 1955,
+        "verifiedAt": 1791185001187,
+        "sampleQuality": 1
+      },
+      "tier": "S",
+      "followScore": 95
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "traderId": "0xf9faba57a81d1575d3e506dd3eafe7db6f2a3275",
+      "name": "0xf9faba57a81d1575d3e506dd3eafe7db6f2a3275",
+      "stats": {
+        "trades7d": 947,
+        "activeDays": 2,
+        "wr": 76.4519535374868,
+        "pf": 6.374106319116208,
+        "pnl7d": 265198.226181,
+        "dd": 13.559636135758247,
+        "ddKnown": false,
+        "ddUsd": 22443.375219999958,
+        "avgHoldH": 6.340004519323703,
+        "medianHoldH": 4.660325,
+        "roi7d": 27.28543469,
+        "aum": 1237138.857398,
+        "dailyConsistency": 1,
+        "dailyLossRate": 0
+      },
+      "coverage": "COMPLETE",
+      "discoveredAt": 1791184991683,
+      "audit": {
+        "fills7d": 2000,
+        "verifiedAt": 1791185004714,
+        "sampleQuality": 1
+      },
+      "tier": "S",
+      "followScore": 94.90095125
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "traderId": "0xe02e420ec55b4e03924d77c7b342c012541ba2d3",
+      "name": "0xe02e420ec55b4e03924d77c7b342c012541ba2d3",
+      "stats": {
+        "trades7d": 409,
+        "activeDays": 5,
+        "wr": 77.99511002444987,
+        "pf": 4.374839873963333,
+        "pnl7d": 165115.144591,
+        "dd": 18.278984729816365,
+        "ddKnown": false,
+        "ddUsd": 10568.609199999994,
+        "avgHoldH": 48.876218354063056,
+        "medianHoldH": 68.50640111111112,
+        "roi7d": 29.210993769999998,
+        "aum": 5888308.460061,
+        "dailyConsistency": 0.8,
+        "dailyLossRate": 0.2
+      },
+      "coverage": "COMPLETE",
+      "discoveredAt": 1791184991683,
+      "audit": {
+        "fills7d": 939,
+        "verifiedAt": 1791185004747,
+        "sampleQuality": 1
+      },
+      "tier": "S",
+      "followScore": 93.78864749848117
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "traderId": "0xb49fa1dd045ab41250293540a271fce5a7168258",
+      "name": "0xb49fa1dd045ab41250293540a271fce5a7168258",
+      "stats": {
+        "trades7d": 915,
+        "activeDays": 3,
+        "wr": 84.59016393442623,
+        "pf": 3.464216302283372,
+        "pnl7d": 32292.796674,
+        "dd": 22.400348287078238,
+        "ddKnown": false,
+        "ddUsd": 19611.074197999907,
+        "avgHoldH": 8.013494707114408,
+        "medianHoldH": 6.338161944444445,
+        "roi7d": 32.20261898,
+        "aum": 132572.828856,
+        "dailyConsistency": 1,
+        "dailyLossRate": 0
+      },
+      "coverage": "COMPLETE",
+      "discoveredAt": 1791184991683,
+      "audit": {
+        "fills7d": 2000,
+        "verifiedAt": 1791185004464,
+        "sampleQuality": 1
+      },
+      "tier": "S",
+      "followScore": 92.85430951101137
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "traderId": "0xc8b527864ef2ad6dc49de7e99943a3a76ad48891",
+      "name": "0xc8b527864ef2ad6dc49de7e99943a3a76ad48891",
+      "stats": {
+        "trades7d": 2000,
+        "activeDays": 1,
+        "wr": 91.14999999999999,
+        "pf": 24.7630737941704,
+        "pnl7d": 1895706.193082,
+        "dd": 3.8815244174252124,
+        "ddKnown": false,
+        "ddUsd": 76401.57876,
+        "avgHoldH": null,
+        "medianHoldH": null,
+        "roi7d": 8.94619737,
+        "aum": 23085684.105931,
+        "dailyConsistency": 1,
+        "dailyLossRate": 0
+      },
+      "coverage": "COMPLETE",
+      "discoveredAt": 1791184991682,
+      "audit": {
+        "fills7d": 2000,
+        "verifiedAt": 1791184998728,
+        "sampleQuality": 0.6666666666666666
+      },
+      "tier": "S",
+      "followScore": 91
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "traderId": "0x1ee7a73cb5b0b6b056d8138085b2009e6a6bedf5",
+      "name": "0x1ee7a73cb5b0b6b056d8138085b2009e6a6bedf5",
+      "stats": {
+        "trades7d": 1057,
+        "activeDays": 2,
+        "wr": 80.51087984862819,
+        "pf": 3.1548353331226364,
+        "pnl7d": 214163.394186,
+        "dd": 23.871145284558697,
+        "ddKnown": false,
+        "ddUsd": 38455.57125999991,
+        "avgHoldH": 4.391880364088648,
+        "medianHoldH": 2.6613508333333336,
+        "roi7d": 102.44454436999999,
+        "aum": 423216.360557,
+        "dailyConsistency": 1,
+        "dailyLossRate": 0
+      },
+      "coverage": "COMPLETE",
+      "discoveredAt": 1791184991682,
+      "audit": {
+        "fills7d": 2000,
+        "verifiedAt": 1791185001897,
+        "sampleQuality": 1
+      },
+      "tier": "S",
+      "followScore": 90.18832187456746
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "traderId": "0x0c4a3a7ac74d43732f9b5ea507f01ab72a381b19",
+      "name": "0x0c4a3a7ac74d43732f9b5ea507f01ab72a381b19",
+      "stats": {
+        "trades7d": 769,
+        "activeDays": 5,
+        "wr": 100,
+        "pf": null,
+        "pnl7d": 1298278.347576,
+        "dd": 0,
+        "ddKnown": false,
+        "ddUsd": 0,
+        "avgHoldH": 47.477831020334094,
+        "medianHoldH": 38.64901888888889,
+        "roi7d": 42.49810512,
+        "aum": 4353187.134793,
+        "dailyConsistency": 1,
+        "dailyLossRate": 0
+      },
+      "coverage": "COMPLETE",
+      "discoveredAt": 1791184991682,
+      "audit": {
+        "fills7d": 2000,
+        "verifiedAt": 1791184999287,
+        "sampleQuality": 0.8333333333333334
+      },
+      "tier": "A",
+      "followScore": 73.5
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "traderId": "0xb1ec7febea4f841d525785955b7fe0e812d6e86a",
+      "name": "0xb1ec7febea4f841d525785955b7fe0e812d6e86a",
+      "stats": {
+        "trades7d": 1143,
+        "activeDays": 2,
+        "wr": 100,
+        "pf": null,
+        "pnl7d": 793287.315937,
+        "dd": 0,
+        "ddKnown": false,
+        "ddUsd": 0,
+        "avgHoldH": 3.885602580899208,
+        "medianHoldH": 2.144102222222222,
+        "roi7d": 9.30350442,
+        "aum": 9320045.403135,
+        "dailyConsistency": 1,
+        "dailyLossRate": 0
+      },
+      "coverage": "COMPLETE",
+      "discoveredAt": 1791184991682,
+      "audit": {
+        "fills7d": 2000,
+        "verifiedAt": 1791185000951,
+        "sampleQuality": 0.8333333333333334
+      },
+      "tier": "A",
+      "followScore": 72.5
+    },
+    {
+      "source": "HYPERLIQUID",
+      "venue": "HYPERLIQUID",
+      "traderId": "0xec4a6f59960fb55a7fa49262e2628687b322cf62",
+      "name": "0xec4a6f59960fb55a7fa49262e2628687b322cf62",
+      "stats": {
+        "trades7d": 438,
+        "activeDays": 1,
+        "wr": 100,
+        "pf": null,
+        "pnl7d": 633714.453029,
+        "dd": 0,
+        "ddKnown": false,
+        "ddUsd": 0,
+        "avgHoldH": 3.526432671867064,
+        "medianHoldH": 1.0652897222222222,
+        "roi7d": 6.0707923599999996,
+        "aum": 11072458.116458,
+        "dailyConsistency": 1,
+        "dailyLossRate": 0
+      },
+      "coverage": "COMPLETE",
+      "discoveredAt": 1791184991681,
+      "audit": {
+        "fills7d": 2000,
+        "verifiedAt": 1791185001647,
+        "sampleQuality": 0.8333333333333334
+      },
+      "tier": "A",
+      "followScore": 72.5
+    }
+  ],
+  "actionable": []
 }
