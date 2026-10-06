@@ -449,7 +449,7 @@ function sortCandidates(rows){return rows.slice().sort((a,b)=>{
  if(b.quality.score!==a.quality.score)return b.quality.score-a.quality.score;
  return num(b.performance.closedTrades)-num(a.performance.closedTrades);
 })}
-function fmtTrader(x){const p=x.performance,q=x.quality;return `${short(x.address)} | ${q.tier} ${q.score.toFixed(1)} | Trades ${p.closedTrades} | WR ${finite(p.wr)?p.wr.toFixed(1)+'%':'—'} | PF ${p.pf===null?'—':p.pf.toFixed(2)} | DD ${pct(q.ddPct,1)} | PnL ${usd(p.realizedPnl)}`}
+function fmtTrader(x){const p=x.performance,q=x.quality;return `${short(x.address)} | ${q.tier} ${safeFixed(q.score,1)} | Trades ${p.closedTrades} | WR ${finite(p.wr)?safeFixed(p.wr,1)+'%':'—'} | PF ${safePF(p.pf)} | DD ${pct(q.ddPct,1)} | PnL ${usd(p.realizedPnl)}`}
 function signalLine(s,i){return [`${i}. ${s.trader.name||short(s.trader.address)} | ${short(s.trader.address)}`,`   ${s.side} ${s.coin} | Entry ${px(s.entry)} | Mark ${px(s.mark)} | Dist ${pct(s.distancePct,2)}`,`   SL ${px(s.sl)} | TP ${px(s.tp)} | RR ${s.rr.toFixed(2)} | Age ${s.ageMin.toFixed(1)}m | Notional ${usd(s.notional)}`,`   Trader ${s.trader.quality.tier}-TIER ${s.trader.quality.score.toFixed(1)} | WR ${finite(s.trader.performance.wr)?s.trader.performance.wr.toFixed(1)+'%':'—'} | PF ${s.trader.performance.pf===null?'—':s.trader.performance.pf.toFixed(2)} | Trades ${s.trader.performance.closedTrades}`,`   VALID: CURRENT_POSITION_VERIFIED + FRESH_OPEN_ADD + ENTRY_WINDOW + RR_GATE`];}
 
 function anomalyReason(x){
@@ -465,11 +465,13 @@ function failureText(x){
  const reasons=Array.isArray(q.reasons)?q.reasons:[];
  return reasons.length?reasons.join('+'):'QUALITY_PASS';
 }
+function safeFixed(v,d=2){return finite(v)?Number(v).toFixed(d):'—'}
+function safePF(v){return v===Infinity?'∞':finite(v)?Number(v).toFixed(2):'—'}
 function evidenceLine(x){
  const p=x.performance||{},q=x.quality||{},d=x.diagnostics||{},c=x.copyability||{};
  const live=(d.livePositions||0)>0?'LIVE':'NO-LIVE',pos=d.matched>0?'MATCH':'NO-MATCH',entry=d.entryWindow>0?'ENTRY':'NO-ENTRY';
  const recent=p.recent24||{};const dist=p.distribution||{};
- return `${short(x.address)} | ${q.tier} ${q.score.toFixed(1)} | ${live}/${pos}/${entry} | ${p.closedTrades}T | WR ${finite(p.wr)?p.wr.toFixed(1)+'%':'—'} | PF ${p.pf===null?'—':p.pf.toFixed(2)} | DD ${pct(q.ddPct,1)} | 24H ${recent.trades}T/${finite(recent.wr)?recent.wr.toFixed(0)+'%':'—'}/${recent.pf===null?'—':finite(recent.pf)?recent.pf.toFixed(2):'—'} | AvgW/L ${usd(dist.avgWin,0)}/${usd(dist.avgLoss,0)} | Streak L${p.longestLossStreak||0} | Conc ${finite(dist.profitConcentrationPct)?dist.profitConcentrationPct.toFixed(0)+'%':'—'} | PosConc ${finite(c.maxPositionSharePct)?c.maxPositionSharePct.toFixed(0)+'%':'—'} | ${failureText(x)}`;
+ return `${short(x.address)} | ${q.tier} ${safeFixed(q.score,1)} | ${live}/${pos}/${entry} | ${p.closedTrades}T | WR ${finite(p.wr)?safeFixed(p.wr,1)+'%':'—'} | PF ${safePF(p.pf)} | DD ${pct(q.ddPct,1)} | 24H ${recent.trades}T/${finite(recent.wr)?safeFixed(recent.wr,0)+'%':'—'}/${safePF(recent.pf)} | AvgW/L ${usd(dist.avgWin,0)}/${usd(dist.avgLoss,0)} | Streak L${p.longestLossStreak||0} | Conc ${finite(dist.profitConcentrationPct)?safeFixed(dist.profitConcentrationPct,0)+'%':'—'} | PosConc ${finite(c.maxPositionSharePct)?safeFixed(c.maxPositionSharePct,0)+'%':'—'} | ${failureText(x)}`;
 }
 function evidenceRank(x){
  const d=x.diagnostics||{};
@@ -525,18 +527,18 @@ async function main(){
  evidenceTop.slice(0,10).forEach((x,i)=>report.push(`${i+1}. ${evidenceLine(x)} | ${x.quality.strategy||'NONE'} | Copy ${x.quality.copyPass?'PASS':'FAIL'}`));
  if(!evidenceTop.length)report.push('No trader reached live-position matching for evidence ranking.');
  report.push('','🎯 NEAR-MISS — LIVE POSITION + ENTRY PASSED, QUALITY FAILED');
- nearMiss.slice(0,10).forEach((x,i)=>{const p=x.performance,q=x.quality,d=x.diagnostics;report.push(`${i+1}. ${short(x.address)} | Score ${q.score.toFixed(1)} | Trades ${p.closedTrades} | WR ${finite(p.wr)?p.wr.toFixed(1)+'%':'—'} | PF ${p.pf===null?'—':p.pf.toFixed(2)} | DD ${pct(q.ddPct,1)} | FAIL ${failureText(x)} | live=${d.livePositions||0} match=${d.matched||0} entry=${d.entryWindow||0}`)});
+ nearMiss.slice(0,10).forEach((x,i)=>{const p=x.performance,q=x.quality,d=x.diagnostics;report.push(`${i+1}. ${short(x.address)} | Score ${safeFixed(q.score,1)} | Trades ${p.closedTrades} | WR ${finite(p.wr)?safeFixed(p.wr,1)+'%':'—'} | PF ${safePF(p.pf)} | DD ${pct(q.ddPct,1)} | FAIL ${failureText(x)} | live=${d.livePositions||0} match=${d.matched||0} entry=${d.entryWindow||0}`)});
  if(!nearMiss.length)report.push('No live-position + entry-window near-miss this cycle.');
  report.push('','🧬 PERFORMANCE FORENSICS — NEAR-MISS');
- nearMiss.slice(0,10).forEach((x,i)=>{const p=x.performance||{},d=p.distribution||{},r=p.recent24||{},r7=p.recent7||{},c=x.copyability||{};report.push(`${i+1}. ${short(x.address)} | ${x.quality.tier} ${x.quality.score.toFixed(1)} | ${failureText(x)}`,
- `   All ${p.closedTrades}T WR ${finite(p.wr)?p.wr.toFixed(1)+'%':'—'} PF ${p.pf===null?'—':p.pf.toFixed(2)} PnL ${usd(p.realizedPnl)} | 24H ${r.trades}T/${finite(r.wr)?r.wr.toFixed(1)+'%':'—'}/${r.pf===null?'—':finite(r.pf)?r.pf.toFixed(2):'—'} ${usd(r.pnl)} | 7D ${r7.trades}T/${finite(r7.wr)?r7.wr.toFixed(1)+'%':'—'}/${r7.pf===null?'—':finite(r7.pf)?r7.pf.toFixed(2):'—'}`,
+ nearMiss.slice(0,10).forEach((x,i)=>{const p=x.performance||{},d=p.distribution||{},r=p.recent24||{},r7=p.recent7||{},c=x.copyability||{};report.push(`${i+1}. ${short(x.address)} | ${x.quality.tier} ${safeFixed(x.quality?.score,1)} | ${failureText(x)}`,
+ `   All ${p.closedTrades}T WR ${finite(p.wr)?safeFixed(p.wr,1)+'%':'—'} PF ${safePF(p.pf)} PnL ${usd(p.realizedPnl)} | 24H ${r.trades}T/${finite(r.wr)?safeFixed(r.wr,1)+'%':'—'}/${safePF(r.pf)} ${usd(r.pnl)} | 7D ${r7.trades}T/${finite(r7.wr)?safeFixed(r7.wr,1)+'%':'—'}/${safePF(r7.pf)}`,
  `   Avg W/L ${usd(d.avgWin,0)}/${usd(d.avgLoss,0)} | Med W/L ${usd(d.medianWin,0)}/${usd(d.medianLoss,0)} | Max W/L ${usd(d.largestWin,0)}/${usd(d.largestLoss,0)}`,
- `   Profit concentration top-win=${pct(d.profitConcentrationPct,1)} top3=${pct(d.top3ProfitConcentrationPct,1)} | Streak W/L ${p.longestWinStreak||0}/${p.longestLossStreak||0} | Recovery ${finite(p.recoveryFactor)?p.recoveryFactor.toFixed(2):'—'}`,
- `   Copyability live=${c.livePositions||0} notional=${usd(c.liveNotional)} maxPos=${pct(c.maxPositionSharePct,1)} maxCoin=${pct(c.maxCoinSharePct,1)} lev=${finite(c.avgLeverage)?c.avgLeverage.toFixed(1)+'x':'—'}/${finite(c.maxLeverage)?c.maxLeverage.toFixed(1)+'x':'—'} age=${finite(c.avgPositionAgeHours)?c.avgPositionAgeHours.toFixed(1)+'h':'—'}`);});
+ `   Profit concentration top-win=${pct(d.profitConcentrationPct,1)} top3=${pct(d.top3ProfitConcentrationPct,1)} | Streak W/L ${p.longestWinStreak||0}/${p.longestLossStreak||0} | Recovery ${finite(p.recoveryFactor)?safeFixed(p.recoveryFactor,2):'—'}`,
+ `   Copyability live=${c.livePositions||0} notional=${usd(c.liveNotional)} maxPos=${pct(c.maxPositionSharePct,1)} maxCoin=${pct(c.maxCoinSharePct,1)} lev=${finite(c.avgLeverage)?safeFixed(c.avgLeverage,1)+'x':'—'}/${finite(c.maxLeverage)?safeFixed(c.maxLeverage,1)+'x':'—'} age=${finite(c.avgPositionAgeHours)?safeFixed(c.avgPositionAgeHours,1)+'h':'—'}`);});
  if(!nearMiss.length)report.push('No near-miss performance forensic sample this cycle.');
  report.push('','🚨 ANOMALY FORENSICS');
  const anomalies=audited.filter(x=>x.quality?.anomaly);
- anomalies.slice(0,5).forEach((x,i)=>{const p=x.performance,d=p.distribution||{};report.push(`${i+1}. ${short(x.address)} | PF ${p.pf===null?'—':p.pf.toFixed(2)} | WR ${finite(p.wr)?p.wr.toFixed(1)+'%':'—'} | ${p.closedTrades}T | top-win concentration=${pct(d.profitConcentrationPct,1)} | top3=${pct(d.top3ProfitConcentrationPct,1)} | largestW/L=${usd(d.largestWin,0)}/${usd(d.largestLoss,0)} | reason=${anomalyReason(x)}`);});
+ anomalies.slice(0,5).forEach((x,i)=>{const p=x.performance,d=p.distribution||{};report.push(`${i+1}. ${short(x.address)} | PF ${safePF(p.pf)} | WR ${finite(p.wr)?safeFixed(p.wr,1)+'%':'—'} | ${p.closedTrades}T | top-win concentration=${pct(d.profitConcentrationPct,1)} | top3=${pct(d.top3ProfitConcentrationPct,1)} | largestW/L=${usd(d.largestWin,0)}/${usd(d.largestLoss,0)} | reason=${anomalyReason(x)}`);});
  if(!anomalies.length)report.push('No statistical anomaly flagged this cycle.');
  report.push('','👑 TOP VERIFIED TRADERS');
  watch.slice(0,TOP_WATCH).forEach((x,i)=>report.push(`${i+1}. ${fmtTrader(x)} | ${x.currentSignal?'POSITION READY':'BLOCK '+x.blockReason}`));
@@ -544,7 +546,7 @@ async function main(){
  report.push('','🔥 ACTIONABLE NOW');
  if(signals.length){signals.forEach((s,i)=>report.push(...signalLine(s,i+1),'━━━━━━━━━━━━━━━━━━'))}else report.push('No verified trader has a fresh copyable-quality current position this cycle.');
  report.push('','🧱 TOP BLOCK REASONS');
- sortCandidates(audited.filter(x=>!used.has(x.address))).slice(0,10).forEach(x=>{const d=x.diagnostics||{};report.push(`${short(x.address)} | ${x.quality.tier} ${x.quality.score.toFixed(1)} | ${x.blockReason||x.quality.reasons.join(' | ')||'NOT_SIGNAL_READY'} | fresh=${d.fresh15||0} match=${d.matched||0}`)});
+ sortCandidates(audited.filter(x=>!used.has(x.address))).slice(0,10).forEach(x=>{const d=x.diagnostics||{};report.push(`${short(x.address)} | ${x.quality.tier} ${safeFixed(x.quality?.score,1)} | ${x.blockReason||x.quality.reasons.join(' | ')||'NOT_SIGNAL_READY'} | fresh=${d.fresh15||0} match=${d.matched||0}`)});
  report.push('','🛡️ V2.1.10 CONTRACTS',`• Discovery returns real Hyperliquid trader IDs and reports numeric discovered count.`,`• Performance unit = actual closed lifecycle; no synthetic trades.`,`• PF unavailable is shown as — and never becomes LOW_PF.`,`• Current position = clearinghouseState; position side/entry must exist now.`,`• Signal requires fresh open activity + live position + entry distance + RR.`,`• Null metrics are rendered as — and never passed to toFixed().`,`• Multiple independent traders/signals may be emitted; MAX_SIGNALS=${MAX_SIGNALS}.`,`• Audit is activity-first: fresh probe → history only for active traders → state only after fresh activity.`,`• Decision diagnostics separate missing-mid, invalid-entry, watch/entry distance and RR failures; Entry validation uses the live position entry price with fill fallback.`,`• Quality diagnostics separate trade-count, WR, PF-unavailable, PF, PnL, DD and anomaly failures.`,`• Evidence matrix shows Trades/WR/PF/DD plus recent 24H performance, win/loss distribution, streaks and position concentration.`,
  `• Performance forensics compares the current audit window with 24H and 7D activity; no synthetic performance is created.`,
  `• Copyability forensics reports live notional, max position/coin concentration, leverage and reconstructed position age.`,
