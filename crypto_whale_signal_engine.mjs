@@ -6,8 +6,8 @@ import path from 'node:path';
 // Source authority: Hyperliquid public leaderboard + public user fills + clearinghouseState.
 // Current position authority: clearinghouseState ONLY. Stale fills never become a live position.
 
-const VERSION='GFTSH-V2.3.2-GIT-PERSISTENT-30D-BEHAVIOR-HUNTER';
-const BUILD='V2.3.2-GIT-PERSISTENT-30D-EVENT-DATABASE-ROTATING-AUDIT-MULTI-COIN-REPEATABILITY';
+const VERSION='GFTSH-V3.0-GLOBAL-REPEATABLE-BEHAVIOR-TRACKER';
+const BUILD='V3.0-HISTORY-FIRST-30D-HUNTER-DISCOVERY-TOP10-PERSISTENT-LIVE-TRACKING';
 const API=process.env.HYPERLIQUID_API_URL||'https://api.hyperliquid.xyz/info';
 const LEADERBOARD=process.env.HL_LEADERBOARD_URL||process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL||'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';
 const TG_TOKEN=process.env.TELEGRAM_TOKEN||process.env.TELEGRAM_BOT_TOKEN||'';
@@ -63,11 +63,14 @@ const GLOBAL_PUMP_PCT=Number(process.env.GFTSH_GLOBAL_PUMP_PCT||5);
 const GLOBAL_DUMP_PCT=Number(process.env.GFTSH_GLOBAL_DUMP_PCT||5);
 const GLOBAL_EVENT_MIN_USD=Number(process.env.GFTSH_GLOBAL_EVENT_MIN_USD||1000000);
 const GLOBAL_EVENT_MAX_HOURS=Math.max(1,Number(process.env.GFTSH_GLOBAL_EVENT_MAX_HOURS||12));
-const GLOBAL_MIN_REPEAT_EVENTS=Math.max(2,Number(process.env.GFTSH_GLOBAL_MIN_REPEAT_EVENTS||2));
+const GLOBAL_MIN_REPEAT_EVENTS=Math.max(2,Number(process.env.GFTSH_GLOBAL_MIN_REPEAT_EVENTS||3));
 const GLOBAL_MIN_PREPUMP_LEAD_MIN=Math.max(1,Number(process.env.GFTSH_GLOBAL_MIN_PREPUMP_LEAD_MIN||10));
-const GLOBAL_EXIT_CAPTURE_MIN=Number(process.env.GFTSH_GLOBAL_EXIT_CAPTURE_MIN||50);
+const GLOBAL_EXIT_CAPTURE_MIN=Number(process.env.GFTSH_GLOBAL_EXIT_CAPTURE_MIN||70);
+const GLOBAL_EXIT_PEAK_TOLERANCE_MIN=Math.max(1,Number(process.env.GFTSH_GLOBAL_EXIT_PEAK_TOLERANCE_MIN||15));
 const GLOBAL_HUNTER_SCORE_MIN=Number(process.env.GFTSH_GLOBAL_HUNTER_SCORE_MIN||70);
 const GLOBAL_MIN_DISTINCT_COINS=Math.max(2,Number(process.env.GFTSH_GLOBAL_MIN_DISTINCT_COINS||2));
+const GLOBAL_TRACKED_HUNTERS=Math.max(1,Number(process.env.GFTSH_GLOBAL_TRACKED_HUNTERS||10));
+const GLOBAL_DISCOVERY_AUDIT_CHUNK=Math.max(10,Number(process.env.GFTSH_GLOBAL_DISCOVERY_AUDIT_CHUNK||40));
 const GLOBAL_DISCOVERY_LIMIT=Math.max(20,Number(process.env.GFTSH_GLOBAL_DISCOVERY_LIMIT||100));
 const GLOBAL_EVENT_CANDIDATES=Math.max(20,Number(process.env.GFTSH_GLOBAL_EVENT_CANDIDATES||80));
 const GLOBAL_EVENT_TRIGGER_PCT=Number(process.env.GFTSH_GLOBAL_EVENT_TRIGGER_PCT||1.5);
@@ -75,7 +78,7 @@ const GLOBAL_EVENT_TRIGGER_MINUTES=Math.max(5,Number(process.env.GFTSH_GLOBAL_EV
 const GLOBAL_TELEGRAM_MAX_SIGNALS=Math.max(1,Number(process.env.GFTSH_GLOBAL_TELEGRAM_MAX_SIGNALS||5));
 const GLOBAL_API_GAP_MS=Math.max(300,Number(process.env.GFTSH_GLOBAL_API_GAP_MS||500));
 const GLOBAL_BEHAVIOR_WINDOW='30D';
-const GLOBAL_ROTATION_POOL=Math.max(80,Number(process.env.GFTSH_GLOBAL_ROTATION_POOL||240));
+const GLOBAL_ROTATION_POOL=Math.max(0,Number(process.env.GFTSH_GLOBAL_ROTATION_POOL||0));
 const GLOBAL_AUDIT_CHUNK=Math.max(10,Number(process.env.GFTSH_GLOBAL_AUDIT_CHUNK||40));
 const GLOBAL_DB_MAX_EVENTS=Math.max(100,Number(process.env.GFTSH_GLOBAL_DB_MAX_EVENTS||2000));
 const GLOBAL_DB_MAX_HUNTERS=Math.max(20,Number(process.env.GFTSH_GLOBAL_DB_MAX_HUNTERS||200));
@@ -134,9 +137,15 @@ function behaviorHunterScore(ev){
  const avgLead=ev.reduce((a,e)=>a+Number(e?.preLeadMin||0),0)/Math.max(1,ev.length);
  const avgCapture=ev.reduce((a,e)=>a+Number(e?.exitCapturePct||0),0)/Math.max(1,ev.length);
  const coins=[...new Set(ev.map(e=>String(e?.coin||'')).filter(Boolean))];
- const strongCapture=ev.filter(e=>Number(e?.exitCapturePct)>=GLOBAL_STRONG_CAPTURE_MIN).length;
- const score=Math.min(100,ev.length*15+Math.min(15,Math.max(0,coins.length-1)*5)+Math.min(30,avgLead/10)+Math.min(40,avgCapture/2));
- return {strong,strongCapture,avgLead,avgCapture,coins,score};
+ const strongRate=strong.length/Math.max(1,ev.length);
+ const longLead=Math.min(20,avgLead/2);
+ const capture=Math.min(25,avgCapture*0.25);
+ const repeat=Math.min(30,ev.length*10);
+ const diversity=Math.min(15,coins.length*5);
+ const consistency=Math.min(10,strongRate*10);
+ const score=Math.min(100,repeat+diversity+longLead+capture+consistency);
+ const recent=ev.filter(e=>Number(e?.eventTimestamp||e?.openTime||0)>=Date.now()-7*86400000).length;
+ return {strong,strongRate,avgLead,avgCapture,coins,score,recent};
 }
 function buildBehaviorHuntersFromDB(events,audited=[]){
  const grouped=new Map();
@@ -496,37 +505,38 @@ function classifyError(e){
  return 'OTHER';
 }
 async function auditTrader(c,start,end,midsMap){
-  const diag={fills:0,fresh15:0,increasing:0,livePositions:0,matched:0,entryWindow:0,missingMid:0,invalidEntry:0,watchDistanceFail:0,entryDistanceFail:0,rrFail:0,qualityPass:false,signalPass:false,activityProbe:true,historyLoaded:false,stateChecked:false,quality:{tradesFail:false,wrFail:false,pfUnavailable:false,pfFail:false,pnlFail:false,ddFail:false,anomaly:false}};
-  // Activity-first: query only the last freshness window before touching full history or state.
-  const probeStart=Math.max(start,end-DIAG_WINDOW_MIN*60000);
-  const probe=await recentFillsFor(c.address,probeStart,end);
-  const probeAdds=latestOpenAdds(probe);
-  diag.fresh15=probeAdds.filter(x=>x.__fresh).length;
-  diag.increasing=probeAdds.filter(x=>x.__positionDelta!==0&&Math.abs(x.__positionAfter)>Math.abs(x.__positionBefore)+1e-10).length;
-  if(!diag.fresh15){
-    return {...c,performance:{closedTrades:0,wins:0,losses:0,wr:null,pf:null,realizedPnl:0,grossWin:0,grossLoss:0,maxDrawdown:0,activeDays:0,recentClosed:0,recent24:{trades:0,wins:0,losses:0,wr:null,pf:null,pnl:0},recent7:{trades:0,wins:0,losses:0,wr:null,pf:null,pnl:0},avgHoldHours:null,medianHoldHours:null,tradesPerDay:0,recognizedFills:0,unknownFills:0,reversalFills:0,invalidFills:0,distribution:{},longestWinStreak:0,longestLossStreak:0,recoveryFactor:null,pnlConcentrationPct:null,openBooks:[],closed:[]},quality:{score:0,tier:'C',reasons:['NO_FRESH_POSITION_INCREASE_15M'],ddPct:0,anomaly:false},positions:[],copyability:{livePositions:0,liveNotional:0,maxPositionSharePct:null,maxCoinSharePct:null,avgLeverage:null,maxLeverage:null,positionAgeHours:null,avgPositionAgeHours:null,positionDetails:[]},latestAdd:null,currentSignal:null,blockReason:'NO_FRESH_POSITION_INCREASE_15M',diagnostics:diag};
-  }
-  const fills=await fillsFor(c.address,start,probeStart-1,probe);diag.fills=fills.length;diag.historyLoaded=true;
+  const diag={fills:0,fresh15:0,increasing:0,livePositions:0,matched:0,entryWindow:0,missingMid:0,invalidEntry:0,watchDistanceFail:0,entryDistanceFail:0,rrFail:0,qualityPass:false,signalPass:false,activityProbe:true,historyLoaded:false,stateChecked:false,behaviorEligible:false,quality:{tradesFail:false,wrFail:false,pfUnavailable:false,pfFail:false,pnlFail:false,ddFail:false,anomaly:false}};
+  // IMPORTANT: discovery is historical-behavior-first. A trader does NOT need a fresh
+  // position in the last 15 minutes to qualify as a hunter. The 15m probe is only for
+  // live signal detection after the trader has been admitted to the watch system.
+  // One source-of-truth fill walk: the newest page already contains the fresh
+  // activity window, so a separate 15m request would only duplicate API load.
+  const fills=await fillsFor(c.address,start,end,[]);diag.fills=fills.length;diag.historyLoaded=true;
   const perf=reconstruct(fills);
-  const state=await stateFor(c.address);diag.stateChecked=true;
-  const ps=positions(state);diag.livePositions=ps.length;const posByCoin=new Map(ps.map(p=>[p.coin,p]));
+  let ps=[];
+  // clearinghouseState is needed only for a trader with fresh activity or a persistent hunter.
+  // Historical discovery must not spend one extra state request per inactive candidate.
+  if(diag.fresh15||c.__trackedHunter){ const state=await stateFor(c.address);diag.stateChecked=true; ps=positions(state); }
+  diag.livePositions=ps.length;const posByCoin=new Map(ps.map(p=>[p.coin,p]));
   const adds=latestOpenAdds(fills);diag.fresh15=adds.filter(x=>x.__fresh).length;diag.increasing=adds.filter(x=>x.__positionDelta!==0&&Math.abs(x.__positionAfter)>Math.abs(x.__positionBefore)+1e-10).length;
-  let candidate=null;let block=ps.length?'POSITION_EXISTS_BUT_NO_FRESH_OPEN_ADD':'NO_CURRENT_POSITION';
+
+  // Current-position matching is diagnostic/live-signal logic, never the historical discovery gate.
+  let candidate=null;let behaviorCandidate=null;let block=ps.length?'POSITION_EXISTS_BUT_NO_FRESH_OPEN_ADD':'NO_CURRENT_POSITION';
   for(const f of adds){
     if(!f.__fresh)continue;
     const p=posByCoin.get(String(f.coin));if(!p)continue;
     diag.matched++;
     const mid=num(midsMap[String(f.coin)]);
     if(!(mid>0)){diag.missingMid++;continue}
-    const entry=num(p.entry)||num(f.px);
-    if(!(entry>0)){diag.invalidEntry++;continue}
     const sig=makeSignal({...c,performance:perf},null,p,f,mid);
     if(!sig){diag.invalidEntry++;continue}
     if(sig.absDistancePct>WATCH_MAX)diag.watchDistanceFail++;
     if(sig.absDistancePct>ENTRY_MAX)diag.entryDistanceFail++;
     else if(sig.rr<MIN_RR)diag.rrFail++;
     else diag.entryWindow++;
+    if(sig.entryReady&&!behaviorCandidate)behaviorCandidate=sig;
   }
+
   const cp=copyability(ps,perf,adds);
   const q=quality(perf,c.lb,cp);
   diag.quality={tradesFail:q.tradesFail,wrFail:q.wrFail,pfUnavailable:q.pfUnavailable,pfFail:q.pfFail,pnlFail:q.pnlFail,ddFail:q.ddFail,anomaly:Boolean(q.anomaly),asymPass:q.asymPass,copyPass:q.copyPass};
@@ -539,11 +549,12 @@ async function auditTrader(c,start,end,midsMap){
     if(sig?.entryReady&&diag.qualityPass){candidate=sig;break;}
   }
   if(candidate)block='QUALITY_PASS';
+  else if(behaviorCandidate)block='BEHAVIOR_POSITION_READY';
   else if(ps.length===0)block='NO_CURRENT_POSITION';
   else if(!diag.qualityPass)block='TRADER_QUALITY_GATE_FAILED';
   else if(diag.entryWindow===0)block=`ENTRY_DISTANCE_GT_${ENTRY_MAX}%`;
   diag.signalPass=Boolean(candidate);
-  return {...c,performance:perf,quality:q,positions:ps,copyability:cp,latestAdd:adds[0]||null,currentSignal:candidate,blockReason:block,diagnostics:diag};
+  return {...c,performance:perf,quality:q,positions:ps,copyability:cp,latestAdd:adds[0]||null,currentSignal:candidate,behaviorCurrentSignal:behaviorCandidate,blockReason:block,diagnostics:diag};
 }
 function sortCandidates(rows){return rows.slice().sort((a,b)=>{
  const as=a.currentSignal?1:0,bs=b.currentSignal?1:0;if(bs!==as)return bs-as;
@@ -676,7 +687,7 @@ async function enrichHLBehaviorEvents(events){
   if(capture<GLOBAL_EXIT_CAPTURE_MIN)continue;
   stats.capturePass++;
   const exitAfterEvent=Math.max(0,(num(e.closeTime)-eventStart)/60000);
-  out.push({...e,mfePct:eventPeakMove,mfeTime:eventPeak,preLeadMin:lead,eventStart,eventEnd,exitAfterEventMin:exitAfterEvent,exitCapturePct:capture,marketEvent:true});
+  out.push({...e,mfePct:eventPeakMove,mfeTime:eventPeak,preLeadMin:lead,eventStart,eventEnd,exitAfterEventMin:exitAfterEvent,exitCapturePct:capture,exitFromPeakMin,marketEvent:true});
  }
  console.log(`[GLOBAL][HL EVENT RECON] candidates=${events.length} candleOK=${stats.candleOk} trigger=${stats.triggerFound} leadPass=${stats.leadPass} mfePass=${stats.mfePass} capturePass=${stats.capturePass} verified=${out.length}`);
  return out;
@@ -706,13 +717,16 @@ async function main(){
  const lb=await fetchLeaderboard();
  // Global discovery ranks the full public universe, then rotates a bounded audit window.
  const allRanked=lb.rows.map(r=>{const a=String(r?.ethAddress||r?.address||r?.user||'');const m=leaderboardMetrics(r);return {...r,address:a,name:String(r?.displayName||r?.name||r?.username||''),lb:m}}).filter(r=>/^0x[a-fA-F0-9]{40}$/.test(r.address)).sort((a,b)=>(b.lb.day.vlm*0.000002+b.lb.week.vlm*0.0000005+Math.max(0,b.lb.day.pnl)*0.002)-(a.lb.day.vlm*0.000002+a.lb.week.vlm*0.0000005+Math.max(0,a.lb.day.pnl)*0.002));
- const discoveryPool=allRanked.slice(0,Math.min(GLOBAL_ROTATION_POOL,allRanked.length));
+ const discoveryPool=GLOBAL_ROTATION_POOL>0?allRanked.slice(0,Math.min(GLOBAL_ROTATION_POOL,allRanked.length)):allRanked;
  const cursorBase=behaviorState.cursor%Math.max(1,discoveryPool.length);
  const rotating=[];for(let i=0;i<Math.min(GLOBAL_AUDIT_CHUNK,discoveryPool.length);i++)rotating.push(discoveryPool[(cursorBase+i)%discoveryPool.length]);
  const byAddr=new Map(allRanked.map(x=>[x.address,x]));
- const persistedHunters=buildBehaviorHuntersFromDB(pruneBehaviorEvents(behaviorState.events),[]).filter(x=>x.repeatable).slice(0,Math.max(5,Math.floor(GLOBAL_AUDIT_CHUNK/4)));
- for(const h of persistedHunters){const c=byAddr.get(h.traderId);if(c&&!rotating.some(x=>x.address===c.address))rotating.push(c);}
- const ranked=rotating.slice(0,Math.min(ACTIVE_AUDIT_LIMIT,rotating.length));
+ const persistedHunters=buildBehaviorHuntersFromDB(pruneBehaviorEvents(behaviorState.events),[]).filter(x=>x.repeatable).slice(0,GLOBAL_TRACKED_HUNTERS);
+ // Persistent hunters always have priority. The rotating discovery pool continues
+ // learning new hunters in parallel and is never allowed to evict tracked hunters.
+ const priority=[];for(const h of persistedHunters){const c=byAddr.get(h.traderId)||{address:h.traderId,name:h.name||short(h.traderId),lb:{day:{vlm:0,pnl:0},week:{vlm:0,pnl:0}}};if(/^0x[a-fA-F0-9]{40}$/.test(c.address)&&!priority.some(x=>x.address===c.address))priority.push({...c,__trackedHunter:true});}
+ for(const c of rotating){if(!priority.some(x=>x.address===c.address))priority.push(c);}
+ const ranked=priority.slice(0,Math.max(GLOBAL_TRACKED_HUNTERS,Math.min(ACTIVE_AUDIT_LIMIT,priority.length)));
  console.log(`[DISCOVERY] leaderboardRows=${lb.rows.length} validTraderIds=${lb.traders.length} rotationPool=${discoveryPool.length} cursor=${cursorBase} persistedHunters=${persistedHunters.length} audit=${ranked.length}`);
  const midsMap=await mids();const audited=[];let errors=0;const errorBreakdown={};
  const activityPool=ranked;
@@ -734,14 +748,20 @@ async function main(){
  globalHunt.sources.unshift(`HYPERLIQUID behavior hunters=${behaviorHunters.filter(x=>x.repeatable).length}`);
  globalHunt.hunters=[...behaviorHunters,...globalHunt.hunters];
  globalHunt.events=[...currentVerified,...globalHunt.events];
- for(const h of behaviorHunters.filter(x=>x.repeatable&&x.currentSignal)){
-  const s={...h.currentSignal,source:'HYPERLIQUID',traderId:h.traderId,name:h.name,behaviorScore:h.score,repeats:h.repeats,reason:`REPEATABLE_PRE_PUMP_DUMP_HUNTER | ${h.repeats} verified events | ${h.coins.length} coins | lead ${safeFixed(h.avgLeadMin,1)}m | capture ${safeFixed(h.avgExitCapturePct,0)}%`};
+ // Live tracking is behavior-gated, not historical-quality-gated. A repeatable
+ // pre-pump/pre-dump hunter can generate a signal even when its generic WR/PF gate
+ // would reject it; the behavior engine is the authority for this signal lane.
+ const auditedByAddr=new Map(audited.map(x=>[x.address,x]));
+ for(const h of behaviorHunters.filter(x=>x.repeatable).slice(0,GLOBAL_TRACKED_HUNTERS)){
+  const owner=auditedByAddr.get(h.traderId); if(!owner)continue;
+  const s0=owner.behaviorCurrentSignal; if(!s0?.entryReady)continue;
+  const s={...s0,source:'HYPERLIQUID',traderId:h.traderId,name:h.name,behaviorScore:h.score,repeats:h.repeats,coins:h.coins,qualityTier:owner.quality?.tier,qualityScore:owner.quality?.score,reason:`REPEATABLE_PRE_PUMP_DUMP_HUNTER | ${h.repeats} verified events | ${h.coins.length} coins | lead ${safeFixed(h.avgLeadMin,1)}m | capture ${safeFixed(h.avgExitCapturePct,0)}%`};
   globalHunt.signals.push(s);
  }
  const strongNow=currentVerified.filter(e=>e.exitCapturePct>=GLOBAL_STRONG_CAPTURE_MIN).length;
  console.log(`[GLOBAL][BEHAVIOR DB] loaded=${behaviorState.events.length} currentVerified=${currentVerified.length} strongCapture>=${GLOBAL_STRONG_CAPTURE_MIN}%=${strongNow} retained30D=${mergedEvents.length} repeatable=${behaviorHunters.filter(x=>x.repeatable).length}`);
  console.log(`[GLOBAL HUNT] sources=${globalHunt.sources.join(' | ')||'none'} | currentEvents=${currentVerified.length} | retained30D=${mergedEvents.length} | repeatableHunters=${globalHunt.hunters.filter(x=>x.repeatable).length} | verifiedGlobalSignals=${globalHunt.signals.length}`);
- console.log(`[GLOBAL FUNNEL] behavior-events=${globalHunt.events.length} | repeatable=${globalHunt.hunters.filter(x=>x.repeatable).length} | quality+behavior+position signals=${globalHunt.signals.length} | telegram-selected=${Math.min(GLOBAL_TELEGRAM_MAX_SIGNALS,globalHunt.signals.length)}`);
+ console.log(`[GLOBAL FUNNEL] behavior-events=${globalHunt.events.length} | repeatable=${globalHunt.hunters.filter(x=>x.repeatable).length} | behavior+live-position signals=${globalHunt.signals.length} | telegram-selected=${Math.min(GLOBAL_TELEGRAM_MAX_SIGNALS,globalHunt.signals.length)}`);
  const watch=sortCandidates(eligible).slice(0,TOP_WATCH);const localSignals=watch.map(x=>x.currentSignal).filter(Boolean).sort((a,b)=>b.trader.quality.score-a.trader.quality.score).slice(0,MAX_SIGNALS);
  const signals=localSignals.slice(0,MAX_SIGNALS);
  const used=new Set([...signals.map(s=>s?.trader?.address),...globalHunt.signals.map(s=>s?.traderId)].filter(Boolean));
@@ -781,17 +801,17 @@ async function main(){
  if(signals.length){signals.forEach((s,i)=>report.push(...signalLine(s,i+1),'━━━━━━━━━━━━━━━━━━'))}else report.push('No verified trader has a fresh copyable-quality current position this cycle.');
  report.push('','🧱 TOP BLOCK REASONS');
  sortCandidates(audited.filter(x=>!used.has(x.address))).slice(0,10).forEach(x=>{const d=x.diagnostics||{};report.push(`${short(x.address)} | ${x.quality.tier} ${safeFixed(x.quality?.score,1)} | ${x.blockReason||x.quality.reasons.join(' | ')||'NOT_SIGNAL_READY'} | fresh=${d.fresh15||0} match=${d.matched||0}`)});
- report.push('','🌍 GLOBAL BEHAVIOR HUNT',`Sources: ${globalHunt.sources.join(' | ')||'none'}`,`Current event observations: ${currentVerified.length} | Retained 30D events: ${mergedEvents.length} | Repeatable hunters: ${globalHunt.hunters.filter(x=>x.repeatable).length}`,
- `Behavior DB: rotation=${discoveryPool.length} | cursor=${cursorBase}→${(cursorBase+activityPool.length)%Math.max(1,discoveryPool.length)} | persisted hunters audited=${persistedHunters.length} | strong capture≥${GLOBAL_STRONG_CAPTURE_MIN}%=${strongNow}`, `Rule: trader entry must precede the first directional trigger and the market must then reach the major-move threshold; exit capture is measured against event MFE. Minimum repeats=${GLOBAL_MIN_REPEAT_EVENTS} and distinct coins=${GLOBAL_MIN_DISTINCT_COINS}.`,'');
+ report.push('','🌍 GLOBAL BEHAVIOR HUNT',`Sources: ${globalHunt.sources.join(' | ')||'none'}`,`Current event observations: ${currentVerified.length} | Retained 30D events: ${mergedEvents.length} | Repeatable hunters: ${behaviorHunters.filter(x=>x.repeatable).length} | Tracked TOP=${Math.min(GLOBAL_TRACKED_HUNTERS,behaviorHunters.filter(x=>x.repeatable).length)}`,
+ `Behavior DB: full-universe rotation=${discoveryPool.length} | cursor=${cursorBase}→${(cursorBase+activityPool.length)%Math.max(1,discoveryPool.length)} | persisted hunters audited=${persistedHunters.length} | strong capture≥${GLOBAL_STRONG_CAPTURE_MIN}%=${strongNow}`, `Rule: discovery is independent of current activity; entry must precede the first directional trigger, market must reach the major-move threshold, and exit must capture ≥${GLOBAL_EXIT_CAPTURE_MIN}% of MFE and occur within ${GLOBAL_EXIT_PEAK_TOLERANCE_MIN}m before/after the event peak. Minimum repeats=${GLOBAL_MIN_REPEAT_EVENTS}, distinct coins=${GLOBAL_MIN_DISTINCT_COINS}.`,'');
  report.push('','🛡️ V2.2 CONTRACTS',`• Global discovery is multi-exchange; Hyperliquid is one source, not the whole hunter.`,`• Performance unit = actual closed lifecycle; no synthetic trades.`,`• PF unavailable is shown as — and never becomes LOW_PF.`,`• Exchange-specific current-position authority is source-native; no stale fill may become a live position.`,`• Signal requires fresh open activity + live position + entry distance + RR.`,`• Null metrics are rendered as — and never passed to toFixed().`,`• Multiple independent traders/signals may be emitted; MAX_SIGNALS=${MAX_SIGNALS}.`,`• Audit is activity-first: fresh probe → history only for active traders → state only after fresh activity.`,`• Decision diagnostics separate missing-mid, invalid-entry, watch/entry distance and RR failures; Entry validation uses the live position entry price with fill fallback.`,`• Quality diagnostics separate trade-count, WR, PF-unavailable, PF, PnL, DD and anomaly failures.`,`• Evidence matrix shows Trades/WR/PF/DD plus recent 24H performance, win/loss distribution, streaks and position concentration.`,
  `• Performance forensics compares the current audit window with 24H and 7D activity; no synthetic performance is created.`,
  `• Copyability forensics reports live notional, max position/coin concentration, leverage and reconstructed position age.`,
  `• Anomaly forensics explains PF/WR outliers and profit concentration instead of silently suppressing them.`,`• Near-miss analysis isolates traders that passed live-position + entry validation but failed historical quality.`,`• Live-position count, live-match count and entry-ready count are reported separately to expose pipeline attrition.`,`• Quality is strategy-aware: HIGH-WR classic path OR ASYMMETRIC profit-specialist path; no blind WR relaxation.`,`• ASYMMETRIC path requires trades, PF, DD, recovery, profit concentration and recent-performance gates.`,`• Copyability is an independent hard gate on live position/coin concentration and leverage.`,`• Recent-vs-historical drift can reject an otherwise profitable trader.` ,`• Global hunter promotes only repeatable pre-pump/pre-dump behavior observed across multiple events.`,`• V2.3.1 persists verified behavior events in a rolling 30D database; events are deduplicated by trader/coin/side/time.`,`• Leaderboard discovery rotates through a bounded top universe so behavior evidence is accumulated across cycles rather than rebuilt from only the same 40 traders.`,`• Persisted repeatable hunters are re-audited for current-position authority before any live signal is emitted.`,`• Strong capture≥${GLOBAL_STRONG_CAPTURE_MIN}% is tracked separately; no quality or behavior gate is relaxed to manufacture signals.`,`• Telegram contains selected signals only; diagnostics remain in GitHub Actions logs/state.`,`• No quality threshold is relaxed to manufacture actionable signals.`,
  `• Global 429 cooldown + bounded concurrency + minimum request gap protect the Hyperliquid API.`,`• HTTP 429/5xx/timeout requests use bounded exponential retry/backoff.`,`• Freshness is source timestamp based; delayed sources are labeled and never treated as real-time.`,`⏱ Runtime: ${((Date.now()-started)/1000).toFixed(1)}s`,
  `⚙️ Rate safety: candidates=${activityPool.length} | concurrency=${MAX_CONCURRENCY} | gap=${MIN_REQUEST_GAP_MS}ms | 429 cooldown=${GLOBAL_429_COOLDOWN_MS}ms`,`🕒 ${new Date().toISOString()}`);
- const telemetryText=report.join('\n');console.log(telemetryText);const tgLines=['🌐 GFTSH GLOBAL HUNTER V2.2','━━━━━━━━━━━━━━━━━━'];const selectedSignals=globalHunt.signals.filter(s=>s?.ageMin<=FRESH_MIN).sort((a,b)=>(b.behaviorScore||0)-(a.behaviorScore||0)).slice(0,GLOBAL_TELEGRAM_MAX_SIGNALS);if(selectedSignals.length){selectedSignals.forEach((s,i)=>tgLines.push(`🟢 ${i+1} | ${s.name||s.trader?.name||short(s.traderId)} | ${s.source||s.selectedSource}`,`   ${s.side} ${s.coin} | Entry ${px(s.entry)} | Mark ${px(s.mark)} | Dist ${pct(s.distancePct,2)}`,`   SL ${px(s.sl)} | TP ${px(s.tp)} | RR ${safeFixed(s.rr,2)} | Age ${safeFixed(s.ageMin,1)}m`,`   BEHAVIOR ${s.behaviorScore!==undefined?safeFixed(s.behaviorScore,1):s.trader?.quality?.strategy||'SELECTED'} | Repeats ${s.repeats||'—'} | ${s.reason||'VERIFIED'}`,`   VERIFIED: CURRENT POSITION + FRESH ENTRY + REPEATABLE BEHAVIOR`,'━━━━━━━━━━━━━━━━━━'))}const text=selectedSignals.length?tgLines.join('\n'):'';await fs.mkdir(path.dirname(STATE_FILE),{recursive:true});await fs.mkdir(path.dirname(GLOBAL_BEHAVIOR_STATE_FILE),{recursive:true});
+ const telemetryText=report.join('\n');console.log(telemetryText);const tgLines=['🌐 GFTSH GLOBAL HUNTER V3.0 — BEHAVIOR TRACKER','━━━━━━━━━━━━━━━━━━'];const selectedSignals=globalHunt.signals.filter(s=>s?.ageMin<=FRESH_MIN).sort((a,b)=>(b.behaviorScore||0)-(a.behaviorScore||0)).slice(0,GLOBAL_TELEGRAM_MAX_SIGNALS);if(selectedSignals.length){selectedSignals.forEach((s,i)=>tgLines.push(`🟢 ${i+1} | ${s.name||s.trader?.name||short(s.traderId)} | ${s.source||s.selectedSource}`,`   ${s.side} ${s.coin} | Entry ${px(s.entry)} | Mark ${px(s.mark)} | Dist ${pct(s.distancePct,2)}`,`   SL ${px(s.sl)} | TP ${px(s.tp)} | RR ${safeFixed(s.rr,2)} | Age ${safeFixed(s.ageMin,1)}m`,`   BEHAVIOR ${s.behaviorScore!==undefined?safeFixed(s.behaviorScore,1):s.trader?.quality?.strategy||'SELECTED'} | Repeats ${s.repeats||'—'} | ${s.reason||'VERIFIED'}`,`   VERIFIED: CURRENT POSITION + FRESH ENTRY + REPEATABLE BEHAVIOR`,'━━━━━━━━━━━━━━━━━━'))}const text=selectedSignals.length?tgLines.join('\n'):'';await fs.mkdir(path.dirname(STATE_FILE),{recursive:true});await fs.mkdir(path.dirname(GLOBAL_BEHAVIOR_STATE_FILE),{recursive:true});
  const nextCursor=(cursorBase+Math.max(1,activityPool.length))%Math.max(1,discoveryPool.length);
- await fs.writeFile(GLOBAL_BEHAVIOR_STATE_FILE,JSON.stringify({version:VERSION,updatedAt:Date.now(),cursor:nextCursor,events:mergedEvents,hunters:behaviorHunters.slice(0,GLOBAL_DB_MAX_HUNTERS)},null,2));
+ await fs.writeFile(GLOBAL_BEHAVIOR_STATE_FILE,JSON.stringify({version:VERSION,updatedAt:Date.now(),cursor:nextCursor,events:mergedEvents,hunters:behaviorHunters.slice(0,GLOBAL_DB_MAX_HUNTERS),trackedHunters:behaviorHunters.filter(x=>x.repeatable).slice(0,GLOBAL_TRACKED_HUNTERS).map(x=>({source:x.source,traderId:x.traderId,name:x.name,repeats:x.repeats,coins:x.coins,score:x.score,avgLeadMin:x.avgLeadMin,avgExitCapturePct:x.avgExitCapturePct}))},null,2));
  await fs.writeFile(STATE_FILE,JSON.stringify({version:VERSION,build:BUILD,generatedAt:Date.now(),discovered:lb.traders.length,behaviorDatabase:{file:GLOBAL_BEHAVIOR_STATE_FILE,loaded:behaviorState.events.length,currentVerified:currentVerified.length,retained30D:mergedEvents.length,repeatableHunters:behaviorHunters.filter(x=>x.repeatable).length,rotationPool:discoveryPool.length,cursor:nextCursor},globalHunt:{sources:globalHunt.sources,events:globalHunt.events,hunters:globalHunt.hunters.slice(0,50),signals:globalHunt.signals.slice(0,20)},audited:audited.length,eligible:eligible.length,signals:[...signals.map(s=>({source:'HYPERLIQUID',address:s.trader.address,coin:s.coin,side:s.side,entry:s.entry,mark:s.mark,sl:s.sl,tp:s.tp,rr:s.rr,ageMin:s.ageMin})),...globalHunt.signals.map(s=>({source:s.source,traderId:s.traderId,coin:s.coin,side:s.side,entry:s.entry,mark:s.mark,sl:s.sl,tp:s.tp,rr:s.rr,ageMin:s.ageMin,behaviorScore:s.behaviorScore,repeats:s.repeats}))],watch:watch.map(x=>({address:x.address,name:x.name,score:x.quality.score,tier:x.quality.tier,blockReason:x.blockReason,performance:x.performance,quality:x.quality,positions:x.positions,copyability:x.copyability,diagnostics:x.diagnostics})),evidenceTop:evidenceTop.slice(0,20).map(x=>({address:x.address,name:x.name,score:x.quality.score,tier:x.quality.tier,performance:x.performance,quality:x.quality,positions:x.positions,copyability:x.copyability,diagnostics:x.diagnostics,blockReason:x.blockReason})),nearMiss:nearMiss.slice(0,20).map(x=>({address:x.address,name:x.name,performance:x.performance,quality:x.quality,positions:x.positions,copyability:x.copyability,diagnostics:x.diagnostics,blockReason:x.blockReason})),errors,errorBreakdown,pipeline:{fills:dsum('fills'),fresh15:dsum('fresh15'),increasing:dsum('increasing'),livePositions:dsum('livePositions'),matched:dsum('matched'),entryWindow:dsum('entryWindow'),qualityPass:diagRows.filter(x=>x.qualityPass).length}},null,2));if(text)await telegram(text);
 }
 main().catch(async e=>{console.error(`[GFTSH][FATAL] ${e.stack||e}`);process.exitCode=1});
