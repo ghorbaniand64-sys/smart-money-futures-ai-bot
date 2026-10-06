@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {spawnSync} from 'node:child_process';
 
 // GFTSH V2.1.2 — GLOBAL FUTURES ACTUAL-TRADE RECON / MULTI-SIGNAL
 // READ ONLY. NO ORDERS. NO AUTO-COPY. FUTURES ONLY.
@@ -87,6 +88,9 @@ const GLOBAL_STRONG_CAPTURE_MIN=Number(process.env.GFTSH_GLOBAL_STRONG_CAPTURE_M
 const GLOBAL_BEHAVIOR_STATE_FILE=process.env.GFTSH_BEHAVIOR_STATE_FILE||'state/gftsh_global_behavior_v23.json';
 const GLOBAL_DISCOVERY_REFRESH_HOURS=Math.max(1,Number(process.env.GFTSH_GLOBAL_DISCOVERY_REFRESH_HOURS||24));
 const GLOBAL_DISCOVERY_MAX_AUDIT_AGE_MS=GLOBAL_DISCOVERY_REFRESH_HOURS*3600000;
+const GFTSH_PERSIST_DIR=process.env.GFTSH_PERSIST_DIR||'state';
+const GFTSH_STATE_SNAPSHOT=process.env.GFTSH_STATE_SNAPSHOT||path.join(GFTSH_PERSIST_DIR,'gftsh_global_behavior_snapshot.json');
+const GFTSH_PERSIST_HEARTBEAT_MIN=Math.max(1,Number(process.env.GFTSH_PERSIST_HEARTBEAT_MIN||15));
 
 let requestGate=Promise.resolve();
 let nextRequestAt=0;
@@ -104,18 +108,30 @@ function normalizeBehaviorEvent(e){
  if(!(openTime>0) && closeTime>0)openTime=closeTime;
  return {...e,openTime:Number(openTime),closeTime:Number(closeTime||e.closeTime||0),eventTimestamp:Number(e.eventStart||openTime||closeTime||0)};
 }
+function emptyBehaviorState(){return {version:'',cursor:0,events:[],updatedAt:0,auditLedger:{},persistedFrom:''};}
+function parseBehaviorState(x,source){return {version:String(x?.version||''),cursor:Math.max(0,Number(x?.cursor||0)),events:(Array.isArray(x?.events)?x.events:[]).map(normalizeBehaviorEvent).filter(Boolean),updatedAt:Number(x?.updatedAt||0),auditLedger:(x?.auditLedger&&typeof x.auditLedger==='object')?x.auditLedger:{},persistedFrom:source||''};}
+async function readBehaviorStateFile(file){try{const raw=await fs.readFile(file,'utf8');return parseBehaviorState(JSON.parse(raw),file);}catch{return null;}}
 async function loadBehaviorState(){
- try{
-  const raw=await fs.readFile(GLOBAL_BEHAVIOR_STATE_FILE,'utf8');
-  const x=JSON.parse(raw);
-  return {
-   version:String(x?.version||''),
-   cursor:Math.max(0,Number(x?.cursor||0)),
-   events:(Array.isArray(x?.events)?x.events:[]).map(normalizeBehaviorEvent).filter(Boolean),
-   updatedAt:Number(x?.updatedAt||0),
-   auditLedger:(x?.auditLedger&&typeof x.auditLedger==='object')?x.auditLedger:{}
-  };
- }catch(e){return {version:'',cursor:0,events:[],updatedAt:0,auditLedger:{}};}
+ const primary=await readBehaviorStateFile(GLOBAL_BEHAVIOR_STATE_FILE);
+ const snap=await readBehaviorStateFile(GFTSH_STATE_SNAPSHOT);
+ const candidates=[primary,snap].filter(Boolean).sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0));
+ return candidates[0]||emptyBehaviorState();
+}
+function persistenceCapability(){
+ const gh=Boolean(process.env.GITHUB_ACTIONS);
+ const workspace=process.env.GITHUB_WORKSPACE||process.cwd();
+ return {githubActions:gh,workspace,localStatePath:path.resolve(GLOBAL_BEHAVIOR_STATE_FILE),snapshotPath:path.resolve(GFTSH_STATE_SNAPSHOT),note:gh?'Runner-local files are ephemeral unless the workflow caches/artifacts/state directory. This build writes a portable snapshot and reports its age.':'Local filesystem persistence is available.'};
+}
+async function persistBehaviorState(payload){
+ await fs.mkdir(path.dirname(GLOBAL_BEHAVIOR_STATE_FILE),{recursive:true});
+ await fs.mkdir(path.dirname(GFTSH_STATE_SNAPSHOT),{recursive:true});
+ const body=JSON.stringify(payload,null,2);
+ await fs.writeFile(GLOBAL_BEHAVIOR_STATE_FILE,body);
+ const now=Date.now();
+ let last=0;try{const x=JSON.parse(await fs.readFile(GFTSH_STATE_SNAPSHOT,'utf8'));last=Number(x?.snapshotAt||0);}catch{}
+ if(!last || now-last>=GFTSH_PERSIST_HEARTBEAT_MIN*60000){
+  await fs.writeFile(GFTSH_STATE_SNAPSHOT,JSON.stringify({...payload,snapshotAt:now,snapshotVersion:VERSION},null,2));
+ }
 }
 function eventKey(e){
  const n=normalizeBehaviorEvent(e)||{};
@@ -719,7 +735,9 @@ async function buildHLBehaviorHunters(audited){
 async function main(){
  const started=Date.now();const start=Date.now()-LOOKBACK_HOURS*3600000,end=Date.now();
  console.log(`${VERSION} | READ-ONLY | NO ORDERS`);
+ console.log(`[PERSISTENCE] source=${behaviorState.persistedFrom||'NONE'} | cursor=${behaviorState.cursor} | events=${behaviorState.events.length} | updatedAt=${behaviorState.updatedAt?new Date(behaviorState.updatedAt).toISOString():'NONE'} | githubActions=${persistInfo.githubActions?'YES':'NO'}`);
  const behaviorState=await loadBehaviorState();
+ const persistInfo=persistenceCapability();
  const lb=await fetchLeaderboard();
  // Global discovery ranks the full public universe, then rotates a bounded audit window.
  const allRanked=lb.rows.map(r=>{const a=String(r?.ethAddress||r?.address||r?.user||'');const m=leaderboardMetrics(r);return {...r,address:a,name:String(r?.displayName||r?.name||r?.username||''),lb:m}}).filter(r=>/^0x[a-fA-F0-9]{40}$/.test(r.address)).sort((a,b)=>(b.lb.day.vlm*0.000002+b.lb.week.vlm*0.0000005+Math.max(0,b.lb.day.pnl)*0.002)-(a.lb.day.vlm*0.000002+a.lb.week.vlm*0.0000005+Math.max(0,a.lb.day.pnl)*0.002));
@@ -819,7 +837,7 @@ async function main(){
  report.push('','🧱 TOP BLOCK REASONS');
  sortCandidates(audited.filter(x=>!used.has(x.address))).slice(0,10).forEach(x=>{const d=x.diagnostics||{};report.push(`${short(x.address)} | ${x.quality.tier} ${safeFixed(x.quality?.score,1)} | ${x.blockReason||x.quality.reasons.join(' | ')||'NOT_SIGNAL_READY'} | fresh=${d.fresh15||0} match=${d.matched||0}`)});
  report.push('','🌍 GLOBAL BEHAVIOR HUNT',`Sources: ${globalHunt.sources.join(' | ')||'none'}`,`Current event observations: ${currentVerified.length} | Retained 30D events: ${mergedEvents.length} | Repeatable hunters: ${behaviorHunters.filter(x=>x.repeatable).length} | Tracked TOP=${Math.min(GLOBAL_TRACKED_HUNTERS,behaviorHunters.filter(x=>x.repeatable).length)}`,
- `Behavior DB: full-universe queue=${discoveryPool.length} | cursor=${cursorBase}→${(cursorBase+activityPool.length)%Math.max(1,discoveryPool.length)} | persisted hunters audited=${persistedHunters.length} | refresh=${GLOBAL_DISCOVERY_REFRESH_HOURS}h | strong capture≥${GLOBAL_STRONG_CAPTURE_MIN}%=${strongNow}`, `Rule: discovery is independent of current activity; entry must precede the first directional trigger, market must reach the major-move threshold, and exit must capture ≥${GLOBAL_EXIT_CAPTURE_MIN}% of MFE and occur within ${GLOBAL_EXIT_PEAK_TOLERANCE_MIN}m before/after the event peak. Minimum repeats=${GLOBAL_MIN_REPEAT_EVENTS}, distinct coins=${GLOBAL_MIN_DISTINCT_COINS}.`,'');
+ `Behavior DB: full-universe queue=${discoveryPool.length} | cursor=${cursorBase}→${(cursorBase+activityPool.length)%Math.max(1,discoveryPool.length)} | persisted hunters audited=${persistedHunters.length} | refresh=${GLOBAL_DISCOVERY_REFRESH_HOURS}h | strong capture≥${GLOBAL_STRONG_CAPTURE_MIN}%=${strongNow}` ,`Persistence: loaded=${behaviorState.persistedFrom||'NONE'} | priorCursor=${behaviorState.cursor} | priorEvents=${behaviorState.events.length} | snapshot=${GFTSH_STATE_SNAPSHOT}`, `Rule: discovery is independent of current activity; entry must precede the first directional trigger, market must reach the major-move threshold, and exit must capture ≥${GLOBAL_EXIT_CAPTURE_MIN}% of MFE and occur within ${GLOBAL_EXIT_PEAK_TOLERANCE_MIN}m before/after the event peak. Minimum repeats=${GLOBAL_MIN_REPEAT_EVENTS}, distinct coins=${GLOBAL_MIN_DISTINCT_COINS}.`,'');
  report.push('','🛡️ V2.2 CONTRACTS',`• Global discovery is multi-exchange; Hyperliquid is one source, not the whole hunter.`,`• Performance unit = actual closed lifecycle; no synthetic trades.`,`• PF unavailable is shown as — and never becomes LOW_PF.`,`• Exchange-specific current-position authority is source-native; no stale fill may become a live position.`,`• Signal requires fresh open activity + live position + entry distance + RR.`,`• Null metrics are rendered as — and never passed to toFixed().`,`• Multiple independent traders/signals may be emitted; MAX_SIGNALS=${MAX_SIGNALS}.`,`• Audit is history-first: full 30D fills are evaluated for discovery; live state is fetched only after fresh activity is detected or for a tracked hunter.`,`• Decision diagnostics separate missing-mid, invalid-entry, watch/entry distance and RR failures; Entry validation uses the live position entry price with fill fallback.`,`• Quality diagnostics separate trade-count, WR, PF-unavailable, PF, PnL, DD and anomaly failures.`,`• Evidence matrix shows Trades/WR/PF/DD plus recent 24H performance, win/loss distribution, streaks and position concentration.`,
  `• Performance forensics compares the current audit window with 24H and 7D activity; no synthetic performance is created.`,
  `• Copyability forensics reports live notional, max position/coin concentration, leverage and reconstructed position age.`,
@@ -831,7 +849,8 @@ async function main(){
  const auditLedger={...(behaviorState.auditLedger||{})};
  for(const c of activityPool){if(c?.address)auditLedger[c.address]=Date.now();}
  for(const k of Object.keys(auditLedger)){if(!byAddr.has(k))delete auditLedger[k];}
- await fs.writeFile(GLOBAL_BEHAVIOR_STATE_FILE,JSON.stringify({version:VERSION,updatedAt:Date.now(),cursor:nextCursor,events:mergedEvents,hunters:behaviorHunters.slice(0,GLOBAL_DB_MAX_HUNTERS),trackedHunters:behaviorHunters.filter(x=>x.repeatable).slice(0,GLOBAL_TRACKED_HUNTERS).map(x=>({source:x.source,traderId:x.traderId,name:x.name,repeats:x.repeats,coins:x.coins,score:x.score,avgLeadMin:x.avgLeadMin,avgExitCapturePct:x.avgExitCapturePct})),auditLedger},null,2));
+ const behaviorPayload={version:VERSION,updatedAt:Date.now(),cursor:nextCursor,events:mergedEvents,hunters:behaviorHunters.slice(0,GLOBAL_DB_MAX_HUNTERS),trackedHunters:behaviorHunters.filter(x=>x.repeatable).slice(0,GLOBAL_TRACKED_HUNTERS).map(x=>({source:x.source,traderId:x.traderId,name:x.name,repeats:x.repeats,coins:x.coins,score:x.score,avgLeadMin:x.avgLeadMin,avgExitCapturePct:x.avgExitCapturePct})),auditLedger};
+ await persistBehaviorState(behaviorPayload);
  await fs.writeFile(STATE_FILE,JSON.stringify({version:VERSION,build:BUILD,generatedAt:Date.now(),discovered:lb.traders.length,behaviorDatabase:{file:GLOBAL_BEHAVIOR_STATE_FILE,loaded:behaviorState.events.length,currentVerified:currentVerified.length,retained30D:mergedEvents.length,repeatableHunters:behaviorHunters.filter(x=>x.repeatable).length,rotationPool:discoveryPool.length,cursor:nextCursor},globalHunt:{sources:globalHunt.sources,events:globalHunt.events,hunters:globalHunt.hunters.slice(0,50),signals:globalHunt.signals.slice(0,20)},audited:audited.length,eligible:eligible.length,signals:[...signals.map(s=>({source:'HYPERLIQUID',address:s.trader.address,coin:s.coin,side:s.side,entry:s.entry,mark:s.mark,sl:s.sl,tp:s.tp,rr:s.rr,ageMin:s.ageMin})),...globalHunt.signals.map(s=>({source:s.source,traderId:s.traderId,coin:s.coin,side:s.side,entry:s.entry,mark:s.mark,sl:s.sl,tp:s.tp,rr:s.rr,ageMin:s.ageMin,behaviorScore:s.behaviorScore,repeats:s.repeats}))],watch:watch.map(x=>({address:x.address,name:x.name,score:x.quality.score,tier:x.quality.tier,blockReason:x.blockReason,performance:x.performance,quality:x.quality,positions:x.positions,copyability:x.copyability,diagnostics:x.diagnostics})),evidenceTop:evidenceTop.slice(0,20).map(x=>({address:x.address,name:x.name,score:x.quality.score,tier:x.quality.tier,performance:x.performance,quality:x.quality,positions:x.positions,copyability:x.copyability,diagnostics:x.diagnostics,blockReason:x.blockReason})),nearMiss:nearMiss.slice(0,20).map(x=>({address:x.address,name:x.name,performance:x.performance,quality:x.quality,positions:x.positions,copyability:x.copyability,diagnostics:x.diagnostics,blockReason:x.blockReason})),errors,errorBreakdown,pipeline:{fills:dsum('fills'),fresh15:dsum('fresh15'),increasing:dsum('increasing'),livePositions:dsum('livePositions'),matched:dsum('matched'),entryWindow:dsum('entryWindow'),qualityPass:diagRows.filter(x=>x.qualityPass).length}},null,2));if(text)await telegram(text);
 }
 main().catch(async e=>{console.error(`[GFTSH][FATAL] ${e.stack||e}`);process.exitCode=1});
