@@ -687,9 +687,12 @@ async function enrichHLBehaviorEvents(events){
   if(capture<GLOBAL_EXIT_CAPTURE_MIN)continue;
   stats.capturePass++;
   const exitAfterEvent=Math.max(0,(num(e.closeTime)-eventStart)/60000);
+  const exitFromPeakMin=(num(e.closeTime)-num(eventPeak))/60000;
+  if(exitFromPeakMin < -GLOBAL_EXIT_PEAK_TOLERANCE_MIN)continue;
+  stats.peakExitPass=(stats.peakExitPass||0)+1;
   out.push({...e,mfePct:eventPeakMove,mfeTime:eventPeak,preLeadMin:lead,eventStart,eventEnd,exitAfterEventMin:exitAfterEvent,exitCapturePct:capture,exitFromPeakMin,marketEvent:true});
  }
- console.log(`[GLOBAL][HL EVENT RECON] candidates=${events.length} candleOK=${stats.candleOk} trigger=${stats.triggerFound} leadPass=${stats.leadPass} mfePass=${stats.mfePass} capturePass=${stats.capturePass} verified=${out.length}`);
+ console.log(`[GLOBAL][HL EVENT RECON] candidates=${events.length} candleOK=${stats.candleOk} trigger=${stats.triggerFound} leadPass=${stats.leadPass} mfePass=${stats.mfePass} capturePass=${stats.capturePass} peakExitPass=${stats.peakExitPass||0} verified=${out.length}`);
  return out;
 }
 async function buildHLBehaviorHunters(audited){
