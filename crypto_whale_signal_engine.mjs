@@ -503,7 +503,7 @@ async function telegram(text){if(!TG_TOKEN||!TG_CHAT){console.log('[TELEGRAM] cr
 
 async function globalGet(pathname,params={},label='global'){await sleep(GLOBAL_API_GAP_MS);const q=new URLSearchParams(params);return json(`${OKX_API}${pathname}?${q.toString()}`,{},label)}
 function normalizeOkxLeadRows(raw){const rows=Array.isArray(raw?.data)?raw.data:Array.isArray(raw)?raw:[];return rows.map(r=>({source:'OKX',id:String(r?.uniqueCode||''),name:String(r?.nickName||r?.displayName||''),roi:num(r?.roi),pnl:num(r?.pnl),aum:num(r?.aum),mdd:num(r?.mdd),winRate:num(r?.winRate),raw:r})).filter(x=>x.id)}
-async function fetchOKXLeaders(){try{return normalizeOkxLeadRows(await globalGet('/copytrading/public-lead-traders',{instType:'SWAP',limit:String(Math.min(100,GLOBAL_DISCOVERY_LIMIT))},'okx:leaders'))}catch(e){console.log(`[GLOBAL][OKX][LEADERS] ${classifyError(e)} | ${String(e?.message||e).slice(0,160)}`);return []}}
+async function fetchOKXLeaders(){console.log('[GLOBAL][OKX][LEADERS] SOURCE_UNAVAILABLE | current public OKX lead-trading REST adapter is not a valid signal-history source');return []}
 async function fetchOKXPositions(uniqueCode){try{const raw=await globalGet('/copytrading/public-current-subpositions',{instType:'SWAP',uniqueCode,limit:'100'},`okx:pos:${uniqueCode}`);const rows=Array.isArray(raw?.data)?raw.data:[];return rows.map(r=>({source:'OKX',uniqueCode,coin:String(r?.instId||''),side:String(r?.posSide||'').toLowerCase()==='short'?'SHORT':'LONG',entry:num(r?.openAvgPx),mark:num(r?.markPx),size:Math.abs(num(r?.subPos)),value:Math.abs(num(r?.margin))*Math.max(1,num(r?.lever)),leverage:num(r?.lever),openTime:num(r?.openTime),delayed:true,raw:r})).filter(x=>x.coin&&x.entry>0)}catch(e){return []}}
 async function fetchOKXHistory(uniqueCode){try{const raw=await globalGet('/copytrading/public-subpositions-history',{instType:'SWAP',uniqueCode,limit:'100'},`okx:hist:${uniqueCode}`);return Array.isArray(raw?.data)?raw.data:[]}catch(e){return []}}
 async function fetchOKXCandles(instId,start,end){try{const raw=await globalGet('/market/candles',{instId,bar:'5m',after:String(end),before:String(start),limit:'100'},`okx:candle:${instId}`);const rows=Array.isArray(raw?.data)?raw.data:[];return rows.map(r=>({t:num(r?.[0]),o:num(r?.[1]),h:num(r?.[2]),l:num(r?.[3]),c:num(r?.[4]),v:num(r?.[5])})).filter(x=>x.t>0&&x.h>0&&x.l>0)}catch(e){return []}}
@@ -531,7 +531,58 @@ async function mapLimit(items,limit,fn){
   await Promise.all(Array.from({length:Math.min(limit,items.length)},()=>worker()));return out;
 }
 
-function buildHLBehaviorHunters(audited){const out=[];for(const x of audited){const rows=(x.performance?.closed||[]).filter(t=>t.closeTime>=Date.now()-GLOBAL_EVENT_LOOKBACK_DAYS*86400000);const events=rows.map(t=>{const move=t.side==='LONG'?(t.exit/t.entry-1)*100:(1-t.exit/t.entry)*100;return {...t,movePct:move,preLeadMin:num(t.holdHours)*60,exitCapturePct:move>=Math.max(GLOBAL_PUMP_PCT,GLOBAL_DUMP_PCT)?100:0}}).filter(e=>e.movePct>=Math.max(GLOBAL_PUMP_PCT,GLOBAL_DUMP_PCT)&&e.preLeadMin>=GLOBAL_MIN_PREPUMP_LEAD_MIN&&e.preLeadMin<=GLOBAL_EVENT_MAX_HOURS*60);if(events.length>=GLOBAL_MIN_REPEAT_EVENTS){const strong=events.filter(e=>e.exitCapturePct>=GLOBAL_EXIT_CAPTURE_MIN);const avgLead=events.reduce((a,e)=>a+e.preLeadMin,0)/events.length;const score=Math.min(100,events.length*15+Math.min(35,avgLead/10)+40);out.push({source:'HYPERLIQUID',traderId:x.address,name:x.name||short(x.address),events,repeats:events.length,strongRepeats:strong.length,avgLeadMin:avgLead,avgExitCapturePct:100,score,repeatable:strong.length>=GLOBAL_MIN_REPEAT_EVENTS&&score>=GLOBAL_HUNTER_SCORE_MIN,quality:x.quality,performance:x.performance,currentSignal:x.currentSignal})}}return out.sort((a,b)=>b.score-a.score)}
+async function fetchHLCandles(coin,start,end,interval='5m'){
+ try{
+  const raw=await hl({type:'candleSnapshot',req:{coin,interval,startTime:start,endTime:end}},`candle:${coin}`);
+  return Array.isArray(raw)?raw.map(c=>({t:num(c?.t),T:num(c?.T),o:num(c?.o),h:num(c?.h),l:num(c?.l),c:num(c?.c)})).filter(c=>c.t>0&&c.h>0&&c.l>0):[];
+ }catch(e){return []}
+}
+async function enrichHLBehaviorEvents(events){
+ const out=[];
+ for(const e of events.slice(0,Math.max(10,GLOBAL_EVENT_CANDIDATES*2))){
+  const end=Math.min(num(e.closeTime)||Date.now(),num(e.openTime)+GLOBAL_EVENT_MAX_HOURS*3600000);
+  const candles=await fetchHLCandles(e.coin,num(e.openTime),end,'5m');
+  if(!candles.length)continue;
+  let mfe=0,mfeTime=0;
+  for(const c of candles){
+   const move=e.side==='LONG'?(c.h/e.entry-1)*100:(1-c.l/e.entry)*100;
+   if(move>mfe){mfe=move;mfeTime=c.T||c.t}
+  }
+  const capture=mfe>0?Math.max(0,Math.min(100,e.movePct/mfe*100)):0;
+  const leadMin=mfeTime>e.openTime?(mfeTime-e.openTime)/60000:0;
+  const marketEvent=mfe>=Math.max(GLOBAL_PUMP_PCT,GLOBAL_DUMP_PCT);
+  if(!marketEvent||leadMin<GLOBAL_MIN_PREPUMP_LEAD_MIN||capture<GLOBAL_EXIT_CAPTURE_MIN)continue;
+  out.push({...e,mfePct:mfe,preLeadMin:leadMin,exitCapturePct:capture,marketEvent:true});
+ }
+ return out;
+}
+async function buildHLBehaviorHunters(audited){
+ const candidateEvents=[];
+ for(const x of audited){
+  const rows=(x.performance?.closed||[]).filter(t=>t.closeTime>=Date.now()-GLOBAL_EVENT_LOOKBACK_DAYS*86400000);
+  for(const t of rows){
+   const move=t.side==='LONG'?(t.exit/t.entry-1)*100:(1-t.exit/t.entry)*100;
+   if(move<Math.max(GLOBAL_PUMP_PCT,GLOBAL_DUMP_PCT)||num(t.holdHours)<=0||num(t.holdHours)>GLOBAL_EVENT_MAX_HOURS)continue;
+   candidateEvents.push({...t,traderId:x.address,name:x.name||short(x.address),source:'HYPERLIQUID',movePct:move});
+  }
+ }
+ candidateEvents.sort((a,b)=>Math.abs(b.movePct)-Math.abs(a.movePct));
+ const verified=await enrichHLBehaviorEvents(candidateEvents);
+ const grouped=new Map();
+ for(const e of verified){const k=`${e.traderId}:${e.coin}`;const g=grouped.get(k)||{source:'HYPERLIQUID',traderId:e.traderId,name:e.name,coin:e.coin,events:[]};g.events.push(e);grouped.set(k,g)}
+ const out=[];
+ for(const g of grouped.values()){
+  const ev=g.events, strong=ev.filter(e=>e.preLeadMin>=GLOBAL_MIN_PREPUMP_LEAD_MIN&&e.exitCapturePct>=GLOBAL_EXIT_CAPTURE_MIN);
+  const avgLead=ev.reduce((a,e)=>a+e.preLeadMin,0)/ev.length,avgCapture=ev.reduce((a,e)=>a+e.exitCapturePct,0)/ev.length;
+  const score=Math.min(100,ev.length*15+Math.min(35,avgLead/10)+Math.min(40,avgCapture/2));
+  const owner=audited.find(x=>x.address===g.traderId);
+  g.repeats=ev.length;g.strongRepeats=strong.length;g.avgLeadMin=avgLead;g.avgExitCapturePct=avgCapture;g.score=score;
+  g.repeatable=ev.length>=GLOBAL_MIN_REPEAT_EVENTS&&strong.length>=GLOBAL_MIN_REPEAT_EVENTS&&score>=GLOBAL_HUNTER_SCORE_MIN;
+  g.quality=owner?.quality;g.performance=owner?.performance;g.currentSignal=owner?.currentSignal;
+  out.push(g);
+ }
+ return out.sort((a,b)=>b.score-a.score);
+}
 async function main(){
  const started=Date.now();const start=Date.now()-LOOKBACK_HOURS*3600000,end=Date.now();
  console.log(`${VERSION} | READ-ONLY | NO ORDERS`);
@@ -551,9 +602,11 @@ async function main(){
  const nearMiss=sortCandidates(audited.filter(x=>(x.diagnostics?.entryWindow||0)>0&&!x.diagnostics?.qualityPass)).sort((a,b)=>evidenceRank(b)-evidenceRank(a));
  const evidenceTop=sortCandidates(audited.filter(x=>(x.diagnostics?.matched||0)>0)).sort((a,b)=>evidenceRank(b)-evidenceRank(a));
 
- const hlHunters=buildHLBehaviorHunters(audited);const globalHunt=await globalBehaviorDiscovery();globalHunt.sources.unshift(`HYPERLIQUID behavior hunters=${hlHunters.filter(x=>x.repeatable).length}`);globalHunt.hunters=[...hlHunters,...globalHunt.hunters];for(const h of hlHunters.filter(x=>x.repeatable)){if(h.currentSignal){const s={...h.currentSignal,source:'HYPERLIQUID',traderId:h.traderId,name:h.name,behaviorScore:h.score,repeats:h.repeats,reason:`REPEATABLE_PRE_PUMP_HUNTER | ${h.repeats} events | lead ${safeFixed(h.avgLeadMin,1)}m`};globalHunt.signals.push(s)}}console.log(`[GLOBAL HUNT] sources=${globalHunt.sources.join(' | ')||'none'} | events=${globalHunt.events.length} | repeatableHunters=${globalHunt.hunters.filter(x=>x.repeatable).length} | verifiedGlobalSignals=${globalHunt.signals.length}`);
+ const hlHunters=await buildHLBehaviorHunters(audited);const globalHunt=await globalBehaviorDiscovery();globalHunt.sources.unshift(`HYPERLIQUID behavior hunters=${hlHunters.filter(x=>x.repeatable).length}`);globalHunt.hunters=[...hlHunters,...globalHunt.hunters];globalHunt.events=[...hlHunters.flatMap(x=>x.events||[]),...globalHunt.events];for(const h of hlHunters.filter(x=>x.repeatable)){if(h.currentSignal){const s={...h.currentSignal,source:'HYPERLIQUID',traderId:h.traderId,name:h.name,behaviorScore:h.score,repeats:h.repeats,reason:`REPEATABLE_PRE_PUMP_HUNTER | ${h.repeats} events | lead ${safeFixed(h.avgLeadMin,1)}m`};globalHunt.signals.push(s)}}console.log(`[GLOBAL HUNT] sources=${globalHunt.sources.join(' | ')||'none'} | events=${globalHunt.events.length} | repeatableHunters=${globalHunt.hunters.filter(x=>x.repeatable).length} | verifiedGlobalSignals=${globalHunt.signals.length}`);
+ console.log(`[GLOBAL FUNNEL] behavior-events=${globalHunt.events.length} | repeatable=${globalHunt.hunters.filter(x=>x.repeatable).length} | quality+behavior+position signals=${globalHunt.signals.length} | telegram-selected=${Math.min(GLOBAL_TELEGRAM_MAX_SIGNALS,globalHunt.signals.length)}`);
  const watch=sortCandidates(eligible).slice(0,TOP_WATCH);const localSignals=watch.map(x=>x.currentSignal).filter(Boolean).sort((a,b)=>b.trader.quality.score-a.trader.quality.score).slice(0,MAX_SIGNALS);
  const signals=localSignals.slice(0,MAX_SIGNALS);
+ const used=new Set([...signals.map(s=>s?.trader?.address),...globalHunt.signals.map(s=>s?.traderId)].filter(Boolean));
  const report=[];
  report.push('🌐 GLOBAL FUTURES PRO HUNTER',`🧠 ${VERSION}`,`🔧 ${BUILD}`,'📡 READ-ONLY | NO ORDERS | NO AUTO-COPY | FUTURES ONLY','━━━━━━━━━━━━━━━━━━');
  const diagRows=audited.map(x=>x.diagnostics||{});const dsum=k=>diagRows.reduce((a,x)=>a+num(x[k]),0);const qsum=k=>diagRows.reduce((a,x)=>a+num(x.quality?.[k]?1:0),0);const errText=Object.entries(errorBreakdown).map(([k,v])=>`${k}=${v}`).join(' | ')||'none';
@@ -565,7 +618,7 @@ async function main(){
  `📦 COPY GATE: maxPos≤${COPY_MAX_POSITION}% | maxCoin≤${COPY_MAX_COIN}% | maxLev≤${COPY_MAX_LEVERAGE}x`, `🧪 FORENSICS: near-miss=${nearMiss.length} | anomalies=${audited.filter(x=>x.quality?.anomaly).length} | evidence-live=${evidenceTop.length}`,
  `📊 EVIDENCE DEPTH: live-position traders=${audited.filter(x=>(x.diagnostics?.livePositions||0)>0).length} | live-match traders=${liveMatched.length} | entry-ready traders=${entryCandidates.length} | quality-pass traders=${eligible.length}`,
  `🧯 ERROR BREAKDOWN: ${errText}`,`🎯 Quality eligible: ${eligible.length} | Watchlist: ${watch.length} | Actionable signals: ${signals.length}/${MAX_SIGNALS}`,`🧾 TRADE RECON: actual closed lifecycles | partial fills aggregated | PF/WR anomaly guard ON`,`🛡 CURRENT POSITION: source-native verified position only | stale fills/history cannot create a live position`,`⚡ SIGNAL: fresh open activity ≤${FRESH_MIN}m | entry distance ≤${ENTRY_MAX}% | SL ${SL_PCT}% | TP ${TP_R}R | RR ≥${MIN_RR}`,'');
- report.push('📡 SOURCE STATUS',`HYPERLIQUID: OK | BEHAVIOR+SIGNAL | discovered=${lb.traders.length} | audited=${audited.length}`,`OKX: ${globalHunt.sources.find(x=>x.startsWith('OKX'))||'NOT ENABLED'} | public lead history/positions | position feed has documented delay`,`BINANCE: ${GLOBAL_SOURCES.includes('BINANCE')?'DISCOVERY-ONLY':'DISABLED'} | public leaderboard/Smart Money exists, raw trader-history adapter not promoted to signal`, `BYBIT: ${GLOBAL_SOURCES.includes('BYBIT')?'DISCOVERY-ONLY':'DISABLED'} | public leaderboard exists, raw trader-history adapter not promoted to signal`,'');
+ report.push('📡 SOURCE STATUS',`HYPERLIQUID: OK | BEHAVIOR+SIGNAL | discovered=${lb.traders.length} | audited=${audited.length}`,`OKX: ${globalHunt.sources.find(x=>x.startsWith('OKX'))||'NOT ENABLED'} | SIGNAL-UNAVAILABLE via current public REST lead-history adapter`,`BINANCE: ${GLOBAL_SOURCES.includes('BINANCE')?'DISCOVERY-ONLY':'DISABLED'} | public leaderboard/Smart Money exists, raw trader-history adapter not promoted to signal`, `BYBIT: ${GLOBAL_SOURCES.includes('BYBIT')?'DISCOVERY-ONLY':'DISABLED'} | public leaderboard exists, raw trader-history adapter not promoted to signal`,'');
  report.push('🔬 QUALITY EVIDENCE MATRIX');
  evidenceTop.slice(0,10).forEach((x,i)=>report.push(`${i+1}. ${evidenceLine(x)} | ${x.quality.strategy||'NONE'} | Copy ${x.quality.copyPass?'PASS':'FAIL'}`));
  if(!evidenceTop.length)report.push('No trader reached live-position matching for evidence ranking.');
@@ -599,4 +652,4 @@ async function main(){
  `⚙️ Rate safety: candidates=${activityPool.length} | concurrency=${MAX_CONCURRENCY} | gap=${MIN_REQUEST_GAP_MS}ms | 429 cooldown=${GLOBAL_429_COOLDOWN_MS}ms`,`🕒 ${new Date().toISOString()}`);
  const telemetryText=report.join('\n');console.log(telemetryText);const tgLines=['🌐 GFTSH GLOBAL HUNTER V2.2','━━━━━━━━━━━━━━━━━━'];const selectedSignals=globalHunt.signals.filter(s=>s?.ageMin<=FRESH_MIN).sort((a,b)=>(b.behaviorScore||0)-(a.behaviorScore||0)).slice(0,GLOBAL_TELEGRAM_MAX_SIGNALS);if(selectedSignals.length){selectedSignals.forEach((s,i)=>tgLines.push(`🟢 ${i+1} | ${s.name||s.trader?.name||short(s.traderId)} | ${s.source||s.selectedSource}`,`   ${s.side} ${s.coin} | Entry ${px(s.entry)} | Mark ${px(s.mark)} | Dist ${pct(s.distancePct,2)}`,`   SL ${px(s.sl)} | TP ${px(s.tp)} | RR ${safeFixed(s.rr,2)} | Age ${safeFixed(s.ageMin,1)}m`,`   BEHAVIOR ${s.behaviorScore!==undefined?safeFixed(s.behaviorScore,1):s.trader?.quality?.strategy||'SELECTED'} | Repeats ${s.repeats||'—'} | ${s.reason||'VERIFIED'}`,`   VERIFIED: CURRENT POSITION + FRESH ENTRY + REPEATABLE BEHAVIOR`,'━━━━━━━━━━━━━━━━━━'))}const text=selectedSignals.length?tgLines.join('\n'):'';await fs.mkdir(path.dirname(STATE_FILE),{recursive:true});await fs.writeFile(STATE_FILE,JSON.stringify({version:VERSION,build:BUILD,generatedAt:Date.now(),discovered:lb.traders.length,globalHunt:{sources:globalHunt.sources,events:globalHunt.events,hunters:globalHunt.hunters.slice(0,50),signals:globalHunt.signals.slice(0,20)},audited:audited.length,eligible:eligible.length,signals:[...signals.map(s=>({source:'HYPERLIQUID',address:s.trader.address,coin:s.coin,side:s.side,entry:s.entry,mark:s.mark,sl:s.sl,tp:s.tp,rr:s.rr,ageMin:s.ageMin})),...globalHunt.signals.map(s=>({source:s.source,traderId:s.traderId,coin:s.coin,side:s.side,entry:s.entry,mark:s.mark,sl:s.sl,tp:s.tp,rr:s.rr,ageMin:s.ageMin,behaviorScore:s.behaviorScore,repeats:s.repeats}))],watch:watch.map(x=>({address:x.address,name:x.name,score:x.quality.score,tier:x.quality.tier,blockReason:x.blockReason,performance:x.performance,quality:x.quality,positions:x.positions,copyability:x.copyability,diagnostics:x.diagnostics})),evidenceTop:evidenceTop.slice(0,20).map(x=>({address:x.address,name:x.name,score:x.quality.score,tier:x.quality.tier,performance:x.performance,quality:x.quality,positions:x.positions,copyability:x.copyability,diagnostics:x.diagnostics,blockReason:x.blockReason})),nearMiss:nearMiss.slice(0,20).map(x=>({address:x.address,name:x.name,performance:x.performance,quality:x.quality,positions:x.positions,copyability:x.copyability,diagnostics:x.diagnostics,blockReason:x.blockReason})),errors,errorBreakdown,pipeline:{fills:dsum('fills'),fresh15:dsum('fresh15'),increasing:dsum('increasing'),livePositions:dsum('livePositions'),matched:dsum('matched'),entryWindow:dsum('entryWindow'),qualityPass:diagRows.filter(x=>x.qualityPass).length}},null,2));if(text)await telegram(text);
 }
-main().catch(async e=>{console.error(`[GFTSH][FATAL] ${e.stack||e}`);await telegram(`🌐 GLOBAL FUTURES PRO HUNTER\n🧠 ${VERSION}\n💥 FATAL: ${String(e?.message||e).slice(0,1000)}`);process.exitCode=1});
+main().catch(async e=>{console.error(`[GFTSH][FATAL] ${e.stack||e}`);process.exitCode=1});
