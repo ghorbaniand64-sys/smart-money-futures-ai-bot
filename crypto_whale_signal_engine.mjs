@@ -6,8 +6,8 @@ import path from 'node:path';
 // Source authority: Hyperliquid public leaderboard + public user fills + clearinghouseState.
 // Current position authority: clearinghouseState ONLY. Stale fills never become a live position.
 
-const VERSION='GFTSH-V2.3.1-PERSISTENT-30D-BEHAVIOR-HUNTER-FIXED';
-const BUILD='V2.3.1-PERSISTENT-30D-EVENT-DATABASE-ROTATING-AUDIT-MULTI-COIN-REPEATABILITY-OPEN-TIME-FIX';
+const VERSION='GFTSH-V2.3.2-GIT-PERSISTENT-30D-BEHAVIOR-HUNTER';
+const BUILD='V2.3.2-GIT-PERSISTENT-30D-EVENT-DATABASE-ROTATING-AUDIT-MULTI-COIN-REPEATABILITY';
 const API=process.env.HYPERLIQUID_API_URL||'https://api.hyperliquid.xyz/info';
 const LEADERBOARD=process.env.HL_LEADERBOARD_URL||process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL||'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';
 const TG_TOKEN=process.env.TELEGRAM_TOKEN||process.env.TELEGRAM_BOT_TOKEN||'';

@@ -1,28 +1,34 @@
-GFTSH V2.3.0 — PERSISTENT 30D GLOBAL BEHAVIOR HUNTER
-READ-ONLY / NO ORDERS / NO AUTO-COPY / FUTURES ONLY
+GFTSH V2.3.2 — GIT-PERSISTENT 30D BEHAVIOR HUNTER
+READ-ONLY / NO ORDERS / NO AUTO-COPY
 
-Required worker filename:
-crypto_whale_signal_engine.mjs
+Purpose:
+Persist verified pre-pump/pre-dump behavior evidence across GitHub Actions runs.
+The repository itself is the durable state store because ubuntu-latest runners are ephemeral.
 
-Required workflow filename:
-.github/workflows/crypto-whale-signal-engine.yml
+V2.3.2 changes:
+- Persists state/gftsh_global_behavior_v23.json back into the repository after successful runs.
+- Persists the rotation cursor, so the next 5-minute cycle continues from the previous batch.
+- Uses git add -f so state is persisted even if a repository .gitignore matches state/.
+- Persists only after a successful worker run; failed/cancelled runs do not overwrite durable behavior state.
+- Verifies the persisted JSON schema before completing the job.
+- Keeps the V2.3.1 open-time reconstruction fix.
+- Keeps verified-event deduplication and rolling 30D retention.
+- Keeps strict quality, copyability, current-position and fresh-entry gates.
+- Does not lower any gate to manufacture signals.
 
-WHAT V2.3 FIXES
-1. Persistent rolling 30D behavior database is stored in:
-   state/gftsh_global_behavior_v23.json
-2. Verified events are deduplicated by trader/coin/side/time and retained for 30 days.
-3. Behavior is accumulated across GitHub Actions cycles instead of rebuilt from only the current 40 audited traders.
-4. Leaderboard discovery rotates through a bounded top universe (default 400) with a 40-trader audit chunk.
-5. Persisted repeatable hunters are re-audited for fresh current-position authority before a signal can be emitted.
-6. Repeatability still requires at least 2 verified events and 2 distinct coins.
-7. Exit capture remains strict; strong capture >=70% is tracked separately and no quality gate is relaxed.
-8. Hyperliquid remains the only current signal-grade raw trader lifecycle source in this build. Binance/Bybit are discovery-only and OKX remains source-unavailable for the required public lead-history reconstruction.
+Expected rotation:
+Run 1: cursor 0 -> 40
+Run 2: cursor 40 -> 80
+Run 3: cursor 80 -> 120
+...
+Run N: cursor resumes from the committed state.
 
-EVENT MODEL
-Trader entry -> wait >=10m -> first directional trigger >=1.5% -> continuation to major move >=5% within trigger window -> MFE measured from actual entry -> exit capture >=50% -> verified event.
+Expected behavior database:
+loaded=<previous persisted events>
+currentVerified=<new events this cycle>
+retained30D=<merged rolling 30D events>
+repeatable=<traders with >=2 verified events on >=2 distinct coins>
 
-SIGNAL MODEL
-Repeatable behavior + trader quality + copyability + source-native current position + fresh open activity + entry distance <=0.75% + model SL 0.5% + TP 2R + RR >=1.5.
-
-TELEGRAM
-Telegram contains selected signals only. Diagnostics and behavior database remain in GitHub Actions logs/state.
+IMPORTANT:
+The GitHub workflow requires contents: write and runs in the production environment.
+No VPS is required.
