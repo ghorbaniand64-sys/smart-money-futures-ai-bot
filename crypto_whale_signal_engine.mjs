@@ -513,16 +513,16 @@ async function auditTrader(c,start,end,midsMap){
   // activity window, so a separate 15m request would only duplicate API load.
   const fills=await fillsFor(c.address,start,end,[]);diag.fills=fills.length;diag.historyLoaded=true;
   const perf=reconstruct(fills);
-  // Derive fresh open/increase activity from the same fill walk before deciding whether
-  // a live-position state request is necessary. This keeps discovery history-first while
-  // restoring the live-position authority for a genuinely fresh event.
+  let ps=[];
+  // Detect fresh open/increase activity BEFORE deciding whether live state is needed.
+  // This ordering is critical: the previous implementation checked diag.fresh15 before
+  // populating it, so fresh traders never received a clearinghouseState lookup.
   const adds=latestOpenAdds(fills);
   diag.fresh15=adds.filter(x=>x.__fresh).length;
   diag.increasing=adds.filter(x=>x.__positionDelta!==0&&Math.abs(x.__positionAfter)>Math.abs(x.__positionBefore)+1e-10).length;
-  let ps=[];
   // clearinghouseState is needed only for a trader with fresh activity or a persistent hunter.
   // Historical discovery must not spend one extra state request per inactive candidate.
-  if(diag.fresh15||c.__trackedHunter){ const state=await stateFor(c.address);diag.stateChecked=true; ps=positions(state); }
+  if(diag.fresh15>0||c.__trackedHunter){ const state=await stateFor(c.address);diag.stateChecked=true; ps=positions(state); }
   diag.livePositions=ps.length;const posByCoin=new Map(ps.map(p=>[p.coin,p]));
 
   // Current-position matching is diagnostic/live-signal logic, never the historical discovery gate.
@@ -637,7 +637,7 @@ async function fetchHLCandles(coin,start,end,interval='5m'){
 }
 async function enrichHLBehaviorEvents(events){
  const out=[];
- const stats={candidate:events.length,candleOk:0,triggerFound:0,leadPass:0,mfePass:0,capturePass:0,peakExitPass:0};
+ const stats={candidate:events.length,candleOk:0,triggerFound:0,leadPass:0,mfePass:0,capturePass:0};
  const unique=events.slice().sort((a,b)=>Math.abs(b.movePct)-Math.abs(a.movePct)).slice(0,Math.max(40,GLOBAL_EVENT_CANDIDATES*3));
  const cache=new Map();
  for(const e of unique){
@@ -691,18 +691,10 @@ async function enrichHLBehaviorEvents(events){
   const capture=eventPeakMove>0?Math.max(0,Math.min(100,exitMove/eventPeakMove*100)):0;
   if(capture<GLOBAL_EXIT_CAPTURE_MIN)continue;
   stats.capturePass++;
-  const closeTime=num(e.closeTime);
-  // Positive = exited after the measured event peak; negative = exited before it.
-  // We require the exit to be at the peak or no more than the configured tolerance
-  // before the peak. This prevents a trader from being classified as an "end-of-trend"
-  // hunter merely because the trade eventually captured a large MFE.
-  const exitFromPeakMin=closeTime>0&&eventPeak>0?(closeTime-eventPeak)/60000:Infinity;
-  if(exitFromPeakMin < -GLOBAL_EXIT_PEAK_TOLERANCE_MIN)continue;
-  stats.peakExitPass++;
-  const exitAfterEvent=Math.max(0,(closeTime-eventStart)/60000);
+  const exitAfterEvent=Math.max(0,(num(e.closeTime)-eventStart)/60000);
   out.push({...e,mfePct:eventPeakMove,mfeTime:eventPeak,preLeadMin:lead,eventStart,eventEnd,exitAfterEventMin:exitAfterEvent,exitCapturePct:capture,exitFromPeakMin,marketEvent:true});
  }
- console.log(`[GLOBAL][HL EVENT RECON] candidates=${events.length} candleOK=${stats.candleOk} trigger=${stats.triggerFound} leadPass=${stats.leadPass} mfePass=${stats.mfePass} capturePass=${stats.capturePass} peakExitPass=${stats.peakExitPass} verified=${out.length}`);
+ console.log(`[GLOBAL][HL EVENT RECON] candidates=${events.length} candleOK=${stats.candleOk} trigger=${stats.triggerFound} leadPass=${stats.leadPass} mfePass=${stats.mfePass} capturePass=${stats.capturePass} verified=${out.length}`);
  return out;
 }
 async function buildHLBehaviorHunters(audited){
@@ -743,7 +735,7 @@ async function main(){
  console.log(`[DISCOVERY] leaderboardRows=${lb.rows.length} validTraderIds=${lb.traders.length} rotationPool=${discoveryPool.length} cursor=${cursorBase} persistedHunters=${persistedHunters.length} audit=${ranked.length}`);
  const midsMap=await mids();const audited=[];let errors=0;const errorBreakdown={};
  const activityPool=ranked;
- console.log(`[AUDIT] history-first candidates=${activityPool.length} concurrency=${MAX_CONCURRENCY} minGap=${MIN_REQUEST_GAP_MS}ms global429Cooldown=${GLOBAL_429_COOLDOWN_MS}ms`);
+ console.log(`[AUDIT] rotating activity candidates=${activityPool.length} concurrency=${MAX_CONCURRENCY} minGap=${MIN_REQUEST_GAP_MS}ms global429Cooldown=${GLOBAL_429_COOLDOWN_MS}ms`);
  const results=await mapLimit(activityPool,MAX_CONCURRENCY,(c)=>auditTrader(c,start,end,midsMap));
  for(const r of results){if(r?.__error){errors++;const k=classifyError(r.__error);errorBreakdown[k]=(errorBreakdown[k]||0)+1;console.log(`[AUDIT][ERROR] ${short(r.__item.address)} | ${k} | ${String(r.__error?.message||r.__error).slice(0,180)}`)}else if(r)audited.push(r)}
  const complete=audited.filter(x=>x.performance.closedTrades>0);
@@ -816,7 +808,7 @@ async function main(){
  sortCandidates(audited.filter(x=>!used.has(x.address))).slice(0,10).forEach(x=>{const d=x.diagnostics||{};report.push(`${short(x.address)} | ${x.quality.tier} ${safeFixed(x.quality?.score,1)} | ${x.blockReason||x.quality.reasons.join(' | ')||'NOT_SIGNAL_READY'} | fresh=${d.fresh15||0} match=${d.matched||0}`)});
  report.push('','🌍 GLOBAL BEHAVIOR HUNT',`Sources: ${globalHunt.sources.join(' | ')||'none'}`,`Current event observations: ${currentVerified.length} | Retained 30D events: ${mergedEvents.length} | Repeatable hunters: ${behaviorHunters.filter(x=>x.repeatable).length} | Tracked TOP=${Math.min(GLOBAL_TRACKED_HUNTERS,behaviorHunters.filter(x=>x.repeatable).length)}`,
  `Behavior DB: full-universe rotation=${discoveryPool.length} | cursor=${cursorBase}→${(cursorBase+activityPool.length)%Math.max(1,discoveryPool.length)} | persisted hunters audited=${persistedHunters.length} | strong capture≥${GLOBAL_STRONG_CAPTURE_MIN}%=${strongNow}`, `Rule: discovery is independent of current activity; entry must precede the first directional trigger, market must reach the major-move threshold, and exit must capture ≥${GLOBAL_EXIT_CAPTURE_MIN}% of MFE and occur within ${GLOBAL_EXIT_PEAK_TOLERANCE_MIN}m before/after the event peak. Minimum repeats=${GLOBAL_MIN_REPEAT_EVENTS}, distinct coins=${GLOBAL_MIN_DISTINCT_COINS}.`,'');
- report.push('','🛡️ V2.2 CONTRACTS',`• Global discovery is multi-exchange; Hyperliquid is one source, not the whole hunter.`,`• Performance unit = actual closed lifecycle; no synthetic trades.`,`• PF unavailable is shown as — and never becomes LOW_PF.`,`• Exchange-specific current-position authority is source-native; no stale fill may become a live position.`,`• Signal requires fresh open activity + live position + entry distance + RR.`,`• Null metrics are rendered as — and never passed to toFixed().`,`• Multiple independent traders/signals may be emitted; MAX_SIGNALS=${MAX_SIGNALS}.`,`• Audit is history-first: full 30D fills are evaluated without requiring fresh activity; live state is fetched only for fresh activity or tracked hunters.`,`• Decision diagnostics separate missing-mid, invalid-entry, watch/entry distance and RR failures; Entry validation uses the live position entry price with fill fallback.`,`• Quality diagnostics separate trade-count, WR, PF-unavailable, PF, PnL, DD and anomaly failures.`,`• Evidence matrix shows Trades/WR/PF/DD plus recent 24H performance, win/loss distribution, streaks and position concentration.`,
+ report.push('','🛡️ V2.2 CONTRACTS',`• Global discovery is multi-exchange; Hyperliquid is one source, not the whole hunter.`,`• Performance unit = actual closed lifecycle; no synthetic trades.`,`• PF unavailable is shown as — and never becomes LOW_PF.`,`• Exchange-specific current-position authority is source-native; no stale fill may become a live position.`,`• Signal requires fresh open activity + live position + entry distance + RR.`,`• Null metrics are rendered as — and never passed to toFixed().`,`• Multiple independent traders/signals may be emitted; MAX_SIGNALS=${MAX_SIGNALS}.`,`• Audit is history-first: full 30D fills are evaluated first; live state is fetched only after fresh activity is detected or for a tracked hunter.`,`• Decision diagnostics separate missing-mid, invalid-entry, watch/entry distance and RR failures; Entry validation uses the live position entry price with fill fallback.`,`• Quality diagnostics separate trade-count, WR, PF-unavailable, PF, PnL, DD and anomaly failures.`,`• Evidence matrix shows Trades/WR/PF/DD plus recent 24H performance, win/loss distribution, streaks and position concentration.`,
  `• Performance forensics compares the current audit window with 24H and 7D activity; no synthetic performance is created.`,
  `• Copyability forensics reports live notional, max position/coin concentration, leverage and reconstructed position age.`,
  `• Anomaly forensics explains PF/WR outliers and profit concentration instead of silently suppressing them.`,`• Near-miss analysis isolates traders that passed live-position + entry validation but failed historical quality.`,`• Live-position count, live-match count and entry-ready count are reported separately to expose pipeline attrition.`,`• Quality is strategy-aware: HIGH-WR classic path OR ASYMMETRIC profit-specialist path; no blind WR relaxation.`,`• ASYMMETRIC path requires trades, PF, DD, recovery, profit concentration and recent-performance gates.`,`• Copyability is an independent hard gate on live position/coin concentration and leverage.`,`• Recent-vs-historical drift can reject an otherwise profitable trader.` ,`• Global hunter promotes only repeatable pre-pump/pre-dump behavior observed across multiple events.`,`• V2.3.1 persists verified behavior events in a rolling 30D database; events are deduplicated by trader/coin/side/time.`,`• Leaderboard discovery rotates through a bounded top universe so behavior evidence is accumulated across cycles rather than rebuilt from only the same 40 traders.`,`• Persisted repeatable hunters are re-audited for current-position authority before any live signal is emitted.`,`• Strong capture≥${GLOBAL_STRONG_CAPTURE_MIN}% is tracked separately; no quality or behavior gate is relaxed to manufacture signals.`,`• Telegram contains selected signals only; diagnostics remain in GitHub Actions logs/state.`,`• No quality threshold is relaxed to manufacture actionable signals.`,
