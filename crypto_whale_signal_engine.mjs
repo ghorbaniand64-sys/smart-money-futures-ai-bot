@@ -6,8 +6,8 @@ import path from 'node:path';
 // Source authority: Hyperliquid public leaderboard + public user fills + clearinghouseState.
 // Current position authority: clearinghouseState ONLY. Stale fills never become a live position.
 
-const VERSION='GFTSH-V2.2-GLOBAL-BEHAVIOR-HUNTER-MULTI-EXCHANGE';
-const BUILD='V2.2-GLOBAL-BEHAVIOR-HUNT-PRE-PUMP-PRE-DUMP-MULTI-EXCHANGE-30D-REPEATABILITY';
+const VERSION='GFTSH-V2.2.1-GLOBAL-BEHAVIOR-EVENT-RECON-FIXED';
+const BUILD='V2.2.1-GLOBAL-BEHAVIOR-HUNT-PRE-PUMP-PRE-DUMP-MULTI-EXCHANGE-30D-REPEATABILITY-EVENT-START-RECON';
 const API=process.env.HYPERLIQUID_API_URL||'https://api.hyperliquid.xyz/info';
 const LEADERBOARD=process.env.HL_LEADERBOARD_URL||process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL||'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';
 const TG_TOKEN=process.env.TELEGRAM_TOKEN||process.env.TELEGRAM_BOT_TOKEN||'';
@@ -67,6 +67,7 @@ const GLOBAL_MIN_REPEAT_EVENTS=Math.max(2,Number(process.env.GFTSH_GLOBAL_MIN_RE
 const GLOBAL_MIN_PREPUMP_LEAD_MIN=Math.max(1,Number(process.env.GFTSH_GLOBAL_MIN_PREPUMP_LEAD_MIN||10));
 const GLOBAL_EXIT_CAPTURE_MIN=Number(process.env.GFTSH_GLOBAL_EXIT_CAPTURE_MIN||50);
 const GLOBAL_HUNTER_SCORE_MIN=Number(process.env.GFTSH_GLOBAL_HUNTER_SCORE_MIN||70);
+const GLOBAL_MIN_DISTINCT_COINS=Math.max(2,Number(process.env.GFTSH_GLOBAL_MIN_DISTINCT_COINS||2));
 const GLOBAL_DISCOVERY_LIMIT=Math.max(20,Number(process.env.GFTSH_GLOBAL_DISCOVERY_LIMIT||100));
 const GLOBAL_EVENT_CANDIDATES=Math.max(10,Number(process.env.GFTSH_GLOBAL_EVENT_CANDIDATES||30));
 const GLOBAL_TELEGRAM_MAX_SIGNALS=Math.max(1,Number(process.env.GFTSH_GLOBAL_TELEGRAM_MAX_SIGNALS||5));
@@ -539,20 +540,43 @@ async function fetchHLCandles(coin,start,end,interval='5m'){
 }
 async function enrichHLBehaviorEvents(events){
  const out=[];
- for(const e of events.slice(0,Math.max(10,GLOBAL_EVENT_CANDIDATES*2))){
-  const end=Math.min(num(e.closeTime)||Date.now(),num(e.openTime)+GLOBAL_EVENT_MAX_HOURS*3600000);
-  const candles=await fetchHLCandles(e.coin,num(e.openTime),end,'5m');
+ const unique=events.slice().sort((a,b)=>Math.abs(b.movePct)-Math.abs(a.movePct)).slice(0,Math.max(20,GLOBAL_EVENT_CANDIDATES*4));
+ const cache=new Map();
+ for(const e of unique){
+  const pre=Math.max(5,GLOBAL_PRE_EVENT_MIN);
+  const start=Math.max(0,num(e.openTime)-pre*60000);
+  const end=Math.min(Date.now(),Math.max(num(e.closeTime)||Date.now(),num(e.openTime))+GLOBAL_EVENT_WINDOW_MIN*60000);
+  const key=`${e.coin}:${Math.floor(start/300000)}:${Math.floor(end/300000)}`;
+  let candles=cache.get(key);
+  if(!candles){candles=await fetchHLCandles(e.coin,start,end,'5m');cache.set(key,candles)}
   if(!candles.length)continue;
-  let mfe=0,mfeTime=0;
-  for(const c of candles){
-   const move=e.side==='LONG'?(c.h/e.entry-1)*100:(1-c.l/e.entry)*100;
-   if(move>mfe){mfe=move;mfeTime=c.T||c.t}
+  candles=candles.slice().sort((a,b)=>a.t-b.t);
+  const entryIdx=candles.reduce((best,c,i)=>Math.abs(c.t-e.openTime)<Math.abs(candles[best]?.t-e.openTime)?i:best,0);
+  const baseStart=Math.max(0,entryIdx-Math.ceil(pre/5));
+  let eventStart=null,eventPeak=null,eventPeakMove=0;
+  // Detect the FIRST market move of the same direction that reaches the configured threshold.
+  // The trader must already be in the position before that move starts.
+  for(let i=Math.max(0,baseStart);i<candles.length;i++){
+   const c=candles[i];
+   if(c.t<=e.openTime)continue;
+   const baseline=candles[Math.max(baseStart,i-Math.ceil(GLOBAL_EVENT_WINDOW_MIN/5))];
+   if(!baseline?.c)continue;
+   const moveFromBase=e.side==='LONG'?(c.h/baseline.c-1)*100:(1-c.l/baseline.c)*100;
+   if(moveFromBase>=Math.max(GLOBAL_PUMP_PCT,GLOBAL_DUMP_PCT)){eventStart=c.t;break}
   }
-  const capture=mfe>0?Math.max(0,Math.min(100,e.movePct/mfe*100)):0;
-  const leadMin=mfeTime>e.openTime?(mfeTime-e.openTime)/60000:0;
-  const marketEvent=mfe>=Math.max(GLOBAL_PUMP_PCT,GLOBAL_DUMP_PCT);
-  if(!marketEvent||leadMin<GLOBAL_MIN_PREPUMP_LEAD_MIN||capture<GLOBAL_EXIT_CAPTURE_MIN)continue;
-  out.push({...e,mfePct:mfe,preLeadMin:leadMin,exitCapturePct:capture,marketEvent:true});
+  if(!eventStart||eventStart<=e.openTime+GLOBAL_MIN_PREPUMP_LEAD_MIN*60000)continue;
+  const eventEnd=Math.min(end,eventStart+GLOBAL_EVENT_WINDOW_MIN*60000);
+  for(const c of candles){
+   if(c.t<eventStart||c.t>eventEnd)continue;
+   const move=e.side==='LONG'?(c.h/e.entry-1)*100:(1-c.l/e.entry)*100;
+   if(move>eventPeakMove){eventPeakMove=move;eventPeak=c.t}
+  }
+  const exitMove=e.side==='LONG'?(e.exit/e.entry-1)*100:(1-e.exit/e.entry)*100;
+  if(eventPeakMove<Math.max(GLOBAL_PUMP_PCT,GLOBAL_DUMP_PCT))continue;
+  const capture=eventPeakMove>0?Math.max(0,Math.min(100,exitMove/eventPeakMove*100)):0;
+  if(capture<GLOBAL_EXIT_CAPTURE_MIN)continue;
+  const exitAfterEvent=Math.max(0,(num(e.closeTime)-eventStart)/60000);
+  out.push({...e,mfePct:eventPeakMove,mfeTime:eventPeak,preLeadMin:(eventStart-e.openTime)/60000,eventStart,eventEnd,exitAfterEventMin:exitAfterEvent,exitCapturePct:capture,marketEvent:true});
  }
  return out;
 }
@@ -562,22 +586,25 @@ async function buildHLBehaviorHunters(audited){
   const rows=(x.performance?.closed||[]).filter(t=>t.closeTime>=Date.now()-GLOBAL_EVENT_LOOKBACK_DAYS*86400000);
   for(const t of rows){
    const move=t.side==='LONG'?(t.exit/t.entry-1)*100:(1-t.exit/t.entry)*100;
-   if(move<Math.max(GLOBAL_PUMP_PCT,GLOBAL_DUMP_PCT)||num(t.holdHours)<=0||num(t.holdHours)>GLOBAL_EVENT_MAX_HOURS)continue;
+   if(Math.abs(move)<Math.max(GLOBAL_PUMP_PCT,GLOBAL_DUMP_PCT)||num(t.holdHours)<=0||num(t.holdHours)>GLOBAL_EVENT_MAX_HOURS)continue;
    candidateEvents.push({...t,traderId:x.address,name:x.name||short(x.address),source:'HYPERLIQUID',movePct:move});
   }
  }
  candidateEvents.sort((a,b)=>Math.abs(b.movePct)-Math.abs(a.movePct));
  const verified=await enrichHLBehaviorEvents(candidateEvents);
+ // Repeatability is trader-level: the edge must recur across independent events,
+ // preferably across different coins, rather than counting one coin repeatedly.
  const grouped=new Map();
- for(const e of verified){const k=`${e.traderId}:${e.coin}`;const g=grouped.get(k)||{source:'HYPERLIQUID',traderId:e.traderId,name:e.name,coin:e.coin,events:[]};g.events.push(e);grouped.set(k,g)}
+ for(const e of verified){const k=e.traderId;const g=grouped.get(k)||{source:'HYPERLIQUID',traderId:e.traderId,name:e.name,coins:new Set(),events:[]};g.events.push(e);g.coins.add(e.coin);grouped.set(k,g)}
  const out=[];
  for(const g of grouped.values()){
   const ev=g.events, strong=ev.filter(e=>e.preLeadMin>=GLOBAL_MIN_PREPUMP_LEAD_MIN&&e.exitCapturePct>=GLOBAL_EXIT_CAPTURE_MIN);
-  const avgLead=ev.reduce((a,e)=>a+e.preLeadMin,0)/ev.length,avgCapture=ev.reduce((a,e)=>a+e.exitCapturePct,0)/ev.length;
-  const score=Math.min(100,ev.length*15+Math.min(35,avgLead/10)+Math.min(40,avgCapture/2));
+  const avgLead=ev.reduce((a,e)=>a+e.preLeadMin,0)/Math.max(1,ev.length),avgCapture=ev.reduce((a,e)=>a+e.exitCapturePct,0)/Math.max(1,ev.length);
+  const coinBonus=Math.min(15,Math.max(0,g.coins.size-1)*5);
+  const score=Math.min(100,ev.length*15+coinBonus+Math.min(30,avgLead/10)+Math.min(40,avgCapture/2));
   const owner=audited.find(x=>x.address===g.traderId);
-  g.repeats=ev.length;g.strongRepeats=strong.length;g.avgLeadMin=avgLead;g.avgExitCapturePct=avgCapture;g.score=score;
-  g.repeatable=ev.length>=GLOBAL_MIN_REPEAT_EVENTS&&strong.length>=GLOBAL_MIN_REPEAT_EVENTS&&score>=GLOBAL_HUNTER_SCORE_MIN;
+  g.coins=[...g.coins];g.repeats=ev.length;g.strongRepeats=strong.length;g.avgLeadMin=avgLead;g.avgExitCapturePct=avgCapture;g.score=score;
+  g.repeatable=ev.length>=GLOBAL_MIN_REPEAT_EVENTS&&strong.length>=GLOBAL_MIN_REPEAT_EVENTS&&g.coins.length>=GLOBAL_MIN_DISTINCT_COINS&&score>=GLOBAL_HUNTER_SCORE_MIN;
   g.quality=owner?.quality;g.performance=owner?.performance;g.currentSignal=owner?.currentSignal;
   out.push(g);
  }
@@ -643,7 +670,7 @@ async function main(){
  if(signals.length){signals.forEach((s,i)=>report.push(...signalLine(s,i+1),'━━━━━━━━━━━━━━━━━━'))}else report.push('No verified trader has a fresh copyable-quality current position this cycle.');
  report.push('','🧱 TOP BLOCK REASONS');
  sortCandidates(audited.filter(x=>!used.has(x.address))).slice(0,10).forEach(x=>{const d=x.diagnostics||{};report.push(`${short(x.address)} | ${x.quality.tier} ${safeFixed(x.quality?.score,1)} | ${x.blockReason||x.quality.reasons.join(' | ')||'NOT_SIGNAL_READY'} | fresh=${d.fresh15||0} match=${d.matched||0}`)});
- report.push('','🌍 GLOBAL BEHAVIOR HUNT',`Sources: ${globalHunt.sources.join(' | ')||'none'}`,`Event observations: ${globalHunt.events.length} | Repeatable hunters: ${globalHunt.hunters.filter(x=>x.repeatable).length}`,`Rule: repeated pre-move entries + profitable exit capture; no single-event promotion. OKX uses candle MFE; Hyperliquid uses realized-move proxy.`,'');
+ report.push('','🌍 GLOBAL BEHAVIOR HUNT',`Sources: ${globalHunt.sources.join(' | ')||'none'}`,`Event observations: ${globalHunt.events.length} | Repeatable hunters: ${globalHunt.hunters.filter(x=>x.repeatable).length}`,`Rule: trader entry must precede the first threshold market move; exit capture is measured against event MFE. Minimum repeats=${GLOBAL_MIN_REPEAT_EVENTS} and distinct coins=${GLOBAL_MIN_DISTINCT_COINS}.`,'');
  report.push('','🛡️ V2.2 CONTRACTS',`• Global discovery is multi-exchange; Hyperliquid is one source, not the whole hunter.`,`• Performance unit = actual closed lifecycle; no synthetic trades.`,`• PF unavailable is shown as — and never becomes LOW_PF.`,`• Exchange-specific current-position authority is source-native; no stale fill may become a live position.`,`• Signal requires fresh open activity + live position + entry distance + RR.`,`• Null metrics are rendered as — and never passed to toFixed().`,`• Multiple independent traders/signals may be emitted; MAX_SIGNALS=${MAX_SIGNALS}.`,`• Audit is activity-first: fresh probe → history only for active traders → state only after fresh activity.`,`• Decision diagnostics separate missing-mid, invalid-entry, watch/entry distance and RR failures; Entry validation uses the live position entry price with fill fallback.`,`• Quality diagnostics separate trade-count, WR, PF-unavailable, PF, PnL, DD and anomaly failures.`,`• Evidence matrix shows Trades/WR/PF/DD plus recent 24H performance, win/loss distribution, streaks and position concentration.`,
  `• Performance forensics compares the current audit window with 24H and 7D activity; no synthetic performance is created.`,
  `• Copyability forensics reports live notional, max position/coin concentration, leverage and reconstructed position age.`,
