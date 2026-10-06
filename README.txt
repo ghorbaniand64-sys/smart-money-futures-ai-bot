@@ -1,24 +1,19 @@
-GFTSH V2.2.1 — GLOBAL BEHAVIOR EVENT RECON FIXED
+GFTSH V2.2.2 — GLOBAL BEHAVIOR EVENT RECON
+READ-ONLY / NO ORDERS / NO AUTO-COPY / FUTURES ONLY
 
-Worker: crypto_whale_signal_engine.mjs
-Workflow: .github/workflows/crypto-whale-signal-engine.yml
-Mode: READ-ONLY / SIGNAL-ONLY / NO ORDERS / NO AUTO-COPY
+Worker filename (required): crypto_whale_signal_engine.mjs
+Workflow filename (required): .github/workflows/crypto-whale-signal-engine.yml
 
-This build fixes the V2.2 behavior-hunt logic. Hyperliquid historical closed trades are no longer treated as if the time-to-MFE were the trader's pre-pump lead. The engine now requests 5m candles around each candidate lifecycle, detects the FIRST market move that reaches the configured pump/dump threshold after the trader is already positioned, measures trader lead time to that event start, measures event MFE and exit capture, and promotes a hunter only when the behavior repeats across multiple independent events and at least two distinct coins.
+V2.2.2 fixes the V2.2.1 event detector:
+- Major move threshold defaults to 5% (configurable).
+- A 1.5% directional trigger is detected first.
+- The trader must enter at least 10 minutes before the trigger.
+- The trigger must develop into the major 5% move inside the event window.
+- Exit capture is measured against MFE from the actual trader entry.
+- Behavior events are grouped by trader across independent coins.
+- No behavior signal is promoted from a single event.
+- Binance/Bybit remain discovery-only without raw public trader lifecycle data.
+- OKX remains source-unavailable for the required public lead-history reconstruction.
+- Telegram remains signal-only.
 
-Global hunt remains evidence-first:
-- Hyperliquid: behavior + current-position signal source.
-- OKX: public lead-trading source is isolated unless the current public API exposes enough trader-history evidence; no fabricated signal.
-- Binance / Bybit: discovery-only until raw public trader-history/current-position evidence is sufficient.
-
-Default behavior requirements:
-- 30-day performance/event lookback
-- pump/dump threshold: 8%
-- minimum pre-event lead: 10m
-- exit capture: >=50% of event MFE
-- minimum repeated events: 2
-- minimum distinct coins: 2
-- behavior score: >=70
-- final signal still requires existing strict trader-quality, copyability, live-position, freshness, entry-distance and RR gates.
-
-Telegram is signal-only. Diagnostics, event observations, near misses and source availability remain in the GitHub Actions log/state.
+Important: this version does not relax the final trader quality/copyability/current-position gates.
