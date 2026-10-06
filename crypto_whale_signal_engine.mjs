@@ -6,8 +6,8 @@ import path from 'node:path';
 // Source authority: Hyperliquid public leaderboard + public user fills + clearinghouseState.
 // Current position authority: clearinghouseState ONLY. Stale fills never become a live position.
 
-const VERSION='GFTSH-V2.3.0-PERSISTENT-30D-BEHAVIOR-HUNTER';
-const BUILD='V2.3.0-PERSISTENT-30D-EVENT-DATABASE-ROTATING-AUDIT-MULTI-COIN-REPEATABILITY';
+const VERSION='GFTSH-V2.3.1-PERSISTENT-30D-BEHAVIOR-HUNTER-FIXED';
+const BUILD='V2.3.1-PERSISTENT-30D-EVENT-DATABASE-ROTATING-AUDIT-MULTI-COIN-REPEATABILITY-OPEN-TIME-FIX';
 const API=process.env.HYPERLIQUID_API_URL||'https://api.hyperliquid.xyz/info';
 const LEADERBOARD=process.env.HL_LEADERBOARD_URL||process.env.HYPERLIQUID_HUNTER_DISCOVERY_URL||'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';
 const TG_TOKEN=process.env.TELEGRAM_TOKEN||process.env.TELEGRAM_BOT_TOKEN||'';
@@ -87,6 +87,18 @@ let requestGate=Promise.resolve();
 let nextRequestAt=0;
 let global429Until=0;
 
+function normalizeBehaviorEvent(e){
+ if(!e||typeof e!=='object')return null;
+ const closeTime=Number(e.closeTime||0);
+ let openTime=Number(e.openTime||0);
+ // Hyperliquid closed lifecycle rows historically carried closeTime + holdHours,
+ // but not openTime. Reconstruct the lifecycle start so 30D persistence/pruning
+ // and event deduplication have a real timestamp.
+ if(!(openTime>0) && closeTime>0 && Number(e.holdHours)>0)openTime=closeTime-Number(e.holdHours)*3600000;
+ if(!(openTime>0) && Number(e.eventStart)>0 && Number(e.preLeadMin)>0)openTime=Number(e.eventStart)-Number(e.preLeadMin)*60000;
+ if(!(openTime>0) && closeTime>0)openTime=closeTime;
+ return {...e,openTime:Number(openTime),closeTime:Number(closeTime||e.closeTime||0),eventTimestamp:Number(e.eventStart||openTime||closeTime||0)};
+}
 async function loadBehaviorState(){
  try{
   const raw=await fs.readFile(GLOBAL_BEHAVIOR_STATE_FILE,'utf8');
@@ -94,25 +106,28 @@ async function loadBehaviorState(){
   return {
    version:String(x?.version||''),
    cursor:Math.max(0,Number(x?.cursor||0)),
-   events:Array.isArray(x?.events)?x.events:[],
+   events:(Array.isArray(x?.events)?x.events:[]).map(normalizeBehaviorEvent).filter(Boolean),
    updatedAt:Number(x?.updatedAt||0)
   };
  }catch(e){return {version:'',cursor:0,events:[],updatedAt:0};}
 }
 function eventKey(e){
- const t=Math.floor(Number(e?.openTime||0)/(GLOBAL_EVENT_DEDUP_MINUTES*60000));
- return `${e?.source||'HYPERLIQUID'}:${e?.traderId||''}:${e?.coin||''}:${e?.side||''}:${t}`;
+ const n=normalizeBehaviorEvent(e)||{};
+ const t=Math.floor(Number(n.eventTimestamp||n.openTime||n.closeTime||0)/(GLOBAL_EVENT_DEDUP_MINUTES*60000));
+ return `${n.source||'HYPERLIQUID'}:${n.traderId||''}:${n.coin||''}:${n.side||''}:${t}`;
 }
 function pruneBehaviorEvents(events,now=Date.now()){
  const cutoff=now-GLOBAL_EVENT_LOOKBACK_DAYS*86400000;
  const map=new Map();
- for(const e of (Array.isArray(events)?events:[])){
-  if(Number(e?.openTime||0)<cutoff)continue;
+ for(const raw of (Array.isArray(events)?events:[])){
+  const e=normalizeBehaviorEvent(raw); if(!e)continue;
+  const ts=Number(e?.eventTimestamp||e?.openTime||e?.closeTime||0);
+  if(ts<cutoff)continue;
   const k=eventKey(e);
   const old=map.get(k);
   if(!old||Number(e?.verifiedAt||0)>Number(old?.verifiedAt||0))map.set(k,e);
  }
- return [...map.values()].sort((a,b)=>Number(b?.openTime||0)-Number(a?.openTime||0)).slice(0,GLOBAL_DB_MAX_EVENTS);
+ return [...map.values()].sort((a,b)=>Number(b?.eventTimestamp||b?.openTime||0)-Number(a?.eventTimestamp||a?.openTime||0)).slice(0,GLOBAL_DB_MAX_EVENTS);
 }
 function behaviorHunterScore(ev){
  const strong=ev.filter(e=>Number(e?.preLeadMin)>=GLOBAL_MIN_PREPUMP_LEAD_MIN&&Number(e?.exitCapturePct)>=GLOBAL_EXIT_CAPTURE_MIN);
@@ -673,7 +688,8 @@ async function buildHLBehaviorHunters(audited){
   for(const t of rows){
    const move=t.side==='LONG'?(t.exit/t.entry-1)*100:(1-t.exit/t.entry)*100;
    if(move<GLOBAL_EVENT_TRIGGER_PCT||num(t.holdHours)<=0||num(t.holdHours)>GLOBAL_EVENT_MAX_HOURS)continue;
-   candidateEvents.push({...t,traderId:x.address,name:x.name||short(x.address),source:'HYPERLIQUID',movePct:move});
+   const lifecycle=normalizeBehaviorEvent({...t});
+   candidateEvents.push({...lifecycle,traderId:x.address,name:x.name||short(x.address),source:'HYPERLIQUID',movePct:move});
   }
  }
  candidateEvents.sort((a,b)=>b.movePct-a.movePct);
@@ -711,7 +727,7 @@ async function main(){
  const evidenceTop=sortCandidates(audited.filter(x=>(x.diagnostics?.matched||0)>0)).sort((a,b)=>evidenceRank(b)-evidenceRank(a));
 
  const hlRecon=await buildHLBehaviorHunters(audited);
- const currentVerified=hlRecon.verified.map(e=>({...e,verifiedAt:Date.now()}));
+ const currentVerified=hlRecon.verified.map(e=>normalizeBehaviorEvent({...e,verifiedAt:Date.now()})).filter(e=>e&&Number(e.openTime)>0);
  const mergedEvents=pruneBehaviorEvents([...behaviorState.events,...currentVerified]);
  const behaviorHunters=buildBehaviorHuntersFromDB(mergedEvents,audited);
  const globalHunt=await globalBehaviorDiscovery();
@@ -770,7 +786,7 @@ async function main(){
  report.push('','🛡️ V2.2 CONTRACTS',`• Global discovery is multi-exchange; Hyperliquid is one source, not the whole hunter.`,`• Performance unit = actual closed lifecycle; no synthetic trades.`,`• PF unavailable is shown as — and never becomes LOW_PF.`,`• Exchange-specific current-position authority is source-native; no stale fill may become a live position.`,`• Signal requires fresh open activity + live position + entry distance + RR.`,`• Null metrics are rendered as — and never passed to toFixed().`,`• Multiple independent traders/signals may be emitted; MAX_SIGNALS=${MAX_SIGNALS}.`,`• Audit is activity-first: fresh probe → history only for active traders → state only after fresh activity.`,`• Decision diagnostics separate missing-mid, invalid-entry, watch/entry distance and RR failures; Entry validation uses the live position entry price with fill fallback.`,`• Quality diagnostics separate trade-count, WR, PF-unavailable, PF, PnL, DD and anomaly failures.`,`• Evidence matrix shows Trades/WR/PF/DD plus recent 24H performance, win/loss distribution, streaks and position concentration.`,
  `• Performance forensics compares the current audit window with 24H and 7D activity; no synthetic performance is created.`,
  `• Copyability forensics reports live notional, max position/coin concentration, leverage and reconstructed position age.`,
- `• Anomaly forensics explains PF/WR outliers and profit concentration instead of silently suppressing them.`,`• Near-miss analysis isolates traders that passed live-position + entry validation but failed historical quality.`,`• Live-position count, live-match count and entry-ready count are reported separately to expose pipeline attrition.`,`• Quality is strategy-aware: HIGH-WR classic path OR ASYMMETRIC profit-specialist path; no blind WR relaxation.`,`• ASYMMETRIC path requires trades, PF, DD, recovery, profit concentration and recent-performance gates.`,`• Copyability is an independent hard gate on live position/coin concentration and leverage.`,`• Recent-vs-historical drift can reject an otherwise profitable trader.` ,`• Global hunter promotes only repeatable pre-pump/pre-dump behavior observed across multiple events.`,`• V2.3 persists verified behavior events in a rolling 30D database; events are deduplicated by trader/coin/side/time.`,`• Leaderboard discovery rotates through a bounded top universe so behavior evidence is accumulated across cycles rather than rebuilt from only the same 40 traders.`,`• Persisted repeatable hunters are re-audited for current-position authority before any live signal is emitted.`,`• Strong capture≥${GLOBAL_STRONG_CAPTURE_MIN}% is tracked separately; no quality or behavior gate is relaxed to manufacture signals.`,`• Telegram contains selected signals only; diagnostics remain in GitHub Actions logs/state.`,`• No quality threshold is relaxed to manufacture actionable signals.`,
+ `• Anomaly forensics explains PF/WR outliers and profit concentration instead of silently suppressing them.`,`• Near-miss analysis isolates traders that passed live-position + entry validation but failed historical quality.`,`• Live-position count, live-match count and entry-ready count are reported separately to expose pipeline attrition.`,`• Quality is strategy-aware: HIGH-WR classic path OR ASYMMETRIC profit-specialist path; no blind WR relaxation.`,`• ASYMMETRIC path requires trades, PF, DD, recovery, profit concentration and recent-performance gates.`,`• Copyability is an independent hard gate on live position/coin concentration and leverage.`,`• Recent-vs-historical drift can reject an otherwise profitable trader.` ,`• Global hunter promotes only repeatable pre-pump/pre-dump behavior observed across multiple events.`,`• V2.3.1 persists verified behavior events in a rolling 30D database; events are deduplicated by trader/coin/side/time.`,`• Leaderboard discovery rotates through a bounded top universe so behavior evidence is accumulated across cycles rather than rebuilt from only the same 40 traders.`,`• Persisted repeatable hunters are re-audited for current-position authority before any live signal is emitted.`,`• Strong capture≥${GLOBAL_STRONG_CAPTURE_MIN}% is tracked separately; no quality or behavior gate is relaxed to manufacture signals.`,`• Telegram contains selected signals only; diagnostics remain in GitHub Actions logs/state.`,`• No quality threshold is relaxed to manufacture actionable signals.`,
  `• Global 429 cooldown + bounded concurrency + minimum request gap protect the Hyperliquid API.`,`• HTTP 429/5xx/timeout requests use bounded exponential retry/backoff.`,`• Freshness is source timestamp based; delayed sources are labeled and never treated as real-time.`,`⏱ Runtime: ${((Date.now()-started)/1000).toFixed(1)}s`,
  `⚙️ Rate safety: candidates=${activityPool.length} | concurrency=${MAX_CONCURRENCY} | gap=${MIN_REQUEST_GAP_MS}ms | 429 cooldown=${GLOBAL_429_COOLDOWN_MS}ms`,`🕒 ${new Date().toISOString()}`);
  const telemetryText=report.join('\n');console.log(telemetryText);const tgLines=['🌐 GFTSH GLOBAL HUNTER V2.2','━━━━━━━━━━━━━━━━━━'];const selectedSignals=globalHunt.signals.filter(s=>s?.ageMin<=FRESH_MIN).sort((a,b)=>(b.behaviorScore||0)-(a.behaviorScore||0)).slice(0,GLOBAL_TELEGRAM_MAX_SIGNALS);if(selectedSignals.length){selectedSignals.forEach((s,i)=>tgLines.push(`🟢 ${i+1} | ${s.name||s.trader?.name||short(s.traderId)} | ${s.source||s.selectedSource}`,`   ${s.side} ${s.coin} | Entry ${px(s.entry)} | Mark ${px(s.mark)} | Dist ${pct(s.distancePct,2)}`,`   SL ${px(s.sl)} | TP ${px(s.tp)} | RR ${safeFixed(s.rr,2)} | Age ${safeFixed(s.ageMin,1)}m`,`   BEHAVIOR ${s.behaviorScore!==undefined?safeFixed(s.behaviorScore,1):s.trader?.quality?.strategy||'SELECTED'} | Repeats ${s.repeats||'—'} | ${s.reason||'VERIFIED'}`,`   VERIFIED: CURRENT POSITION + FRESH ENTRY + REPEATABLE BEHAVIOR`,'━━━━━━━━━━━━━━━━━━'))}const text=selectedSignals.length?tgLines.join('\n'):'';await fs.mkdir(path.dirname(STATE_FILE),{recursive:true});await fs.mkdir(path.dirname(GLOBAL_BEHAVIOR_STATE_FILE),{recursive:true});
