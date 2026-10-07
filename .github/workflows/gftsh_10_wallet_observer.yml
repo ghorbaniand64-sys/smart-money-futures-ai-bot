@@ -18,6 +18,7 @@ jobs:
     environment: production
 
     steps:
+
       # ============================================================
       # 1. Checkout repository
       # ============================================================
@@ -36,7 +37,7 @@ jobs:
           node-version: '20'
 
       # ============================================================
-      # 3. Verify repository structure
+      # 3. Verify observer file
       # ============================================================
       - name: Verify observer installation
         shell: bash
@@ -47,6 +48,7 @@ jobs:
           echo "GFTSH 10-WALLET OBSERVER — VERIFY"
           echo "=========================================="
 
+          echo ""
           echo "Workspace:"
           pwd
 
@@ -61,35 +63,35 @@ jobs:
           echo ""
           echo "Checking observer file..."
 
-          if [ ! -f "production/gftsh_10_wallet_observer.mjs" ]; then
+          if [ ! -f "gftsh_10_wallet_observer.mjs" ]; then
             echo ""
             echo "❌ ERROR: Observer file NOT FOUND:"
-            echo "production/gftsh_10_wallet_observer.mjs"
+            echo "gftsh_10_wallet_observer.mjs"
             echo ""
+
             echo "Repository files containing 'observer':"
             git ls-tree -r --name-only HEAD | grep -i "observer" || true
+
             echo ""
-            echo "Production directory:"
-            if [ -d "production" ]; then
-              find production -maxdepth 2 -type f -print | sort
-            else
-              echo "production/ directory does not exist."
-            fi
+            echo "Repository root:"
+            find . -maxdepth 2 -type f -print | sort
+
             echo ""
             echo "The workflow cannot continue."
             exit 1
           fi
 
+          echo ""
           echo "✅ Observer file exists."
 
           echo ""
           echo "Observer file:"
-          ls -lh production/gftsh_10_wallet_observer.mjs
+          ls -lh gftsh_10_wallet_observer.mjs
 
           echo ""
           echo "Running Node syntax check..."
 
-          node --check production/gftsh_10_wallet_observer.mjs
+          node --check gftsh_10_wallet_observer.mjs
 
           echo ""
           echo "✅ Node syntax check passed."
@@ -104,7 +106,10 @@ jobs:
 
           mkdir -p production/state
 
-          echo "State directory ready:"
+          echo "=========================================="
+          echo "STATE DIRECTORY"
+          echo "=========================================="
+
           ls -la production/state || true
 
       # ============================================================
@@ -112,6 +117,7 @@ jobs:
       # ============================================================
       - name: Run 10-wallet observer
         env:
+
           # --------------------------------------------------------
           # Telegram
           # --------------------------------------------------------
@@ -152,13 +158,12 @@ jobs:
           GFTSH_TELEGRAM_MAX_CHARS: ${{ vars.GFTSH_TELEGRAM_MAX_CHARS }}
 
           # --------------------------------------------------------
-          # Startup message
+          # Startup status
           # --------------------------------------------------------
           GFTSH_SEND_STARTUP_STATUS: ${{ vars.GFTSH_SEND_STARTUP_STATUS }}
 
           # --------------------------------------------------------
           # Optional wallet override
-          # If empty, the .mjs hard-coded 10-wallet list is used.
           # --------------------------------------------------------
           GFTSH_WATCH_WALLETS: ${{ vars.GFTSH_WATCH_WALLETS }}
 
@@ -169,17 +174,18 @@ jobs:
           echo "GFTSH 10-WALLET OBSERVER — START"
           echo "=========================================="
 
+          echo ""
           echo "Node:"
           node --version
 
           echo ""
           echo "Observer:"
-          echo "production/gftsh_10_wallet_observer.mjs"
+          echo "gftsh_10_wallet_observer.mjs"
 
           echo ""
           echo "Starting observer..."
 
-          node production/gftsh_10_wallet_observer.mjs
+          node gftsh_10_wallet_observer.mjs
 
           echo ""
           echo "=========================================="
@@ -187,7 +193,7 @@ jobs:
           echo "=========================================="
 
       # ============================================================
-      # 6. Show state changes
+      # 6. Inspect observer state
       # ============================================================
       - name: Inspect observer state
         if: always()
@@ -216,7 +222,7 @@ jobs:
           fi
 
       # ============================================================
-      # 7. Persist observer state back to repository
+      # 7. Persist observer state
       # ============================================================
       - name: Persist observer state
         if: always()
@@ -231,44 +237,58 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Make sure the state directory exists.
           mkdir -p production/state
 
-          # Add state files if they exist.
+          # --------------------------------------------------------
+          # Add observer state
+          # --------------------------------------------------------
           if [ -f "production/state/gftsh_10_wallet_observer.json" ]; then
             git add -f production/state/gftsh_10_wallet_observer.json
             echo "Added observer state."
           else
-            echo "Observer state file not found; nothing to add."
+            echo "Observer state file not found."
           fi
 
+          # --------------------------------------------------------
+          # Add Telegram state
+          # --------------------------------------------------------
           if [ -f "production/state/gftsh_10_wallet_telegram.json" ]; then
             git add -f production/state/gftsh_10_wallet_telegram.json
             echo "Added Telegram state."
           else
-            echo "Telegram state file not found; nothing to add."
+            echo "Telegram state file not found."
           fi
 
           echo ""
           echo "Staged changes:"
           git status --short
 
-          # Nothing changed.
+          # --------------------------------------------------------
+          # Nothing changed
+          # --------------------------------------------------------
           if git diff --cached --quiet; then
             echo ""
             echo "No state changes to commit."
             exit 0
           fi
 
+          # --------------------------------------------------------
+          # Commit
+          # --------------------------------------------------------
           echo ""
           echo "Committing observer state..."
 
           git commit -m "chore: persist GFTSH 10-wallet observer state"
 
+          # --------------------------------------------------------
+          # Push
+          # --------------------------------------------------------
           echo ""
           echo "Pushing state..."
 
           git push origin HEAD:${GITHUB_REF_NAME}
 
           echo ""
-          echo "✅ Observer state persisted."
+          echo "=========================================="
+          echo "✅ OBSERVER STATE PERSISTED"
+          echo "=========================================="
