@@ -1,9 +1,23 @@
 name: GFTSH 10 Wallet Observer
 
+# ============================================================
+# GFTSH — 10 WALLET LIVE FUTURES OBSERVER
+#
+# Automatic scan:
+#   Every 5 minutes
+#
+# Manual scan:
+#   workflow_dispatch
+#
+# IMPORTANT:
+#   Scheduled workflows run from the repository DEFAULT BRANCH.
+# ============================================================
+
 on:
-  workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
+
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,132 +27,509 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+
   watch:
     runs-on: ubuntu-latest
     environment: production
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
 
+      # ============================================================
+      # 1. Checkout repository
+      # ============================================================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+
+      # ============================================================
+      # 2. Setup Node.js
+      # ============================================================
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: Scheduler diagnostics
+      # ============================================================
+      # 3. Scheduler / trigger diagnostic
+      # ============================================================
+      - name: Scheduler diagnostic
+        shell: bash
         run: |
-          echo "========================================"
-          echo "GFTSH 10 WALLET OBSERVER"
-          echo "Schedule: every 5 minutes"
-          echo "Cron: */5 * * * *"
-          echo "UTC now: $(date -u)"
-          echo "========================================"
+          set -e
 
+          echo "=========================================="
+          echo "GFTSH SCHEDULER DIAGNOSTIC"
+          echo "=========================================="
+
+          echo ""
+          echo "UTC time:"
+          date -u '+%Y-%m-%d %H:%M:%S UTC'
+
+          echo ""
+          echo "Event:"
+          echo "${{ github.event_name }}"
+
+          echo ""
+          echo "Workflow:"
+          echo "${{ github.workflow }}"
+
+          echo ""
+          echo "Run ID:"
+          echo "${{ github.run_id }}"
+
+          echo ""
+          echo "Run number:"
+          echo "${{ github.run_number }}"
+
+          echo ""
+          echo "Repository:"
+          echo "${{ github.repository }}"
+
+          echo ""
+          echo "Ref:"
+          echo "${{ github.ref }}"
+
+          echo ""
+          echo "Branch:"
+          echo "${{ github.ref_name }}"
+
+          echo ""
+          echo "SHA:"
+          echo "${{ github.sha }}"
+
+          echo ""
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "TRIGGER TYPE: AUTOMATIC SCHEDULE"
+            echo "SCHEDULE: */5 * * * *"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "TRIGGER TYPE: MANUAL DISPATCH"
+          else
+            echo "TRIGGER TYPE: ${{ github.event_name }}"
+          fi
+
+          echo ""
+          echo "=========================================="
+
+      # ============================================================
+      # 4. Verify repository / default branch
+      # ============================================================
       - name: Verify repository
+        shell: bash
         run: |
-          pwd
-          echo "Files:"
-          ls -la
-          echo
-          echo "Workflow files:"
-          ls -la .github/workflows || true
-          echo
-          echo "Observer:"
-          ls -la gftsh_10_wallet_observer.mjs
+          set -e
 
+          echo "=========================================="
+          echo "GFTSH REPOSITORY VERIFICATION"
+          echo "=========================================="
+
+          echo ""
+          echo "Workspace:"
+          pwd
+
+          echo ""
+          echo "Commit:"
+          git rev-parse HEAD
+
+          echo ""
+          echo "Current branch:"
+          git branch --show-current || true
+
+          echo ""
+          echo "GitHub ref:"
+          echo "${GITHUB_REF}"
+
+          echo ""
+          echo "GitHub ref name:"
+          echo "${GITHUB_REF_NAME}"
+
+          echo ""
+          echo "Default branch:"
+          echo "${{ github.event.repository.default_branch }}"
+
+          echo ""
+          echo "Repository:"
+          echo "${{ github.repository }}"
+
+          echo ""
+          echo "=========================================="
+
+      # ============================================================
+      # 5. Verify observer installation
+      # ============================================================
       - name: Verify observer installation
+        shell: bash
         run: |
-          test -f gftsh_10_wallet_observer.mjs
+          set -e
+
+          echo "=========================================="
+          echo "GFTSH 10-WALLET OBSERVER — VERIFY"
+          echo "=========================================="
+
+          echo ""
+          echo "Checking observer file..."
+
+          if [ ! -f "gftsh_10_wallet_observer.mjs" ]; then
+            echo ""
+            echo "❌ ERROR: Observer file NOT FOUND:"
+            echo "gftsh_10_wallet_observer.mjs"
+            echo ""
+
+            echo "Repository files containing 'observer':"
+            git ls-tree -r --name-only HEAD | grep -i "observer" || true
+
+            echo ""
+            echo "Repository root:"
+            find . -maxdepth 2 -type f -print | sort
+
+            echo ""
+            echo "The workflow cannot continue."
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ Observer file exists."
+
+          echo ""
+          echo "Observer file:"
+          ls -lh gftsh_10_wallet_observer.mjs
+
+          echo ""
+          echo "Running Node syntax check..."
+
           node --check gftsh_10_wallet_observer.mjs
 
-      - name: Prepare state directory
+          echo ""
+          echo "✅ Node syntax check passed."
+
+      # ============================================================
+      # 6. Ensure state directory exists
+      # ============================================================
+      - name: Ensure state directory
+        shell: bash
         run: |
+          set -e
+
           mkdir -p production/state
-          echo "State directory:"
-          ls -la production/state
 
+          echo "=========================================="
+          echo "STATE DIRECTORY"
+          echo "=========================================="
+
+          ls -la production/state || true
+
+      # ============================================================
+      # 7. Display effective observer configuration
+      #
+      # IMPORTANT:
+      #   Scan interval is deliberately hard-set to 5 minutes here.
+      #   This prevents an empty/misconfigured Repository Variable
+      #   from silently reverting the observer to 15 minutes.
+      # ============================================================
       - name: Observer configuration
-        run: |
-          echo "========================================"
-          echo "GFTSH OBSERVER CONFIG"
-          echo "Wallet count: 10"
-          echo "Scan interval: 5 minutes"
-          echo "Lookback: worker default"
-          echo "Read-only: YES"
-          echo "Orders: NO"
-          echo "Copy trading: NO"
-          echo "========================================"
-
-      - name: Run GFTSH observer
+        shell: bash
         env:
-          GFTSH_SCAN_INTERVAL_MIN: '5'
           GFTSH_LOOKBACK_MIN: ${{ vars.GFTSH_LOOKBACK_MIN }}
-          GFTSH_WATCH_WALLETS: ${{ vars.GFTSH_WATCH_WALLETS }}
-          GFTSH_MIN_ALERT_NOTIONAL: ${{ vars.GFTSH_MIN_ALERT_NOTIONAL }}
+          GFTSH_REQUEST_GAP_MS: ${{ vars.GFTSH_REQUEST_GAP_MS }}
+          GFTSH_REQUEST_TIMEOUT_MS: ${{ vars.GFTSH_REQUEST_TIMEOUT_MS }}
+          GFTSH_RETRIES: ${{ vars.GFTSH_RETRIES }}
+          GFTSH_RETRY_BASE_MS: ${{ vars.GFTSH_RETRY_BASE_MS }}
+          GFTSH_MODEL_SL_PCT: ${{ vars.GFTSH_MODEL_SL_PCT }}
+          GFTSH_MODEL_TP_R: ${{ vars.GFTSH_MODEL_TP_R }}
+          GFTSH_MIN_ALERT_NOTIONAL_USD: ${{ vars.GFTSH_MIN_ALERT_NOTIONAL_USD }}
+          GFTSH_TELEGRAM_MAX_CHARS: ${{ vars.GFTSH_TELEGRAM_MAX_CHARS }}
+          GFTSH_SEND_STARTUP_STATUS: ${{ vars.GFTSH_SEND_STARTUP_STATUS }}
+        run: |
+          set -e
 
-          HYPERLIQUID_API_URL: ${{ vars.HYPERLIQUID_API_URL }}
+          echo "=========================================="
+          echo "GFTSH EFFECTIVE CONFIGURATION"
+          echo "=========================================="
 
+          echo ""
+          echo "Workflow schedule:"
+          echo "*/5 * * * *"
+
+          echo ""
+          echo "Observer scan interval:"
+          echo "5 minutes"
+
+          echo ""
+          echo "Lookback:"
+          echo "${GFTSH_LOOKBACK_MIN:-auto (10 minutes)} minutes"
+
+          echo ""
+          echo "Request gap:"
+          echo "${GFTSH_REQUEST_GAP_MS:-default} ms"
+
+          echo ""
+          echo "Request timeout:"
+          echo "${GFTSH_REQUEST_TIMEOUT_MS:-default} ms"
+
+          echo ""
+          echo "Retries:"
+          echo "${GFTSH_RETRIES:-default}"
+
+          echo ""
+          echo "Retry base:"
+          echo "${GFTSH_RETRY_BASE_MS:-default} ms"
+
+          echo ""
+          echo "Model SL:"
+          echo "${GFTSH_MODEL_SL_PCT:-default}%"
+
+          echo ""
+          echo "Model TP/R:"
+          echo "${GFTSH_MODEL_TP_R:-default}"
+
+          echo ""
+          echo "Minimum alert notional:"
+          echo "${GFTSH_MIN_ALERT_NOTIONAL_USD:-default} USD"
+
+          echo ""
+          echo "Telegram max chars:"
+          echo "${GFTSH_TELEGRAM_MAX_CHARS:-default}"
+
+          echo ""
+          echo "Startup status:"
+          echo "${GFTSH_SEND_STARTUP_STATUS:-default}"
+
+          echo ""
+          echo "=========================================="
+
+      # ============================================================
+      # 8. Run 10-wallet observer
+      # ============================================================
+      - name: Run 10-wallet observer
+        env:
+
+          # Telegram
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
+          # Hyperliquid
+          HYPERLIQUID_API_URL: ${{ vars.HYPERLIQUID_API_URL }}
+
+          # Scan / API settings
+          # Hard-set to 5 minutes so the worker and workflow
+          # can never silently disagree because of a missing variable.
+          GFTSH_SCAN_INTERVAL_MIN: '5'
+          GFTSH_LOOKBACK_MIN: ${{ vars.GFTSH_LOOKBACK_MIN }}
+          GFTSH_REQUEST_GAP_MS: ${{ vars.GFTSH_REQUEST_GAP_MS }}
+          GFTSH_REQUEST_TIMEOUT_MS: ${{ vars.GFTSH_REQUEST_TIMEOUT_MS }}
+          GFTSH_RETRIES: ${{ vars.GFTSH_RETRIES }}
+          GFTSH_RETRY_BASE_MS: ${{ vars.GFTSH_RETRY_BASE_MS }}
+
+          # Persistent state
+          GFTSH_WATCH_STATE_FILE: production/state/gftsh_10_wallet_observer.json
+          GFTSH_WATCH_TELEGRAM_STATE_FILE: production/state/gftsh_10_wallet_telegram.json
+
+          # Model TP / SL
+          GFTSH_MODEL_SL_PCT: ${{ vars.GFTSH_MODEL_SL_PCT }}
+          GFTSH_MODEL_TP_R: ${{ vars.GFTSH_MODEL_TP_R }}
+
+          # Alert filtering
+          GFTSH_MIN_ALERT_NOTIONAL_USD: ${{ vars.GFTSH_MIN_ALERT_NOTIONAL_USD }}
+          GFTSH_TELEGRAM_MAX_CHARS: ${{ vars.GFTSH_TELEGRAM_MAX_CHARS }}
+
+          # Startup status
+          GFTSH_SEND_STARTUP_STATUS: ${{ vars.GFTSH_SEND_STARTUP_STATUS }}
+
+          # Optional wallet override
+          GFTSH_WATCH_WALLETS: ${{ vars.GFTSH_WATCH_WALLETS }}
+
+        shell: bash
         run: |
-          echo "Starting GFTSH..."
-          echo "Scan interval: 5 minutes"
-          echo "Start UTC: $(date -u)"
+          set -e
+
+          echo "=========================================="
+          echo "GFTSH 10-WALLET OBSERVER — START"
+          echo "=========================================="
+
+          echo ""
+          echo "Node:"
+          node --version
+
+          echo ""
+          echo "Trigger:"
+          echo "${{ github.event_name }}"
+
+          echo ""
+          echo "Scheduled cron:"
+          echo "*/5 * * * *"
+
+          echo ""
+          echo "Effective observer interval:"
+          echo "5 minutes"
+
+          echo ""
+          echo "Observer:"
+          echo "gftsh_10_wallet_observer.mjs"
+
+          echo ""
+          echo "Starting observer..."
 
           node gftsh_10_wallet_observer.mjs
 
-          echo "End UTC: $(date -u)"
+          echo ""
+          echo "=========================================="
+          echo "GFTSH OBSERVER — FINISHED"
+          echo "=========================================="
 
+      # ============================================================
+      # 9. Inspect observer state
+      # ============================================================
       - name: Inspect observer state
         if: always()
+        shell: bash
         run: |
-          echo "========================================"
-          echo "OBSERVER STATE"
-          echo "========================================"
+          echo "=========================================="
+          echo "GFTSH STATE INSPECTION"
+          echo "=========================================="
 
-          if [ -f production/state/gftsh_10_wallet_observer.json ]; then
-            cat production/state/gftsh_10_wallet_observer.json
+          echo ""
+          echo "UTC time:"
+          date -u '+%Y-%m-%d %H:%M:%S UTC'
+
+          if [ -f "production/state/gftsh_10_wallet_observer.json" ]; then
+            echo ""
+            echo "Observer state:"
+            ls -lh production/state/gftsh_10_wallet_observer.json
+
+            echo ""
+            echo "Observer state summary:"
+            node -e "
+              const fs = require('fs');
+              const p = 'production/state/gftsh_10_wallet_observer.json';
+              try {
+                const x = JSON.parse(fs.readFileSync(p, 'utf8'));
+                console.log(JSON.stringify({
+                  version: x.version,
+                  initialized: x.initialized,
+                  lastScanAt: x.lastScanAt,
+                  lastRuntimeMs: x.lastRuntimeMs,
+                  lastAlerts: Array.isArray(x.lastAlerts) ? x.lastAlerts.length : 0,
+                  alertedFillIds: Array.isArray(x.alertedFillIds) ? x.alertedFillIds.length : 0
+                }, null, 2));
+              } catch (e) {
+                console.log('Unable to parse observer state:', e.message);
+              }
+            "
+          else
+            echo ""
+            echo "Observer state file does not exist."
+          fi
+
+          if [ -f "production/state/gftsh_10_wallet_telegram.json" ]; then
+            echo ""
+            echo "Telegram state:"
+            ls -lh production/state/gftsh_10_wallet_telegram.json
+
+            echo ""
+            echo "Telegram state:"
+            cat production/state/gftsh_10_wallet_telegram.json || true
+          else
+            echo ""
+            echo "Telegram state file does not exist."
+          fi
+
+      # ============================================================
+      # 10. Persist observer state
+      # ============================================================
+      - name: Persist observer state
+        if: always()
+        shell: bash
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo "PERSISTING GFTSH OBSERVER STATE"
+          echo "=========================================="
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          mkdir -p production/state
+
+          if [ -f "production/state/gftsh_10_wallet_observer.json" ]; then
+            git add -f production/state/gftsh_10_wallet_observer.json
+            echo "Added observer state."
           else
             echo "Observer state file not found."
           fi
 
-          echo
-          echo "Telegram state:"
-
-          if [ -f production/state/gftsh_10_wallet_telegram.json ]; then
-            cat production/state/gftsh_10_wallet_telegram.json
+          if [ -f "production/state/gftsh_10_wallet_telegram.json" ]; then
+            git add -f production/state/gftsh_10_wallet_telegram.json
+            echo "Added Telegram state."
           else
             echo "Telegram state file not found."
           fi
 
-      - name: Commit and push state
-        if: always()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add production/state/gftsh_10_wallet_observer.json \
-                  production/state/gftsh_10_wallet_telegram.json
+          echo ""
+          echo "Staged changes:"
+          git status --short
 
           if git diff --cached --quiet; then
+            echo ""
             echo "No state changes to commit."
-          else
-            git commit -m "Update GFTSH observer state"
-            git push
+            exit 0
           fi
 
-      - name: Final summary
+          echo ""
+          echo "Committing observer state..."
+
+          git commit -m "chore: persist GFTSH 10-wallet observer state"
+
+          echo ""
+          echo "Pushing state..."
+
+          git push origin HEAD:${GITHUB_REF_NAME}
+
+          echo ""
+          echo "=========================================="
+          echo "✅ OBSERVER STATE PERSISTED"
+          echo "=========================================="
+
+      # ============================================================
+      # 11. Final run summary
+      # ============================================================
+      - name: Final scheduler summary
         if: always()
+        shell: bash
         run: |
-          echo "========================================"
-          echo "GFTSH 10 WALLET OBSERVER FINISHED"
-          echo "Mode: READ ONLY"
-          echo "Wallets: 10"
-          echo "Schedule: every 5 minutes"
-          echo "Orders: NO"
-          echo "Copy trading: NO"
-          echo "UTC: $(date -u)"
-          echo "========================================"
+          echo ""
+          echo "=========================================="
+          echo "GFTSH FINAL RUN SUMMARY"
+          echo "=========================================="
+
+          echo ""
+          echo "Trigger:"
+          echo "${{ github.event_name }}"
+
+          echo ""
+          echo "UTC:"
+          date -u '+%Y-%m-%d %H:%M:%S UTC'
+
+          echo ""
+          echo "Schedule:"
+          echo "Every 5 minutes"
+
+          echo ""
+          echo "Worker interval:"
+          echo "5 minutes"
+
+          echo ""
+          echo "Workflow:"
+          echo "${{ github.workflow }}"
+
+          echo ""
+          echo "Run:"
+          echo "${{ github.run_number }}"
+
+          echo ""
+          echo "Status:"
+          echo "${{ job.status }}"
+
+          echo ""
+          echo "=========================================="
