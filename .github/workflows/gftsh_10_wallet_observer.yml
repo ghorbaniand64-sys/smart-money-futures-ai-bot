@@ -8,8 +8,13 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: gftsh-10-wallet-observer
+  cancel-in-progress: false
+
 jobs:
   watch:
+    name: Watch 10 Futures Wallets
     runs-on: ubuntu-latest
     environment: production
 
@@ -25,8 +30,25 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Verify production files
+        run: |
+          echo "=== Repository ==="
+          pwd
+          echo "=== Root ==="
+          ls -la
+
+          echo "=== Production ==="
+          ls -la production || true
+
+          test -f production/gftsh_10_wallet_observer.mjs
+
+          echo "Observer file found:"
+          ls -lh production/gftsh_10_wallet_observer.mjs
+
       - name: Ensure state directory
-        run: mkdir -p production/state
+        run: |
+          mkdir -p production/state
+          ls -la production/state
 
       - name: Run 10-wallet observer
         env:
@@ -34,8 +56,10 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
           HYPERLIQUID_API_URL: ${{ vars.HYPERLIQUID_API_URL }}
+
           GFTSH_SCAN_INTERVAL_MIN: ${{ vars.GFTSH_SCAN_INTERVAL_MIN }}
           GFTSH_LOOKBACK_MIN: ${{ vars.GFTSH_LOOKBACK_MIN }}
+
           GFTSH_REQUEST_GAP_MS: ${{ vars.GFTSH_REQUEST_GAP_MS }}
           GFTSH_REQUEST_TIMEOUT_MS: ${{ vars.GFTSH_REQUEST_TIMEOUT_MS }}
           GFTSH_RETRIES: ${{ vars.GFTSH_RETRIES }}
@@ -46,17 +70,28 @@ jobs:
 
           GFTSH_MODEL_SL_PCT: ${{ vars.GFTSH_MODEL_SL_PCT }}
           GFTSH_MODEL_TP_R: ${{ vars.GFTSH_MODEL_TP_R }}
+
           GFTSH_MIN_ALERT_NOTIONAL_USD: ${{ vars.GFTSH_MIN_ALERT_NOTIONAL_USD }}
           GFTSH_TELEGRAM_MAX_CHARS: ${{ vars.GFTSH_TELEGRAM_MAX_CHARS }}
           GFTSH_SEND_STARTUP_STATUS: ${{ vars.GFTSH_SEND_STARTUP_STATUS }}
+
           GFTSH_WATCH_WALLETS: ${{ vars.GFTSH_WATCH_WALLETS }}
-        run: node production/gftsh_10_wallet_observer.mjs
+
+        run: |
+          node --version
+          node --check production/gftsh_10_wallet_observer.mjs
+          node production/gftsh_10_wallet_observer.mjs
 
       - name: Persist observer state
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add production/state/gftsh_10_wallet_observer.json production/state/gftsh_10_wallet_telegram.json
+
+          git add \
+            production/state/gftsh_10_wallet_observer.json \
+            production/state/gftsh_10_wallet_telegram.json
+
           if git diff --cached --quiet; then
             echo "No state changes to commit."
           else
