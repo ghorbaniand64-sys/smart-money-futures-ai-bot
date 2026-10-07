@@ -19,7 +19,7 @@ import path from 'node:path';
  *   GitHub Actions cron: every 15 minutes
  */
 
-const VERSION = 'GFTSH-10W-LIVE-OBSERVER-V1.0.0';
+const VERSION = 'GFTSH-10W-LIVE-OBSERVER-V1.1.0-CYCLE-TELEGRAM';
 const API = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
@@ -485,6 +485,7 @@ async function main() {
 
   let alerts = [];
   let errors = 0;
+  let staleCount = 0;
 
   for (const [trader, address] of WALLETS) {
     try {
@@ -513,6 +514,7 @@ async function main() {
         // Only alert if the source-native current position confirms the new trade
         // still exists. This prevents stale historical fills from becoming alerts.
         if (!position) {
+          staleCount++;
           console.log(`[SKIP][STALE/FLAT] ${trader} ${coin} ${side} fill=${fillKey(fill)}`);
           continue;
         }
@@ -573,12 +575,15 @@ async function main() {
 
   await writeJson(STATE_FILE, state);
 
-  const tgState = await readJson(TG_STATE_FILE, { initialized: false, lastStartupAt: 0 });
+  const tgState = await readJson(TG_STATE_FILE, {
+    initialized: false,
+    lastStartupAt: 0,
+    lastCycleAt: 0
+  });
   if (!tgState.initialized) {
     await sendStartupStatus(state);
     tgState.initialized = true;
     tgState.lastStartupAt = now;
-    await writeJson(TG_STATE_FILE, tgState);
   }
 
   // Send one Telegram alert per genuinely new position.
@@ -587,9 +592,39 @@ async function main() {
     await sendTelegram(formatAlert(alert));
   }
 
+  // GitHub Actions starts a fresh process on every scheduled run.
+  // Therefore send one cycle/status message on every successful run.
+  const cycleRuntimeSec = ((Date.now() - started) / 1000).toFixed(1);
+  const cycleText = [
+    '👁️ GFTSH — 10 WALLET OBSERVER',
+    '━━━━━━━━━━━━━━━━━━',
+    '📡 Status: WATCHING',
+    `👥 Wallets checked: ${WALLETS.length}/${WALLETS.length}`,
+    `⏱ Schedule: every ${SCAN_INTERVAL_MIN} minutes`,
+    '',
+    `🆕 New positions: ${alerts.length}`,
+    '➕ ADD / averaging: ignored',
+    `⏭ Stale / flat: ${staleCount}`,
+    `❌ Errors: ${errors}`,
+    '',
+    `🕐 Cycle: ${new Date(now).toISOString()}`,
+    `⚙️ Runtime: ${cycleRuntimeSec}s`,
+    '',
+    '🛡 READ-ONLY',
+    '❌ Orders: DISABLED',
+    '❌ Auto-copy: DISABLED'
+  ].join('\n');
+
+  await sendTelegram(cycleText);
+
+  tgState.lastCycleAt = now;
+  tgState.lastCycleAlerts = alerts.length;
+  tgState.lastCycleErrors = errors;
+  await writeJson(TG_STATE_FILE, tgState);
+
   console.log(
     `[CYCLE] wallets=${WALLETS.length} alerts=${alerts.length} errors=${errors} ` +
-    `runtime=${((Date.now() - started) / 1000).toFixed(1)}s`
+    `runtime=${cycleRuntimeSec}s`
   );
 }
 
