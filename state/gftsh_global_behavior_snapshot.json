@@ -1,0 +1,358 @@
+{
+  "version": "GFTSH-V3.2-PERSISTENT-DISCOVERY-QUEUE-TOP10-HUNTERS",
+  "updatedAt": 1791357731140,
+  "cursor": 40,
+  "events": [
+    {
+      "coin": "NEAR",
+      "side": "SHORT",
+      "entry": 5.198632311534968,
+      "exit": 4.9733,
+      "size": 49.20000000000053,
+      "pnl": -14.600938,
+      "holdHours": 1.2734494444444444,
+      "closeTime": 1790357217711,
+      "notional": 13736.866020000003,
+      "openTime": 1790352633293,
+      "eventTimestamp": 1790356200000,
+      "traderId": "0x3bcae23e8c380dab4732e9a159c0456f12d866f3",
+      "name": "0x3bcae2…d866f3",
+      "source": "HYPERLIQUID",
+      "movePct": 4.33445371843264,
+      "mfePct": 5.521304341876377,
+      "mfeTime": 1790357400000,
+      "preLeadMin": 59.445116666666664,
+      "eventStart": 1790356200000,
+      "eventEnd": 1790367000000,
+      "exitAfterEventMin": 16.96185,
+      "exitCapturePct": 78.50416224220682,
+      "exitFromPeakMin": -3.03815,
+      "peakExitPass": true,
+      "marketEvent": true,
+      "verifiedAt": 1791357731100
+    }
+  ],
+  "hunters": [
+    {
+      "source": "HYPERLIQUID",
+      "traderId": "0x3bcae23e8c380dab4732e9a159c0456f12d866f3",
+      "name": "0x3bcae2…d866f3",
+      "events": [
+        {
+          "coin": "NEAR",
+          "side": "SHORT",
+          "entry": 5.198632311534968,
+          "exit": 4.9733,
+          "size": 49.20000000000053,
+          "pnl": -14.600938,
+          "holdHours": 1.2734494444444444,
+          "closeTime": 1790357217711,
+          "notional": 13736.866020000003,
+          "openTime": 1790352633293,
+          "eventTimestamp": 1790356200000,
+          "traderId": "0x3bcae23e8c380dab4732e9a159c0456f12d866f3",
+          "name": "0x3bcae2…d866f3",
+          "source": "HYPERLIQUID",
+          "movePct": 4.33445371843264,
+          "mfePct": 5.521304341876377,
+          "mfeTime": 1790357400000,
+          "preLeadMin": 59.445116666666664,
+          "eventStart": 1790356200000,
+          "eventEnd": 1790367000000,
+          "exitAfterEventMin": 16.96185,
+          "exitCapturePct": 78.50416224220682,
+          "exitFromPeakMin": -3.03815,
+          "peakExitPass": true,
+          "marketEvent": true,
+          "verifiedAt": 1791357731100
+        }
+      ],
+      "coins": [
+        "NEAR"
+      ],
+      "repeats": 1,
+      "strongRepeats": 1,
+      "avgLeadMin": 59.445116666666664,
+      "avgExitCapturePct": 78.50416224220682,
+      "score": 64.6260405605517,
+      "repeatable": false,
+      "quality": {
+        "score": 86.4,
+        "tier": "A",
+        "reasons": [
+          "TRADES<8",
+          "WR<58%",
+          "ASYM_TRADES<20",
+          "RECENT24H_PF<1.25",
+          "RECENT24H_NON_POSITIVE_PNL"
+        ],
+        "ddPct": 11.222331957584277,
+        "anomaly": false,
+        "tradesFail": true,
+        "wrFail": true,
+        "pfUnavailable": false,
+        "pfFail": false,
+        "pnlFail": false,
+        "ddFail": false,
+        "hardFailCount": 2,
+        "classicPass": false,
+        "asymPass": false,
+        "copyPass": true,
+        "strategy": "NONE",
+        "strategyPass": false,
+        "classicReasons": [
+          "TRADES<8",
+          "WR<58%"
+        ],
+        "asymReasons": [
+          "ASYM_TRADES<20",
+          "RECENT24H_PF<1.25",
+          "RECENT24H_NON_POSITIVE_PNL"
+        ],
+        "copyReasons": [],
+        "asymMetrics": {
+          "minTrades": 20,
+          "minPf": 2,
+          "maxDd": 20,
+          "minRecovery": 2,
+          "maxTop1": 40,
+          "maxTop3": 70,
+          "minRecentPf": 1.25
+        },
+        "copyabilityGate": {
+          "maxPosition": 20,
+          "maxCoin": 20,
+          "maxLeverage": 40
+        }
+      },
+      "performance": {
+        "closedTrades": 4,
+        "wins": 0,
+        "losses": 2,
+        "wr": 0,
+        "pf": 4.617285104594315,
+        "realizedPnl": 3499.3249490000017,
+        "grossWin": 4466.714814000004,
+        "grossLoss": 967.3898649999996,
+        "maxDrawdown": 609.833266,
+        "activeDays": 2,
+        "recentClosed": 0,
+        "recent24": {
+          "trades": 0,
+          "wins": 0,
+          "losses": 0,
+          "wr": null,
+          "pf": null,
+          "pnl": 0
+        },
+        "recent7": {
+          "trades": 0,
+          "wins": 0,
+          "losses": 0,
+          "wr": null,
+          "pf": null,
+          "pnl": 0
+        },
+        "avgHoldHours": 6.639211041666667,
+        "medianHoldHours": 6.876465138888889,
+        "tradesPerDay": 0.13333333333333333,
+        "recognizedFills": 2000,
+        "unknownFills": 0,
+        "reversalFills": 0,
+        "invalidFills": 0,
+        "distribution": {
+          "avgWin": null,
+          "avgLoss": 12.5400215,
+          "medianWin": null,
+          "medianLoss": 12.5400215,
+          "largestWin": 0,
+          "largestLoss": 14.600938,
+          "profitConcentrationPct": null,
+          "top3ProfitConcentrationPct": null,
+          "avgTrade": -6.27001075,
+          "equityVolatility": 6.437136258857791,
+          "winLossRatio": null
+        },
+        "longestWinStreak": 0,
+        "longestLossStreak": 2,
+        "recoveryFactor": 5.738166715555989,
+        "pnlConcentrationPct": 0.32688314808539726,
+        "openBooks": [
+          {
+            "coin": "ETH",
+            "side": -1,
+            "size": 208.09859999999975,
+            "avg": 2689.3305219896215,
+            "startTime": 1790384591655,
+            "notional": 1555819.0893299996
+          },
+          {
+            "coin": "BTC",
+            "side": -1,
+            "size": 0.9948699999999642,
+            "avg": 83752.00000000001,
+            "startTime": 1790383048593,
+            "notional": 83322.352239997
+          },
+          {
+            "coin": "NEAR",
+            "side": 1,
+            "size": 14113,
+            "avg": 4.9286018429816485,
+            "startTime": 1790357217711,
+            "notional": 69557.35781
+          },
+          {
+            "coin": "xyz:SNDK",
+            "side": 1,
+            "size": 35.216,
+            "avg": 1759.8084507042258,
+            "startTime": 1790345710824,
+            "notional": 61973.414400000016
+          },
+          {
+            "coin": "ZEC",
+            "side": 1,
+            "size": 17.849999999999998,
+            "avg": 1559.0142857142857,
+            "startTime": 1790347409605,
+            "notional": 27828.404999999995
+          },
+          {
+            "coin": "ONDO",
+            "side": 1,
+            "size": 77703,
+            "avg": 0.5369817274751296,
+            "startTime": 1790349914686,
+            "notional": 41725.09117000001
+          },
+          {
+            "coin": "xyz:INTC",
+            "side": 1,
+            "size": 124.84,
+            "avg": 123.07000000000001,
+            "startTime": 1790349963808,
+            "notional": 15364.0588
+          },
+          {
+            "coin": "SOL",
+            "side": -1,
+            "size": 19288.600000000002,
+            "avg": 120.76826036473025,
+            "startTime": 1790350672784,
+            "notional": 2958381.1474999986
+          },
+          {
+            "coin": "xyz:MU",
+            "side": 1,
+            "size": 32.556,
+            "avg": 1076.4,
+            "startTime": 1790350944016,
+            "notional": 35043.2784
+          },
+          {
+            "coin": "INJ",
+            "side": 1,
+            "size": 5428,
+            "avg": 7.910666912306561,
+            "startTime": 1790357257186,
+            "notional": 42939.10000000001
+          }
+        ],
+        "closed": [
+          {
+            "coin": "NEAR",
+            "side": "LONG",
+            "entry": 5.029241666666666,
+            "exit": 5.182,
+            "size": 182.09999999999934,
+            "pnl": 0,
+            "holdHours": 2.6516305555555557,
+            "closeTime": 1790352633293,
+            "notional": 20802.955229999996
+          },
+          {
+            "coin": "NEAR",
+            "side": "SHORT",
+            "entry": 5.198632311534968,
+            "exit": 4.9733,
+            "size": 49.20000000000053,
+            "pnl": -14.600938,
+            "holdHours": 1.2734494444444444,
+            "closeTime": 1790357217711,
+            "notional": 13736.866020000003
+          },
+          {
+            "coin": "BTC",
+            "side": "LONG",
+            "entry": 83759.43197830646,
+            "exit": 83752,
+            "size": 0.5026200000000358,
+            "pnl": -10.479105,
+            "holdHours": 11.101299722222222,
+            "closeTime": 1790383048593,
+            "notional": 3267047.5330400015
+          },
+          {
+            "coin": "ETH",
+            "side": "LONG",
+            "entry": 2689.3908341638776,
+            "exit": 2689.9,
+            "size": 14.378799999999929,
+            "pnl": 0,
+            "holdHours": 11.530464444444444,
+            "closeTime": 1790384591655,
+            "notional": 1940433.40726
+          }
+        ]
+      },
+      "currentSignal": null,
+      "currentlyAudited": true
+    }
+  ],
+  "trackedHunters": [],
+  "auditLedger": {
+    "0x85ecf584f25db6f146718b86d493e33c5af72052": 1791357731139,
+    "0xf5d81a135f756ca16544e53c20fc20643ec3ad53": 1791357731139,
+    "0x399965e15d4e61ec3529cc98b7f7ebb93b733336": 1791357731139,
+    "0x8c625ff57d8a4374784c7eff585dfdc42ccec974": 1791357731139,
+    "0x87f9cd15f5050a9283b8896300f7c8cf69ece2cf": 1791357731139,
+    "0x7839e2f2c375dd2935193f2736167514efff9916": 1791357731139,
+    "0xecb63caa47c7c4e77f60f1ce858cf28dc2b82b00": 1791357731139,
+    "0xff4cd3826ecee12acd4329aada4a2d3419fc463c": 1791357731139,
+    "0xdf9ea6ec3b7109935ccb4fb267e15ac1fb077ab1": 1791357731139,
+    "0x7b7f72a28fe109fa703eeed7984f2a8a68fedee2": 1791357731139,
+    "0xe357fa9fecb084f0303ff341b0bc55c89f2bb5ce": 1791357731139,
+    "0xfc667adba8d4837586078f4fdcdc29804337ca06": 1791357731139,
+    "0xc926ddba8b7617dbc65712f20cf8e1b58b8598d3": 1791357731139,
+    "0x57dd78cd36e76e2011e8f6dc25cabbaba994494b": 1791357731139,
+    "0xf84d8d3863043d578b17c1f76dded6655d1f05fc": 1791357731139,
+    "0xccf3fff396a14d55d93366f870c007425e9f2a75": 1791357731139,
+    "0xeeb56331b6a250fe2dbc123f08bdb87aa9840464": 1791357731139,
+    "0x4e23288cee4960f9f962195c22948e4bc7ae20c3": 1791357731139,
+    "0xd1581ae3dc981bfb70cceace6647a1c35df09dab": 1791357731139,
+    "0x020ca66c30bec2c4fe3861a94e4db4a498a35872": 1791357731139,
+    "0xfc27136e42af1732ddc9ce2605ea9bff1b959d9d": 1791357731139,
+    "0x023a3d058020fb76cca98f01b3c48c8938a22355": 1791357731139,
+    "0xe4c6ae25959d7fc66cf2dd5965fb78c5e09c4048": 1791357731139,
+    "0x7fdafde5cfb5465924316eced2d3715494c517d1": 1791357731139,
+    "0xad8be12a452b5b8f9ad9883f6e8e67536627db4b": 1791357731139,
+    "0x7717a7a245d9f950e586822b8c9b46863ed7bd7e": 1791357731139,
+    "0x3bcae23e8c380dab4732e9a159c0456f12d866f3": 1791357731139,
+    "0x862dd8e68f30693e3d3c9daa42a440bc6d2a1f0c": 1791357731139,
+    "0x31dea2516beee92135b96f464eeec3cf292a13f2": 1791357731139,
+    "0xbc76170c8a15b34941ba9e00567d7e0f11ba417c": 1791357731139,
+    "0xec4a6f59960fb55a7fa49262e2628687b322cf62": 1791357731139,
+    "0x469e9a7f624b04c24f0e64edf8d8a277e6bf58a5": 1791357731139,
+    "0x856c35038594767646266bc7fd68dc26480e910d": 1791357731139,
+    "0xb1ec7febea4f841d525785955b7fe0e812d6e86a": 1791357731139,
+    "0x1c1c270b573d55b68b3d14722b5d5d401511bed0": 1791357731139,
+    "0xbeccae9ffcb69e9d42a1d4e744abf8056149562d": 1791357731139,
+    "0x396dc3e4d1051837bb559810d2b1ea7977775899": 1791357731139,
+    "0xf58b673c1633ccef0ac58263cdc95ed80f817fc7": 1791357731139,
+    "0x5986347c1d0133d02d307f08bb1efd44c2eb89d9": 1791357731139,
+    "0x6355f7cf36b24044cd5b089a845113327d0ee58e": 1791357731139
+  },
+  "snapshotAt": 1791357731141,
+  "snapshotVersion": "GFTSH-V3.2-PERSISTENT-DISCOVERY-QUEUE-TOP10-HUNTERS"
+}
