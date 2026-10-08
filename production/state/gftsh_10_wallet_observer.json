@@ -1,26 +1,26 @@
 {
   "version": "GFTSH-10W-LIVE-OBSERVER-V2.0.0-NEAR-ENTRY-WATCH",
   "initialized": true,
-  "lastScanAt": 1791452694631,
+  "lastScanAt": 1791453009360,
   "wallets": {
     "0x885989fd94d30c150e6eaf897090509bce4f6aa8": {
       "trader": "Trader #1",
       "address": "0x885989fd94d30c150e6eaf897090509bce4f6aa8",
-      "checkedAt": 1791452694631,
+      "checkedAt": 1791453009360,
       "positions": []
     },
     "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1": {
       "trader": "Trader #2",
       "address": "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1",
-      "checkedAt": 1791452694631,
+      "checkedAt": 1791453009360,
       "positions": [
         {
           "coin": "BTC",
           "szi": 0.5,
           "side": "LONG",
           "entry": 83005,
-          "positionValue": 41541.5,
-          "unrealizedPnl": 39,
+          "positionValue": 41520.5,
+          "unrealizedPnl": 18,
           "leverage": 20
         },
         {
@@ -28,8 +28,8 @@
           "szi": 30,
           "side": "LONG",
           "entry": 2628.71,
-          "positionValue": 76995,
-          "unrealizedPnl": -1866.428571,
+          "positionValue": 76944,
+          "unrealizedPnl": -1917.428571,
           "leverage": 10
         },
         {
@@ -37,8 +37,8 @@
           "szi": 300,
           "side": "LONG",
           "entry": 117.5,
-          "positionValue": 34539,
-          "unrealizedPnl": -711,
+          "positionValue": 34515,
+          "unrealizedPnl": -735,
           "leverage": 10
         },
         {
@@ -46,8 +46,8 @@
           "szi": 741.84,
           "side": "LONG",
           "entry": 10.66,
-          "positionValue": 8064.54264,
-          "unrealizedPnl": 156.52824,
+          "positionValue": 8060.0916,
+          "unrealizedPnl": 152.0772,
           "leverage": 10
         },
         {
@@ -55,8 +55,8 @@
           "szi": 45000,
           "side": "LONG",
           "entry": 1.420033,
-          "positionValue": 63747,
-          "unrealizedPnl": -154.5,
+          "positionValue": 63688.5,
+          "unrealizedPnl": -213,
           "leverage": 20
         },
         {
@@ -64,8 +64,8 @@
           "szi": 100000,
           "side": "LONG",
           "entry": 0.124031,
-          "positionValue": 12380,
-          "unrealizedPnl": -23.102426,
+          "positionValue": 12340,
+          "unrealizedPnl": -63.102426,
           "leverage": 3
         },
         {
@@ -73,8 +73,8 @@
           "szi": 5750,
           "side": "LONG",
           "entry": 89.8904,
-          "positionValue": 500503,
-          "unrealizedPnl": -16366.85051,
+          "positionValue": 501048.1,
+          "unrealizedPnl": -15821.75051,
           "leverage": 5
         },
         {
@@ -82,8 +82,8 @@
           "szi": 30,
           "side": "LONG",
           "entry": 1250,
-          "positionValue": 36945,
-          "unrealizedPnl": -555,
+          "positionValue": 36900,
+          "unrealizedPnl": -600,
           "leverage": 5
         }
       ]
@@ -91,15 +91,15 @@
     "0xe67f141977da22e5c34d15c19b35f180a1532715": {
       "trader": "Trader #3",
       "address": "0xe67f141977da22e5c34d15c19b35f180a1532715",
-      "checkedAt": 1791452694631,
+      "checkedAt": 1791453009360,
       "positions": [
         {
           "coin": "NEAR",
           "szi": 579.2,
           "side": "LONG",
           "entry": 5.28606,
-          "positionValue": 3038.83072,
-          "unrealizedPnl": -22.85798,
+          "positionValue": 3061.12992,
+          "unrealizedPnl": -0.55878,
           "leverage": 10
         },
         {
@@ -107,8 +107,8 @@
           "szi": 1684.74,
           "side": "LONG",
           "entry": 91.1235,
-          "positionValue": 146646.50856,
-          "unrealizedPnl": -6872.98163,
+          "positionValue": 146806.221912,
+          "unrealizedPnl": -6713.268278,
           "leverage": 1
         },
         {
@@ -116,8 +116,8 @@
           "szi": 235.94,
           "side": "LONG",
           "entry": 26.101,
-          "positionValue": 5878.68104,
-          "unrealizedPnl": -279.594671,
+          "positionValue": 5878.20916,
+          "unrealizedPnl": -280.066551,
           "leverage": 1
         },
         {
@@ -125,17 +125,17 @@
           "szi": 91948,
           "side": "LONG",
           "entry": 0.098613,
-          "positionValue": 8086.734652,
-          "unrealizedPnl": -980.56082,
+          "positionValue": 8086.36686,
+          "unrealizedPnl": -980.928612,
           "leverage": 1
         },
         {
           "coin": "ZEC",
-          "szi": 122.84,
+          "szi": 127.84,
           "side": "LONG",
-          "entry": 1304.9725,
-          "positionValue": 151277.46,
-          "unrealizedPnl": -9025.372538,
+          "entry": 1302.0442,
+          "positionValue": 157243.2,
+          "unrealizedPnl": -9210.132538,
           "leverage": 10
         },
         {
@@ -143,8 +143,8 @@
           "szi": 200000,
           "side": "LONG",
           "entry": 0.032002,
-          "positionValue": 5192.8,
-          "unrealizedPnl": -1207.65856,
+          "positionValue": 5201.6,
+          "unrealizedPnl": -1198.85856,
           "leverage": 5
         },
         {
@@ -152,8 +152,8 @@
           "szi": 156873,
           "side": "LONG",
           "entry": 0.160102,
-          "positionValue": 19531.786611,
-          "unrealizedPnl": -5583.918831,
+          "positionValue": 19439.70216,
+          "unrealizedPnl": -5676.003282,
           "leverage": 1
         },
         {
@@ -161,8 +161,8 @@
           "szi": 117845,
           "side": "LONG",
           "entry": 0.470218,
-          "positionValue": 47786.1475,
-          "unrealizedPnl": -7626.78869,
+          "positionValue": 47949.95205,
+          "unrealizedPnl": -7462.98414,
           "leverage": 1
         },
         {
@@ -170,8 +170,8 @@
           "szi": 531502,
           "side": "LONG",
           "entry": 0.271595,
-          "positionValue": 107692.93524,
-          "unrealizedPnl": -36660.878044,
+          "positionValue": 108812.809954,
+          "unrealizedPnl": -35541.00333,
           "leverage": 3
         }
       ]
@@ -179,15 +179,15 @@
     "0x810b41bd2294ea9b87efd8fd03040ff74a1e5130": {
       "trader": "Trader #4",
       "address": "0x810b41bd2294ea9b87efd8fd03040ff74a1e5130",
-      "checkedAt": 1791452694631,
+      "checkedAt": 1791453009360,
       "positions": [
         {
           "coin": "BTC",
           "szi": 15,
           "side": "LONG",
           "entry": 82303.7,
-          "positionValue": 1246245,
-          "unrealizedPnl": 11689.23745,
+          "positionValue": 1245615,
+          "unrealizedPnl": 11059.23745,
           "leverage": 10
         },
         {
@@ -195,8 +195,8 @@
           "szi": 10000,
           "side": "LONG",
           "entry": 86.7316,
-          "positionValue": 870440,
-          "unrealizedPnl": 3123.255488,
+          "positionValue": 871388,
+          "unrealizedPnl": 4071.255488,
           "leverage": 10
         },
         {
@@ -204,8 +204,8 @@
           "szi": 601749,
           "side": "LONG",
           "entry": 0.243562,
-          "positionValue": 74921.962743,
-          "unrealizedPnl": -71641.375107,
+          "positionValue": 74568.73608,
+          "unrealizedPnl": -71994.60177,
           "leverage": 2
         }
       ]
@@ -213,21 +213,21 @@
     "0x736850ee773ac6170fcaeda596514269b863ee56": {
       "trader": "Trader #5",
       "address": "0x736850ee773ac6170fcaeda596514269b863ee56",
-      "checkedAt": 1791452694631,
+      "checkedAt": 1791453009360,
       "positions": []
     },
     "0xad68fabb1bec8b08c8080ad165ae5bdec64136d6": {
       "trader": "Trader #6",
       "address": "0xad68fabb1bec8b08c8080ad165ae5bdec64136d6",
-      "checkedAt": 1791452694631,
+      "checkedAt": 1791453009360,
       "positions": [
         {
           "coin": "BTC",
           "szi": 0.52892,
           "side": "LONG",
           "entry": 84847.1,
-          "positionValue": 43944.26036,
-          "unrealizedPnl": -933.07191,
+          "positionValue": 43922.04572,
+          "unrealizedPnl": -955.28655,
           "leverage": 5
         },
         {
@@ -235,8 +235,8 @@
           "szi": -56.5737,
           "side": "SHORT",
           "entry": 2430.62,
-          "positionValue": 145196.40105,
-          "unrealizedPnl": -7687.12173,
+          "positionValue": 145100.22576,
+          "unrealizedPnl": -7590.94644,
           "leverage": 5
         }
       ]
@@ -244,15 +244,15 @@
     "0x95da8596c44dd09f4b8becce87ad3b7894fb2328": {
       "trader": "Trader #7",
       "address": "0x95da8596c44dd09f4b8becce87ad3b7894fb2328",
-      "checkedAt": 1791452694631,
+      "checkedAt": 1791453009360,
       "positions": [
         {
           "coin": "XRP",
           "szi": 415182,
           "side": "LONG",
           "entry": 1.448598,
-          "positionValue": 588146.8212,
-          "unrealizedPnl": -13285.1746,
+          "positionValue": 587607.0846,
+          "unrealizedPnl": -13824.9112,
           "leverage": 5
         },
         {
@@ -260,8 +260,8 @@
           "szi": 98039.2,
           "side": "LONG",
           "entry": 0.51,
-          "positionValue": 51942.148552,
-          "unrealizedPnl": 1942.156552,
+          "positionValue": 52065.677944,
+          "unrealizedPnl": 2065.685944,
           "leverage": 5
         },
         {
@@ -269,8 +269,8 @@
           "szi": 12330.4,
           "side": "LONG",
           "entry": 8.11,
-          "positionValue": 96604.98488,
-          "unrealizedPnl": -3394.55912,
+          "positionValue": 96659.23864,
+          "unrealizedPnl": -3340.30536,
           "leverage": 5
         },
         {
@@ -278,8 +278,8 @@
           "szi": 1106376,
           "side": "LONG",
           "entry": 0.466691,
-          "positionValue": 536537.0412,
-          "unrealizedPnl": 20200.86761,
+          "positionValue": 535928.5344,
+          "unrealizedPnl": 19592.36081,
           "leverage": 7
         },
         {
@@ -287,8 +287,8 @@
           "szi": 563938,
           "side": "LONG",
           "entry": 0.221292,
-          "positionValue": 124782.56126,
-          "unrealizedPnl": -12.76859,
+          "positionValue": 124692.33118,
+          "unrealizedPnl": -102.99867,
           "leverage": 5
         },
         {
@@ -296,8 +296,8 @@
           "szi": 88103.9,
           "side": "LONG",
           "entry": 0.60853,
-          "positionValue": 55269.338548,
-          "unrealizedPnl": 1654.648434,
+          "positionValue": 55443.78427,
+          "unrealizedPnl": 1829.094156,
           "leverage": 3
         },
         {
@@ -305,8 +305,8 @@
           "szi": -40015,
           "side": "SHORT",
           "entry": 0.506512,
-          "positionValue": 20282.40305,
-          "unrealizedPnl": -14.29715,
+          "positionValue": 20129.1456,
+          "unrealizedPnl": 138.9603,
           "leverage": 1
         },
         {
@@ -314,8 +314,8 @@
           "szi": 77827,
           "side": "LONG",
           "entry": 0.39044,
-          "positionValue": 31538.61348,
-          "unrealizedPnl": 1151.78176,
+          "positionValue": 31667.02803,
+          "unrealizedPnl": 1280.19631,
           "leverage": 1
         }
       ]
@@ -323,21 +323,21 @@
     "0x4bafc8eca50fc3208fb2520a2a49980768ec60f6": {
       "trader": "Trader #8",
       "address": "0x4bafc8eca50fc3208fb2520a2a49980768ec60f6",
-      "checkedAt": 1791452694631,
+      "checkedAt": 1791453009360,
       "positions": []
     },
     "0x58f0bf4307c61bc7a5fe11e24fe36e64300b0d20": {
       "trader": "Trader #9",
       "address": "0x58f0bf4307c61bc7a5fe11e24fe36e64300b0d20",
-      "checkedAt": 1791452694631,
+      "checkedAt": 1791453009360,
       "positions": [
         {
           "coin": "DOGE",
           "szi": 37522716,
           "side": "LONG",
           "entry": 0.089824,
-          "positionValue": 3311267.118852,
-          "unrealizedPnl": -59174.368115,
+          "positionValue": 3309991.346508,
+          "unrealizedPnl": -60450.140459,
           "leverage": 10
         },
         {
@@ -345,8 +345,8 @@
           "szi": 6906159,
           "side": "LONG",
           "entry": 1.431295,
-          "positionValue": 9783264.8394,
-          "unrealizedPnl": -101486.236709,
+          "positionValue": 9772905.6009,
+          "unrealizedPnl": -111845.475209,
           "leverage": 20
         },
         {
@@ -354,8 +354,8 @@
           "szi": -142413.7,
           "side": "SHORT",
           "entry": 4.90053,
-          "positionValue": 747144.99431,
-          "unrealizedPnl": -49242.351423,
+          "positionValue": 752385.81847,
+          "unrealizedPnl": -54483.175583,
           "leverage": 10
         },
         {
@@ -363,8 +363,8 @@
           "szi": 5090133,
           "side": "LONG",
           "entry": 0.522163,
-          "positionValue": 2468459.99835,
-          "unrealizedPnl": -189420.9199,
+          "positionValue": 2464540.59594,
+          "unrealizedPnl": -193340.32231,
           "leverage": 10
         },
         {
@@ -372,8 +372,8 @@
           "szi": 11324.32,
           "side": "LONG",
           "entry": 91.9211,
-          "positionValue": 985714.11008,
-          "unrealizedPnl": -55230.86375,
+          "positionValue": 986710.65024,
+          "unrealizedPnl": -54234.32359,
           "leverage": 10
         },
         {
@@ -381,8 +381,8 @@
           "szi": 9083294,
           "side": "LONG",
           "entry": 0.111019,
-          "positionValue": 798957.456946,
-          "unrealizedPnl": -209466.283384,
+          "positionValue": 798730.374596,
+          "unrealizedPnl": -209693.365734,
           "leverage": 10
         },
         {
@@ -390,8 +390,8 @@
           "szi": 11083779,
           "side": "LONG",
           "entry": 0.053975,
-          "positionValue": 572333.096223,
-          "unrealizedPnl": -25916.381914,
+          "positionValue": 572111.420643,
+          "unrealizedPnl": -26138.057494,
           "leverage": 3
         }
       ]
@@ -399,15 +399,15 @@
     "0xd21d931890d27b6e7e2e668f27931e17698e90f1": {
       "trader": "Trader #10",
       "address": "0xd21d931890d27b6e7e2e668f27931e17698e90f1",
-      "checkedAt": 1791452694631,
+      "checkedAt": 1791453009360,
       "positions": [
         {
           "coin": "HYPE",
           "szi": 50000.2,
           "side": "LONG",
           "entry": 70.5564,
-          "positionValue": 4352217.4088,
-          "unrealizedPnl": 824379.900191,
+          "positionValue": 4356617.4264,
+          "unrealizedPnl": 828779.917791,
           "leverage": 5
         },
         {
@@ -415,8 +415,8 @@
           "szi": 180000.49,
           "side": "LONG",
           "entry": 27.1009,
-          "positionValue": 4484712.20835,
-          "unrealizedPnl": -393463.174703,
+          "positionValue": 4483560.205214,
+          "unrealizedPnl": -394615.177839,
           "leverage": 3
         },
         {
@@ -424,8 +424,8 @@
           "szi": 3500,
           "side": "LONG",
           "entry": 1268.8182,
-          "positionValue": 4310279.75,
-          "unrealizedPnl": -130584.210684,
+          "positionValue": 4303950,
+          "unrealizedPnl": -136913.960684,
           "leverage": 4
         },
         {
@@ -433,8 +433,8 @@
           "szi": 200000,
           "side": "LONG",
           "entry": 3.864425,
-          "positionValue": 720300,
-          "unrealizedPnl": -52585.0711,
+          "positionValue": 721460,
+          "unrealizedPnl": -51425.0711,
           "leverage": 3
         }
       ]
@@ -443,7 +443,7 @@
   "alertedFillIds": [
     "664944464156613"
   ],
-  "lastRuntimeMs": 2966,
+  "lastRuntimeMs": 3235,
   "lastAlerts": [],
   "rrAlertedPositions": [],
   "nearEntryAlertedPositions": [
