@@ -20,7 +20,7 @@ import path from 'node:path';
  *   GitHub Actions cron: every 5 minutes
  */
 
-const VERSION = 'GFTSH-10W-LIVE-OBSERVER-V2.1.0-QUEUE-AND-LIFECYCLE-FIX';
+const VERSION = 'GFTSH-10W-LIVE-OBSERVER-V2.0.0-NEAR-ENTRY-WATCH';
 const MODEL_SL_PCT = Math.max(0.01, Number(process.env.GFTSH_MODEL_SL_PCT || 0.5));
 const MODEL_TP_R = Math.max(0.1, Number(process.env.GFTSH_MODEL_TP_R || 2.0));
 const NEAR_ENTRY_PCT = Math.max(0.01, Number(process.env.GFTSH_NEAR_ENTRY_PCT || 0.5));
@@ -563,12 +563,9 @@ async function main() {
           entry: position.entry, szi: position.szi, lastSeenAt: now
         };
 
-        // Migrate a legacy alert only while this position still uses the generic base key.
-        // Never copy the old base-key alert onto a distinct OPEN:<fillId> lifecycle: that would
-        // suppress a legitimate alert after a close/reopen between observer runs.
-        if (positionKey === baseKey && !alerted.has(positionKey) && alerted.has(baseKey)) {
-          alerted.add(positionKey);
-        }
+        // Migrate an alert from the old V2 base-key format to the new lifecycle key
+        // on the first run after upgrade, avoiding a duplicate alert for an already-known live position.
+        if (!alerted.has(positionKey) && alerted.has(baseKey)) alerted.add(positionKey);
 
         const distancePct = Math.abs((mark - position.entry) / position.entry) * 100;
 
