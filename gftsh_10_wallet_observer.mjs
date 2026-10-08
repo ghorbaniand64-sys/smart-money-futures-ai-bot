@@ -20,7 +20,11 @@ import path from 'node:path';
  *   GitHub Actions cron: every 5 minutes
  */
 
-const VERSION = 'GFTSH-10W-LIVE-OBSERVER-V1.2.0-RR-WATCH';
+const VERSION = 'GFTSH-10W-LIVE-OBSERVER-V2.0.0-NEAR-ENTRY-WATCH';
+const MODEL_SL_PCT = Math.max(0.01, Number(process.env.GFTSH_MODEL_SL_PCT || 0.5));
+const MODEL_TP_R = Math.max(0.1, Number(process.env.GFTSH_MODEL_TP_R || 2.0));
+const NEAR_ENTRY_PCT = Math.max(0.01, Number(process.env.GFTSH_NEAR_ENTRY_PCT || 0.5));
+const TELEGRAM_MAX = Math.max(1000, Number(process.env.GFTSH_TELEGRAM_MAX_CHARS || 3800));
 const API = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
@@ -41,13 +45,10 @@ const TG_STATE_FILE =
   process.env.GFTSH_WATCH_TELEGRAM_STATE_FILE ||
   'production/state/gftsh_10_wallet_telegram.json';
 
-const MODEL_SL_PCT = Math.max(0.01, Number(process.env.GFTSH_MODEL_SL_PCT || 0.5));
-const MODEL_TP_R = Math.max(0.1, Number(process.env.GFTSH_MODEL_TP_R || 2.0));
 const MIN_ALERT_NOTIONAL = Math.max(0, Number(process.env.GFTSH_MIN_ALERT_NOTIONAL_USD || 50));
 const RR_ALERT_MAX = Number.isFinite(Number(process.env.GFTSH_RR_ALERT_MAX))
   ? Number(process.env.GFTSH_RR_ALERT_MAX)
   : 0.5;
-const TELEGRAM_MAX = Math.max(1000, Number(process.env.GFTSH_TELEGRAM_MAX_CHARS || 3800));
 const SEND_STARTUP_STATUS =
   String(process.env.GFTSH_SEND_STARTUP_STATUS || 'true').toLowerCase() !== 'false';
 
@@ -356,94 +357,80 @@ function calculateRR(side, entry, sl, tp) {
   return reward / risk;
 }
 
-function buildAlert({ trader, address, position, mark, realTpsl }) {
+function buildAlert({ trader, address, position, mark }) {
   const side = position?.side;
   const entry = num(position?.entry);
   const lev = num(position?.leverage);
   const current = num(mark);
-  const distance = entry > 0 ? ((current - entry) / entry) * 100 * (side === 'LONG' ? 1 : -1) : null;
-
-  // IMPORTANT: RR is evaluated from the trader's REAL currently-open TP/SL.
-  // The old model fallback (RR=2.0) is intentionally NOT used for the RR<0.5 watcher.
-  const sl = num(realTpsl?.sl);
-  const tp = num(realTpsl?.tp);
-  const rr = calculateRR(side, entry, sl, tp);
+  const distancePct = entry > 0 && current > 0
+    ? Math.abs((current - entry) / entry) * 100
+    : null;
+  const levels = modelLevels(side, entry);
 
   return {
-    trader,
-    address,
+    trader, address,
     coin: String(position?.coin || ''),
-    side,
-    entry,
-    current,
-    leverage: lev,
-    distancePct: distance,
-    sl: sl > 0 ? sl : null,
-    tp: tp > 0 ? tp : null,
-    rr,
+    side, entry, current, leverage: lev, distancePct,
+    sl: levels.sl, tp: levels.tp, rr: levels.rr,
     notional: num(position?.positionValue),
     positionSize: Math.abs(num(position?.szi)),
-    tpslSource: sl > 0 || tp > 0 ? 'TRADER_TPSL' : 'NONE'
+    tpslSource: 'MODEL'
   };
 }
 
 function formatAlert(a) {
   const icon = a.side === 'LONG' ? '🟢' : '🔴';
-
   return [
-    '🐋 SMART MONEY — RR ALERT',
+    '🐋 SMART MONEY — NEAR ENTRY',
     '━━━━━━━━━━━━━━━━━━',
     `👤 ${a.trader}`,
     `🔗 ${short(a.address)}`,
     '',
     `${icon} ${a.side} ${a.coin}`,
     `⚡ Leverage: ${fmtLev(a.leverage)}`,
-    `📍 Average Entry: ${fmtPx(a.entry)}`,
-    `💵 Current: ${fmtPx(a.current)}`,
-    `📏 Distance from Avg Entry: ${fmtPct(a.distancePct)}`,
+    `📍 Entry: ${fmtPx(a.entry)}`,
+    `💵 Market: ${fmtPx(a.current)}`,
+    `📏 Distance: ${fmtPct(a.distancePct)}`,
     '',
     `🎯 TP: ${fmtPx(a.tp)}`,
     `🛑 SL: ${fmtPx(a.sl)}`,
-    `📊 RR: ${a.rr != null ? a.rr.toFixed(2) : '—'}`,
-    `🚨 Trigger: RR < ${RR_ALERT_MAX.toFixed(2)}`,
-    `🧮 TP/SL source: ${a.tpslSource}`,
-    `💰 Current position notional: $${a.notional.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
-    `📦 Position size: ${fmtPx(a.positionSize)}`,
+    `📊 RR: ${a.rr.toFixed(2)}`,
+    `🧠 TP/SL: MODEL`,
     '',
-    '🔄 Entry = current weighted-average position entry',
-    '👁️ Position may be old or averaged; age is NOT a filter',
+    `💰 Position: $${a.notional.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
+    `📦 Size: ${fmtPx(a.positionSize)}`,
+    '',
+    `🚨 Trigger: market within ${NEAR_ENTRY_PCT.toFixed(2)}% of entry`,
+    '👁️ Current live position — age does not matter',
     '🛡 READ-ONLY | NO ORDERS | NO AUTO-COPY'
   ].join('\n');
 }
 
 async function sendTelegram(text) {
-  if (!TG_TOKEN || !TG_CHAT) return { sent: false, reason: 'telegram_not_configured' };
-
-  const chunks = [];
-  if (text.length <= TELEGRAM_MAX) chunks.push(text);
-  else {
-    chunks.push(text.slice(0, TELEGRAM_MAX - 80) + '\n\n⚠️ Message truncated.');
+  if (!TG_TOKEN || !TG_CHAT) {
+    console.error('[TELEGRAM] NOT SENT — telegram_not_configured');
+    return { sent: false, reason: 'telegram_not_configured' };
   }
-
-  for (const chunk of chunks) {
+  const chunk = text.length <= TELEGRAM_MAX
+    ? text
+    : text.slice(0, TELEGRAM_MAX - 80) + '\n\n⚠️ Message truncated.';
+  try {
     const url = `https://api.telegram.org/bot${TG_TOKEN}/sendMessage`;
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: TG_CHAT,
-        text: chunk,
-        disable_web_page_preview: true
-      })
+      body: JSON.stringify({ chat_id: TG_CHAT, text: chunk, disable_web_page_preview: true })
     });
-
     if (!res.ok) {
       const body = await res.text();
       throw new Error(`Telegram HTTP ${res.status}: ${body.slice(0, 200)}`);
     }
+    console.log('[TELEGRAM] SIGNAL SENT');
+    return { sent: true };
+  } catch (e) {
+    console.error(`[TELEGRAM] FAILED — ${e?.message || e}`);
+    return { sent: false, reason: e?.message || 'telegram_send_failed' };
   }
-
-  return { sent: true };
 }
 
 async function sendStartupStatus(state) {
@@ -488,119 +475,66 @@ async function main() {
 
   let alerts = [];
   let errors = 0;
-  let belowThresholdCount = 0;
-  let noTpslCount = 0;
-  let notEligibleCount = 0;
+  let nearEntryCount = 0;
+  let outsideNearEntryCount = 0;
 
-  // RR alerts are position-level, not fill-level.
-  // Once a live position has already alerted, do not spam Telegram every 5 minutes.
-  // The key is deliberately independent of entry/size so averaging does NOT create duplicates.
-  const rrAlerted = new Set(state.rrAlertedPositions || []);
+  const alerted = new Set(state.nearEntryAlertedPositions || []);
   const activePositionKeys = new Set();
 
   for (const [trader, address] of WALLETS) {
     try {
-      const [currentState, orders] = await Promise.all([
-        fetchCurrentState(address),
-        fetchFrontendOrders(address)
-      ]);
-
+      const currentState = await fetchCurrentState(address);
       const positions = extractPositions(currentState);
 
       for (const position of positions) {
         const coin = String(position.coin || '');
         const side = position.side;
+        const mark = num(mids?.[coin]);
+
+        if (!(mark > 0 && num(position.entry) > 0)) {
+          console.log(`[WATCH][NO-MARK] ${trader} ${side} ${coin} entry=${fmtPx(position.entry)} mark=${fmtPx(mark)}`);
+          continue;
+        }
+
         const positionKey = `${address}|${coin}|${side}`;
         activePositionKeys.add(positionKey);
 
-        if (!(num(position.positionValue) >= MIN_ALERT_NOTIONAL)) {
-          notEligibleCount++;
-          continue;
-        }
+        const distancePct = Math.abs((mark - position.entry) / position.entry) * 100;
 
-        const realTpsl = extractRealTpsl(orders, coin, side);
-        const sl = num(realTpsl?.sl);
-        const tp = num(realTpsl?.tp);
-        const rr = calculateRR(side, num(position.entry), sl, tp);
+        if (distancePct < NEAR_ENTRY_PCT) {
+          nearEntryCount++;
+          const alert = buildAlert({ trader, address, position, mark });
 
-        if (rr == null) {
-          noTpslCount++;
-          console.log(
-            `[WATCH][NO-RR] ${trader} ${side} ${coin} avgEntry=${fmtPx(position.entry)} ` +
-            `lev=${fmtLev(position.leverage)} TP/SL unavailable or invalid`
-          );
-          continue;
-        }
-
-        if (rr < RR_ALERT_MAX) {
-          belowThresholdCount++;
-
-          const alert = buildAlert({
-            trader,
-            address,
-            position,
-            mark: num(mids?.[coin]),
-            realTpsl
-          });
-
-          if (!rrAlerted.has(positionKey)) {
+          if (!alerted.has(positionKey)) {
             alerts.push(alert);
-            rrAlerted.add(positionKey);
-            console.log(
-              `[RR-ALERT] ${trader} ${side} ${coin} avgEntry=${fmtPx(alert.entry)} ` +
-              `mark=${fmtPx(alert.current)} lev=${fmtLev(alert.leverage)} rr=${alert.rr.toFixed(2)}`
-            );
+            alerted.add(positionKey);
+            console.log(`[NEAR-ENTRY] ${trader} ${side} ${coin} entry=${fmtPx(alert.entry)} mark=${fmtPx(alert.current)} distance=${fmtPct(alert.distancePct)} lev=${fmtLev(alert.leverage)}`);
           } else {
-            console.log(
-              `[RR-WATCH] ${trader} ${side} ${coin} still-open rr=${rr.toFixed(2)} ` +
-              `alertAlreadySent=yes`
-            );
+            console.log(`[NEAR-ENTRY-WATCH] ${trader} ${side} ${coin} distance=${fmtPct(distancePct)} alertAlreadySent=yes`);
           }
         } else {
-          console.log(
-            `[WATCH] ${trader} ${side} ${coin} avgEntry=${fmtPx(position.entry)} ` +
-            `lev=${fmtLev(position.leverage)} rr=${rr.toFixed(2)} >= ${RR_ALERT_MAX.toFixed(2)}`
-          );
+          outsideNearEntryCount++;
+          console.log(`[WATCH] ${trader} ${side} ${coin} entry=${fmtPx(position.entry)} mark=${fmtPx(mark)} distance=${fmtPct(distancePct)} >= ${NEAR_ENTRY_PCT.toFixed(2)}%`);
         }
       }
 
-      // Persist the current positions for diagnostics/reconciliation.
-      state.wallets[address] = {
-        trader,
-        address,
-        checkedAt: now,
-        positions
-      };
+      state.wallets[address] = { trader, address, checkedAt: now, positions };
     } catch (e) {
       errors++;
       console.error(`[WATCH][ERROR] ${trader} ${short(address)}: ${e?.message || e}`);
     }
   }
 
-  // Remove alert locks for positions that are no longer open.
-  // If the same coin/side is opened again later, it can alert again.
-  state.rrAlertedPositions = [...rrAlerted]
-    .filter(key => activePositionKeys.has(key))
-    .slice(-2000);
-
+  state.nearEntryAlertedPositions = [...alerted].filter(key => activePositionKeys.has(key)).slice(-2000);
   state.version = VERSION;
   state.initialized = true;
   state.lastScanAt = now;
   state.lastRuntimeMs = Date.now() - started;
   state.lastAlerts = alerts.map(a => ({
-    trader: a.trader,
-    address: a.address,
-    coin: a.coin,
-    side: a.side,
-    entry: a.entry,
-    current: a.current,
-    leverage: a.leverage,
-    distancePct: a.distancePct,
-    tp: a.tp,
-    sl: a.sl,
-    rr: a.rr,
-    notional: a.notional,
-    positionSize: a.positionSize
+    trader: a.trader, address: a.address, coin: a.coin, side: a.side,
+    entry: a.entry, current: a.current, leverage: a.leverage,
+    distancePct: a.distancePct, tp: a.tp, sl: a.sl, rr: a.rr,
+    notional: a.notional, positionSize: a.positionSize
   }));
 
   await writeJson(STATE_FILE, state);
