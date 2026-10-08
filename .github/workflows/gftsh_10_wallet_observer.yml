@@ -15,16 +15,18 @@ name: GFTSH 10 Wallet Observer
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    # Offset from :00 to reduce GitHub scheduler high-load contention.
+    - cron: '2-59/5 * * * *'
 
   workflow_dispatch:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: gftsh-10-wallet-observer
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
 
@@ -102,7 +104,7 @@ jobs:
           echo ""
           if [ "${{ github.event_name }}" = "schedule" ]; then
             echo "TRIGGER TYPE: AUTOMATIC SCHEDULE"
-            echo "SCHEDULE: */5 * * * *"
+            echo "SCHEDULE: 2-59/5 * * * * (backup cron; self-healing chain is primary)"
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "TRIGGER TYPE: MANUAL DISPATCH"
           else
@@ -111,6 +113,16 @@ jobs:
 
           echo ""
           echo "=========================================="
+
+      # ============================================================
+      # 3b. Capture run start time for the self-healing 5-minute chain
+      # ============================================================
+      - name: Capture scheduler start time
+        shell: bash
+        run: |
+          echo "GFTSH_RUN_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+          echo "GFTSH_RUN_START_UTC=$(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> "$GITHUB_ENV"
+          echo "Self-healing scheduler start: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 
       # ============================================================
       # 4. Verify repository / default branch
@@ -249,7 +261,7 @@ jobs:
 
           echo ""
           echo "Workflow schedule:"
-          echo "*/5 * * * *"
+          echo "2-59/5 * * * * (backup cron)"
 
           echo ""
           echo "Observer scan interval:"
@@ -357,7 +369,7 @@ jobs:
 
           echo ""
           echo "Scheduled cron:"
-          echo "*/5 * * * *"
+          echo "2-59/5 * * * * (backup cron)"
 
           echo ""
           echo "Effective observer interval:"
@@ -492,7 +504,44 @@ jobs:
           echo "=========================================="
 
       # ============================================================
-      # 11. Final run summary
+      # 11. Self-healing 5-minute scheduler
+      #
+      # GitHub schedule events can be delayed or dropped under load.
+      # This step chains the next run through workflow_dispatch after
+      # exactly 5 minutes from the beginning of the current run.
+      # The cron above remains as a backup/bootstrap mechanism.
+      # ============================================================
+      - name: Schedule next observer run
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -u
+
+          echo "=========================================="
+          echo "GFTSH SELF-HEALING SCHEDULER"
+          echo "=========================================="
+
+          START_EPOCH="${GFTSH_RUN_START_EPOCH:-$(date +%s)}"
+          NOW_EPOCH="$(date +%s)"
+          ELAPSED=$((NOW_EPOCH - START_EPOCH))
+          WAIT=$((300 - ELAPSED))
+
+          if [ "$WAIT" -gt 0 ]; then
+            echo "Waiting ${WAIT}s before dispatching next run..."
+            sleep "$WAIT"
+          else
+            echo "Current run exceeded 5 minutes; dispatching immediately."
+          fi
+
+          echo "Dispatching next workflow run..."
+          gh workflow run gftsh_10_wallet_observer.yml --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME}"
+
+          echo "✅ Next observer run dispatched."
+
+      # ============================================================
+      # 12. Final run summary
       # ============================================================
       - name: Final scheduler summary
         if: always()
@@ -513,7 +562,7 @@ jobs:
 
           echo ""
           echo "Schedule:"
-          echo "Every 5 minutes"
+          echo "Every 5 minutes (self-healing workflow_dispatch + offset cron backup)"
 
           echo ""
           echo "Worker interval:"
