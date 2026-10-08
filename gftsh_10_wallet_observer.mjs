@@ -447,6 +447,54 @@ async function sendStartupStatus(state) {
   await sendTelegram(text);
 }
 
+
+function fillTime(fill) {
+  return num(fill?.time) || num(fill?.timestamp) || 0;
+}
+
+function fillId(fill) {
+  return String(
+    fill?.tid ??
+    fill?.hash ??
+    fill?.oid ??
+    `${fillTime(fill)}:${fill?.px ?? ''}:${fill?.sz ?? ''}:${fill?.dir ?? ''}`
+  );
+}
+
+function isOpeningFill(fill, side) {
+  // Prefer startPosition when Hyperliquid provides it. This prevents an averaging
+  // fill (which may still be labelled Open Long/Open Short) from creating a new lifecycle.
+  const rawStart = fill?.startPosition;
+  const hasStartPosition = rawStart !== undefined && rawStart !== null && rawStart !== '';
+  if (hasStartPosition) {
+    const startPosition = num(rawStart);
+    const fillSide = String(fill?.side || '').toUpperCase();
+    if (startPosition !== 0) return false;
+    if (side === 'LONG' && fillSide === 'B') return true;
+    if (side === 'SHORT' && fillSide === 'A') return true;
+  }
+
+  const dir = String(fill?.dir || '').toLowerCase();
+  if (dir.includes('open')) {
+    return side === 'LONG' ? dir.includes('long') : dir.includes('short');
+  }
+  return false;
+}
+
+function latestOpeningFill(fills, coin, side) {
+  return fills
+    .filter(fill => String(fill?.coin || '') === coin)
+    .filter(fill => isOpeningFill(fill, side))
+    .sort((a, b) => fillTime(b) - fillTime(a))[0] || null;
+}
+
+function lifecycleIdFor(address, coin, side, fills, previousMeta) {
+  const opening = latestOpeningFill(fills, coin, side);
+  if (opening) return `${address}|${coin}|${side}|OPEN:${fillId(opening)}`;
+  if (previousMeta?.lifecycleId) return previousMeta.lifecycleId;
+  return `${address}|${coin}|${side}`;
+}
+
 async function main() {
   const started = Date.now();
   console.log(`\n${VERSION}`);
@@ -458,7 +506,8 @@ async function main() {
     initialized: false,
     lastScanAt: 0,
     wallets: {},
-    rrAlertedPositions: []
+    nearEntryAlertedPositions: [],
+    positionMeta: {}
   });
 
   if (state.lastScanAt && Date.now() - state.lastScanAt < (SCAN_INTERVAL_MIN * 60_000 * 0.8)) {
@@ -477,11 +526,19 @@ async function main() {
 
   const alerted = new Set(state.nearEntryAlertedPositions || []);
   const activePositionKeys = new Set();
+  const activeBaseKeys = new Set();
+  const positionMeta = state.positionMeta || {};
 
   for (const [trader, address] of WALLETS) {
     try {
       const currentState = await fetchCurrentState(address);
       const positions = extractPositions(currentState);
+      let recentFills = [];
+      try {
+        recentFills = await fetchFills(address, start, now);
+      } catch (fillError) {
+        console.log(`[LIFECYCLE][FILL-WARN] ${trader} ${short(address)}: ${fillError?.message || fillError}`);
+      }
 
       for (const position of positions) {
         const coin = String(position.coin || '');
@@ -493,8 +550,22 @@ async function main() {
           continue;
         }
 
-        const positionKey = `${address}|${coin}|${side}`;
+        const baseKey = `${address}|${coin}|${side}`;
+        const previousMeta = positionMeta[baseKey] || null;
+        const positionKey = lifecycleIdFor(address, coin, side, recentFills, previousMeta);
         activePositionKeys.add(positionKey);
+        activeBaseKeys.add(baseKey);
+
+        // Preserve an alert across averaging / weighted-entry changes. A close/reopen
+        // gets a new opening-fill lifecycle ID and can therefore alert again.
+        positionMeta[baseKey] = {
+          trader, address, coin, side, lifecycleId: positionKey,
+          entry: position.entry, szi: position.szi, lastSeenAt: now
+        };
+
+        // Migrate an alert from the old V2 base-key format to the new lifecycle key
+        // on the first run after upgrade, avoiding a duplicate alert for an already-known live position.
+        if (!alerted.has(positionKey) && alerted.has(baseKey)) alerted.add(positionKey);
 
         const distancePct = Math.abs((mark - position.entry) / position.entry) * 100;
 
@@ -505,9 +576,9 @@ async function main() {
           if (!alerted.has(positionKey)) {
             alerts.push(alert);
             alerted.add(positionKey);
-            console.log(`[NEAR-ENTRY] ${trader} ${side} ${coin} entry=${fmtPx(alert.entry)} mark=${fmtPx(alert.current)} distance=${fmtPct(alert.distancePct)} lev=${fmtLev(alert.leverage)}`);
+            console.log(`[NEAR-ENTRY] ${trader} ${side} ${coin} lifecycle=${positionKey.split('|').pop()} entry=${fmtPx(alert.entry)} mark=${fmtPx(alert.current)} distance=${fmtPct(alert.distancePct)} lev=${fmtLev(alert.leverage)}`);
           } else {
-            console.log(`[NEAR-ENTRY-WATCH] ${trader} ${side} ${coin} distance=${fmtPct(distancePct)} alertAlreadySent=yes`);
+            console.log(`[NEAR-ENTRY-WATCH] ${trader} ${side} ${coin} distance=${fmtPct(distancePct)} alertAlreadySent=yes lifecycle=${positionKey.split('|').pop()}`);
           }
         } else {
           outsideNearEntryCount++;
@@ -522,7 +593,16 @@ async function main() {
     }
   }
 
-  state.nearEntryAlertedPositions = [...alerted].filter(key => activePositionKeys.has(key)).slice(-2000);
+  state.nearEntryAlertedPositions = [...alerted]
+    .filter(key => activePositionKeys.has(key))
+    .slice(-2000);
+
+  // Remove stale metadata after a wallet/coin/side is no longer active.
+  // This is what allows a later reopen to establish a fresh lifecycle.
+  for (const key of Object.keys(positionMeta)) {
+    if (!activeBaseKeys.has(key)) delete positionMeta[key];
+  }
+  state.positionMeta = positionMeta;
   state.version = VERSION;
   state.initialized = true;
   state.lastScanAt = now;
@@ -547,8 +627,8 @@ async function main() {
     tgState.lastStartupAt = now;
   }
 
-  // Send one Telegram alert per live position that newly qualifies for RR < threshold.
-  // Position age and averaging history are intentionally ignored.
+  // Send one Telegram alert per position lifecycle when it newly qualifies for near-entry.
+  // Averaging keeps the same lifecycle; close/reopen creates a new lifecycle ID.
   for (const alert of alerts) {
     await sendTelegram(formatAlert(alert));
   }
