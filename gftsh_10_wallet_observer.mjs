@@ -46,9 +46,6 @@ const TG_STATE_FILE =
   'production/state/gftsh_10_wallet_telegram.json';
 
 const MIN_ALERT_NOTIONAL = Math.max(0, Number(process.env.GFTSH_MIN_ALERT_NOTIONAL_USD || 50));
-const RR_ALERT_MAX = Number.isFinite(Number(process.env.GFTSH_RR_ALERT_MAX))
-  ? Number(process.env.GFTSH_RR_ALERT_MAX)
-  : 0.5;
 const SEND_STARTUP_STATUS =
   String(process.env.GFTSH_SEND_STARTUP_STATUS || 'true').toLowerCase() !== 'false';
 
@@ -566,10 +563,9 @@ async function main() {
     `👥 Wallets checked: ${WALLETS.length}/${WALLETS.length}`,
     `⏱ Schedule: every ${SCAN_INTERVAL_MIN} minutes`,
     '',
-    `🚨 RR alerts sent: ${alerts.length}`,
-    `📉 Open positions with RR < ${RR_ALERT_MAX.toFixed(2)}: ${belowThresholdCount}`,
-    `⚠️ Open positions without usable TP/SL: ${noTpslCount}`,
-    `⏭ Below minimum notional: ${notEligibleCount}`,
+    `🚨 New near-entry alerts sent: ${alerts.length}`,
+    `🎯 Near-entry open positions: ${nearEntryCount}`,
+    `📏 Positions outside ${NEAR_ENTRY_PCT.toFixed(2)}% entry zone: ${outsideNearEntryCount}`,
     `❌ Errors: ${errors}`,
     '',
     `🕐 Cycle: ${new Date(now).toISOString()}`,
