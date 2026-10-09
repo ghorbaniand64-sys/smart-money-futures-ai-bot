@@ -20,7 +20,7 @@ import path from 'node:path';
  *   GitHub Actions cron: every 5–10 minutes
  */
 
-const VERSION = 'GFTSH-10W-LIVE-OBSERVER-V2.3.2-STATE-SCHEMA-REPAIR';
+const VERSION = 'GFTSH-10W-LIVE-OBSERVER-V2.3.3-ALERT-STATE-REARM';
 const API = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
@@ -490,6 +490,16 @@ async function main() {
     state.alertedOpenPositionKeys = [];
   }
 
+  // One-time migration: older releases could persist dedupe keys without proving
+  // Telegram delivery. Rearm once so any currently in-band positions can alert.
+  // Thereafter, state.alertStateVersion prevents repeated alerts every cycle.
+  if (state.alertStateVersion !== 1) {
+    const oldKeyCount = state.alertedOpenPositionKeys.length;
+    state.alertedOpenPositionKeys = [];
+    state.alertStateVersion = 1;
+    console.log(`[ALERT-STATE-MIGRATION] Rearmed alerts once; cleared ${oldKeyCount} legacy dedupe key(s). Current in-band positions may alert now.`);
+  }
+
   // Suppress only near-simultaneous duplicate invocations; never block a valid 5–10m scan.
   const previousScanAt = num(state.lastScanAt);
   const scanAgeMs = Date.now() - previousScanAt;
@@ -510,6 +520,9 @@ async function main() {
   let outsideEntryBand = 0;
   let belowMinimumNotional = 0;
   let inBandOpenPositions = 0;
+  let alreadyAlertedInBand = 0;
+  let alertsSent = 0;
+  let alertSendErrors = 0;
 
   for (const [trader, address] of WALLETS) {
     try {
@@ -553,7 +566,11 @@ async function main() {
           continue;
         }
         inBandOpenPositions++;
-        if (alertedOpenPositionKeys.has(key)) continue;
+        if (alertedOpenPositionKeys.has(key)) {
+          alreadyAlertedInBand++;
+          console.log(`[OPEN-POSITION][DEDUP-SKIP] ${trader} ${side} ${coin} distance=${fmtPct(distancePct)} reason=already_alerted_this_lifecycle`);
+          continue;
+        }
 
         if (!(num(position.positionValue) >= MIN_ALERT_NOTIONAL)) {
           belowMinimumNotional++;
@@ -622,11 +639,22 @@ async function main() {
   }
 
   for (const alert of alerts) {
-    await sendTelegram(formatAlert(alert));
-    // Mark only after Telegram confirms delivery. Failed sends are retried next cycle.
-    alertedOpenPositionKeys.add(alert.fillKey);
-    state.alertedOpenPositionKeys = [...alertedOpenPositionKeys].slice(-5000);
-    await writeJson(STATE_FILE, state);
+    try {
+      const delivery = await sendTelegram(formatAlert(alert));
+      if (!delivery?.sent) {
+        alertSendErrors++;
+        console.error(`[TELEGRAM][ALERT-NOT-SENT] ${alert.trader} ${alert.side} ${alert.coin}: ${delivery?.reason || 'unknown reason'}; will retry next cycle.`);
+        continue;
+      }
+      // Mark only after Telegram confirms delivery. Failed sends are retried next cycle.
+      alertedOpenPositionKeys.add(alert.fillKey);
+      alertsSent++;
+      state.alertedOpenPositionKeys = [...alertedOpenPositionKeys].slice(-5000);
+      await writeJson(STATE_FILE, state);
+    } catch (e) {
+      alertSendErrors++;
+      console.error(`[TELEGRAM][ALERT-SEND-ERROR] ${alert.trader} ${alert.side} ${alert.coin}: ${e?.message || e}; will retry next cycle.`);
+    }
   }
 
   const cycleRuntimeSec = ((Date.now() - started) / 1000).toFixed(1);
@@ -637,7 +665,9 @@ async function main() {
     `👥 Wallets checked successfully: ${walletsSucceeded}/${WALLETS.length}`, 
     `⏱ Scan interval: ${SCAN_INTERVAL_MIN} minutes`,
     '',
-    `🔔 Open-position alerts sent: ${alerts.length}`,
+    `🔔 Open-position alerts sent: ${alertsSent}`,
+    `🔁 Already alerted in current lifecycle: ${alreadyAlertedInBand}`,
+    `⚠️ Alert delivery errors: ${alertSendErrors}`, 
     `🎯 Open positions inside 0.50% band: ${inBandOpenPositions}`,
     `📊 Open positions checked: ${positionsChecked}`,
     `🔄 Averaging/add fills ignored: ${averagingFillsIgnored}`,
@@ -654,11 +684,12 @@ async function main() {
   await sendTelegram(cycleText);
 
   tgState.lastCycleAt = now;
-  tgState.lastCycleAlerts = alerts.length;
+  tgState.lastCycleAlerts = alertsSent;
+  tgState.lastCycleAlertSendErrors = alertSendErrors;
   tgState.lastCycleErrors = errors;
   await writeJson(TG_STATE_FILE, tgState);
 
-  console.log(`[CYCLE] wallets=${walletsSucceeded}/${WALLETS.length} positions=${positionsChecked} inBandOpenPositions=${inBandOpenPositions} openPositionAlerts=${alerts.length} averagingIgnored=${averagingFillsIgnored} outsideBand=${outsideEntryBand} errors=${errors} runtime=${cycleRuntimeSec}s`);
+  console.log(`[CYCLE] wallets=${walletsSucceeded}/${WALLETS.length} positions=${positionsChecked} inBandOpenPositions=${inBandOpenPositions} openPositionAlerts=${alertsSent} alreadyAlerted=${alreadyAlertedInBand} alertSendErrors=${alertSendErrors} averagingIgnored=${averagingFillsIgnored} outsideBand=${outsideEntryBand} errors=${errors} runtime=${cycleRuntimeSec}s`);
 }
 
 main().catch(e => {
