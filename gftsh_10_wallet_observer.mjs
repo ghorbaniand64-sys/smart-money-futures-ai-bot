@@ -20,14 +20,14 @@ import path from 'node:path';
  *   GitHub Actions cron: every 5–10 minutes
  */
 
-const VERSION = 'GFTSH-10W-LIVE-OBSERVER-V2.3.0-ALL-OPEN-POSITIONS-NEAR-ENTRY';
+const VERSION = 'GFTSH-10W-LIVE-OBSERVER-V2.3.1-10M-ALIGNED';
 const API = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
 const TG_CHAT = process.env.TELEGRAM_CHAT_ID || '';
 
-const SCAN_INTERVAL_MIN = Math.max(1, Number(process.env.GFTSH_SCAN_INTERVAL_MIN || 5));
-const LOOKBACK_MIN = Math.max(5, Number(process.env.GFTSH_LOOKBACK_MIN || SCAN_INTERVAL_MIN + 5));
+const SCAN_INTERVAL_MIN = Math.min(10, Math.max(1, Number(process.env.GFTSH_SCAN_INTERVAL_MIN || 10)));
+const LOOKBACK_MIN = Math.min(15, Math.max(5, Number(process.env.GFTSH_LOOKBACK_MIN || SCAN_INTERVAL_MIN + 5)));
 const REQUEST_GAP_MS = Math.max(100, Number(process.env.GFTSH_REQUEST_GAP_MS || 250));
 const TIMEOUT_MS = Math.max(3000, Number(process.env.GFTSH_REQUEST_TIMEOUT_MS || 15000));
 const RETRIES = Math.max(1, Number(process.env.GFTSH_RETRIES || 3));
@@ -406,9 +406,9 @@ function formatAlert(a) {
     `🎯 Model TP: ${fmtPx(levels.tp)}`,
     `🛑 Model SL: ${fmtPx(levels.sl)}`,
     `💰 Position Notional: $${a.notional.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
-    `🕒 Opening fill: ${a.fillTime ? new Date(a.fillTime).toISOString() : 'recent'}`,
+    `🕒 Detected: ${new Date().toISOString()}`,
     '',
-    '🔒 Averaging/add fills are ignored',
+    '🔒 Signal uses the current position and average entry; adds do not create duplicate alerts',
     '📐 Alert when mark is within 0.50% of current average entry',
     '🛡 READ-ONLY | NO ORDERS | NO AUTO-COPY'
   ].join('\n');
@@ -467,6 +467,7 @@ async function main() {
   console.log('READ-ONLY | NO ORDERS | NO AUTO-COPY | FUTURES ONLY');
   console.log(`Watching ${WALLETS.length} fixed wallets every ${SCAN_INTERVAL_MIN} minutes.`);
   console.log('Signal rule: alert each currently open position once when mark-entry distance < 0.50%; averaging does not create duplicate alerts.');
+  console.log('Telegram cycle status is sent after each successful scan; trade alerts are conditional on the signal rule.');
 
   const state = await readJson(STATE_FILE, {
     version: VERSION,
