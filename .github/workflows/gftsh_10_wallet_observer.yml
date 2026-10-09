@@ -21,8 +21,10 @@ permissions:
   contents: write
 
 # Do not cancel an active scan if another run is triggered.
+# Keep observer runs serialized and queue pending runs.
 concurrency:
   group: gftsh-10-wallet-observer
+  queue: max
   cancel-in-progress: false
 
 jobs:
