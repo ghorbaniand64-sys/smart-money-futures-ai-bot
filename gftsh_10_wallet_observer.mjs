@@ -20,14 +20,14 @@ import path from 'node:path';
  *   GitHub Actions cron: every 5–10 minutes
  */
 
-const VERSION = 'GFTSH-10W-LIVE-OBSERVER-V2.3.1-10M-ALIGNED';
+const VERSION = 'GFTSH-10W-LIVE-OBSERVER-V2.3.2-STATE-SCHEMA-REPAIR';
 const API = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
 const TG_CHAT = process.env.TELEGRAM_CHAT_ID || '';
 
-const SCAN_INTERVAL_MIN = Math.min(10, Math.max(1, Number(process.env.GFTSH_SCAN_INTERVAL_MIN || 10)));
-const LOOKBACK_MIN = Math.min(15, Math.max(5, Number(process.env.GFTSH_LOOKBACK_MIN || SCAN_INTERVAL_MIN + 5)));
+const SCAN_INTERVAL_MIN = Math.max(1, Number(process.env.GFTSH_SCAN_INTERVAL_MIN || 5));
+const LOOKBACK_MIN = Math.max(5, Number(process.env.GFTSH_LOOKBACK_MIN || SCAN_INTERVAL_MIN + 5));
 const REQUEST_GAP_MS = Math.max(100, Number(process.env.GFTSH_REQUEST_GAP_MS || 250));
 const TIMEOUT_MS = Math.max(3000, Number(process.env.GFTSH_REQUEST_TIMEOUT_MS || 15000));
 const RETRIES = Math.max(1, Number(process.env.GFTSH_RETRIES || 3));
@@ -406,9 +406,9 @@ function formatAlert(a) {
     `🎯 Model TP: ${fmtPx(levels.tp)}`,
     `🛑 Model SL: ${fmtPx(levels.sl)}`,
     `💰 Position Notional: $${a.notional.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
-    `🕒 Detected: ${new Date().toISOString()}`,
+    `🕒 Opening fill: ${a.fillTime ? new Date(a.fillTime).toISOString() : 'recent'}`,
     '',
-    '🔒 Signal uses the current position and average entry; adds do not create duplicate alerts',
+    '🔒 Averaging/add fills are ignored',
     '📐 Alert when mark is within 0.50% of current average entry',
     '🛡 READ-ONLY | NO ORDERS | NO AUTO-COPY'
   ].join('\n');
@@ -467,7 +467,6 @@ async function main() {
   console.log('READ-ONLY | NO ORDERS | NO AUTO-COPY | FUTURES ONLY');
   console.log(`Watching ${WALLETS.length} fixed wallets every ${SCAN_INTERVAL_MIN} minutes.`);
   console.log('Signal rule: alert each currently open position once when mark-entry distance < 0.50%; averaging does not create duplicate alerts.');
-  console.log('Telegram cycle status is sent after each successful scan; trade alerts are conditional on the signal rule.');
 
   const state = await readJson(STATE_FILE, {
     version: VERSION,
@@ -476,6 +475,20 @@ async function main() {
     wallets: {},
     alertedOpenPositionKeys: []
   });
+
+  // Repair older/incomplete persisted state before any wallet is processed.
+  // Without this normalization, state.wallets[address] throws when the saved
+  // JSON exists but has no `wallets` object, causing all 10 wallets to be
+  // counted as errors even after their API data was successfully fetched.
+  if (!state || typeof state !== 'object' || Array.isArray(state)) {
+    throw new Error(`Invalid observer state in ${STATE_FILE}: expected a JSON object`);
+  }
+  if (!state.wallets || typeof state.wallets !== 'object' || Array.isArray(state.wallets)) {
+    state.wallets = {};
+  }
+  if (!Array.isArray(state.alertedOpenPositionKeys)) {
+    state.alertedOpenPositionKeys = [];
+  }
 
   // Suppress only near-simultaneous duplicate invocations; never block a valid 5–10m scan.
   const previousScanAt = num(state.lastScanAt);
@@ -491,6 +504,7 @@ async function main() {
   const alertedOpenPositionKeys = new Set((state.alertedOpenPositionKeys || []).map(String));
   const alerts = [];
   let errors = 0;
+  let walletsSucceeded = 0;
   let positionsChecked = 0;
   let averagingFillsIgnored = 0;
   let outsideEntryBand = 0;
@@ -572,6 +586,7 @@ async function main() {
         recentFillCount: fills.length
       };
       positionsChecked += positions.length;
+      walletsSucceeded++;
     } catch (e) {
       errors++;
       console.error(`[WATCH][ERROR] ${trader} ${short(address)}: ${e?.message || e}`);
@@ -619,7 +634,7 @@ async function main() {
     '👁️ GFTSH — 10 WALLET OBSERVER',
     '━━━━━━━━━━━━━━━━━━',
     '📡 Status: WATCHING',
-    `👥 Wallets checked: ${WALLETS.length}/${WALLETS.length}`,
+    `👥 Wallets checked successfully: ${walletsSucceeded}/${WALLETS.length}`, 
     `⏱ Scan interval: ${SCAN_INTERVAL_MIN} minutes`,
     '',
     `🔔 Open-position alerts sent: ${alerts.length}`,
@@ -643,7 +658,7 @@ async function main() {
   tgState.lastCycleErrors = errors;
   await writeJson(TG_STATE_FILE, tgState);
 
-  console.log(`[CYCLE] wallets=${WALLETS.length} positions=${positionsChecked} inBandOpenPositions=${inBandOpenPositions} openPositionAlerts=${alerts.length} averagingIgnored=${averagingFillsIgnored} outsideBand=${outsideEntryBand} errors=${errors} runtime=${cycleRuntimeSec}s`);
+  console.log(`[CYCLE] wallets=${walletsSucceeded}/${WALLETS.length} positions=${positionsChecked} inBandOpenPositions=${inBandOpenPositions} openPositionAlerts=${alerts.length} averagingIgnored=${averagingFillsIgnored} outsideBand=${outsideEntryBand} errors=${errors} runtime=${cycleRuntimeSec}s`);
 }
 
 main().catch(e => {
