@@ -8,7 +8,7 @@ name: GFTSH 10 Wallet Observer
 
 # Automatic scan:
 
-# Every 10 minutes via GitHub Actions cron
+# Every 10 minutes
 
 #
 
@@ -21,10 +21,6 @@ name: GFTSH 10 Wallet Observer
 # IMPORTANT:
 
 # Scheduled workflows run from the repository DEFAULT BRANCH.
-
-# The cron is the only automatic scheduler.
-
-# No sleeping self-healing chain is used.
 
 # ============================================================
 
@@ -253,7 +249,6 @@ steps:
       GFTSH_MIN_ALERT_NOTIONAL_USD: ${{ vars.GFTSH_MIN_ALERT_NOTIONAL_USD }}
       GFTSH_TELEGRAM_MAX_CHARS: ${{ vars.GFTSH_TELEGRAM_MAX_CHARS }}
       GFTSH_SEND_STARTUP_STATUS: ${{ vars.GFTSH_SEND_STARTUP_STATUS }}
-    shell: bash
     run: |
       set -e
 
