@@ -15,7 +15,7 @@ name: GFTSH 10 Wallet Observer
 
 on:
   schedule:
-    # Offset from :00 to reduce GitHub scheduler high-load contention.
+    # Run every 10 minutes, offset from :00.
     - cron: '2-59/10 * * * *'
 
   workflow_dispatch:
@@ -23,18 +23,17 @@ on:
 permissions:
   contents: write
 
+# Do not cancel an active scan if another run is triggered.
 concurrency:
   group: gftsh-10-wallet-observer
   cancel-in-progress: false
 
 jobs:
-
   watch:
     runs-on: ubuntu-latest
     environment: production
 
     steps:
-
       # ============================================================
       # 1. Checkout repository
       # ============================================================
@@ -113,7 +112,6 @@ jobs:
           echo ""
           echo "=========================================="
 
-
       # ============================================================
       # 4. Verify repository / default branch
       # ============================================================
@@ -174,10 +172,9 @@ jobs:
 
           if [ ! -f "gftsh_10_wallet_observer.mjs" ]; then
             echo ""
-            echo "❌ ERROR: Observer file NOT FOUND:"
+            echo "ERROR: Observer file NOT FOUND:"
             echo "gftsh_10_wallet_observer.mjs"
             echo ""
-
             echo "Repository files containing 'observer':"
             git ls-tree -r --name-only HEAD | grep -i "observer" || true
 
@@ -191,19 +188,15 @@ jobs:
           fi
 
           echo ""
-          echo "✅ Observer file exists."
-
-          echo ""
-          echo "Observer file:"
+          echo "Observer file exists."
           ls -lh gftsh_10_wallet_observer.mjs
 
           echo ""
           echo "Running Node syntax check..."
-
           node --check gftsh_10_wallet_observer.mjs
 
           echo ""
-          echo "✅ Node syntax check passed."
+          echo "Node syntax check passed."
 
       # ============================================================
       # 6. Ensure state directory exists
@@ -223,11 +216,6 @@ jobs:
 
       # ============================================================
       # 7. Display effective observer configuration
-      #
-      # IMPORTANT:
-      #   Scan interval is deliberately hard-set to 10 minutes here.
-      #   This prevents an empty/misconfigured Repository Variable
-      #   from silently reverting the observer to 15 minutes.
       # ============================================================
       - name: Observer configuration
         shell: bash
@@ -305,7 +293,6 @@ jobs:
       # ============================================================
       - name: Run 10-wallet observer
         env:
-
           # Telegram
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -314,8 +301,6 @@ jobs:
           HYPERLIQUID_API_URL: ${{ vars.HYPERLIQUID_API_URL }}
 
           # Scan / API settings
-          # Hard-set to 10 minutes so the worker and workflow
-          # can never silently disagree because of a missing variable.
           GFTSH_SCAN_INTERVAL_MIN: '10'
           GFTSH_LOOKBACK_MIN: ${{ vars.GFTSH_LOOKBACK_MIN }}
           GFTSH_REQUEST_GAP_MS: ${{ vars.GFTSH_REQUEST_GAP_MS }}
@@ -429,7 +414,6 @@ jobs:
             ls -lh production/state/gftsh_10_wallet_telegram.json
 
             echo ""
-            echo "Telegram state:"
             cat production/state/gftsh_10_wallet_telegram.json || true
           else
             echo ""
@@ -480,22 +464,19 @@ jobs:
 
           echo ""
           echo "Committing observer state..."
-
           git commit -m "chore: persist GFTSH 10-wallet observer state"
 
           echo ""
           echo "Pushing state..."
-
           git push origin HEAD:${GITHUB_REF_NAME}
 
           echo ""
           echo "=========================================="
-          echo "✅ OBSERVER STATE PERSISTED"
+          echo "OBSERVER STATE PERSISTED"
           echo "=========================================="
 
-
       # ============================================================
-      # 12. Final run summary
+      # 11. Final run summary
       # ============================================================
       - name: Final scheduler summary
         if: always()
