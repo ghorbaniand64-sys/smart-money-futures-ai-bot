@@ -378,7 +378,7 @@ function buildAlert({ trader, address, position, mark }) {
 function formatAlert(a) {
   const icon = a.side === 'LONG' ? '🟢' : '🔴';
   return [
-    '🐋 SMART MONEY — NEAR ENTRY',
+    `🐋 SMART MONEY — ${a.alertReason || 'POSITION ALERT'}`, 
     '━━━━━━━━━━━━━━━━━━',
     `👤 ${a.trader}`,
     `🔗 ${short(a.address)}`,
@@ -510,8 +510,10 @@ async function main() {
     positionMeta: {}
   });
 
-  if (state.lastScanAt && Date.now() - state.lastScanAt < (SCAN_INTERVAL_MIN * 60_000 * 0.8)) {
-    console.log('[SCHEDULE-GUARD] Previous scan is too recent; skipping duplicate run.');
+  // Suppress only near-simultaneous duplicate dispatches, never a legitimate 10-minute scan.
+  const guardAgeMs = Date.now() - Number(state.lastScanAt || 0);
+  if (state.lastScanAt && guardAgeMs < 2 * 60_000) {
+    console.log(`[SCHEDULE-GUARD] Duplicate run suppressed; previous scan was ${Math.max(0, Math.round(guardAgeMs / 1000))}s ago.`);
     return;
   }
 
@@ -571,12 +573,25 @@ async function main() {
         }
 
         const distancePct = Math.abs((mark - position.entry) / position.entry) * 100;
+        const openingFill = latestOpeningFill(recentFills, coin, side);
+        const openedRecently = Boolean(openingFill && fillTime(openingFill) >= start);
+
+        // Emit once for each newly opened position lifecycle, even if price has already
+        // moved away from entry. A close/reopen on the same symbol gets a new fill ID,
+        // so BTC/BNB/etc. can alert multiple times per day when the trader re-enters.
+        if (openedRecently && !alerted.has(positionKey)) {
+          const alert = buildAlert({ trader, address, position, mark });
+          alert.alertReason = 'NEW POSITION';
+          alerts.push(alert);
+          alerted.add(positionKey);
+          console.log(`[NEW-POSITION] ${trader} ${side} ${coin} lifecycle=${positionKey.split('|').pop()} fill=${fillId(openingFill)} entry=${fmtPx(alert.entry)} mark=${fmtPx(alert.current)}`);
+        }
 
         if (distancePct < NEAR_ENTRY_PCT) {
           nearEntryCount++;
-          const alert = buildAlert({ trader, address, position, mark });
-
           if (!alerted.has(positionKey)) {
+            const alert = buildAlert({ trader, address, position, mark });
+            alert.alertReason = 'NEAR ENTRY';
             alerts.push(alert);
             alerted.add(positionKey);
             console.log(`[NEAR-ENTRY] ${trader} ${side} ${coin} lifecycle=${positionKey.split('|').pop()} entry=${fmtPx(alert.entry)} mark=${fmtPx(alert.current)} distance=${fmtPct(alert.distancePct)} lev=${fmtLev(alert.leverage)}`);
@@ -630,7 +645,7 @@ async function main() {
     tgState.lastStartupAt = now;
   }
 
-  // Send one Telegram alert per position lifecycle when it newly qualifies for near-entry.
+  // Send one Telegram alert per newly opened lifecycle, or near-entry if no opening fill was detected.
   // Averaging keeps the same lifecycle; close/reopen creates a new lifecycle ID.
   for (const alert of alerts) {
     await sendTelegram(formatAlert(alert));

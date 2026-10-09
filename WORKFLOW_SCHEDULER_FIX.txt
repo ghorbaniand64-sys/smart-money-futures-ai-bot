@@ -1,0 +1,10 @@
+WORKFLOW SCHEDULER FIX (10-minute schedule)
+
+The current self-healing scheduler intentionally sleeps almost 600 seconds, which is why the GitHub Actions run remains In progress for about 10 minutes.
+
+To let each run finish promptly:
+1. Keep the workflow's cron schedule at: 2-59/10 * * * *
+2. Remove the entire step named "Schedule next observer run" (the step containing WAIT=$((600 - ELAPSED)), sleep "$WAIT", and gh workflow run ...).
+3. Do not replace it with an immediate gh workflow run, because that would create a rapid dispatch loop.
+
+The observer source in this ZIP is named exactly gftsh_10_wallet_observer.mjs, matching the workflow command: node gftsh_10_wallet_observer.mjs.
