@@ -473,7 +473,8 @@ async function main() {
     initialized: false,
     lastScanAt: 0,
     wallets: {},
-    alertedFillIds: []
+    alertedFillIds: [],
+    pendingPositionFills: {}
   });
 
   // Suppress only near-simultaneous duplicate invocations; never block a valid 5–10m scan.
@@ -488,6 +489,7 @@ async function main() {
   const startTime = Math.max(0, now - LOOKBACK_MIN * 60_000);
   const mids = await fetchMids();
   const alertedFillIds = new Set((state.alertedFillIds || []).map(String));
+  state.pendingPositionFills ||= {};
   const alerts = [];
   const newPositionFills = [];
   let errors = 0;
@@ -516,13 +518,22 @@ async function main() {
         const before = num(fill?.startPosition);
         const after = postPositionFromFill(fill);
 
+        const pendingCoinKey = `${address}|${coin}`;
         if (Math.abs(before) > 1e-12 && Math.abs(after) < 1e-12) {
           latestOpenByCoin.delete(coin);
+          delete state.pendingPositionFills[pendingCoinKey];
           continue;
         }
 
         if (isNewPositionFill(fill)) {
           latestOpenByCoin.set(coin, fill);
+          const lifecycleKey = `${address}|${fillKey(fill)}`;
+          if (!alertedFillIds.has(lifecycleKey)) {
+            state.pendingPositionFills[pendingCoinKey] = {
+              trader, address, coin, side: sideFromFill(fill),
+              time: num(fill?.time), key: lifecycleKey, fillKey: fillKey(fill)
+            };
+          }
           continue;
         }
 
@@ -531,26 +542,41 @@ async function main() {
         }
       }
 
-      // Only the latest lifecycle that is still open can produce a signal.
+      // Persist newly detected lifecycles. Keep them pending until the mark enters
+      // the strict 0.50% band and Telegram confirms delivery, or the position closes.
       for (const [coin, fill] of latestOpenByCoin.entries()) {
         const key = `${address}|${fillKey(fill)}`;
         if (alertedFillIds.has(key)) continue;
-        const side = sideFromFill(fill);
-        const currentPosition = findPosition(positions, coin, side);
-        if (!currentPosition) continue;
-        newPositionFills.push({ trader, coin, side, time: num(fill?.time), key });
+        const pendingCoinKey = `${address}|${coin}`;
+        state.pendingPositionFills[pendingCoinKey] = {
+          trader, address, coin, side: sideFromFill(fill),
+          time: num(fill?.time), key, fillKey: fillKey(fill)
+        };
+      }
 
-        if (!(num(currentPosition.positionValue) >= MIN_ALERT_NOTIONAL)) {
-          belowMinimumNotional++;
-          alertedFillIds.add(key);
+      // Evaluate all still-open pending lifecycles, including those first seen in an
+      // earlier scan while price was outside the entry band or mark data was missing.
+      for (const [pendingCoinKey, pending] of Object.entries(state.pendingPositionFills)) {
+        if (pending.address !== address) continue;
+        const currentPosition = findPosition(positions, pending.coin, pending.side);
+        if (!currentPosition) {
+          delete state.pendingPositionFills[pendingCoinKey];
+          continue;
+        }
+        if (alertedFillIds.has(pending.key)) {
+          delete state.pendingPositionFills[pendingCoinKey];
           continue;
         }
 
-        const mark = num(mids?.[coin]);
+        if (!(num(currentPosition.positionValue) >= MIN_ALERT_NOTIONAL)) {
+          belowMinimumNotional++;
+          continue;
+        }
+
+        const mark = num(mids?.[pending.coin]);
         const entry = num(currentPosition.entry);
         if (!(mark > 0 && entry > 0)) {
-          console.log(`[NEW-POSITION][NO-MARK] ${trader} ${side} ${coin} entry=${fmtPx(entry)} mark=${fmtPx(mark)}`);
-          alertedFillIds.add(key);
+          console.log(`[NEW-POSITION][NO-MARK] ${trader} ${pending.side} ${pending.coin} entry=${fmtPx(entry)} mark=${fmtPx(mark)}`);
           continue;
         }
 
@@ -558,28 +584,27 @@ async function main() {
         const distancePct = Math.abs((mark - entry) / entry) * 100;
         if (!(distancePct < 0.5)) {
           outsideEntryBand++;
-          alertedFillIds.add(key);
-          console.log(`[NEW-POSITION][OUTSIDE-BAND] ${trader} ${side} ${coin} entry=${fmtPx(entry)} mark=${fmtPx(mark)} distance=${fmtPct(distancePct)} >= 0.50%`);
+          console.log(`[NEW-POSITION][OUTSIDE-BAND] ${trader} ${pending.side} ${pending.coin} entry=${fmtPx(entry)} mark=${fmtPx(mark)} distance=${fmtPct(distancePct)} >= 0.50%`);
           continue;
         }
 
         const alert = {
-          trader,
+          trader: pending.trader,
           address,
-          coin,
-          side,
+          coin: pending.coin,
+          side: pending.side,
           entry,
           current: mark,
           leverage: num(currentPosition.leverage),
           distancePct,
           notional: num(currentPosition.positionValue),
           positionSize: Math.abs(num(currentPosition.szi)),
-          fillTime: num(fill?.time),
-          fillKey: key
+          fillTime: pending.time,
+          fillKey: pending.key,
+          pendingCoinKey
         };
         alerts.push(alert);
-        alertedFillIds.add(key);
-        console.log(`[NEW-POSITION][SIGNAL] ${trader} ${side} ${coin} entry=${fmtPx(entry)} mark=${fmtPx(mark)} distance=${fmtPct(distancePct)} fill=${fillKey(fill)}`);
+        console.log(`[NEW-POSITION][SIGNAL] ${trader} ${pending.side} ${pending.coin} entry=${fmtPx(entry)} mark=${fmtPx(mark)} distance=${fmtPct(distancePct)} fill=${pending.fillKey}`);
       }
 
       state.wallets[address] = {
@@ -610,7 +635,7 @@ async function main() {
     distancePct: a.distancePct,
     fillTime: a.fillTime
   }));
-  // Keep a rolling dedupe window by unique opening-fill identity, not by symbol.
+  // Only successfully delivered alert IDs belong in the dedupe set.
   state.alertedFillIds = [...alertedFillIds].slice(-5000);
   await writeJson(STATE_FILE, state);
 
@@ -625,7 +650,14 @@ async function main() {
     tgState.lastStartupAt = now;
   }
 
-  for (const alert of alerts) await sendTelegram(formatAlert(alert));
+  for (const alert of alerts) {
+    await sendTelegram(formatAlert(alert));
+    // Mark delivered only after Telegram returns success; failed sends remain pending.
+    alertedFillIds.add(alert.fillKey);
+    delete state.pendingPositionFills[alert.pendingCoinKey];
+    state.alertedFillIds = [...alertedFillIds].slice(-5000);
+    await writeJson(STATE_FILE, state);
+  }
 
   const cycleRuntimeSec = ((Date.now() - started) / 1000).toFixed(1);
   const cycleText = [
