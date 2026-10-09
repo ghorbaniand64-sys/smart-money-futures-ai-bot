@@ -1,7 +1,7 @@
 {
   "version": "GFTSH-10W-LIVE-OBSERVER-V2.3.0-ALL-OPEN-POSITIONS-NEAR-ENTRY",
   "updatedAt": 1791534975363,
-  "lastScanAt": 1791537308126,
+  "lastScanAt": 1791538736386,
   "seenFillIds": [],
   "lastPositions": {
     "0x885989fd94d30c150e6eaf897090509bce4f6aa8": [],
@@ -324,42 +324,23 @@
     ]
   },
   "initialized": true,
-  "lastRuntimeMs": 7986,
+  "lastRuntimeMs": 7634,
   "lastAlerts": [
     {
       "trader": "Trader #2",
       "address": "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1",
-      "coin": "AVAX",
+      "coin": "XRP",
       "side": "LONG",
-      "entry": 10.3316,
-      "current": 10.3735,
-      "distancePct": 0.4055518990282245,
-      "fillTime": 1791537308126
-    },
-    {
-      "trader": "Trader #4",
-      "address": "0x810b41bd2294ea9b87efd8fd03040ff74a1e5130",
-      "coin": "BTC",
-      "side": "LONG",
-      "entry": 82303.7,
-      "current": 82527.5,
-      "distancePct": 0.2719197314337058,
-      "fillTime": 1791537308126
-    },
-    {
-      "trader": "Trader #7",
-      "address": "0x95da8596c44dd09f4b8becce87ad3b7894fb2328",
-      "coin": "XPL",
-      "side": "LONG",
-      "entry": 0.085191,
-      "current": 0.085036,
-      "distancePct": 0.1819441020765132,
-      "fillTime": 1791537308126
+      "entry": 1.392802,
+      "current": 1.39845,
+      "distancePct": 0.4055134900725211,
+      "fillTime": 1791538736386
     }
   ],
   "alertedOpenPositionKeys": [
     "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1|AVAX|LONG",
     "0x810b41bd2294ea9b87efd8fd03040ff74a1e5130|BTC|LONG",
-    "0x95da8596c44dd09f4b8becce87ad3b7894fb2328|XPL|LONG"
+    "0x95da8596c44dd09f4b8becce87ad3b7894fb2328|XPL|LONG",
+    "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1|XRP|LONG"
   ]
 }
