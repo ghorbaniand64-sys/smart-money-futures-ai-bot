@@ -1,5 +1,10 @@
 {
   "version": "GFTSH-10-WALLET-OBSERVER-V1.0.0",
   "updatedAt": 1791534975364,
-  "startupSent": true
+  "startupSent": true,
+  "initialized": true,
+  "lastStartupAt": 1791537308126,
+  "lastCycleAt": 1791537308126,
+  "lastCycleAlerts": 3,
+  "lastCycleErrors": 10
 }
