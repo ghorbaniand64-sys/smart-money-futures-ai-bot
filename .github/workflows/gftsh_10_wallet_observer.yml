@@ -4,7 +4,7 @@ name: GFTSH 10 Wallet Observer
 # GFTSH — 10 WALLET LIVE FUTURES OBSERVER
 #
 # Automatic scan:
-#   Every 5 minutes
+#   Every 10 minutes
 #
 # Manual scan:
 #   workflow_dispatch
@@ -15,7 +15,7 @@ name: GFTSH 10 Wallet Observer
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/10 * * * *'
 
   workflow_dispatch:
 
@@ -102,7 +102,7 @@ jobs:
           echo ""
           if [ "${{ github.event_name }}" = "schedule" ]; then
             echo "TRIGGER TYPE: AUTOMATIC SCHEDULE"
-            echo "SCHEDULE: */5 * * * *"
+            echo "SCHEDULE: */10 * * * *"
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "TRIGGER TYPE: MANUAL DISPATCH"
           else
@@ -172,7 +172,7 @@ jobs:
 
           if [ ! -f "gftsh_10_wallet_observer.mjs" ]; then
             echo ""
-            echo "❌ ERROR: Observer file NOT FOUND:"
+            echo "ERROR: Observer file NOT FOUND:"
             echo "gftsh_10_wallet_observer.mjs"
             echo ""
 
@@ -189,7 +189,7 @@ jobs:
           fi
 
           echo ""
-          echo "✅ Observer file exists."
+          echo "Observer file exists."
 
           echo ""
           echo "Observer file:"
@@ -201,7 +201,7 @@ jobs:
           node --check gftsh_10_wallet_observer.mjs
 
           echo ""
-          echo "✅ Node syntax check passed."
+          echo "Node syntax check passed."
 
       # ============================================================
       # 6. Ensure state directory exists
@@ -222,10 +222,7 @@ jobs:
       # ============================================================
       # 7. Display effective observer configuration
       #
-      # IMPORTANT:
-      #   Scan interval is deliberately hard-set to 5 minutes here.
-      #   This prevents an empty/misconfigured Repository Variable
-      #   from silently reverting the observer to 15 minutes.
+      # Scan interval is hard-set to 10 minutes here.
       # ============================================================
       - name: Observer configuration
         shell: bash
@@ -249,15 +246,15 @@ jobs:
 
           echo ""
           echo "Workflow schedule:"
-          echo "*/5 * * * *"
+          echo "*/10 * * * *"
 
           echo ""
           echo "Observer scan interval:"
-          echo "5 minutes"
+          echo "10 minutes"
 
           echo ""
           echo "Lookback:"
-          echo "${GFTSH_LOOKBACK_MIN:-auto (10 minutes)} minutes"
+          echo "${GFTSH_LOOKBACK_MIN:-auto (15 minutes)} minutes"
 
           echo ""
           echo "Request gap:"
@@ -312,9 +309,7 @@ jobs:
           HYPERLIQUID_API_URL: ${{ vars.HYPERLIQUID_API_URL }}
 
           # Scan / API settings
-          # Hard-set to 5 minutes so the worker and workflow
-          # can never silently disagree because of a missing variable.
-          GFTSH_SCAN_INTERVAL_MIN: '5'
+          GFTSH_SCAN_INTERVAL_MIN: '10'
           GFTSH_LOOKBACK_MIN: ${{ vars.GFTSH_LOOKBACK_MIN }}
           GFTSH_REQUEST_GAP_MS: ${{ vars.GFTSH_REQUEST_GAP_MS }}
           GFTSH_REQUEST_TIMEOUT_MS: ${{ vars.GFTSH_REQUEST_TIMEOUT_MS }}
@@ -357,11 +352,11 @@ jobs:
 
           echo ""
           echo "Scheduled cron:"
-          echo "*/5 * * * *"
+          echo "*/10 * * * *"
 
           echo ""
           echo "Effective observer interval:"
-          echo "5 minutes"
+          echo "10 minutes"
 
           echo ""
           echo "Observer:"
@@ -488,7 +483,7 @@ jobs:
 
           echo ""
           echo "=========================================="
-          echo "✅ OBSERVER STATE PERSISTED"
+          echo "OBSERVER STATE PERSISTED"
           echo "=========================================="
 
       # ============================================================
@@ -513,11 +508,11 @@ jobs:
 
           echo ""
           echo "Schedule:"
-          echo "Every 5 minutes"
+          echo "Every 10 minutes"
 
           echo ""
           echo "Worker interval:"
-          echo "5 minutes"
+          echo "10 minutes"
 
           echo ""
           echo "Workflow:"
@@ -533,3 +528,4 @@ jobs:
 
           echo ""
           echo "=========================================="
+```
