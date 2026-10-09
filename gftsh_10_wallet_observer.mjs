@@ -17,14 +17,10 @@ import path from 'node:path';
  *   frontendOpenOrders -> real TP/SL if publicly exposed
  *
  * Recommended scheduler:
- *   GitHub Actions cron: every 5 minutes
+ *   GitHub Actions cron: every 5–10 minutes
  */
 
-const VERSION = 'GFTSH-10W-LIVE-OBSERVER-V2.1.0-QUEUE-AND-LIFECYCLE-FIX';
-const MODEL_SL_PCT = Math.max(0.01, Number(process.env.GFTSH_MODEL_SL_PCT || 0.5));
-const MODEL_TP_R = Math.max(0.1, Number(process.env.GFTSH_MODEL_TP_R || 2.0));
-const NEAR_ENTRY_PCT = Math.max(0.01, Number(process.env.GFTSH_NEAR_ENTRY_PCT || 0.5));
-const TELEGRAM_MAX = Math.max(1000, Number(process.env.GFTSH_TELEGRAM_MAX_CHARS || 3800));
+const VERSION = 'GFTSH-10W-LIVE-OBSERVER-V2.2.0-NEW-POSITION-NEAR-ENTRY';
 const API = process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info';
 
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
@@ -45,7 +41,13 @@ const TG_STATE_FILE =
   process.env.GFTSH_WATCH_TELEGRAM_STATE_FILE ||
   'production/state/gftsh_10_wallet_telegram.json';
 
+const MODEL_SL_PCT = Math.max(0.01, Number(process.env.GFTSH_MODEL_SL_PCT || 0.5));
+const MODEL_TP_R = Math.max(0.1, Number(process.env.GFTSH_MODEL_TP_R || 2.0));
 const MIN_ALERT_NOTIONAL = Math.max(0, Number(process.env.GFTSH_MIN_ALERT_NOTIONAL_USD || 50));
+const RR_ALERT_MAX = Number.isFinite(Number(process.env.GFTSH_RR_ALERT_MAX))
+  ? Number(process.env.GFTSH_RR_ALERT_MAX)
+  : 0.5;
+const TELEGRAM_MAX = Math.max(1000, Number(process.env.GFTSH_TELEGRAM_MAX_CHARS || 3800));
 const SEND_STARTUP_STATUS =
   String(process.env.GFTSH_SEND_STARTUP_STATUS || 'true').toLowerCase() !== 'false';
 
@@ -354,80 +356,92 @@ function calculateRR(side, entry, sl, tp) {
   return reward / risk;
 }
 
-function buildAlert({ trader, address, position, mark }) {
+function buildAlert({ trader, address, position, mark, realTpsl }) {
   const side = position?.side;
   const entry = num(position?.entry);
   const lev = num(position?.leverage);
   const current = num(mark);
-  const distancePct = entry > 0 && current > 0
-    ? Math.abs((current - entry) / entry) * 100
-    : null;
-  const levels = modelLevels(side, entry);
+  const distance = entry > 0 ? ((current - entry) / entry) * 100 * (side === 'LONG' ? 1 : -1) : null;
+
+  // IMPORTANT: RR is evaluated from the trader's REAL currently-open TP/SL.
+  // The old model fallback (RR=2.0) is intentionally NOT used for the RR<0.5 watcher.
+  const sl = num(realTpsl?.sl);
+  const tp = num(realTpsl?.tp);
+  const rr = calculateRR(side, entry, sl, tp);
 
   return {
-    trader, address,
+    trader,
+    address,
     coin: String(position?.coin || ''),
-    side, entry, current, leverage: lev, distancePct,
-    sl: levels.sl, tp: levels.tp, rr: levels.rr,
+    side,
+    entry,
+    current,
+    leverage: lev,
+    distancePct: distance,
+    sl: sl > 0 ? sl : null,
+    tp: tp > 0 ? tp : null,
+    rr,
     notional: num(position?.positionValue),
     positionSize: Math.abs(num(position?.szi)),
-    tpslSource: 'MODEL'
+    tpslSource: sl > 0 || tp > 0 ? 'TRADER_TPSL' : 'NONE'
   };
 }
 
 function formatAlert(a) {
   const icon = a.side === 'LONG' ? '🟢' : '🔴';
+  const levels = modelLevels(a.side, a.entry);
   return [
-    `🐋 SMART MONEY — ${a.alertReason || 'POSITION ALERT'}`, 
+    '🐋 SMART MONEY — NEW POSITION',
     '━━━━━━━━━━━━━━━━━━',
     `👤 ${a.trader}`,
     `🔗 ${short(a.address)}`,
     '',
     `${icon} ${a.side} ${a.coin}`,
+    '🆕 Event: NEW POSITION OPENED',
     `⚡ Leverage: ${fmtLev(a.leverage)}`,
-    `📍 Entry: ${fmtPx(a.entry)}`,
-    `💵 Market: ${fmtPx(a.current)}`,
-    `📏 Distance: ${fmtPct(a.distancePct)}`,
+    `📍 Average Entry: ${fmtPx(a.entry)}`,
+    `💵 Current Mark: ${fmtPx(a.current)}`,
+    `📏 Entry Distance: ${fmtPct(a.distancePct)}`,
     '',
-    `🎯 TP: ${fmtPx(a.tp)}`,
-    `🛑 SL: ${fmtPx(a.sl)}`,
-    `📊 RR: ${a.rr.toFixed(2)}`,
-    `🧠 TP/SL: MODEL`,
+    `🎯 Model TP: ${fmtPx(levels.tp)}`,
+    `🛑 Model SL: ${fmtPx(levels.sl)}`,
+    `💰 Position Notional: $${a.notional.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
+    `🕒 Opening fill: ${a.fillTime ? new Date(a.fillTime).toISOString() : 'recent'}`,
     '',
-    `💰 Position: $${a.notional.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
-    `📦 Size: ${fmtPx(a.positionSize)}`,
-    '',
-    `🚨 Trigger: market within ${NEAR_ENTRY_PCT.toFixed(2)}% of entry`,
-    '👁️ Current live position — age does not matter',
+    '🔒 Averaging/add fills are ignored',
+    '📐 Signal only when mark is within 0.50% of current average entry',
     '🛡 READ-ONLY | NO ORDERS | NO AUTO-COPY'
   ].join('\n');
 }
 
 async function sendTelegram(text) {
-  if (!TG_TOKEN || !TG_CHAT) {
-    console.error('[TELEGRAM] NOT SENT — telegram_not_configured');
-    return { sent: false, reason: 'telegram_not_configured' };
+  if (!TG_TOKEN || !TG_CHAT) return { sent: false, reason: 'telegram_not_configured' };
+
+  const chunks = [];
+  if (text.length <= TELEGRAM_MAX) chunks.push(text);
+  else {
+    chunks.push(text.slice(0, TELEGRAM_MAX - 80) + '\n\n⚠️ Message truncated.');
   }
-  const chunk = text.length <= TELEGRAM_MAX
-    ? text
-    : text.slice(0, TELEGRAM_MAX - 80) + '\n\n⚠️ Message truncated.';
-  try {
+
+  for (const chunk of chunks) {
     const url = `https://api.telegram.org/bot${TG_TOKEN}/sendMessage`;
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chat_id: TG_CHAT, text: chunk, disable_web_page_preview: true })
+      body: JSON.stringify({
+        chat_id: TG_CHAT,
+        text: chunk,
+        disable_web_page_preview: true
+      })
     });
+
     if (!res.ok) {
       const body = await res.text();
       throw new Error(`Telegram HTTP ${res.status}: ${body.slice(0, 200)}`);
     }
-    console.log('[TELEGRAM] SIGNAL SENT');
-    return { sent: true };
-  } catch (e) {
-    console.error(`[TELEGRAM] FAILED — ${e?.message || e}`);
-    return { sent: false, reason: e?.message || 'telegram_send_failed' };
   }
+
+  return { sent: true };
 }
 
 async function sendStartupStatus(state) {
@@ -447,191 +461,157 @@ async function sendStartupStatus(state) {
   await sendTelegram(text);
 }
 
-
-function fillTime(fill) {
-  return num(fill?.time) || num(fill?.timestamp) || 0;
-}
-
-function fillId(fill) {
-  return String(
-    fill?.tid ??
-    fill?.hash ??
-    fill?.oid ??
-    `${fillTime(fill)}:${fill?.px ?? ''}:${fill?.sz ?? ''}:${fill?.dir ?? ''}`
-  );
-}
-
-function isOpeningFill(fill, side) {
-  // Prefer startPosition when Hyperliquid provides it. This prevents an averaging
-  // fill (which may still be labelled Open Long/Open Short) from creating a new lifecycle.
-  const rawStart = fill?.startPosition;
-  const hasStartPosition = rawStart !== undefined && rawStart !== null && rawStart !== '';
-  if (hasStartPosition) {
-    const startPosition = num(rawStart);
-    const fillSide = String(fill?.side || '').toUpperCase();
-    if (startPosition !== 0) return false;
-    if (side === 'LONG' && fillSide === 'B') return true;
-    if (side === 'SHORT' && fillSide === 'A') return true;
-  }
-
-  const dir = String(fill?.dir || '').toLowerCase();
-  if (dir.includes('open')) {
-    return side === 'LONG' ? dir.includes('long') : dir.includes('short');
-  }
-  return false;
-}
-
-function latestOpeningFill(fills, coin, side) {
-  return fills
-    .filter(fill => String(fill?.coin || '') === coin)
-    .filter(fill => isOpeningFill(fill, side))
-    .sort((a, b) => fillTime(b) - fillTime(a))[0] || null;
-}
-
-function lifecycleIdFor(address, coin, side, fills, previousMeta) {
-  const opening = latestOpeningFill(fills, coin, side);
-  if (opening) return `${address}|${coin}|${side}|OPEN:${fillId(opening)}`;
-  if (previousMeta?.lifecycleId) return previousMeta.lifecycleId;
-  return `${address}|${coin}|${side}`;
-}
-
 async function main() {
   const started = Date.now();
   console.log(`\n${VERSION}`);
   console.log('READ-ONLY | NO ORDERS | NO AUTO-COPY | FUTURES ONLY');
   console.log(`Watching ${WALLETS.length} fixed wallets every ${SCAN_INTERVAL_MIN} minutes.`);
+  console.log('Signal rule: NEW position only; ignore averaging; mark-entry distance < 0.50%.');
 
   const state = await readJson(STATE_FILE, {
     version: VERSION,
     initialized: false,
     lastScanAt: 0,
     wallets: {},
-    nearEntryAlertedPositions: [],
-    positionMeta: {}
+    alertedFillIds: []
   });
 
-  // Suppress only near-simultaneous duplicate dispatches, never a legitimate 10-minute scan.
-  const guardAgeMs = Date.now() - Number(state.lastScanAt || 0);
-  if (state.lastScanAt && guardAgeMs < 2 * 60_000) {
-    console.log(`[SCHEDULE-GUARD] Duplicate run suppressed; previous scan was ${Math.max(0, Math.round(guardAgeMs / 1000))}s ago.`);
+  // Suppress only near-simultaneous duplicate invocations; never block a valid 5–10m scan.
+  const previousScanAt = num(state.lastScanAt);
+  const scanAgeMs = Date.now() - previousScanAt;
+  if (previousScanAt && scanAgeMs >= 0 && scanAgeMs < 2 * 60_000) {
+    console.log(`[SCHEDULE-GUARD] Duplicate run suppressed; previous scan was ${Math.round(scanAgeMs / 1000)}s ago.`);
     return;
   }
 
   const now = Date.now();
-  const start = now - LOOKBACK_MIN * 60_000;
+  const startTime = Math.max(0, now - LOOKBACK_MIN * 60_000);
   const mids = await fetchMids();
-
-  let alerts = [];
+  const alertedFillIds = new Set((state.alertedFillIds || []).map(String));
+  const alerts = [];
+  const newPositionFills = [];
   let errors = 0;
-  let nearEntryCount = 0;
-  let outsideNearEntryCount = 0;
-
-  const alerted = new Set(state.nearEntryAlertedPositions || []);
-  const activePositionKeys = new Set();
-  const activeBaseKeys = new Set();
-  const positionMeta = state.positionMeta || {};
+  let positionsChecked = 0;
+  let averagingFillsIgnored = 0;
+  let outsideEntryBand = 0;
+  let belowMinimumNotional = 0;
 
   for (const [trader, address] of WALLETS) {
     try {
-      const currentState = await fetchCurrentState(address);
+      const [currentState, orders, fills] = await Promise.all([
+        fetchCurrentState(address),
+        fetchFrontendOrders(address),
+        fetchFills(address, startTime, now)
+      ]);
       const positions = extractPositions(currentState);
-      let recentFills = [];
-      try {
-        recentFills = await fetchFills(address, start, now);
-      } catch (fillError) {
-        console.log(`[LIFECYCLE][FILL-WARN] ${trader} ${short(address)}: ${fillError?.message || fillError}`);
-      }
+      const fillsSorted = fills.slice().sort((a, b) => num(a.time) - num(b.time));
 
-      for (const position of positions) {
-        const coin = String(position.coin || '');
-        const side = position.side;
-        const mark = num(mids?.[coin]);
+      // Reconstruct the latest open lifecycle per coin from chronological fills.
+      // A close clears the previous opening event; a later reopen replaces it.
+      // This prevents an old opening fill from being mistaken for a recent reopen.
+      const latestOpenByCoin = new Map();
+      for (const fill of fillsSorted) {
+        const coin = String(fill?.coin || '');
+        if (!coin) continue;
+        const before = num(fill?.startPosition);
+        const after = postPositionFromFill(fill);
 
-        if (!(mark > 0 && num(position.entry) > 0)) {
-          console.log(`[WATCH][NO-MARK] ${trader} ${side} ${coin} entry=${fmtPx(position.entry)} mark=${fmtPx(mark)}`);
+        if (Math.abs(before) > 1e-12 && Math.abs(after) < 1e-12) {
+          latestOpenByCoin.delete(coin);
           continue;
         }
 
-        const baseKey = `${address}|${coin}|${side}`;
-        const previousMeta = positionMeta[baseKey] || null;
-        const positionKey = lifecycleIdFor(address, coin, side, recentFills, previousMeta);
-        activePositionKeys.add(positionKey);
-        activeBaseKeys.add(baseKey);
-
-        // Preserve an alert across averaging / weighted-entry changes. A close/reopen
-        // gets a new opening-fill lifecycle ID and can therefore alert again.
-        positionMeta[baseKey] = {
-          trader, address, coin, side, lifecycleId: positionKey,
-          entry: position.entry, szi: position.szi, lastSeenAt: now
-        };
-
-        // Migrate a legacy alert only while this position still uses the generic base key.
-        // Never copy the old base-key alert onto a distinct OPEN:<fillId> lifecycle: that would
-        // suppress a legitimate alert after a close/reopen between observer runs.
-        if (positionKey === baseKey && !alerted.has(positionKey) && alerted.has(baseKey)) {
-          alerted.add(positionKey);
+        if (isNewPositionFill(fill)) {
+          latestOpenByCoin.set(coin, fill);
+          continue;
         }
 
-        const distancePct = Math.abs((mark - position.entry) / position.entry) * 100;
-        const openingFill = latestOpeningFill(recentFills, coin, side);
-        const openedRecently = Boolean(openingFill && fillTime(openingFill) >= start);
-
-        // Emit once for each newly opened position lifecycle, even if price has already
-        // moved away from entry. A close/reopen on the same symbol gets a new fill ID,
-        // so BTC/BNB/etc. can alert multiple times per day when the trader re-enters.
-        if (openedRecently && !alerted.has(positionKey)) {
-          const alert = buildAlert({ trader, address, position, mark });
-          alert.alertReason = 'NEW POSITION';
-          alerts.push(alert);
-          alerted.add(positionKey);
-          console.log(`[NEW-POSITION] ${trader} ${side} ${coin} lifecycle=${positionKey.split('|').pop()} fill=${fillId(openingFill)} entry=${fmtPx(alert.entry)} mark=${fmtPx(alert.current)}`);
-        }
-
-        if (distancePct < NEAR_ENTRY_PCT) {
-          nearEntryCount++;
-          if (!alerted.has(positionKey)) {
-            const alert = buildAlert({ trader, address, position, mark });
-            alert.alertReason = 'NEAR ENTRY';
-            alerts.push(alert);
-            alerted.add(positionKey);
-            console.log(`[NEAR-ENTRY] ${trader} ${side} ${coin} lifecycle=${positionKey.split('|').pop()} entry=${fmtPx(alert.entry)} mark=${fmtPx(alert.current)} distance=${fmtPct(alert.distancePct)} lev=${fmtLev(alert.leverage)}`);
-          } else {
-            console.log(`[NEAR-ENTRY-WATCH] ${trader} ${side} ${coin} distance=${fmtPct(distancePct)} alertAlreadySent=yes lifecycle=${positionKey.split('|').pop()}`);
-          }
-        } else {
-          outsideNearEntryCount++;
-          console.log(`[WATCH] ${trader} ${side} ${coin} entry=${fmtPx(position.entry)} mark=${fmtPx(mark)} distance=${fmtPct(distancePct)} >= ${NEAR_ENTRY_PCT.toFixed(2)}%`);
+        if (Math.abs(before) > 1e-12 && Math.abs(after) > Math.abs(before) && Math.sign(before) === Math.sign(after)) {
+          averagingFillsIgnored++;
         }
       }
 
-      state.wallets[address] = { trader, address, checkedAt: now, positions };
+      // Only the latest lifecycle that is still open can produce a signal.
+      for (const [coin, fill] of latestOpenByCoin.entries()) {
+        const key = `${address}|${fillKey(fill)}`;
+        if (alertedFillIds.has(key)) continue;
+        const side = sideFromFill(fill);
+        const currentPosition = findPosition(positions, coin, side);
+        if (!currentPosition) continue;
+        newPositionFills.push({ trader, coin, side, time: num(fill?.time), key });
+
+        if (!(num(currentPosition.positionValue) >= MIN_ALERT_NOTIONAL)) {
+          belowMinimumNotional++;
+          alertedFillIds.add(key);
+          continue;
+        }
+
+        const mark = num(mids?.[coin]);
+        const entry = num(currentPosition.entry);
+        if (!(mark > 0 && entry > 0)) {
+          console.log(`[NEW-POSITION][NO-MARK] ${trader} ${side} ${coin} entry=${fmtPx(entry)} mark=${fmtPx(mark)}`);
+          alertedFillIds.add(key);
+          continue;
+        }
+
+        // Strictly less than 0.50% absolute distance from current average entry.
+        const distancePct = Math.abs((mark - entry) / entry) * 100;
+        if (!(distancePct < 0.5)) {
+          outsideEntryBand++;
+          alertedFillIds.add(key);
+          console.log(`[NEW-POSITION][OUTSIDE-BAND] ${trader} ${side} ${coin} entry=${fmtPx(entry)} mark=${fmtPx(mark)} distance=${fmtPct(distancePct)} >= 0.50%`);
+          continue;
+        }
+
+        const alert = {
+          trader,
+          address,
+          coin,
+          side,
+          entry,
+          current: mark,
+          leverage: num(currentPosition.leverage),
+          distancePct,
+          notional: num(currentPosition.positionValue),
+          positionSize: Math.abs(num(currentPosition.szi)),
+          fillTime: num(fill?.time),
+          fillKey: key
+        };
+        alerts.push(alert);
+        alertedFillIds.add(key);
+        console.log(`[NEW-POSITION][SIGNAL] ${trader} ${side} ${coin} entry=${fmtPx(entry)} mark=${fmtPx(mark)} distance=${fmtPct(distancePct)} fill=${fillKey(fill)}`);
+      }
+
+      state.wallets[address] = {
+        trader,
+        address,
+        checkedAt: now,
+        positions,
+        recentFillCount: fills.length
+      };
+      positionsChecked += positions.length;
     } catch (e) {
       errors++;
       console.error(`[WATCH][ERROR] ${trader} ${short(address)}: ${e?.message || e}`);
     }
   }
 
-  state.nearEntryAlertedPositions = [...alerted]
-    .filter(key => activePositionKeys.has(key))
-    .slice(-2000);
-
-  // Remove stale metadata after a wallet/coin/side is no longer active.
-  // This is what allows a later reopen to establish a fresh lifecycle.
-  for (const key of Object.keys(positionMeta)) {
-    if (!activeBaseKeys.has(key)) delete positionMeta[key];
-  }
-  state.positionMeta = positionMeta;
   state.version = VERSION;
   state.initialized = true;
   state.lastScanAt = now;
   state.lastRuntimeMs = Date.now() - started;
   state.lastAlerts = alerts.map(a => ({
-    trader: a.trader, address: a.address, coin: a.coin, side: a.side,
-    entry: a.entry, current: a.current, leverage: a.leverage,
-    distancePct: a.distancePct, tp: a.tp, sl: a.sl, rr: a.rr,
-    notional: a.notional, positionSize: a.positionSize
+    trader: a.trader,
+    address: a.address,
+    coin: a.coin,
+    side: a.side,
+    entry: a.entry,
+    current: a.current,
+    distancePct: a.distancePct,
+    fillTime: a.fillTime
   }));
-
+  // Keep a rolling dedupe window by unique opening-fill identity, not by symbol.
+  state.alertedFillIds = [...alertedFillIds].slice(-5000);
   await writeJson(STATE_FILE, state);
 
   const tgState = await readJson(TG_STATE_FILE, {
@@ -645,35 +625,29 @@ async function main() {
     tgState.lastStartupAt = now;
   }
 
-  // Send one Telegram alert per newly opened lifecycle, or near-entry if no opening fill was detected.
-  // Averaging keeps the same lifecycle; close/reopen creates a new lifecycle ID.
-  for (const alert of alerts) {
-    await sendTelegram(formatAlert(alert));
-  }
+  for (const alert of alerts) await sendTelegram(formatAlert(alert));
 
-  // GitHub Actions starts a fresh process on every scheduled run.
-  // Therefore send one cycle/status message on every successful run.
   const cycleRuntimeSec = ((Date.now() - started) / 1000).toFixed(1);
   const cycleText = [
     '👁️ GFTSH — 10 WALLET OBSERVER',
     '━━━━━━━━━━━━━━━━━━',
     '📡 Status: WATCHING',
     `👥 Wallets checked: ${WALLETS.length}/${WALLETS.length}`,
-    `⏱ Schedule: every ${SCAN_INTERVAL_MIN} minutes`,
+    `⏱ Scan interval: ${SCAN_INTERVAL_MIN} minutes`,
     '',
-    `🚨 New near-entry alerts sent: ${alerts.length}`,
-    `🎯 Near-entry open positions: ${nearEntryCount}`,
-    `📏 Positions outside ${NEAR_ENTRY_PCT.toFixed(2)}% entry zone: ${outsideNearEntryCount}`,
-    `❌ Errors: ${errors}`,
+    `🆕 New-position signals sent: ${alerts.length}`,
+    `📊 Open positions checked: ${positionsChecked}`,
+    `🔄 Averaging/add fills ignored: ${averagingFillsIgnored}`,
+    `📏 New positions outside 0.50% entry band: ${outsideEntryBand}`,
+    `⏭ Below minimum notional: ${belowMinimumNotional}`,
+    `❌ Wallet/API errors: ${errors}`,
     '',
     `🕐 Cycle: ${new Date(now).toISOString()}`,
     `⚙️ Runtime: ${cycleRuntimeSec}s`,
     '',
-    '🛡 READ-ONLY',
-    '❌ Orders: DISABLED',
-    '❌ Auto-copy: DISABLED'
+    'Signal rule: a newly opened position only; a later reopen can signal again.',
+    '🛡 READ-ONLY | NO ORDERS | NO AUTO-COPY'
   ].join('\n');
-
   await sendTelegram(cycleText);
 
   tgState.lastCycleAt = now;
@@ -681,10 +655,7 @@ async function main() {
   tgState.lastCycleErrors = errors;
   await writeJson(TG_STATE_FILE, tgState);
 
-  console.log(
-    `[CYCLE] wallets=${WALLETS.length} alerts=${alerts.length} errors=${errors} ` +
-    `runtime=${cycleRuntimeSec}s`
-  );
+  console.log(`[CYCLE] wallets=${WALLETS.length} positions=${positionsChecked} newPositionSignals=${alerts.length} averagingIgnored=${averagingFillsIgnored} outsideBand=${outsideEntryBand} errors=${errors} runtime=${cycleRuntimeSec}s`);
 }
 
 main().catch(e => {
