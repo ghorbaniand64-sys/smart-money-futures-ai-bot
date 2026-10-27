@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 /*
- * NOVARA SMART MONEY AI V2.8.6 STRUCTURE-FIRST REPAIR + PREMIUM GRAPHIC OUTCOME CARDS
+ * NOVARA SMART MONEY AI V2.8.7 GLOBAL REVERSE EXPERIMENT + PREMIUM GRAPHIC OUTCOME CARDS
  * READ-ONLY | NO ORDERS | NO AUTO-COPY | PAPER OUTCOME TRACKING
  * Final LONG/SHORT direction follows a fresh BTC 15m + 1h direction check at candidate time; altcoin structure sets SL/TP
  *
@@ -18,10 +18,10 @@ import { fileURLToPath } from 'node:url';
  * All eligible liquid perp markets are considered; the worker does not depend on wallet lists.
  */
 
-const VERSION = 'NOVARA-SMART-MONEY-AI-V2.8.6-LEVEL-PROXIMITY-EARLY-ENTRY';
-const CLEAN_START_ID = 'NOVARA-V2.8.6-CLEAN-START-2026-10-27';
+const VERSION = 'NOVARA-SMART-MONEY-AI-V2.8.7-GLOBAL-REVERSE-SIDE-SLTP';
+const CLEAN_START_ID = 'NOVARA-V2.8.7-GLOBAL-REVERSE-CLEAN-START-2026-10-27';
 const PAPER_MARGIN_USD = Math.max(10, Number(process.env.NOVARA_PAPER_MARGIN_USD || 1000));
-const REVERSE_SWEEP_ONLY = false; // BTC live direction is authoritative; prevent any second inversion of SWEEP_RECLAIM.
+const REVERSE_ALL_SIGNALS = true; // PAPER EXPERIMENT ONLY: invert every accepted setup's side and swap numeric SL/TP levels.
 const API = (process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info').trim();
 const TOKEN = process.env.TELEGRAM_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
 const LEGACY_CHAT = process.env.TELEGRAM_CHAT_ID || '';
@@ -553,7 +553,7 @@ function buildRisk(candidate) {
     rr: riskDist>0 ? targetDist/riskDist : 0, valid: false, reason: 'no downside repeated-touch 1H support provides the required R:R before the support zone' };
 }
 function oppositeSide(side) { return side === 'LONG' ? 'SHORT' : side === 'SHORT' ? 'LONG' : side; }
-function shouldReverseSignal(s) { return REVERSE_SWEEP_ONLY && s?.pattern === 'SWEEP_RECLAIM'; }
+function shouldReverseSignal(s) { return REVERSE_ALL_SIGNALS && ['LONG', 'SHORT'].includes(s?.side); }
 function signalKey(s) { return `${s.coin}|${s.side}|${s.pattern}`; }
 function isCooldown(state, s) {
   // A short cross-pattern cooldown prevents repeat alerts for the same coin/side
@@ -659,9 +659,9 @@ function formatSignal(s, risk) {
     if (!r || r.status !== 'OK' || !Number.isFinite(Number(r.change24hPct))) return `${tf}: UNAVAILABLE`;
     return `${tf}: ${r.label}/${r.trend} (${Number(r.change24hPct).toFixed(2)}%/24h)`;
   };
-  const reversed = false;
-  const modeLabel = 'LIVE BTC DIRECTION';
-  return `${emoji} <b>NOVARA SMART MONEY AI — LIVE BTC DIRECTION</b>\n🧭 Final direction follows BTC 15m+1H live check; altcoin structure retains SL/TP\n━━━━━━━━━━━━━━━━━━\n<b>${s.side} ${escapeHtml(s.coin)} PERP</b>\n🧭 Setup: ${escapeHtml(s.pattern.replaceAll('_', ' '))}\n📍 Entry (reference): <code>${fmtPrice(risk.entry)}</code>\n🛑 Stop Loss: <code>${fmtPrice(risk.sl)}</code> (${pct(risk.riskPct)})\n🎯 Take Profit: <code>${fmtPrice(risk.tp)}</code> (${pct(risk.rewardPct)})\n⚖️ Planned R:R: 1:${risk.rr.toFixed(2)}\n⚡ Suggested Leverage: ${lev.leverage}x${lev.cappedBelowRequestedRange ? ` (exchange max: ${Math.floor(lev.exchangeMax)}x)` : ''}\n🧠 Setup score: ${s.score.toFixed(2)}/10 (not a win-probability estimate)\n📊 Asset 1H trend: ${s.trend}\n₿ <b>BTC MARKET CHECK</b>\n${tfLine('4H', '4H')}\n${tfLine('1H', '1H')}\n${tfLine('15m', '15m')}\n📉 Alt 15m RSI: ${n(s.rsi15, 50).toFixed(1)} | Fib: ${s.fibConfluence ? 'YES' : 'NO'} | Volume: ${s.volRatio.toFixed(2)}x\n🌊 Trade delta: ${(s.flowDelta * 100).toFixed(1)}% | Book imbalance: ${(s.imbalance * 100).toFixed(1)}%\n📈 OI change: ${s.oiChange >= 0 ? '+' : ''}${s.oiChange.toFixed(2)}% | Funding: ${s.fundingPct.toFixed(4)}%\n🧱 1H Structure: Support ${fmtPrice(s.support)} (${s.supportTouches || 0} touches) | Resistance ${fmtPrice(s.resistance)} (${s.resistanceTouches || 0} touches)\n🧩 Evidence:\n${reasons}\n\n🧪 Mode: ${modeLabel}. Paper tracking only — no real orders.`;
+  const reversed = true;
+  const modeLabel = 'GLOBAL REVERSE PAPER EXPERIMENT';
+  return `${emoji} <b>NOVARA SMART MONEY AI — GLOBAL REVERSE EXPERIMENT</b>\n🧭 EXPERIMENT: every accepted LONG/SHORT is inverted and numeric SL/TP levels are swapped\n━━━━━━━━━━━━━━━━━━\n<b>${s.side} ${escapeHtml(s.coin)} PERP</b>\n🧭 Setup: ${escapeHtml(s.pattern.replaceAll('_', ' '))}\n📍 Entry (reference): <code>${fmtPrice(risk.entry)}</code>\n🛑 Stop Loss: <code>${fmtPrice(risk.sl)}</code> (${pct(risk.riskPct)})\n🎯 Take Profit: <code>${fmtPrice(risk.tp)}</code> (${pct(risk.rewardPct)})\n⚖️ Planned R:R: 1:${risk.rr.toFixed(2)}\n⚡ Suggested Leverage: ${lev.leverage}x${lev.cappedBelowRequestedRange ? ` (exchange max: ${Math.floor(lev.exchangeMax)}x)` : ''}\n🧠 Setup score: ${s.score.toFixed(2)}/10 (not a win-probability estimate)\n📊 Asset 1H trend: ${s.trend}\n₿ <b>BTC MARKET CHECK</b>\n${tfLine('4H', '4H')}\n${tfLine('1H', '1H')}\n${tfLine('15m', '15m')}\n📉 Alt 15m RSI: ${n(s.rsi15, 50).toFixed(1)} | Fib: ${s.fibConfluence ? 'YES' : 'NO'} | Volume: ${s.volRatio.toFixed(2)}x\n🌊 Trade delta: ${(s.flowDelta * 100).toFixed(1)}% | Book imbalance: ${(s.imbalance * 100).toFixed(1)}%\n📈 OI change: ${s.oiChange >= 0 ? '+' : ''}${s.oiChange.toFixed(2)}% | Funding: ${s.fundingPct.toFixed(4)}%\n🧱 1H Structure: Support ${fmtPrice(s.support)} (${s.supportTouches || 0} touches) | Resistance ${fmtPrice(s.resistance)} (${s.resistanceTouches || 0} touches)\n🧩 Evidence:\n${reasons}\n\n🧪 Mode: ${modeLabel}. Paper tracking only — no real orders.`;
 }
 
 let telegramNextAt = 0;
@@ -1120,7 +1120,7 @@ async function main() {
     const legacyTrades = Array.isArray(state.paperTrades) ? state.paperTrades : [];
     state.archivedPaperTrades = [
       ...(Array.isArray(state.archivedPaperTrades) ? state.archivedPaperTrades : []),
-      ...legacyTrades.map(t => ({ ...t, archivedAt: now(), archiveReason: 'V2.8.6_CLEAN_START' }))
+      ...legacyTrades.map(t => ({ ...t, archivedAt: now(), archiveReason: 'V2.8.7_GLOBAL_REVERSE_CLEAN_START' }))
     ];
     state.paperTrades = [];
     state.alertHistory = {};
@@ -1136,12 +1136,12 @@ async function main() {
     state.cleanStartAt = now();
     console.log(`[CLEAN-START] Archived ${legacyTrades.length} legacy paper trades; active paper history, cooldowns, and pending reports reset.`);
   } else {
-    console.log(`[CLEAN-START] Already initialized at ${new Date(n(state.cleanStartAt, 0)).toISOString()}; continuing current V2.8.6 evaluation.`);
+    console.log(`[CLEAN-START] Already initialized at ${new Date(n(state.cleanStartAt, 0)).toISOString()}; continuing current V2.8.7 global-reverse evaluation.`);
   }
   state.version = VERSION;
   console.log(`\n${VERSION} — START`);
   console.log(`Mode: READ-ONLY / NO ORDERS / NO AUTO-COPY / PAPER TRACKING`);
-  console.log(`[CLEAN-START] Evaluation cohort begins ${new Date(n(state.cleanStartAt, started)).toISOString()} (UTC); only newly recorded V2.8.6 trades count.`);
+  console.log(`[CLEAN-START] Evaluation cohort begins ${new Date(n(state.cleanStartAt, started)).toISOString()} (UTC); only newly recorded V2.8.7 global-reverse trades count.`);
   console.log(`Time: ${new Date().toISOString()}`);
   console.log(`Strategy: asset 1H trend is authoritative for LONG/SHORT; 15m is entry timing only; BTC 1H/15m is contextual confirmation, not a side override; final-side evidence adjustment; 30m cross-pattern cooldown; 1H multi-touch support/resistance sets SL/TP; risk bounds 0.50%-5.00% with ATR-aware buffer; selects among repeated-touch 1H levels to preserve valid TP/SL geometry; single-touch levels rejected | Signal threshold: ${MIN_SCORE}/10 | min R:R: 1:${MIN_RR.toFixed(2)} | BTC countertrend: ${BTC_COUNTERTREND_HARD_MOVE_PCT.toFixed(1)}% impulse requires score >= ${BTC_COUNTERTREND_MIN_SCORE.toFixed(1)} and ${BTC_COUNTERTREND_MIN_EVIDENCE} confirmations | structure-first SL/TP | 24h volume floor: NONE | market cap: NONE (all active listed perps)`);
   console.log(`[API][POLICY] requestGap=${SCAN_GAP_MS}ms retries429=${MAX_429_RETRIES} backoff=${RATE_LIMIT_BASE_MS}-${RATE_LIMIT_MAX_MS}ms globalCooldown=yes`);
@@ -1299,8 +1299,9 @@ async function main() {
         const distanceToVwap = Math.abs((s.entry - s.vwap) / s.entry) * 100;
         if (distanceToVwap > Math.max(2.2, s.atr / s.entry * 100 * 2.8)) { noteReject('vwap', s, `distance ${distanceToVwap.toFixed(2)}%`); continue; }
         if (shouldReverseSignal(s)) {
-          // Only SWEEP_RECLAIM is inverted: LONG <-> SHORT, and original numeric TP becomes SL while original numeric SL becomes TP.
-          // BREAKOUT_RETEST and TREND_PULLBACK keep their original side and SL/TP.
+          // GLOBAL REVERSE PAPER EXPERIMENT: every accepted pattern is inverted LONG <-> SHORT;
+          // original numeric TP becomes the new SL, and original numeric SL becomes the new TP.
+          // This intentionally reverses the original risk/reward ratio too; it is not assumed profitable.
           const originalSide = s.side;
           const originalSL = risk.sl;
           const originalTP = risk.tp;
@@ -1311,8 +1312,8 @@ async function main() {
           risk.rewardPct = Math.abs(risk.entry - risk.tp) / risk.entry * 100;
           risk.rr = Math.abs(risk.entry - risk.tp) / Math.max(1e-12, Math.abs(risk.sl - risk.entry));
           risk.reverseExperiment = true;
-          s.reasons = [`REVERSE EXPERIMENT: original ${originalSide} inverted to ${s.side}; SL/TP numeric levels swapped`, ...s.reasons];
-          console.log(`[REVERSE-EXPERIMENT][SWEEP_RECLAIM] ${s.coin}: ${originalSide}->${s.side} entry=${fmtPrice(risk.entry)} swappedSL=${fmtPrice(risk.sl)} swappedTP=${fmtPrice(risk.tp)} reversedRR=1:${risk.rr.toFixed(2)}`);
+          s.reasons = [`GLOBAL REVERSE PAPER EXPERIMENT: original ${originalSide} inverted to ${s.side}; original TP is new SL and original SL is new TP`, ...s.reasons];
+          console.log(`[REVERSE-EXPERIMENT][ALL-PATTERNS] ${s.coin} ${s.pattern}: ${originalSide}->${s.side} entry=${fmtPrice(risk.entry)} newSL(originalTP)=${fmtPrice(risk.sl)} newTP(originalSL)=${fmtPrice(risk.tp)} reversedRR=1:${risk.rr.toFixed(2)}`);
         }
         s.risk = risk;
         s.leverageInfo = suggestLeverage(s);
