@@ -1,0 +1,76 @@
+name: NOVARA Smart Money AI
+
+on:
+  schedule:
+    - cron: '2-59/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: novara-smart-money-ai
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    environment: production
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && github.event.repository.default_branch || github.ref }}
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify source
+        run: node --check novara_smart_money_ai.mjs
+
+      - name: Ensure state directory
+        run: mkdir -p production/state
+
+      - name: Run NOVARA Smart Money AI (read-only)
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NOVARA_FREE_CHAT_ID: ${{ secrets.NOVARA_FREE_CHAT_ID || vars.NOVARA_FREE_CHAT_ID }}
+          NOVARA_VIP_CHAT_ID: ${{ secrets.NOVARA_VIP_CHAT_ID || vars.NOVARA_VIP_CHAT_ID }}
+          NOVARA_FREE_DAILY_LIMIT: '5'
+          NOVARA_TELEGRAM_MIN_GAP_MS: '3200'
+          HYPERLIQUID_API_URL: ${{ vars.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info' }}
+          NOVARA_SMART_MONEY_STATE_FILE: production/state/novara_smart_money_state.json
+          NOVARA_SMART_REQUEST_GAP_MS: '90'
+          NOVARA_SMART_TIMEOUT_MS: '12000'
+          NOVARA_SMART_MIN_24H_VOLUME_USD: '2000000'
+          NOVARA_SMART_MAX_MARKETS: '300'
+          NOVARA_SMART_MIN_SCORE: '5.8'
+          NOVARA_SMART_MIN_RR: '1.65'
+          NOVARA_SMART_MAX_SPREAD_PCT: '0.25'
+          NOVARA_SMART_MAX_SIGNALS_PER_CYCLE: '8'
+        run: node novara_smart_money_ai.mjs
+
+      - name: Persist Smart Money state
+        if: always()
+        shell: bash
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p production/state
+          if [ -f production/state/novara_smart_money_state.json ]; then
+            git add -f production/state/novara_smart_money_state.json
+          fi
+          if git diff --cached --quiet; then
+            echo "No Smart Money state changes to commit."
+            exit 0
+          fi
+          git commit -m "chore: persist NOVARA Smart Money AI state"
+          git push origin HEAD:${GITHUB_REF_NAME}
