@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 /*
- * NOVARA SMART MONEY AI V2.8.7 GLOBAL REVERSE EXPERIMENT + PREMIUM GRAPHIC OUTCOME CARDS
+ * NOVARA SMART MONEY AI V2.8.6 STRUCTURE-FIRST REPAIR + PREMIUM GRAPHIC OUTCOME CARDS
  * READ-ONLY | NO ORDERS | NO AUTO-COPY | PAPER OUTCOME TRACKING
  * Final LONG/SHORT direction follows a fresh BTC 15m + 1h direction check at candidate time; altcoin structure sets SL/TP
  *
@@ -18,10 +18,10 @@ import { fileURLToPath } from 'node:url';
  * All eligible liquid perp markets are considered; the worker does not depend on wallet lists.
  */
 
-const VERSION = 'NOVARA-SMART-MONEY-AI-V2.8.7-GLOBAL-REVERSE-SIDE-SLTP';
-const CLEAN_START_ID = 'NOVARA-V2.8.7-GLOBAL-REVERSE-CLEAN-START-2026-10-27';
+const VERSION = 'NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE';
+const CLEAN_START_ID = 'NOVARA-V2.8.6-CLEAN-START-2026-10-27';
 const PAPER_MARGIN_USD = Math.max(10, Number(process.env.NOVARA_PAPER_MARGIN_USD || 1000));
-const REVERSE_ALL_SIGNALS = true; // PAPER EXPERIMENT ONLY: invert every accepted setup's side and swap numeric SL/TP levels.
+const REVERSE_SWEEP_ONLY = false; // No direction inversion: pattern direction is preserved and SL/TP are built independently from structure.
 const API = (process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info').trim();
 const TOKEN = process.env.TELEGRAM_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
 const LEGACY_CHAT = process.env.TELEGRAM_CHAT_ID || '';
@@ -428,7 +428,7 @@ function detectPatterns({ coin, c15, c1h, ctx, prevCtx, mid, spread, imbalance, 
     if (side === 'LONG' && oiConfirmsLong || side === 'SHORT' && oiConfirmsShort) { score += 0.3; reasons.push('OI confirms participation'); }
     if (spread !== null && spread > MAX_SPREAD_PCT) score -= 1.5;
     score = addContext(side, score, reasons);
-    results.push({ coin, side, pattern: 'BREAKOUT_RETEST', rawSupport, rawResistance, minLevelGap, score: clamp(score, 0, 9.5), reasons, entry: mid, atr: atr15, atr1h, support, resistance, supportSource, resistanceSource, supportTouches: selectedSupport?.touches || 0, resistanceTouches: selectedResistance?.touches || 0, supportLevels: supportCandidates.map(x => ({ price: x.price, touches: x.touches, source: x.source })), resistanceLevels: resistanceCandidates.map(x => ({ price: x.price, touches: x.touches, source: x.source })), trend, btcRegime: btcRegime || { label: 'NEUTRAL', change24hPct: 0 }, rsi15, fibConfluence: fib.confluence, volRatio, oiChange, fundingPct, flowDelta: flow.delta, imbalance, vwap: vwap15, spreadPct: spread, atrPct, dayVolume: n(ctx?.dayVolume), maxLeverage: n(ctx?.maxLeverage) });
+    results.push({ coin, side, pattern: 'BREAKOUT_RETEST', breakoutLevel: retestLong ? breakoutHigh : breakoutLow, rawSupport, rawResistance, minLevelGap, score: clamp(score, 0, 9.5), reasons, entry: mid, atr: atr15, atr1h, support, resistance, supportSource, resistanceSource, supportTouches: selectedSupport?.touches || 0, resistanceTouches: selectedResistance?.touches || 0, supportLevels: supportCandidates.map(x => ({ price: x.price, touches: x.touches, source: x.source })), resistanceLevels: resistanceCandidates.map(x => ({ price: x.price, touches: x.touches, source: x.source })), trend, btcRegime: btcRegime || { label: 'NEUTRAL', change24hPct: 0 }, rsi15, fibConfluence: fib.confluence, volRatio, oiChange, fundingPct, flowDelta: flow.delta, imbalance, vwap: vwap15, spreadPct: spread, atrPct, dayVolume: n(ctx?.dayVolume), maxLeverage: n(ctx?.maxLeverage) });
   }
 
   // Pattern 3: 1H trend with a 15m pullback into fast mean and a directional recovery candle.
@@ -446,7 +446,7 @@ function detectPatterns({ coin, c15, c1h, ctx, prevCtx, mid, spread, imbalance, 
     if (side === 'LONG' && fundingPct > 0.08 || side === 'SHORT' && fundingPct < -0.08) { score -= 0.25; reasons.push('crowded funding slightly penalized'); }
     if (spread !== null && spread > MAX_SPREAD_PCT) score -= 1.5;
     score = addContext(side, score, reasons);
-    results.push({ coin, side, pattern: 'TREND_PULLBACK', rawSupport, rawResistance, minLevelGap, score: clamp(score, 0, 9.5), reasons, entry: mid, atr: atr15, atr1h, support, resistance, supportSource, resistanceSource, supportTouches: selectedSupport?.touches || 0, resistanceTouches: selectedResistance?.touches || 0, supportLevels: supportCandidates.map(x => ({ price: x.price, touches: x.touches, source: x.source })), resistanceLevels: resistanceCandidates.map(x => ({ price: x.price, touches: x.touches, source: x.source })), trend, btcRegime: btcRegime || { label: 'NEUTRAL', change24hPct: 0 }, rsi15, fibConfluence: fib.confluence, volRatio, oiChange, fundingPct, flowDelta: flow.delta, imbalance, vwap: vwap15, spreadPct: spread, atrPct, dayVolume: n(ctx?.dayVolume), maxLeverage: n(ctx?.maxLeverage) });
+    results.push({ coin, side, pattern: 'TREND_PULLBACK', pullbackMean: ema20_15, rawSupport, rawResistance, minLevelGap, score: clamp(score, 0, 9.5), reasons, entry: mid, atr: atr15, atr1h, support, resistance, supportSource, resistanceSource, supportTouches: selectedSupport?.touches || 0, resistanceTouches: selectedResistance?.touches || 0, supportLevels: supportCandidates.map(x => ({ price: x.price, touches: x.touches, source: x.source })), resistanceLevels: resistanceCandidates.map(x => ({ price: x.price, touches: x.touches, source: x.source })), trend, btcRegime: btcRegime || { label: 'NEUTRAL', change24hPct: 0 }, rsi15, fibConfluence: fib.confluence, volRatio, oiChange, fundingPct, flowDelta: flow.delta, imbalance, vwap: vwap15, spreadPct: spread, atrPct, dayVolume: n(ctx?.dayVolume), maxLeverage: n(ctx?.maxLeverage) });
   }
 
   // V2.8.6: attach location/rejection diagnostics. A directional pattern alone
@@ -553,7 +553,7 @@ function buildRisk(candidate) {
     rr: riskDist>0 ? targetDist/riskDist : 0, valid: false, reason: 'no downside repeated-touch 1H support provides the required R:R before the support zone' };
 }
 function oppositeSide(side) { return side === 'LONG' ? 'SHORT' : side === 'SHORT' ? 'LONG' : side; }
-function shouldReverseSignal(s) { return REVERSE_ALL_SIGNALS && ['LONG', 'SHORT'].includes(s?.side); }
+function shouldReverseSignal(s) { return REVERSE_SWEEP_ONLY && s?.pattern === 'SWEEP_RECLAIM'; }
 function signalKey(s) { return `${s.coin}|${s.side}|${s.pattern}`; }
 function isCooldown(state, s) {
   // A short cross-pattern cooldown prevents repeat alerts for the same coin/side
@@ -659,9 +659,9 @@ function formatSignal(s, risk) {
     if (!r || r.status !== 'OK' || !Number.isFinite(Number(r.change24hPct))) return `${tf}: UNAVAILABLE`;
     return `${tf}: ${r.label}/${r.trend} (${Number(r.change24hPct).toFixed(2)}%/24h)`;
   };
-  const reversed = true;
-  const modeLabel = 'GLOBAL REVERSE PAPER EXPERIMENT';
-  return `${emoji} <b>NOVARA SMART MONEY AI — GLOBAL REVERSE EXPERIMENT</b>\n🧭 EXPERIMENT: every accepted LONG/SHORT is inverted and numeric SL/TP levels are swapped\n━━━━━━━━━━━━━━━━━━\n<b>${s.side} ${escapeHtml(s.coin)} PERP</b>\n🧭 Setup: ${escapeHtml(s.pattern.replaceAll('_', ' '))}\n📍 Entry (reference): <code>${fmtPrice(risk.entry)}</code>\n🛑 Stop Loss: <code>${fmtPrice(risk.sl)}</code> (${pct(risk.riskPct)})\n🎯 Take Profit: <code>${fmtPrice(risk.tp)}</code> (${pct(risk.rewardPct)})\n⚖️ Planned R:R: 1:${risk.rr.toFixed(2)}\n⚡ Suggested Leverage: ${lev.leverage}x${lev.cappedBelowRequestedRange ? ` (exchange max: ${Math.floor(lev.exchangeMax)}x)` : ''}\n🧠 Setup score: ${s.score.toFixed(2)}/10 (not a win-probability estimate)\n📊 Asset 1H trend: ${s.trend}\n₿ <b>BTC MARKET CHECK</b>\n${tfLine('4H', '4H')}\n${tfLine('1H', '1H')}\n${tfLine('15m', '15m')}\n📉 Alt 15m RSI: ${n(s.rsi15, 50).toFixed(1)} | Fib: ${s.fibConfluence ? 'YES' : 'NO'} | Volume: ${s.volRatio.toFixed(2)}x\n🌊 Trade delta: ${(s.flowDelta * 100).toFixed(1)}% | Book imbalance: ${(s.imbalance * 100).toFixed(1)}%\n📈 OI change: ${s.oiChange >= 0 ? '+' : ''}${s.oiChange.toFixed(2)}% | Funding: ${s.fundingPct.toFixed(4)}%\n🧱 1H Structure: Support ${fmtPrice(s.support)} (${s.supportTouches || 0} touches) | Resistance ${fmtPrice(s.resistance)} (${s.resistanceTouches || 0} touches)\n🧩 Evidence:\n${reasons}\n\n🧪 Mode: ${modeLabel}. Paper tracking only — no real orders.`;
+  const reversed = false;
+  const modeLabel = 'LIVE BTC DIRECTION';
+  return `${emoji} <b>NOVARA SMART MONEY AI — LIVE BTC DIRECTION</b>\n🧭 Final direction follows BTC 15m+1H live check; altcoin structure retains SL/TP\n━━━━━━━━━━━━━━━━━━\n<b>${s.side} ${escapeHtml(s.coin)} PERP</b>\n🧭 Setup: ${escapeHtml(s.pattern.replaceAll('_', ' '))}\n📍 Entry (reference): <code>${fmtPrice(risk.entry)}</code>\n🛑 Stop Loss: <code>${fmtPrice(risk.sl)}</code> (${pct(risk.riskPct)})\n🎯 Take Profit: <code>${fmtPrice(risk.tp)}</code> (${pct(risk.rewardPct)})\n⚖️ Planned R:R: 1:${risk.rr.toFixed(2)}\n⚡ Suggested Leverage: ${lev.leverage}x${lev.cappedBelowRequestedRange ? ` (exchange max: ${Math.floor(lev.exchangeMax)}x)` : ''}\n🧠 Setup score: ${s.score.toFixed(2)}/10 (not a win-probability estimate)\n📊 Asset 1H trend: ${s.trend}\n₿ <b>BTC MARKET CHECK</b>\n${tfLine('4H', '4H')}\n${tfLine('1H', '1H')}\n${tfLine('15m', '15m')}\n📉 Alt 15m RSI: ${n(s.rsi15, 50).toFixed(1)} | Fib: ${s.fibConfluence ? 'YES' : 'NO'} | Volume: ${s.volRatio.toFixed(2)}x\n🌊 Trade delta: ${(s.flowDelta * 100).toFixed(1)}% | Book imbalance: ${(s.imbalance * 100).toFixed(1)}%\n📈 OI change: ${s.oiChange >= 0 ? '+' : ''}${s.oiChange.toFixed(2)}% | Funding: ${s.fundingPct.toFixed(4)}%\n🧱 1H Structure: Support ${fmtPrice(s.support)} (${s.supportTouches || 0} touches) | Resistance ${fmtPrice(s.resistance)} (${s.resistanceTouches || 0} touches)\n🧩 Evidence:\n${reasons}\n\n🧪 Mode: ${modeLabel}. Paper tracking only — no real orders.`;
 }
 
 let telegramNextAt = 0;
@@ -1120,7 +1120,7 @@ async function main() {
     const legacyTrades = Array.isArray(state.paperTrades) ? state.paperTrades : [];
     state.archivedPaperTrades = [
       ...(Array.isArray(state.archivedPaperTrades) ? state.archivedPaperTrades : []),
-      ...legacyTrades.map(t => ({ ...t, archivedAt: now(), archiveReason: 'V2.8.7_GLOBAL_REVERSE_CLEAN_START' }))
+      ...legacyTrades.map(t => ({ ...t, archivedAt: now(), archiveReason: 'V2.8.6_CLEAN_START' }))
     ];
     state.paperTrades = [];
     state.alertHistory = {};
@@ -1136,14 +1136,14 @@ async function main() {
     state.cleanStartAt = now();
     console.log(`[CLEAN-START] Archived ${legacyTrades.length} legacy paper trades; active paper history, cooldowns, and pending reports reset.`);
   } else {
-    console.log(`[CLEAN-START] Already initialized at ${new Date(n(state.cleanStartAt, 0)).toISOString()}; continuing current V2.8.7 global-reverse evaluation.`);
+    console.log(`[CLEAN-START] Already initialized at ${new Date(n(state.cleanStartAt, 0)).toISOString()}; continuing current V2.8.6 evaluation.`);
   }
   state.version = VERSION;
   console.log(`\n${VERSION} — START`);
   console.log(`Mode: READ-ONLY / NO ORDERS / NO AUTO-COPY / PAPER TRACKING`);
-  console.log(`[CLEAN-START] Evaluation cohort begins ${new Date(n(state.cleanStartAt, started)).toISOString()} (UTC); only newly recorded V2.8.7 global-reverse trades count.`);
+  console.log(`[CLEAN-START] Evaluation cohort begins ${new Date(n(state.cleanStartAt, started)).toISOString()} (UTC); only newly recorded V2.8.6 trades count.`);
   console.log(`Time: ${new Date().toISOString()}`);
-  console.log(`Strategy: asset 1H trend is authoritative for LONG/SHORT; 15m is entry timing only; BTC 1H/15m is contextual confirmation, not a side override; final-side evidence adjustment; 30m cross-pattern cooldown; 1H multi-touch support/resistance sets SL/TP; risk bounds 0.50%-5.00% with ATR-aware buffer; selects among repeated-touch 1H levels to preserve valid TP/SL geometry; single-touch levels rejected | Signal threshold: ${MIN_SCORE}/10 | min R:R: 1:${MIN_RR.toFixed(2)} | BTC countertrend: ${BTC_COUNTERTREND_HARD_MOVE_PCT.toFixed(1)}% impulse requires score >= ${BTC_COUNTERTREND_MIN_SCORE.toFixed(1)} and ${BTC_COUNTERTREND_MIN_EVIDENCE} confirmations | structure-first SL/TP | 24h volume floor: NONE | market cap: NONE (all active listed perps)`);
+  console.log(`Strategy: preserve pattern-confirmed direction; 1H trend is confirmation/context, not a forced side override; pattern-aware entry gates for sweep/reclaim, breakout/retest and trend pullback; BTC 1H/15m is contextual confirmation; 30m cross-pattern cooldown; 1H multi-touch support/resistance independently sets SL/TP; risk bounds 0.50%-5.00% with ATR-aware buffer; minimum structural R:R enforced; no reverse experiment | Signal threshold: ${MIN_SCORE}/10 | min R:R: 1:${MIN_RR.toFixed(2)} | BTC countertrend: ${BTC_COUNTERTREND_HARD_MOVE_PCT.toFixed(1)}% impulse requires score >= ${BTC_COUNTERTREND_MIN_SCORE.toFixed(1)} and ${BTC_COUNTERTREND_MIN_EVIDENCE} confirmations | structure-first SL/TP | 24h volume floor: NONE | market cap: NONE (all active listed perps)`);
   console.log(`[API][POLICY] requestGap=${SCAN_GAP_MS}ms retries429=${MAX_429_RETRIES} backoff=${RATE_LIMIT_BASE_MS}-${RATE_LIMIT_MAX_MS}ms globalCooldown=yes`);
   console.log(`[TELEGRAM][CONFIG] token=${TOKEN ? 'configured' : 'MISSING'} vipChat=${VIP_CHAT ? 'configured' : (LEGACY_CHAT ? 'legacy-fallback' : 'MISSING')} freeChat=${FREE_CHAT ? 'configured' : 'MISSING'} legacyChat=${LEGACY_CHAT ? 'configured' : 'MISSING'}`);
   if (!TOKEN || (!VIP_CHAT && !LEGACY_CHAT && !FREE_CHAT)) {
@@ -1207,15 +1207,16 @@ async function main() {
         // patterns found on the same coin during this pass.
         const liveBtc = await refreshBtcDirection(btcRegime);
         for (const candidate of found) {
-          const originalSide = candidate.side;
-          const oneHourSide = ['LONG', 'SHORT'].includes(candidate.trend) ? candidate.trend : originalSide;
-          candidate.side = oneHourSide;
+          // Preserve the side actually evidenced by the pattern. A blanket 1H-side
+          // override can turn a valid sweep/reclaim into the opposite trade while
+          // leaving its trigger and candle confirmation pointing the old way.
+          const patternSide = candidate.side;
           candidate.btcRegime = liveBtc;
-          candidate.reasons = [`1H ASSET TREND AUTHORITY: ${originalSide}->${oneHourSide}; 15m used for entry timing only; BTC ${liveBtc.trend || 'UNAVAILABLE'} is context, not a side override; source=${liveBtc.directionSource}; SL/TP from repeated-touch 1H levels`, ...candidate.reasons];
-          const sideAdjustment = finalSideEvidenceAdjustment(candidate, originalSide);
+          const sideAdjustment = finalSideEvidenceAdjustment(candidate, patternSide);
           candidate.score = clamp(candidate.score + sideAdjustment, 0, 9.5);
-          candidate.reasons = [`Final-side evidence adjustment ${sideAdjustment >= 0 ? '+' : ''}${sideAdjustment.toFixed(2)} (original=${originalSide}, final=${oneHourSide}; checks trend/flow/order-book/RSI/VWAP)`, ...candidate.reasons];
-          console.log(`[1H][DIRECTION-AUTHORITY] ${candidate.coin} ${candidate.pattern}: ${originalSide}->${oneHourSide}; BTC context=${liveBtc.trend}; finalSideAdjustment=${sideAdjustment.toFixed(2)}; score=${candidate.score.toFixed(2)}; entry=${fmtPrice(candidate.entry)} support=${fmtPrice(candidate.support)} resistance=${fmtPrice(candidate.resistance)}`);
+          const trendRelation = candidate.trend === patternSide ? 'aligned' : 'countertrend';
+          candidate.reasons = [`PATTERN DIRECTION PRESERVED: ${patternSide}; asset 1H trend=${candidate.trend} (${trendRelation}) is confirmation/context, not a forced side flip; BTC ${liveBtc.trend || 'UNAVAILABLE'} is context only; SL/TP recalculated from 1H structure`, `Same-side evidence adjustment ${sideAdjustment >= 0 ? '+' : ''}${sideAdjustment.toFixed(2)} (flow/order-book/RSI/VWAP)`, ...candidate.reasons];
+          console.log(`[DIRECTION][PATTERN-PRESERVED] ${candidate.coin} ${candidate.pattern}: side=${patternSide}; 1H=${candidate.trend}; BTC=${liveBtc.trend}; evidenceAdjustment=${sideAdjustment.toFixed(2)}; score=${candidate.score.toFixed(2)}; entry=${fmtPrice(candidate.entry)} support=${fmtPrice(candidate.support)} resistance=${fmtPrice(candidate.resistance)}`);
         }
       }
       for (const s of found) {
@@ -1224,24 +1225,40 @@ async function main() {
           noteReject('spread', s, s.spreadPct == null ? 'order-book spread unavailable' : `spread ${s.spreadPct.toFixed(3)}% > ${MAX_SPREAD_PCT}%`);
           continue;
         }
-        // V2.8.6 LOCATION GATE: SHORTs must trigger near a repeatedly tested 1H
-        // resistance after a completed 15m bearish rejection; LONGs must trigger
-        // near a repeatedly tested 1H support after a completed 15m bullish reclaim.
-        // This prevents late entries after most of the move toward the opposite level.
-        const entryLevel = n(s.entryLevel);
-        const levelDistancePct = n(s.entryLevelDistancePct, Infinity);
-        const maxEntryLevelDistancePct = n(s.entryProximityMaxPct, 0.45);
-        const levelTouches = s.side === 'SHORT' ? n(s.resistanceTouches) : n(s.supportTouches);
-        if (!(entryLevel > 0) || levelTouches < 2 || levelDistancePct > maxEntryLevelDistancePct || !s.entryReactionConfirmed) {
-          const reason = !(entryLevel > 0) ? 'no repeated-touch 1H level on entry side'
-            : levelTouches < 2 ? `entry level has only ${levelTouches} independent touches`
-            : levelDistancePct > maxEntryLevelDistancePct ? `late entry: ${levelDistancePct.toFixed(2)}% from ${s.side === 'SHORT' ? 'resistance' : 'support'}; max ${maxEntryLevelDistancePct.toFixed(2)}%`
-            : `15m ${s.side === 'SHORT' ? 'bearish resistance rejection' : 'bullish support reclaim'} not confirmed`;
-          console.log(`[FILTER][ENTRY-LOCATION] ${s.coin} ${s.side} ${s.pattern} rejected: ${reason}; entry=${fmtPrice(s.entry)} level=${fmtPrice(entryLevel)} distance=${Number.isFinite(levelDistancePct) ? levelDistancePct.toFixed(2)+'%' : 'NA'} max=${maxEntryLevelDistancePct.toFixed(2)}% touches=${levelTouches}`);
-          noteReject('location', s, reason);
+        // PATTERN-AWARE LOCATION GATE: each setup must be judged against its own
+        // actual trigger. Sweep/reclaim uses 1H S/R; breakout-retest uses the broken
+        // level; trend-pullback uses its 15m EMA20 mean and the original 1H trend.
+        // Do not force every pattern to pretend it entered at support/resistance.
+        const maxEntryLevelDistancePct = Math.min(1.25, Math.max(0.35, n(s.atr1h) / Math.max(n(s.entry), 1) * 100 * 0.70));
+        let entryLevel = 0, levelDistancePct = Infinity, locationPass = false, locationReason = '';
+        if (s.pattern === 'SWEEP_RECLAIM') {
+          entryLevel = s.side === 'SHORT' ? n(s.resistance) : n(s.support);
+          levelDistancePct = entryLevel > 0 ? Math.abs(s.entry - entryLevel) / s.entry * 100 : Infinity;
+          const touches = s.side === 'SHORT' ? n(s.resistanceTouches) : n(s.supportTouches);
+          locationPass = entryLevel > 0 && touches >= 2 && levelDistancePct <= maxEntryLevelDistancePct && s.entryReactionConfirmed;
+          locationReason = `sweep needs ${s.side === 'SHORT' ? 'repeated 1H resistance' : 'repeated 1H support'} + candle reclaim/rejection; distance=${Number.isFinite(levelDistancePct) ? levelDistancePct.toFixed(2)+'%' : 'NA'}, touches=${touches}, reaction=${!!s.entryReactionConfirmed}`;
+        } else if (s.pattern === 'BREAKOUT_RETEST') {
+          entryLevel = n(s.breakoutLevel);
+          levelDistancePct = entryLevel > 0 ? Math.abs(s.entry - entryLevel) / s.entry * 100 : Infinity;
+          const retestTolerancePct = Math.max(n(s.atr) * 0.60 / Math.max(n(s.entry), 1) * 100, 0.20);
+          locationPass = entryLevel > 0 && levelDistancePct <= Math.max(maxEntryLevelDistancePct, retestTolerancePct) &&
+            (s.side === 'LONG' ? s.entry >= entryLevel - n(s.atr) * 0.25 : s.entry <= entryLevel + n(s.atr) * 0.25);
+          locationReason = `breakout retest needs price near broken level ${fmtPrice(entryLevel)}; distance=${Number.isFinite(levelDistancePct) ? levelDistancePct.toFixed(2)+'%' : 'NA'}`;
+        } else if (s.pattern === 'TREND_PULLBACK') {
+          entryLevel = n(s.pullbackMean);
+          levelDistancePct = entryLevel > 0 ? Math.abs(s.entry - entryLevel) / s.entry * 100 : Infinity;
+          locationPass = entryLevel > 0 && s.trend === s.side && levelDistancePct <= Math.max(0.90, n(s.atrPct) * 1.8) &&
+            (s.side === 'LONG' ? s.entry >= entryLevel : s.entry <= entryLevel);
+          locationReason = `trend pullback needs 1H trend aligned and entry near/on recovery side of EMA20; distance=${Number.isFinite(levelDistancePct) ? levelDistancePct.toFixed(2)+'%' : 'NA'}, trend=${s.trend}`;
+        }
+        if (!locationPass) {
+          console.log(`[FILTER][ENTRY-LOCATION] ${s.coin} ${s.side} ${s.pattern} rejected: ${locationReason || 'no valid pattern-specific trigger level'}; entry=${fmtPrice(s.entry)} level=${fmtPrice(entryLevel)} max=${maxEntryLevelDistancePct.toFixed(2)}%`);
+          noteReject('location', s, locationReason || 'no valid pattern-specific trigger level');
           continue;
         }
-        console.log(`[ENTRY][LOCATION-PASS] ${s.coin} ${s.side}: near ${s.side === 'SHORT' ? '1H resistance' : '1H support'} (${levelDistancePct.toFixed(2)}%, ${levelTouches} touches), 15m rejection confirmed`);
+        s.entryLevel = entryLevel;
+        s.entryLevelDistancePct = levelDistancePct;
+        console.log(`[ENTRY][LOCATION-PASS] ${s.coin} ${s.side} ${s.pattern}: ${locationReason}`);
         // Adaptive regime gate: trend disagreement is a warning, not an automatic
         // rejection. Hard-block only when BOTH the asset trend and BTC oppose the
         // setup and BTC itself has a material 24h impulse. Structure/R:R gates below
@@ -1298,23 +1315,7 @@ async function main() {
         // Avoid chasing a move that has already travelled too far from its 15m mean.
         const distanceToVwap = Math.abs((s.entry - s.vwap) / s.entry) * 100;
         if (distanceToVwap > Math.max(2.2, s.atr / s.entry * 100 * 2.8)) { noteReject('vwap', s, `distance ${distanceToVwap.toFixed(2)}%`); continue; }
-        if (shouldReverseSignal(s)) {
-          // GLOBAL REVERSE PAPER EXPERIMENT: every accepted pattern is inverted LONG <-> SHORT;
-          // original numeric TP becomes the new SL, and original numeric SL becomes the new TP.
-          // This intentionally reverses the original risk/reward ratio too; it is not assumed profitable.
-          const originalSide = s.side;
-          const originalSL = risk.sl;
-          const originalTP = risk.tp;
-          s.side = oppositeSide(originalSide);
-          risk.sl = originalTP;
-          risk.tp = originalSL;
-          risk.riskPct = Math.abs(risk.sl - risk.entry) / risk.entry * 100;
-          risk.rewardPct = Math.abs(risk.entry - risk.tp) / risk.entry * 100;
-          risk.rr = Math.abs(risk.entry - risk.tp) / Math.max(1e-12, Math.abs(risk.sl - risk.entry));
-          risk.reverseExperiment = true;
-          s.reasons = [`GLOBAL REVERSE PAPER EXPERIMENT: original ${originalSide} inverted to ${s.side}; original TP is new SL and original SL is new TP`, ...s.reasons];
-          console.log(`[REVERSE-EXPERIMENT][ALL-PATTERNS] ${s.coin} ${s.pattern}: ${originalSide}->${s.side} entry=${fmtPrice(risk.entry)} newSL(originalTP)=${fmtPrice(risk.sl)} newTP(originalSL)=${fmtPrice(risk.tp)} reversedRR=1:${risk.rr.toFixed(2)}`);
-        }
+        // No reverse experiment: risk levels and direction remain independently structure-validated.
         s.risk = risk;
         s.leverageInfo = suggestLeverage(s);
         candidates.push(s); rejects.accepted++;
