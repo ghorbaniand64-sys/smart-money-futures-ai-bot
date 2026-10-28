@@ -1,2941 +1,1331 @@
 {
   "schema": 1,
-  "version": "NOVARA-SMART-MONEY-AI-V2.8.8-REVERSE-ENTRY-FAILURE-STRUCTURE-RR15",
-  "lastRunAt": 1793203280576,
+  "version": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
+  "lastRunAt": 1793204263813,
   "previousMarketContext": {
     "BTC": {
-      "markPx": 80518.4,
-      "openInterest": 43005.47158,
+      "markPx": 80550,
+      "openInterest": 42991.183,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "ETH": {
-      "markPx": 2332.6,
-      "openInterest": 1136604.0684000002,
-      "funding": 0.0000123185,
-      "at": 1793203280576
+      "markPx": 2332.7,
+      "openInterest": 1135891.4233999995,
+      "funding": 0.0000095254,
+      "at": 1793204263813
     },
     "HYPE": {
-      "markPx": 79.744,
-      "openInterest": 20651710.15999997,
+      "markPx": 79.812,
+      "openInterest": 20650492.639999986,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "ZEC": {
-      "markPx": 1275.9,
-      "openInterest": 534093.8400000003,
+      "markPx": 1275.6,
+      "openInterest": 534488.5000000009,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "SOL": {
-      "markPx": 100.97,
-      "openInterest": 5646366.44,
+      "markPx": 101,
+      "openInterest": 5647641.239999999,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "NEAR": {
-      "markPx": 4.6255,
-      "openInterest": 59727147.20000001,
+      "markPx": 4.6115,
+      "openInterest": 59712446.60000002,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "XRP": {
-      "markPx": 1.31141,
-      "openInterest": 172757160,
+      "markPx": 1.311847,
+      "openInterest": 172771594,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "kPEPE": {
-      "markPx": 0.00484,
-      "openInterest": 10155216706,
+      "markPx": 0.004886,
+      "openInterest": 10100245100,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "ENA": {
-      "markPx": 0.19617,
-      "openInterest": 496362188,
-      "funding": 0.0000025369,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "PUMP": {
-      "markPx": 0.004208,
-      "openInterest": 26833648418,
+      "markPx": 0.004205,
+      "openInterest": 26875847002,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
+    },
+    "ENA": {
+      "markPx": 0.196,
+      "openInterest": 495702808,
+      "funding": 0.0000055584,
+      "at": 1793204263813
     },
     "XMR": {
-      "markPx": 603.507,
-      "openInterest": 198346.586,
+      "markPx": 603.9,
+      "openInterest": 198284.644,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "LIT": {
-      "markPx": 2.9452,
-      "openInterest": 37623826,
+      "markPx": 2.939315,
+      "openInterest": 37627488,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "PONS": {
-      "markPx": 0.28837,
-      "openInterest": 84872004,
+      "markPx": 0.28726,
+      "openInterest": 84751202,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "WLD": {
-      "markPx": 0.43217,
-      "openInterest": 141767135.6,
-      "funding": -0.0000101763,
-      "at": 1793203280576
+      "markPx": 0.42898,
+      "openInterest": 141687163.4,
+      "funding": 0.0000015765,
+      "at": 1793204263813
     },
     "VVV": {
-      "markPx": 23.851,
-      "openInterest": 3042582.54,
+      "markPx": 23.884,
+      "openInterest": 3042687.8000000007,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "UNI": {
-      "markPx": 7.0821,
-      "openInterest": 11405919.400000008,
+      "markPx": 7.0734,
+      "openInterest": 11402989.200000005,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "INIT": {
-      "markPx": 0.19323,
-      "openInterest": 16673678,
-      "funding": -0.0000952784,
-      "at": 1793203280576
+      "markPx": 0.20234,
+      "openInterest": 16050974,
+      "funding": -0.0000293079,
+      "at": 1793204263813
     },
     "CASHCAT": {
-      "markPx": 0.098354,
-      "openInterest": 221146972,
+      "markPx": 0.097955,
+      "openInterest": 220927892,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "XPL": {
-      "markPx": 0.077755,
-      "openInterest": 732930824,
+      "markPx": 0.076517,
+      "openInterest": 731113164,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "GRASS": {
-      "markPx": 0.69632,
-      "openInterest": 50090643.400000006,
+      "markPx": 0.69571,
+      "openInterest": 50091927.800000004,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "BNB": {
-      "markPx": 749.25,
-      "openInterest": 60990.368,
-      "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "ZRO": {
-      "markPx": 1.7145,
-      "openInterest": 40061447.199999996,
-      "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "SUI": {
-      "markPx": 0.92667,
-      "openInterest": 35298901.2,
-      "funding": 0.0000099478,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "CHIP": {
-      "markPx": 0.050726,
-      "openInterest": 291206888,
+      "markPx": 0.049302,
+      "openInterest": 270457788,
+      "funding": -0.0000360217,
+      "at": 1793204263813
+    },
+    "SUI": {
+      "markPx": 0.92486,
+      "openInterest": 35110796.800000004,
+      "funding": -0.000011224,
+      "at": 1793204263813
+    },
+    "BNB": {
+      "markPx": 749.74,
+      "openInterest": 60938.306,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
+    },
+    "ZRO": {
+      "markPx": 1.6961,
+      "openInterest": 40061163.400000006,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "DOGE": {
-      "markPx": 0.079268,
-      "openInterest": 1018785898,
+      "markPx": 0.079269,
+      "openInterest": 1019364334,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "AAVE": {
-      "markPx": 132.7929,
-      "openInterest": 403197.38,
+      "markPx": 132.17,
+      "openInterest": 403152.52,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "TAO": {
-      "markPx": 252.76,
-      "openInterest": 163246.222,
+      "markPx": 252.513,
+      "openInterest": 163256.04,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "ONDO": {
-      "markPx": 0.41885,
-      "openInterest": 58146520,
+      "markPx": 0.41691,
+      "openInterest": 58086116,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "ARB": {
-      "markPx": 0.16767,
-      "openInterest": 88653671.79999998,
-      "funding": 3.214e-7,
-      "at": 1793203280576
+      "markPx": 0.16649,
+      "openInterest": 88382899.8,
+      "funding": -0.0000206346,
+      "at": 1793204263813
     },
     "TRX": {
-      "markPx": 0.33112,
-      "openInterest": 35572306,
+      "markPx": 0.33076,
+      "openInterest": 35572792,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "LINK": {
-      "markPx": 11.559,
-      "openInterest": 4901641.4,
+      "markPx": 11.54,
+      "openInterest": 4901614.800000001,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "FARTCOIN": {
-      "markPx": 0.13081,
-      "openInterest": 184730113.39999998,
+      "markPx": 0.13045,
+      "openInterest": 184745777.2,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "STRK": {
-      "markPx": 0.04671,
-      "openInterest": 735033019,
+      "markPx": 0.04643,
+      "openInterest": 736015931.5999999,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "CRV": {
-      "markPx": 0.33546,
-      "openInterest": 61181794.6,
+      "markPx": 0.33499,
+      "openInterest": 61176021.2,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "MON": {
-      "markPx": 0.021162,
-      "openInterest": 1523342116,
-      "funding": 0.0000058366,
-      "at": 1793203280576
+      "markPx": 0.02121,
+      "openInterest": 1523144600,
+      "funding": -0.0000151742,
+      "at": 1793204263813
     },
     "ADA": {
-      "markPx": 0.2029,
-      "openInterest": 149257112,
-      "funding": 0.0000061634,
-      "at": 1793203280576
-    },
-    "BCH": {
-      "markPx": 292.54,
-      "openInterest": 28367.006,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "markPx": 0.20254,
+      "openInterest": 149304028,
+      "funding": 0.0000103743,
+      "at": 1793204263813
     },
     "INJ": {
-      "markPx": 7.7474,
-      "openInterest": 746486.2000000001,
+      "markPx": 7.7755,
+      "openInterest": 745393.2,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "AVAX": {
-      "markPx": 8.881,
-      "openInterest": 1988020.76,
-      "funding": 0.0000017311,
-      "at": 1793203280576
+      "markPx": 8.8669,
+      "openInterest": 2002425.3800000001,
+      "funding": -0.000004729,
+      "at": 1793204263813
     },
-    "AERO": {
-      "markPx": 0.71414,
-      "openInterest": 38824518,
-      "funding": 0.0000125,
-      "at": 1793203280576
+    "BCH": {
+      "markPx": 290.64,
+      "openInterest": 28217.224,
+      "funding": 0.0000037478,
+      "at": 1793204263813
     },
     "LTC": {
-      "markPx": 58.385,
-      "openInterest": 401476.68,
-      "funding": 0.0000092491,
-      "at": 1793203280576
+      "markPx": 58.525,
+      "openInterest": 401801.7999999998,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "BLUR": {
-      "markPx": 0.008143,
-      "openInterest": 110240832,
-      "funding": -0.0018728421,
-      "at": 1793203280576
+      "markPx": 0.008423,
+      "openInterest": 110473096,
+      "funding": -0.0041638372,
+      "at": 1793204263813
+    },
+    "AERO": {
+      "markPx": 0.70673,
+      "openInterest": 38829076,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "PAXG": {
-      "markPx": 4044.3,
-      "openInterest": 6088.85,
+      "markPx": 4042.325,
+      "openInterest": 6091.83,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "DOT": {
-      "markPx": 1.0061,
-      "openInterest": 5958593.6,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "markPx": 1.001,
+      "openInterest": 5953245.4,
+      "funding": 0.0000077134,
+      "at": 1793204263813
     },
     "SKR": {
-      "markPx": 0.014381,
-      "openInterest": 23286430,
+      "markPx": 0.014306,
+      "openInterest": 23405860,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "XTEN": {
-      "markPx": 0.26586,
-      "openInterest": 2409962,
-      "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "TRUMP": {
-      "markPx": 1.7093,
-      "openInterest": 4869467.199999999,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "USELESS": {
-      "markPx": 0.15843,
-      "openInterest": 48453884,
+      "markPx": 0.158351,
+      "openInterest": 48073406,
+      "funding": 0.000013519,
+      "at": 1793204263813
+    },
+    "XTEN": {
+      "markPx": 0.26779,
+      "openInterest": 2416908,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "CC": {
-      "markPx": 0.099892,
-      "openInterest": 61692036,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "markPx": 0.099696,
+      "openInterest": 61171278,
+      "funding": 0.000001501,
+      "at": 1793204263813
     },
     "NIL": {
-      "markPx": 0.080957,
-      "openInterest": 33918720,
-      "funding": -0.0001333997,
-      "at": 1793203280576
+      "markPx": 0.080414,
+      "openInterest": 34101776,
+      "funding": -0.0001452722,
+      "at": 1793204263813
+    },
+    "TRUMP": {
+      "markPx": 1.708,
+      "openInterest": 4873672.600000001,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "MEGA": {
-      "markPx": 0.050386,
-      "openInterest": 157903078,
+      "markPx": 0.050047,
+      "openInterest": 157712562,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "JUP": {
-      "markPx": 0.28086,
-      "openInterest": 28812724,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "GRAM": {
-      "markPx": 1.2277,
-      "openInterest": 18877644,
+      "markPx": 1.2259,
+      "openInterest": 18875810,
+      "funding": -0.0000013845,
+      "at": 1793204263813
+    },
+    "JUP": {
+      "markPx": 0.27999,
+      "openInterest": 28775306,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "MORPHO": {
-      "markPx": 2.1886,
-      "openInterest": 3069290.4,
-      "funding": 6.925e-7,
-      "at": 1793203280576
+      "markPx": 2.1958,
+      "openInterest": 3066373.4,
+      "funding": -0.0000197845,
+      "at": 1793204263813
     },
     "SPX": {
-      "markPx": 0.37899,
-      "openInterest": 12723945.2,
+      "markPx": 0.37897,
+      "openInterest": 12722474.200000001,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "APT": {
-      "markPx": 0.6888,
-      "openInterest": 5943774.74,
-      "funding": -0.0000115637,
-      "at": 1793203280576
+      "markPx": 0.6851,
+      "openInterest": 5940802.58,
+      "funding": -0.0000152325,
+      "at": 1793204263813
     },
     "XLM": {
-      "markPx": 0.17031,
-      "openInterest": 66988768,
-      "funding": 0.0000042484,
-      "at": 1793203280576
-    },
-    "FET": {
-      "markPx": 0.18163,
-      "openInterest": 42987430,
+      "markPx": 0.17042,
+      "openInterest": 66995076,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "REZ": {
-      "markPx": 0.004931,
-      "openInterest": 362427202,
+      "markPx": 0.004868,
+      "openInterest": 363041840,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
+    },
+    "FET": {
+      "markPx": 0.18065,
+      "openInterest": 42988320,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "DASH": {
-      "markPx": 53.147,
-      "openInterest": 65925.78,
+      "markPx": 53.315,
+      "openInterest": 65892.64,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "ATOM": {
-      "markPx": 1.6301,
-      "openInterest": 2275459.1799999997,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "markPx": 1.6255,
+      "openInterest": 2268225.7,
+      "funding": 0.0000027046,
+      "at": 1793204263813
     },
     "TIA": {
-      "markPx": 0.5401,
-      "openInterest": 15737277.200000001,
-      "funding": 0.0000115328,
-      "at": 1793203280576
+      "markPx": 0.53702,
+      "openInterest": 15709915.399999999,
+      "funding": 0.0000093868,
+      "at": 1793204263813
     },
     "WLFI": {
-      "markPx": 0.052423,
-      "openInterest": 219637652,
-      "funding": -0.0000013286,
-      "at": 1793203280576
+      "markPx": 0.05236,
+      "openInterest": 219692936,
+      "funding": -0.0000030617,
+      "at": 1793204263813
     },
     "PENDLE": {
-      "markPx": 1.9633,
-      "openInterest": 4799994,
+      "markPx": 1.9588,
+      "openInterest": 4800872,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "SKY": {
-      "markPx": 0.064765,
-      "openInterest": 53285490,
-      "funding": 0.0000102234,
-      "at": 1793203280576
-    },
-    "STBL": {
-      "markPx": 0.026694,
-      "openInterest": 68839100,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "ASTER": {
-      "markPx": 0.70334,
-      "openInterest": 34432854,
+      "markPx": 0.70548,
+      "openInterest": 34508392,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
+    },
+    "SKY": {
+      "markPx": 0.064648,
+      "openInterest": 53262312,
+      "funding": 0.0000125,
+      "at": 1793204263813
+    },
+    "STBL": {
+      "markPx": 0.026845,
+      "openInterest": 68909450,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "LDO": {
-      "markPx": 0.37393,
-      "openInterest": 23382566,
+      "markPx": 0.37255,
+      "openInterest": 23387061.2,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "OP": {
-      "markPx": 0.11099,
-      "openInterest": 35813669.6,
-      "funding": 0.0000027593,
-      "at": 1793203280576
-    },
-    "PURR": {
-      "markPx": 0.103262,
-      "openInterest": 109689022,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "FIL": {
-      "markPx": 0.89681,
-      "openInterest": 9541725,
+      "markPx": 0.89111,
+      "openInterest": 9514091.000000002,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
+    },
+    "OP": {
+      "markPx": 0.1107,
+      "openInterest": 35812498.99999999,
+      "funding": 0.0000125,
+      "at": 1793204263813
+    },
+    "PURR": {
+      "markPx": 0.10313,
+      "openInterest": 109698024,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "SEI": {
-      "markPx": 0.052821,
-      "openInterest": 52610444,
-      "funding": -0.0000106564,
-      "at": 1793203280576
+      "markPx": 0.0526,
+      "openInterest": 52309446,
+      "funding": 0.000003752,
+      "at": 1793204263813
     },
     "ICP": {
-      "markPx": 2.5901,
-      "openInterest": 1371501.7999999998,
-      "funding": -0.0000077031,
-      "at": 1793203280576
+      "markPx": 2.5764,
+      "openInterest": 1369880,
+      "funding": -0.0000140128,
+      "at": 1793204263813
     },
     "HBAR": {
-      "markPx": 0.075725,
-      "openInterest": 160671548,
+      "markPx": 0.075649,
+      "openInterest": 160673674,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "ETHFI": {
-      "markPx": 0.65316,
-      "openInterest": 14789092.8,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "kBONK": {
-      "markPx": 0.003072,
-      "openInterest": 2590397014,
+      "markPx": 0.003064,
+      "openInterest": 2590142892,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
+    },
+    "ETHFI": {
+      "markPx": 0.65231,
+      "openInterest": 14790428.200000001,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "RENDER": {
-      "markPx": 1.6707,
-      "openInterest": 1436389.2,
+      "markPx": 1.6691,
+      "openInterest": 1435625.2,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "GMX": {
-      "markPx": 8.7988,
-      "openInterest": 103100.44,
+      "markPx": 8.7713,
+      "openInterest": 102953.94,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "PENGU": {
-      "markPx": 0.007756,
-      "openInterest": 795716774,
+      "markPx": 0.007743,
+      "openInterest": 792868138,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "BABY": {
-      "markPx": 0.01482,
-      "openInterest": 16521816,
+      "markPx": 0.014628,
+      "openInterest": 16759638,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "EIGEN": {
-      "markPx": 0.1956,
-      "openInterest": 13591412.24,
+      "markPx": 0.195,
+      "openInterest": 13589514.8,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "PYTH": {
-      "markPx": 0.07139,
-      "openInterest": 36884226,
-      "funding": 0.0000067286,
-      "at": 1793203280576
+      "markPx": 0.071114,
+      "openInterest": 36871180,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "AZTEC": {
-      "markPx": 0.017032,
-      "openInterest": 91296244,
+      "markPx": 0.017004,
+      "openInterest": 91210014,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "BERA": {
-      "markPx": 0.15045,
-      "openInterest": 6999761.600000001,
-      "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "W": {
-      "markPx": 0.01281,
-      "openInterest": 251471889.6,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "markPx": 0.15043,
+      "openInterest": 6994265.600000001,
+      "funding": 0.0000018751,
+      "at": 1793204263813
     },
     "POL": {
-      "markPx": 0.091553,
-      "openInterest": 62833082,
+      "markPx": 0.091541,
+      "openInterest": 62859752,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
+    },
+    "W": {
+      "markPx": 0.01274,
+      "openInterest": 251322784.79999998,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "WIF": {
-      "markPx": 0.18102,
-      "openInterest": 26323916,
+      "markPx": 0.18038,
+      "openInterest": 26334028,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "SOPH": {
-      "markPx": 0.0015,
-      "openInterest": 208888164,
-      "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "MNT": {
-      "markPx": 0.50333,
-      "openInterest": 9678446.4,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "MET": {
-      "markPx": 0.31143,
-      "openInterest": 11528588,
+      "markPx": 0.31065,
+      "openInterest": 11500230,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
+    },
+    "SOPH": {
+      "markPx": 0.001492,
+      "openInterest": 209486342,
+      "funding": 0.0000125,
+      "at": 1793204263813
+    },
+    "MNT": {
+      "markPx": 0.50112,
+      "openInterest": 9676785,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "ANIME": {
-      "markPx": 0.002981,
-      "openInterest": 187067980,
-      "funding": -0.0001050454,
-      "at": 1793203280576
+      "markPx": 0.00298,
+      "openInterest": 185145690,
+      "funding": -0.0001554971,
+      "at": 1793204263813
     },
     "SYRUP": {
-      "markPx": 0.16707,
-      "openInterest": 29347688,
+      "markPx": 0.16654,
+      "openInterest": 29392562,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "ALT": {
-      "markPx": 0.006689,
-      "openInterest": 167779914,
-      "funding": -0.0002761869,
-      "at": 1793203280576
+      "markPx": 0.006678,
+      "openInterest": 168107508,
+      "funding": -0.0001819333,
+      "at": 1793204263813
     },
     "kSHIB": {
-      "markPx": 0.004944,
-      "openInterest": 570205462,
+      "markPx": 0.004937,
+      "openInterest": 570117826,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "MINA": {
-      "markPx": 0.065538,
-      "openInterest": 15727606,
+      "markPx": 0.065169,
+      "openInterest": 15665720,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "STX": {
-      "markPx": 0.30037,
-      "openInterest": 6111254.800000001,
-      "funding": 0.0000055149,
-      "at": 1793203280576
-    },
-    "IO": {
-      "markPx": 0.15106,
-      "openInterest": 4752130.600000001,
-      "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "ALGO": {
-      "markPx": 0.10243,
-      "openInterest": 29906038,
-      "funding": -0.0000081347,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "ETC": {
-      "markPx": 7.5505,
-      "openInterest": 371493.12,
-      "funding": -0.0000069647,
-      "at": 1793203280576
+      "markPx": 7.5402,
+      "openInterest": 370368.14,
+      "funding": -0.0000053874,
+      "at": 1793204263813
+    },
+    "STX": {
+      "markPx": 0.30065,
+      "openInterest": 6093841.6,
+      "funding": 0.0000125,
+      "at": 1793204263813
+    },
+    "ALGO": {
+      "markPx": 0.102298,
+      "openInterest": 29918598,
+      "funding": 0.0000125,
+      "at": 1793204263813
+    },
+    "IO": {
+      "markPx": 0.1507,
+      "openInterest": 4746222,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "VIRTUAL": {
-      "markPx": 0.62173,
-      "openInterest": 9109785.600000001,
+      "markPx": 0.62066,
+      "openInterest": 9108597.4,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "2Z": {
-      "markPx": 0.028969,
-      "openInterest": 27170640,
+      "markPx": 0.028982,
+      "openInterest": 27247428,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "SAND": {
-      "markPx": 0.047982,
-      "openInterest": 21543946,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "MELANIA": {
-      "markPx": 0.08529,
-      "openInterest": 13949744,
+      "markPx": 0.08527,
+      "openInterest": 13933650.6,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
+    },
+    "SAND": {
+      "markPx": 0.047803,
+      "openInterest": 21514956,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "JTO": {
-      "markPx": 0.42158,
-      "openInterest": 6941316,
+      "markPx": 0.42095,
+      "openInterest": 6965168,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "ZK": {
-      "markPx": 0.011688,
-      "openInterest": 392650930,
+      "markPx": 0.011643,
+      "openInterest": 392687480,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "CELO": {
-      "markPx": 0.080182,
-      "openInterest": 7259988,
+      "markPx": 0.080077,
+      "openInterest": 7239878,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "ZORA": {
-      "markPx": 0.006437,
-      "openInterest": 106424486,
+      "markPx": 0.006446,
+      "openInterest": 106518218,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "CAKE": {
-      "markPx": 2.0997,
-      "openInterest": 799607.2,
-      "funding": 0.0000061327,
-      "at": 1793203280576
+      "markPx": 2.0976,
+      "openInterest": 798863.4,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "0G": {
-      "markPx": 0.19612,
-      "openInterest": 9004148,
+      "markPx": 0.19603,
+      "openInterest": 9005424,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "ENS": {
-      "markPx": 5.3078,
-      "openInterest": 367731.96,
+      "markPx": 5.2836,
+      "openInterest": 367793.96,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "AR": {
-      "markPx": 3.4847,
-      "openInterest": 363924.38,
+      "markPx": 3.4725,
+      "openInterest": 363565.2,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "PROVE": {
-      "markPx": 0.19219,
-      "openInterest": 1180304,
+      "markPx": 0.1928,
+      "openInterest": 1179294,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "HEMI": {
-      "markPx": 0.004684,
-      "openInterest": 105873212,
+      "markPx": 0.004664,
+      "openInterest": 105884058,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "POLYX": {
-      "markPx": 0.032596,
-      "openInterest": 3483148,
-      "funding": -0.0001139849,
-      "at": 1793203280576
+      "markPx": 0.032531,
+      "openInterest": 3460130,
+      "funding": -0.0000694939,
+      "at": 1793204263813
     },
     "ZEN": {
-      "markPx": 5.8348,
-      "openInterest": 140999.72,
+      "markPx": 5.8336,
+      "openInterest": 140858.6,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "KAS": {
-      "markPx": 0.035547,
-      "openInterest": 49217812,
+      "markPx": 0.035538,
+      "openInterest": 49240342,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "STABLE": {
-      "markPx": 0.027198,
-      "openInterest": 31430550,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "FOGO": {
-      "markPx": 0.003136,
-      "openInterest": 83551190,
+      "markPx": 0.003115,
+      "openInterest": 83596124,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "DYDX": {
-      "markPx": 0.11076,
-      "openInterest": 13443541.399999999,
+      "markPx": 0.11052,
+      "openInterest": 13424861.2,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "APE": {
-      "markPx": 0.12275,
-      "openInterest": 8009912.8,
+      "markPx": 0.12249,
+      "openInterest": 8006622.6,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "APEX": {
-      "markPx": 0.22483,
-      "openInterest": 7182242,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "markPx": 0.22383,
+      "openInterest": 7181570,
+      "funding": 0.0000421302,
+      "at": 1793204263813
     },
     "COMP": {
-      "markPx": 21.643,
-      "openInterest": 57093,
+      "markPx": 21.532,
+      "openInterest": 57040.46,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "MERL": {
-      "markPx": 0.026242,
-      "openInterest": 19942642,
+      "markPx": 0.026418,
+      "openInterest": 19920072,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "S": {
-      "markPx": 0.046418,
-      "openInterest": 16340648,
-      "funding": 0.0000033759,
-      "at": 1793203280576
+      "markPx": 0.046408,
+      "openInterest": 16366316,
+      "funding": 0.0000080114,
+      "at": 1793204263813
     },
     "BRETT": {
-      "markPx": 0.004656,
-      "openInterest": 42133074,
+      "markPx": 0.004642,
+      "openInterest": 42054764,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
-    "PNUT": {
-      "markPx": 0.04156,
-      "openInterest": 24093398,
+    "STABLE": {
+      "markPx": 0.027144,
+      "openInterest": 31423630,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "USUAL": {
-      "markPx": 0.01067,
-      "openInterest": 66501734.800000004,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "BSV": {
-      "markPx": 17.398,
-      "openInterest": 49575,
+      "markPx": 17.389,
+      "openInterest": 49523,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
+    },
+    "USUAL": {
+      "markPx": 0.01066,
+      "openInterest": 66495036.40000001,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "AVNT": {
-      "markPx": 0.10724,
-      "openInterest": 14577530,
+      "markPx": 0.10711,
+      "openInterest": 14577400,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "kFLOKI": {
-      "markPx": 0.023627,
-      "openInterest": 15796234,
+      "markPx": 0.023618,
+      "openInterest": 15790288,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
+    },
+    "PNUT": {
+      "markPx": 0.04149,
+      "openInterest": 24105693.8,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "DYM": {
-      "markPx": 0.0179,
-      "openInterest": 15837018.6,
+      "markPx": 0.01784,
+      "openInterest": 15861102.4,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "SNX": {
-      "markPx": 0.19843,
-      "openInterest": 2287679.2,
+      "markPx": 0.19816,
+      "openInterest": 2284788.4,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "KAITO": {
-      "markPx": 0.25507,
-      "openInterest": 5678866,
+      "markPx": 0.25416,
+      "openInterest": 5679384,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "ACE": {
-      "markPx": 0.1448,
-      "openInterest": 1303170.0400000003,
+      "markPx": 0.1447,
+      "openInterest": 1302896.48,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "GALA": {
-      "markPx": 0.001758,
-      "openInterest": 289082430,
-      "funding": -0.0000225154,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "YGG": {
-      "markPx": 0.024878,
-      "openInterest": 8167158,
+      "markPx": 0.024875,
+      "openInterest": 8322674,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
-    "GRIFFAIN": {
-      "markPx": 0.013037,
-      "openInterest": 99113274,
-      "funding": 0.0000125,
-      "at": 1793203280576
+    "GALA": {
+      "markPx": 0.001754,
+      "openInterest": 288787792,
+      "funding": -0.0000155158,
+      "at": 1793204263813
     },
     "RUNE": {
-      "markPx": 0.62348,
-      "openInterest": 3179653.4,
+      "markPx": 0.62136,
+      "openInterest": 3172245.6,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
+    },
+    "GRIFFAIN": {
+      "markPx": 0.013035,
+      "openInterest": 99121142,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "PEOPLE": {
-      "markPx": 0.007677,
-      "openInterest": 23057190,
+      "markPx": 0.007656,
+      "openInterest": 23247806,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "CFX": {
-      "markPx": 0.047868,
-      "openInterest": 65495064,
+      "markPx": 0.047842,
+      "openInterest": 65496906,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "POPCAT": {
-      "markPx": 0.043084,
-      "openInterest": 36785516,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "LINEA": {
-      "markPx": 0.002488,
-      "openInterest": 926473598,
+      "markPx": 0.002482,
+      "openInterest": 926554700,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
+    },
+    "POPCAT": {
+      "markPx": 0.042989,
+      "openInterest": 36781614,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "GOAT": {
-      "markPx": 0.01407,
-      "openInterest": 42465376,
+      "markPx": 0.014081,
+      "openInterest": 42455130,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "MOVE": {
-      "markPx": 0.006693,
-      "openInterest": 36376214,
-      "funding": -0.0000037487,
-      "at": 1793203280576
+      "markPx": 0.006682,
+      "openInterest": 36285490,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "SUSHI": {
-      "markPx": 0.20504,
-      "openInterest": 1401518.4,
+      "markPx": 0.20455,
+      "openInterest": 1402368.3999999997,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "TRB": {
-      "markPx": 17.266,
-      "openInterest": 31337.64,
-      "funding": -0.0000183766,
-      "at": 1793203280576
+      "markPx": 17.295,
+      "openInterest": 31259.98,
+      "funding": 0.0000079575,
+      "at": 1793204263813
     },
     "MANTA": {
-      "markPx": 0.06347,
-      "openInterest": 5435055.2,
+      "markPx": 0.06348,
+      "openInterest": 5431418.399999999,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "RSR": {
-      "markPx": 0.00164,
-      "openInterest": 216368540,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "markPx": 0.001654,
+      "openInterest": 216956662,
+      "funding": 0.0000060118,
+      "at": 1793204263813
     },
     "ORDI": {
-      "markPx": 3.6528,
-      "openInterest": 100338.14,
+      "markPx": 3.6409,
+      "openInterest": 100658.42,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "AXS": {
-      "markPx": 0.9538,
-      "openInterest": 430670.8,
+      "markPx": 0.9537,
+      "openInterest": 430435.2,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "ME": {
-      "markPx": 0.06012,
-      "openInterest": 3456833,
+      "markPx": 0.06003,
+      "openInterest": 3447582,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "HYPER": {
-      "markPx": 0.063465,
-      "openInterest": 961432,
-      "funding": -0.0000436358,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "BIGTIME": {
-      "markPx": 0.007045,
-      "openInterest": 16873146,
-      "funding": 0.0000088002,
-      "at": 1793203280576
+      "markPx": 0.00705,
+      "openInterest": 16770620,
+      "funding": 0.0000125,
+      "at": 1793204263813
+    },
+    "HYPER": {
+      "markPx": 0.06333,
+      "openInterest": 916206,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "IMX": {
-      "markPx": 0.13838,
-      "openInterest": 27566832.8,
+      "markPx": 0.13784,
+      "openInterest": 27568360,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "BIO": {
-      "markPx": 0.022583,
-      "openInterest": 36997246,
+      "markPx": 0.022569,
+      "openInterest": 37041726,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "NXPC": {
-      "markPx": 0.17099,
-      "openInterest": 976064,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "IOTA": {
-      "markPx": 0.041554,
-      "openInterest": 28869408,
+      "markPx": 0.041524,
+      "openInterest": 28898288,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
-    "BANANA": {
-      "markPx": 3.4007,
-      "openInterest": 35179.2,
+    "NXPC": {
+      "markPx": 0.17148,
+      "openInterest": 974748,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "SUPER": {
-      "markPx": 0.17709,
-      "openInterest": 7669466,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "XAI": {
-      "markPx": 0.00769,
-      "openInterest": 36118486.8,
+      "markPx": 0.00771,
+      "openInterest": 36079470.4,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
+    },
+    "SUPER": {
+      "markPx": 0.176599,
+      "openInterest": 7669926,
+      "funding": 0.0000125,
+      "at": 1793204263813
+    },
+    "BANANA": {
+      "markPx": 3.4045,
+      "openInterest": 35210.8,
+      "funding": -0.0000215642,
+      "at": 1793204263813
     },
     "ZETA": {
-      "markPx": 0.03932,
-      "openInterest": 18986111.400000002,
+      "markPx": 0.03929,
+      "openInterest": 18986484.999999996,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "kNEIRO": {
-      "markPx": 0.06762,
-      "openInterest": 1886125.6,
+      "markPx": 0.06749,
+      "openInterest": 1884707.9999999998,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "kLUNC": {
-      "markPx": 0.04508,
-      "openInterest": 5656226,
+      "markPx": 0.045068,
+      "openInterest": 5655106,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "AIXBT": {
-      "markPx": 0.0184,
-      "openInterest": 7973474,
-      "funding": 0.0000052686,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "TURBO": {
-      "markPx": 0.00082,
-      "openInterest": 255063736,
+      "markPx": 0.000817,
+      "openInterest": 255069280,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "GMT": {
-      "markPx": 0.006882,
-      "openInterest": 12875404,
+      "markPx": 0.006872,
+      "openInterest": 12855046,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
-    "LAYER": {
-      "markPx": 0.063746,
-      "openInterest": 6035278,
-      "funding": -0.0000149895,
-      "at": 1793203280576
+    "AIXBT": {
+      "markPx": 0.018368,
+      "openInterest": 7969234,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "MOODENG": {
-      "markPx": 0.0384,
-      "openInterest": 8186984,
+      "markPx": 0.03833,
+      "openInterest": 8184886,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
-    "NEO": {
-      "markPx": 2.1071,
-      "openInterest": 195457.58,
+    "LAYER": {
+      "markPx": 0.063744,
+      "openInterest": 6034476,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "GAS": {
-      "markPx": 1.19013,
-      "openInterest": 71554.6,
+      "markPx": 1.186,
+      "openInterest": 71445.2,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
+    },
+    "NEO": {
+      "markPx": 2.1029,
+      "openInterest": 195151.72,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "WCT": {
-      "markPx": 0.035923,
-      "openInterest": 2975112,
+      "markPx": 0.035925,
+      "openInterest": 2974394,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "UMA": {
-      "markPx": 0.3495,
-      "openInterest": 388611.6,
+      "markPx": 0.34954,
+      "openInterest": 388996,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "RESOLV": {
-      "markPx": 0.016363,
-      "openInterest": 70580088,
+      "markPx": 0.016308,
+      "openInterest": 70583174,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "BOME": {
-      "markPx": 0.000636,
-      "openInterest": 702384314,
+      "markPx": 0.000633,
+      "openInterest": 700383996,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "SAGA": {
-      "markPx": 0.01847,
-      "openInterest": 64257523.2,
+      "markPx": 0.0184,
+      "openInterest": 64258939,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
+    },
+    "HMSTR": {
+      "markPx": 0.000142,
+      "openInterest": 8910664508,
+      "funding": 0.0000125,
+      "at": 1793204263813
     },
     "MEME": {
       "markPx": 0.000472,
       "openInterest": 744605512,
       "funding": 0.0000125,
-      "at": 1793203280576
-    },
-    "HMSTR": {
-      "markPx": 0.000142,
-      "openInterest": 8910298294,
-      "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "NOT": {
-      "markPx": 0.000384,
+      "markPx": 0.000385,
       "openInterest": 633608398,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     },
     "TNSR": {
-      "markPx": 0.03007,
+      "markPx": 0.03012,
       "openInterest": 4965252,
       "funding": 0.0000125,
-      "at": 1793203280576
+      "at": 1793204263813
     }
   },
   "alertHistory": {
-    "USELESS|LONG|BREAKOUT_RETEST": 1793129734620,
-    "USELESS|LONG|GLOBAL": 1793129734620,
-    "0G|SHORT|SWEEP_RECLAIM": 1793129737558,
-    "0G|SHORT|GLOBAL": 1793129737558,
-    "KAS|LONG|SWEEP_RECLAIM": 1793130879183,
-    "KAS|LONG|GLOBAL": 1793130879183,
-    "AERO|LONG|TREND_PULLBACK": 1793130882006,
-    "AERO|LONG|GLOBAL": 1793130882006,
-    "BIGTIME|SHORT|TREND_PULLBACK": 1793131965298,
-    "BIGTIME|SHORT|GLOBAL": 1793131965298,
-    "COMP|SHORT|TREND_PULLBACK": 1793131968286,
-    "COMP|SHORT|GLOBAL": 1793131968286,
-    "PENDLE|SHORT|SWEEP_RECLAIM": 1793131971474,
-    "PENDLE|SHORT|GLOBAL": 1793131971474,
-    "SUI|SHORT|SWEEP_RECLAIM": 1793131974682,
-    "SUI|SHORT|GLOBAL": 1793131974682,
-    "TAO|SHORT|SWEEP_RECLAIM": 1793131977879,
-    "TAO|SHORT|GLOBAL": 1793131977879,
-    "NEAR|SHORT|SWEEP_RECLAIM": 1793131981100,
-    "NEAR|SHORT|GLOBAL": 1793131981100,
-    "kLUNC|LONG|TREND_PULLBACK": 1793137708628,
-    "kLUNC|LONG|GLOBAL": 1793137708628,
-    "WCT|LONG|BREAKOUT_RETEST": 1793137711550,
-    "WCT|LONG|GLOBAL": 1793137711550,
-    "STRK|LONG|TREND_PULLBACK": 1793137714753,
-    "STRK|LONG|GLOBAL": 1793137714753,
-    "DYM|LONG|TREND_PULLBACK": 1793137717957,
-    "DYM|LONG|GLOBAL": 1793137717957,
-    "RESOLV|LONG|TREND_PULLBACK": 1793145097308,
-    "RESOLV|LONG|GLOBAL": 1793145097308,
-    "STRK|SHORT|BREAKOUT_RETEST": 1793145100258,
-    "STRK|SHORT|GLOBAL": 1793145100258,
-    "INJ|SHORT|SWEEP_RECLAIM": 1793155464543,
-    "INJ|SHORT|GLOBAL": 1793155464543,
-    "TRB|SHORT|SWEEP_RECLAIM": 1793155467450,
-    "TRB|SHORT|GLOBAL": 1793155467450,
-    "UNI|SHORT|SWEEP_RECLAIM": 1793155470658,
-    "UNI|SHORT|GLOBAL": 1793155470658,
-    "XPL|SHORT|SWEEP_RECLAIM": 1793155473849,
-    "XPL|SHORT|GLOBAL": 1793155473849,
-    "BNB|SHORT|SWEEP_RECLAIM": 1793155477065,
-    "BNB|SHORT|GLOBAL": 1793155477065,
-    "GMT|SHORT|SWEEP_RECLAIM": 1793155480249,
-    "GMT|SHORT|GLOBAL": 1793155480249,
-    "RENDER|SHORT|SWEEP_RECLAIM": 1793155483448,
-    "RENDER|SHORT|GLOBAL": 1793155483448,
-    "ZK|SHORT|SWEEP_RECLAIM": 1793155486654,
-    "ZK|SHORT|GLOBAL": 1793155486654,
-    "ICP|LONG|BREAKOUT_RETEST": 1793177291432,
-    "ICP|LONG|GLOBAL": 1793177291432,
-    "FIL|LONG|BREAKOUT_RETEST": 1793177294430,
-    "FIL|LONG|GLOBAL": 1793177294430,
-    "HBAR|LONG|BREAKOUT_RETEST": 1793177297603,
-    "HBAR|LONG|GLOBAL": 1793177297603,
-    "BIGTIME|LONG|TREND_PULLBACK": 1793177300788,
-    "BIGTIME|LONG|GLOBAL": 1793177300788,
-    "ATOM|SHORT|SWEEP_RECLAIM": 1793177303999,
-    "ATOM|SHORT|GLOBAL": 1793177303999,
-    "SPX|SHORT|SWEEP_RECLAIM": 1793177307273,
-    "SPX|SHORT|GLOBAL": 1793177307273,
-    "ASTER|SHORT|SWEEP_RECLAIM": 1793177310405,
-    "ASTER|SHORT|GLOBAL": 1793177310405,
-    "TIA|SHORT|SWEEP_RECLAIM": 1793177313615,
-    "TIA|SHORT|GLOBAL": 1793177313615,
-    "DOT|LONG|BREAKOUT_RETEST": 1793178006740,
-    "DOT|LONG|GLOBAL": 1793178006740,
-    "STX|SHORT|SWEEP_RECLAIM": 1793178009700,
-    "STX|SHORT|GLOBAL": 1793178009700,
-    "WLD|LONG|BREAKOUT_RETEST": 1793178012880,
-    "WLD|LONG|GLOBAL": 1793178012880,
-    "ZEC|SHORT|SWEEP_RECLAIM": 1793178016072,
-    "ZEC|SHORT|GLOBAL": 1793178016072,
-    "AIXBT|LONG|BREAKOUT_RETEST": 1793178019308,
-    "AIXBT|LONG|GLOBAL": 1793178019308,
-    "AVNT|LONG|BREAKOUT_RETEST": 1793178254929,
-    "AVNT|LONG|GLOBAL": 1793178254929,
-    "GRIFFAIN|LONG|BREAKOUT_RETEST": 1793178257896,
-    "GRIFFAIN|LONG|GLOBAL": 1793178257896,
-    "IMX|LONG|BREAKOUT_RETEST": 1793182382398,
-    "IMX|LONG|GLOBAL": 1793182382398,
-    "LIT|LONG|BREAKOUT_RETEST": 1793182385348,
-    "LIT|LONG|GLOBAL": 1793182385348,
-    "VVV|LONG|TREND_PULLBACK": 1793183186018,
-    "VVV|LONG|GLOBAL": 1793183186018,
-    "POL|SHORT|BREAKOUT_RETEST": 1793203271353,
-    "POL|SHORT|GLOBAL": 1793203271353,
-    "MORPHO|SHORT|BREAKOUT_RETEST": 1793203274298,
-    "MORPHO|SHORT|GLOBAL": 1793203274298,
-    "APEX|SHORT|BREAKOUT_RETEST": 1793203277368,
-    "APEX|SHORT|GLOBAL": 1793203277368,
-    "CAKE|SHORT|BREAKOUT_RETEST": 1793203280576,
-    "CAKE|SHORT|GLOBAL": 1793203280576
+    "BIO|SHORT|BREAKOUT_RETEST": 1793204244992,
+    "BIO|SHORT|GLOBAL": 1793204244992,
+    "ENS|SHORT|BREAKOUT_RETEST": 1793204247805,
+    "ENS|SHORT|GLOBAL": 1793204247805,
+    "TRB|LONG|SWEEP_RECLAIM": 1793204251085,
+    "TRB|LONG|GLOBAL": 1793204251085,
+    "XMR|LONG|SWEEP_RECLAIM": 1793204254204,
+    "XMR|LONG|GLOBAL": 1793204254204,
+    "NXPC|LONG|SWEEP_RECLAIM": 1793204257424,
+    "NXPC|LONG|GLOBAL": 1793204257424,
+    "COMP|SHORT|BREAKOUT_RETEST": 1793204260618,
+    "COMP|SHORT|GLOBAL": 1793204260618,
+    "SOPH|SHORT|TREND_PULLBACK": 1793204263813,
+    "SOPH|SHORT|GLOBAL": 1793204263813
   },
   "dailyFreeCount": {},
   "paperTrades": [
     {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "USELESS|LONG|BREAKOUT_RETEST|1793129734620",
-      "coin": "USELESS",
-      "side": "LONG",
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
+      "id": "BIO|SHORT|BREAKOUT_RETEST|1793204244992",
+      "coin": "BIO",
+      "side": "SHORT",
       "pattern": "BREAKOUT_RETEST",
-      "score": 6.88,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.156867,
-      "sl": 0.15250824285714287,
-      "tp": 0.16481824285714286,
-      "rr": 1.8241995588519695,
-      "suggestedLeverage": 3,
-      "btcRegime": "BULLISH",
-      "rsi15": 63.360206652299624,
-      "fibConfluence": false,
-      "openedAt": 1793129734620,
-      "lastCheckedAt": 1793155192172,
-      "status": "TP",
-      "pnlR": 1.8241995588519695,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.18 (flow/order-book/RSI/VWAP)",
-        "Breakout + retest",
-        "order-flow confirms continuation",
-        "volume supports level break",
-        "VWAP alignment",
-        "15m RSI supports entry (63.4)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793152619999,
-      "exitMark": 0.16528,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793155195623
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "0G|SHORT|SWEEP_RECLAIM|1793129737558",
-      "coin": "0G",
-      "side": "SHORT",
-      "pattern": "SWEEP_RECLAIM",
-      "score": 6.25,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.20487,
-      "sl": 0.20590365714285713,
-      "tp": 0.20263365714285714,
-      "rr": 2.163524794073762,
-      "suggestedLeverage": 3,
-      "btcRegime": "BULLISH",
-      "rsi15": 69.79263413343475,
-      "fibConfluence": false,
-      "openedAt": 1793129737558,
-      "lastCheckedAt": 1793131729706,
-      "status": "TP",
-      "pnlR": 2.163524794073762,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment -0.10 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
-        "order-flow supports reversal",
-        "relative volume expansion",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793131319999,
-      "exitMark": 0.20245,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793131734112
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "KAS|LONG|SWEEP_RECLAIM|1793130879183",
-      "coin": "KAS",
-      "side": "LONG",
-      "pattern": "SWEEP_RECLAIM",
-      "score": 6.83,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.035282,
-      "sl": 0.03500805428571429,
-      "tp": 0.03576205428571429,
-      "rr": 1.752370125468047,
-      "suggestedLeverage": 3,
-      "btcRegime": "BULLISH",
-      "rsi15": 52.98739989773563,
-      "fibConfluence": true,
-      "openedAt": 1793130879183,
-      "lastCheckedAt": 1793155192172,
-      "status": "TP",
-      "pnlR": 1.752370125468047,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.28 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
-        "order-flow supports reversal",
-        "1H Fibonacci confluence (0.0352755)",
-        "15m RSI supports entry (53.0)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793151479999,
-      "exitMark": 0.035816,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793155198530
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "AERO|LONG|TREND_PULLBACK|1793130882006",
-      "coin": "AERO",
-      "side": "LONG",
-      "pattern": "TREND_PULLBACK",
-      "score": 6.64,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.69717,
-      "sl": 0.6889716857142857,
-      "tp": 0.7112816857142857,
-      "rr": 1.7212911365054255,
-      "suggestedLeverage": 3,
-      "btcRegime": "BULLISH",
-      "rsi15": 54.11181374210928,
-      "fibConfluence": false,
-      "openedAt": 1793130882006,
-      "lastCheckedAt": 1793177020282,
-      "status": "TP",
-      "pnlR": 1.7212911365054255,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=LONG (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.29 (flow/order-book/RSI/VWAP)",
-        "Trend pullback + continuation",
-        "order-flow resumes with trend",
-        "VWAP alignment",
-        "15m RSI supports entry (54.1)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793176499999,
-      "exitMark": 0.71148,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793177025023
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "BIGTIME|SHORT|TREND_PULLBACK|1793131965298",
-      "coin": "BIGTIME",
-      "side": "SHORT",
-      "pattern": "TREND_PULLBACK",
-      "score": 6.65,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.006751,
-      "sl": 0.00681885,
-      "tp": 0.00663385,
-      "rr": 1.7266028002947567,
-      "suggestedLeverage": 3,
-      "btcRegime": "BULLISH",
-      "rsi15": 45.88271231130575,
-      "fibConfluence": false,
-      "openedAt": 1793131965298,
-      "lastCheckedAt": 1793155192172,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=SHORT (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.45 (flow/order-book/RSI/VWAP)",
-        "Trend pullback + continuation",
-        "order-flow resumes with trend",
-        "participation present",
-        "VWAP alignment",
-        "15m RSI supports entry (45.9)",
-        "BTC 1H trend conflicts with SHORT (-0.15)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793151719999,
-      "exitMark": 0.006822,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793155201738
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "COMP|SHORT|TREND_PULLBACK|1793131968286",
-      "coin": "COMP",
-      "side": "SHORT",
-      "pattern": "TREND_PULLBACK",
-      "score": 6.28,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 21.375,
-      "sl": 21.547751428571427,
-      "tp": 20.943751428571428,
-      "rr": 2.49635314159075,
-      "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 47.082008062722586,
-      "fibConfluence": false,
-      "openedAt": 1793131968286,
-      "lastCheckedAt": 1793182141839,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=SHORT (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.33 (flow/order-book/RSI/VWAP)",
-        "Trend pullback + continuation",
-        "order-flow resumes with trend",
-        "VWAP alignment",
-        "15m RSI supports entry (47.1)",
-        "BTC 1H trend conflicts with SHORT (-0.15)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793180579999,
-      "exitMark": 21.575,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793182146985
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "PENDLE|SHORT|SWEEP_RECLAIM|1793131971474",
-      "coin": "PENDLE",
-      "side": "SHORT",
-      "pattern": "SWEEP_RECLAIM",
-      "score": 6.2,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 1.9975,
-      "sl": 2.016717857142857,
-      "tp": 1.955917857142857,
-      "rr": 2.1637242148299864,
-      "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 62.935219210254736,
-      "fibConfluence": false,
-      "openedAt": 1793131971474,
-      "lastCheckedAt": 1793197372625,
-      "status": "TP",
-      "pnlR": 2.1637242148299864,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=LONG (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment -0.25 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
-        "order-flow supports reversal",
-        "relative volume expansion",
-        "OI rising with directional move",
-        "BTC 1H trend conflicts with SHORT (-0.15)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793195339999,
-      "exitMark": 1.9562,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793197377516
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "SUI|SHORT|SWEEP_RECLAIM|1793131974682",
-      "coin": "SUI",
-      "side": "SHORT",
-      "pattern": "SWEEP_RECLAIM",
-      "score": 6.14,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.92575,
-      "sl": 0.9315906428571428,
-      "tp": 0.9127806428571428,
-      "rr": 2.220535899913196,
-      "suggestedLeverage": 8,
-      "btcRegime": "BULLISH",
-      "rsi15": 58.63494608049062,
-      "fibConfluence": false,
-      "openedAt": 1793131974682,
-      "lastCheckedAt": 1793137479557,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment -0.06 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
-        "order-flow supports reversal",
-        "relative volume expansion",
-        "BTC 1H trend conflicts with SHORT (-0.15)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793136839999,
-      "exitMark": 0.93182,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793137485549
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "TAO|SHORT|SWEEP_RECLAIM|1793131977879",
-      "coin": "TAO",
-      "side": "SHORT",
-      "pattern": "SWEEP_RECLAIM",
-      "score": 6.14,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 253.48,
-      "sl": 255.30814285714285,
-      "tp": 250.39814285714286,
-      "rr": 1.6857857310306972,
-      "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 62.84464546102179,
-      "fibConfluence": false,
-      "openedAt": 1793131977879,
-      "lastCheckedAt": 1793137479557,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment -0.06 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
-        "order-flow supports reversal",
-        "relative volume expansion",
-        "BTC 1H trend conflicts with SHORT (-0.15)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793136899999,
-      "exitMark": 255.57,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793137488643
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "NEAR|SHORT|SWEEP_RECLAIM|1793131981100",
-      "coin": "NEAR",
-      "side": "SHORT",
-      "pattern": "SWEEP_RECLAIM",
-      "score": 5.95,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 4.6326,
-      "sl": 4.681526142857143,
-      "tp": 4.528026142857143,
-      "rr": 2.1373820014424143,
-      "suggestedLeverage": 9,
-      "btcRegime": "BULLISH",
-      "rsi15": 64.60538907720294,
-      "fibConfluence": false,
-      "openedAt": 1793131981100,
-      "lastCheckedAt": 1793137479557,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=LONG (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment -0.25 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
-        "order-flow supports reversal",
-        "relative volume expansion",
-        "BTC 1H trend conflicts with SHORT (-0.15)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793136839999,
-      "exitMark": 4.7033,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793137491754
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "kLUNC|LONG|TREND_PULLBACK|1793137708628",
-      "coin": "kLUNC",
-      "side": "LONG",
-      "pattern": "TREND_PULLBACK",
-      "score": 7.24,
+      "score": 7.29,
       "audience": "VIP",
       "outcomeDelivered": [],
-      "entry": 0.04507,
-      "sl": 0.044666395000000005,
-      "tp": 0.045827395,
-      "rr": 1.8765748689932273,
+      "entry": 0.022569,
+      "sl": 0.022698411428571427,
+      "tp": 0.022268411428571427,
+      "rr": 2.3227359032101575,
       "suggestedLeverage": 3,
-      "btcRegime": "BULLISH",
-      "rsi15": 60.457126935545645,
+      "btcRegime": "BEARISH",
+      "rsi15": 51.362383145454125,
       "fibConfluence": true,
-      "openedAt": 1793137708628,
-      "lastCheckedAt": 1793203048363,
+      "openedAt": 1793204244992,
+      "lastCheckedAt": 1793204244992,
       "status": "OPEN",
       "pnlR": null,
       "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=LONG (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.29 (flow/order-book/RSI/VWAP)",
-        "Trend pullback + continuation",
-        "order-flow resumes with trend",
-        "participation present",
-        "VWAP alignment",
-        "1H Fibonacci confluence (0.0450665)",
-        "15m RSI supports entry (60.5)",
-        "BTC 1H trend confirms LONG (+0.10)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ]
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "WCT|LONG|BREAKOUT_RETEST|1793137711550",
-      "coin": "WCT",
-      "side": "LONG",
-      "pattern": "BREAKOUT_RETEST",
-      "score": 7.06,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.036494,
-      "sl": 0.03585657714285714,
-      "tp": 0.037613577142857145,
-      "rr": 1.756411980385312,
-      "suggestedLeverage": 3,
-      "btcRegime": "BULLISH",
-      "rsi15": 64.50094349840398,
-      "fibConfluence": false,
-      "openedAt": 1793137711550,
-      "lastCheckedAt": 1793197372625,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.26 (flow/order-book/RSI/VWAP)",
-        "Breakout + retest",
+        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.14 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY: failed breakout / price returned inside range",
         "order-flow confirms continuation",
         "volume supports level break",
         "VWAP alignment",
-        "15m RSI supports entry (64.5)",
-        "BTC 1H trend confirms LONG (+0.10)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793197079999,
-      "exitMark": 0.035872,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793197380497
+        "1H Fibonacci confluence (0.0224954)",
+        "15m RSI supports entry (51.4)",
+        "BTC 4H regime aligns (BEARISH)",
+        "BTC 15m trend confirms SHORT (+0.10)"
+      ]
     },
     {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "STRK|LONG|TREND_PULLBACK|1793137714753",
-      "coin": "STRK",
-      "side": "LONG",
-      "pattern": "TREND_PULLBACK",
-      "score": 6.88,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.04665,
-      "sl": 0.04611562857142857,
-      "tp": 0.04753562857142857,
-      "rr": 1.6573277014382748,
-      "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 52.48561465742167,
-      "fibConfluence": false,
-      "openedAt": 1793137714753,
-      "lastCheckedAt": 1793144870584,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=LONG (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.43 (flow/order-book/RSI/VWAP)",
-        "Trend pullback + continuation",
-        "order-flow resumes with trend",
-        "VWAP alignment",
-        "15m RSI supports entry (52.5)",
-        "BTC 1H trend confirms LONG (+0.10)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793143439999,
-      "exitMark": 0.04599,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793144875533
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "DYM|LONG|TREND_PULLBACK|1793137717957",
-      "coin": "DYM",
-      "side": "LONG",
-      "pattern": "TREND_PULLBACK",
-      "score": 6.88,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.01806,
-      "sl": 0.01786662857142857,
-      "tp": 0.01838662857142857,
-      "rr": 1.6891252955082587,
-      "suggestedLeverage": 3,
-      "btcRegime": "BULLISH",
-      "rsi15": 59.95928130008282,
-      "fibConfluence": false,
-      "openedAt": 1793137717957,
-      "lastCheckedAt": 1793197372625,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=LONG (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.43 (flow/order-book/RSI/VWAP)",
-        "Trend pullback + continuation",
-        "order-flow resumes with trend",
-        "VWAP alignment",
-        "15m RSI supports entry (60.0)",
-        "BTC 1H trend confirms LONG (+0.10)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793190899999,
-      "exitMark": 0.01786,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793197383674
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "RESOLV|LONG|TREND_PULLBACK|1793145097308",
-      "coin": "RESOLV",
-      "side": "LONG",
-      "pattern": "TREND_PULLBACK",
-      "score": 7.11,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.016814,
-      "sl": 0.01671307857142857,
-      "tp": 0.01698807857142857,
-      "rr": 1.724892065963627,
-      "suggestedLeverage": 3,
-      "btcRegime": "BULLISH",
-      "rsi15": 56.01059983284414,
-      "fibConfluence": true,
-      "openedAt": 1793145097308,
-      "lastCheckedAt": 1793155192172,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=LONG (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.41 (flow/order-book/RSI/VWAP)",
-        "Trend pullback + continuation",
-        "order-flow resumes with trend",
-        "VWAP alignment",
-        "1H Fibonacci confluence (0.0168246)",
-        "15m RSI supports entry (56.0)",
-        "BTC 1H trend confirms LONG (+0.10)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793147879999,
-      "exitMark": 0.016714,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793155204986
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "STRK|SHORT|BREAKOUT_RETEST|1793145100258",
-      "coin": "STRK",
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
+      "id": "ENS|SHORT|BREAKOUT_RETEST|1793204247805",
+      "coin": "ENS",
       "side": "SHORT",
       "pattern": "BREAKOUT_RETEST",
-      "score": 6.24,
+      "score": 6.83,
       "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.04625,
-      "sl": 0.04694767142857143,
-      "tp": 0.04508767142857143,
-      "rr": 1.6660114257632401,
+      "outcomeDelivered": [],
+      "entry": 5.2836,
+      "sl": 5.322584714285714,
+      "tp": 5.209884714285714,
+      "rr": 1.890876643959362,
       "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 42.386869397639465,
-      "fibConfluence": true,
-      "openedAt": 1793145100258,
-      "lastCheckedAt": 1793155192172,
-      "status": "SL",
-      "pnlR": -1,
+      "btcRegime": "BEARISH",
+      "rsi15": 51.999379248244566,
+      "fibConfluence": false,
+      "openedAt": 1793204247805,
+      "lastCheckedAt": 1793204247805,
+      "status": "OPEN",
+      "pnlR": null,
       "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.14 (flow/order-book/RSI/VWAP)",
-        "Breakout + retest",
+        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.38 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY: failed breakout / price returned inside range",
         "order-flow confirms continuation",
         "VWAP alignment",
-        "1H Fibonacci confluence (0.0463145)",
-        "15m RSI supports entry (42.4)",
-        "BTC 1H trend conflicts with SHORT (-0.15)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793150519999,
-      "exitMark": 0.04705,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793155208127
+        "15m RSI supports entry (52.0)",
+        "BTC 4H regime aligns (BEARISH)",
+        "BTC 15m trend confirms SHORT (+0.10)"
+      ]
     },
     {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "INJ|SHORT|SWEEP_RECLAIM|1793155464543",
-      "coin": "INJ",
-      "side": "SHORT",
-      "pattern": "SWEEP_RECLAIM",
-      "score": 7.23,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 7.98,
-      "sl": 8.07099957142857,
-      "tp": 7.751899571428572,
-      "rr": 2.5066099212398485,
-      "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 46.971463818286274,
-      "fibConfluence": true,
-      "openedAt": 1793155464543,
-      "lastCheckedAt": 1793203048363,
-      "status": "TP",
-      "pnlR": 2.5066099212398485,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.38 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
-        "order-flow supports reversal",
-        "relative volume expansion",
-        "OI rising with directional move",
-        "1H Fibonacci confluence (7.99713)",
-        "15m RSI supports entry (47.0)",
-        "BTC 1H trend conflicts with SHORT (-0.15)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793202779999,
-      "exitMark": 7.751,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793203054625
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "TRB|SHORT|SWEEP_RECLAIM|1793155467450",
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
+      "id": "TRB|LONG|SWEEP_RECLAIM|1793204251085",
       "coin": "TRB",
-      "side": "SHORT",
+      "side": "LONG",
       "pattern": "SWEEP_RECLAIM",
-      "score": 6.42,
+      "score": 6.63,
       "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 17.462,
-      "sl": 17.575348571428574,
-      "tp": 17.259348571428575,
-      "rr": 1.7878604557369708,
+      "outcomeDelivered": [],
+      "entry": 17.295,
+      "sl": 17.205057500000002,
+      "tp": 17.452057500000002,
+      "rr": 1.74619896044697,
       "suggestedLeverage": 3,
-      "btcRegime": "BULLISH",
-      "rsi15": 51.413461583551545,
-      "fibConfluence": false,
-      "openedAt": 1793155467450,
-      "lastCheckedAt": 1793197372625,
-      "status": "TP",
-      "pnlR": 1.7878604557369708,
+      "btcRegime": "BEARISH",
+      "rsi15": 58.49787267561507,
+      "fibConfluence": true,
+      "openedAt": 1793204251085,
+      "lastCheckedAt": 1793204251085,
+      "status": "OPEN",
+      "pnlR": null,
       "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=LONG (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.07 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
+        "REVERSED ENTRY FAILURE EXPERIMENT: LONG; asset 1H trend=SHORT (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.03 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY: failed liquidity sweep / failed reclaim",
         "order-flow supports reversal",
         "relative volume expansion",
-        "15m RSI supports entry (51.4)",
-        "BTC 1H trend conflicts with SHORT (-0.15)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793189159999,
-      "exitMark": 17.252,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793197387084
+        "1H Fibonacci confluence (17.3210)",
+        "15m RSI supports entry (58.5)",
+        "BTC 4H regime opposes LONG (BEARISH; 0.02%/24h, score penalty -0.15)",
+        "BTC 15m trend conflicts with LONG (-0.15)"
+      ]
     },
     {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "UNI|SHORT|SWEEP_RECLAIM|1793155470658",
-      "coin": "UNI",
-      "side": "SHORT",
-      "pattern": "SWEEP_RECLAIM",
-      "score": 6.39,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 7.1282,
-      "sl": 7.165674142857143,
-      "tp": 7.052974142857143,
-      "rr": 2.007407012073045,
-      "suggestedLeverage": 9,
-      "btcRegime": "BULLISH",
-      "rsi15": 53.644736482644014,
-      "fibConfluence": false,
-      "openedAt": 1793155470658,
-      "lastCheckedAt": 1793177020282,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=LONG (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment -0.21 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
-        "order-flow supports reversal",
-        "relative volume expansion",
-        "OI rising with directional move",
-        "15m RSI supports entry (53.6)",
-        "BTC 1H trend conflicts with SHORT (-0.15)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793162039999,
-      "exitMark": 7.1669,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793177027923
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "XPL|SHORT|SWEEP_RECLAIM|1793155473849",
-      "coin": "XPL",
-      "side": "SHORT",
-      "pattern": "SWEEP_RECLAIM",
-      "score": 6.19,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.074447,
-      "sl": 0.07489490285714286,
-      "tp": 0.07351190285714286,
-      "rr": 2.087723103223906,
-      "suggestedLeverage": 8,
-      "btcRegime": "BULLISH",
-      "rsi15": 59.22889933693688,
-      "fibConfluence": false,
-      "openedAt": 1793155473849,
-      "lastCheckedAt": 1793177020282,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=LONG (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment -0.01 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
-        "order-flow supports reversal",
-        "relative volume expansion",
-        "BTC 1H trend conflicts with SHORT (-0.15)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793157959999,
-      "exitMark": 0.074978,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793177031166
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "BNB|SHORT|SWEEP_RECLAIM|1793155477065",
-      "coin": "BNB",
-      "side": "SHORT",
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
+      "id": "XMR|LONG|SWEEP_RECLAIM|1793204254204",
+      "coin": "XMR",
+      "side": "LONG",
       "pattern": "SWEEP_RECLAIM",
       "score": 6.17,
       "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 744.65,
-      "sl": 749.5569750000001,
-      "tp": 736.496975,
-      "rr": 1.6615175337147197,
-      "suggestedLeverage": 8,
-      "btcRegime": "BULLISH",
-      "rsi15": 46.04638270708443,
+      "outcomeDelivered": [],
+      "entry": 603.9,
+      "sl": 597.4850571428572,
+      "tp": 617.5150571428571,
+      "rr": 2.1223972599689263,
+      "suggestedLeverage": 5,
+      "btcRegime": "BEARISH",
+      "rsi15": 53.28391958240766,
       "fibConfluence": true,
-      "openedAt": 1793155477065,
-      "lastCheckedAt": 1793177020282,
-      "status": "SL",
-      "pnlR": -1,
+      "openedAt": 1793204254204,
+      "lastCheckedAt": 1793204254204,
+      "status": "OPEN",
+      "pnlR": null,
       "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "REVERSED ENTRY FAILURE EXPERIMENT: LONG; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
         "Same-side evidence adjustment +0.02 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
+        "REVERSED ENTRY: failed liquidity sweep / failed reclaim",
         "order-flow supports reversal",
-        "1H Fibonacci confluence (745.581)",
-        "15m RSI supports entry (46.0)",
-        "BTC 1H trend conflicts with SHORT (-0.15)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793176019999,
-      "exitMark": 750.98,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793177035017
+        "1H Fibonacci confluence (602.960)",
+        "15m RSI supports entry (53.3)",
+        "BTC 4H regime opposes LONG (BEARISH; 0.02%/24h, score penalty -0.15)",
+        "BTC 15m trend conflicts with LONG (-0.15)"
+      ]
     },
     {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "GMT|SHORT|SWEEP_RECLAIM|1793155480249",
-      "coin": "GMT",
-      "side": "SHORT",
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
+      "id": "NXPC|LONG|SWEEP_RECLAIM|1793204257424",
+      "coin": "NXPC",
+      "side": "LONG",
       "pattern": "SWEEP_RECLAIM",
-      "score": 6.14,
+      "score": 6.05,
       "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.006946,
-      "sl": 0.006982937142857143,
-      "tp": 0.006859937142857143,
-      "rr": 2.3299814356435755,
+      "outcomeDelivered": [],
+      "entry": 0.17148,
+      "sl": 0.17050641428571428,
+      "tp": 0.1732164142857143,
+      "rr": 1.7835248198852771,
       "suggestedLeverage": 3,
-      "btcRegime": "BULLISH",
-      "rsi15": 57.99805318681205,
-      "fibConfluence": false,
-      "openedAt": 1793155480249,
-      "lastCheckedAt": 1793177020282,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment -0.06 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
-        "order-flow supports reversal",
-        "relative volume expansion",
-        "BTC 1H trend conflicts with SHORT (-0.15)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793176079999,
-      "exitMark": 0.006995,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793177037625
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "RENDER|SHORT|SWEEP_RECLAIM|1793155483448",
-      "coin": "RENDER",
-      "side": "SHORT",
-      "pattern": "SWEEP_RECLAIM",
-      "score": 6.13,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 1.7027,
-      "sl": 1.7127424285714286,
-      "tp": 1.6860424285714286,
-      "rr": 1.6587194332617585,
-      "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 51.62094934895663,
+      "btcRegime": "BEARISH",
+      "rsi15": 52.41326726442282,
       "fibConfluence": true,
-      "openedAt": 1793155483448,
-      "lastCheckedAt": 1793177020282,
-      "status": "SL",
-      "pnlR": -1,
+      "openedAt": 1793204257424,
+      "lastCheckedAt": 1793204257424,
+      "status": "OPEN",
+      "pnlR": null,
       "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment -0.02 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
+        "REVERSED ENTRY FAILURE EXPERIMENT: LONG; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.10 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY: failed liquidity sweep / failed reclaim",
         "order-flow supports reversal",
-        "1H Fibonacci confluence (1.69964)",
-        "15m RSI supports entry (51.6)",
-        "BTC 1H trend conflicts with SHORT (-0.15)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793158379999,
-      "exitMark": 1.7128,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793177040740
+        "1H Fibonacci confluence (0.171295)",
+        "15m RSI supports entry (52.4)",
+        "BTC 4H regime opposes LONG (BEARISH; 0.02%/24h, score penalty -0.15)",
+        "BTC 15m trend conflicts with LONG (-0.15)"
+      ]
     },
     {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "ZK|SHORT|SWEEP_RECLAIM|1793155486654",
-      "coin": "ZK",
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
+      "id": "COMP|SHORT|BREAKOUT_RETEST|1793204260618",
+      "coin": "COMP",
       "side": "SHORT",
-      "pattern": "SWEEP_RECLAIM",
-      "score": 6.12,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.012113,
-      "sl": 0.012199188571428573,
-      "tp": 0.011951188571428573,
-      "rr": 1.8774116555061775,
-      "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 51.22185213187299,
-      "fibConfluence": false,
-      "openedAt": 1793155486654,
-      "lastCheckedAt": 1793177020282,
-      "status": "TP",
-      "pnlR": 1.8774116555061775,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.22 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
-        "order-flow supports reversal",
-        "15m RSI supports entry (51.2)",
-        "BTC 1H trend conflicts with SHORT (-0.15)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793161559999,
-      "exitMark": 0.011951,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793177043921
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "ICP|LONG|BREAKOUT_RETEST|1793177291432",
-      "coin": "ICP",
-      "side": "LONG",
       "pattern": "BREAKOUT_RETEST",
-      "score": 7.09,
+      "score": 5.85,
       "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 2.6127,
-      "sl": 2.5861305714285714,
-      "tp": 2.6641305714285712,
-      "rr": 1.935704837998571,
+      "outcomeDelivered": [],
+      "entry": 21.532,
+      "sl": 21.718142857142855,
+      "tp": 21.216142857142856,
+      "rr": 1.6968534151957313,
       "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 59.62417286238891,
+      "btcRegime": "BEARISH",
+      "rsi15": 56.41367428052027,
       "fibConfluence": true,
-      "openedAt": 1793177291432,
-      "lastCheckedAt": 1793197372625,
-      "status": "SL",
-      "pnlR": -1,
+      "openedAt": 1793204260618,
+      "lastCheckedAt": 1793204260618,
+      "status": "OPEN",
+      "pnlR": null,
       "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.14 (flow/order-book/RSI/VWAP)",
-        "Breakout + retest",
-        "order-flow confirms continuation",
+        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.20 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY: failed breakout / price returned inside range",
         "volume supports level break",
-        "VWAP alignment",
-        "1H Fibonacci confluence (2.61060)",
-        "15m RSI supports entry (59.6)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793189699999,
-      "exitMark": 2.5823,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793197390128
+        "1H Fibonacci confluence (21.5275)",
+        "BTC 4H regime aligns (BEARISH)",
+        "BTC 15m trend confirms SHORT (+0.10)"
+      ]
     },
     {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "FIL|LONG|BREAKOUT_RETEST|1793177294430",
-      "coin": "FIL",
-      "side": "LONG",
-      "pattern": "BREAKOUT_RETEST",
-      "score": 6.88,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.91522,
-      "sl": 0.9079913714285714,
-      "tp": 0.9283513714285714,
-      "rr": 1.8165785250709332,
-      "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 57.75250966529451,
-      "fibConfluence": true,
-      "openedAt": 1793177294430,
-      "lastCheckedAt": 1793197372625,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.38 (flow/order-book/RSI/VWAP)",
-        "Breakout + retest",
-        "order-flow confirms continuation",
-        "VWAP alignment",
-        "1H Fibonacci confluence (0.912878)",
-        "15m RSI supports entry (57.8)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793189159999,
-      "exitMark": 0.90761,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793197393446
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "HBAR|LONG|BREAKOUT_RETEST|1793177297603",
-      "coin": "HBAR",
-      "side": "LONG",
-      "pattern": "BREAKOUT_RETEST",
-      "score": 6.73,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.076616,
-      "sl": 0.07620442571428572,
-      "tp": 0.07736342571428571,
-      "rr": 1.816016549694205,
-      "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 57.89310740658707,
-      "fibConfluence": true,
-      "openedAt": 1793177297603,
-      "lastCheckedAt": 1793182141839,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=SHORT (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.23 (flow/order-book/RSI/VWAP)",
-        "Breakout + retest",
-        "order-flow confirms continuation",
-        "VWAP alignment",
-        "1H Fibonacci confluence (0.0766865)",
-        "15m RSI supports entry (57.9)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793180219999,
-      "exitMark": 0.0762,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793182150842
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "BIGTIME|LONG|TREND_PULLBACK|1793177300788",
-      "coin": "BIGTIME",
-      "side": "LONG",
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
+      "id": "SOPH|SHORT|TREND_PULLBACK|1793204263813",
+      "coin": "SOPH",
+      "side": "SHORT",
       "pattern": "TREND_PULLBACK",
-      "score": 6.64,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.00685,
-      "sl": 0.0067744699999999995,
-      "tp": 0.00699247,
-      "rr": 1.8862703561498502,
-      "suggestedLeverage": 3,
-      "btcRegime": "BULLISH",
-      "rsi15": 54.820007465253376,
-      "fibConfluence": false,
-      "openedAt": 1793177300788,
-      "lastCheckedAt": 1793197372625,
-      "status": "TP",
-      "pnlR": 1.8862703561498502,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=LONG (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.29 (flow/order-book/RSI/VWAP)",
-        "Trend pullback + continuation",
-        "order-flow resumes with trend",
-        "VWAP alignment",
-        "15m RSI supports entry (54.8)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793188259999,
-      "exitMark": 0.007106,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793197396527
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "ATOM|SHORT|SWEEP_RECLAIM|1793177303999",
-      "coin": "ATOM",
-      "side": "SHORT",
-      "pattern": "SWEEP_RECLAIM",
-      "score": 6.5,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 1.6396,
-      "sl": 1.6498594,
-      "tp": 1.6224594,
-      "rr": 1.6707214846871932,
-      "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 56.526485361219464,
-      "fibConfluence": true,
-      "openedAt": 1793177303999,
-      "lastCheckedAt": 1793182141839,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment -0.10 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
-        "order-flow supports reversal",
-        "relative volume expansion",
-        "1H Fibonacci confluence (1.64188)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793181539999,
-      "exitMark": 1.6513,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793182153342
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "SPX|SHORT|SWEEP_RECLAIM|1793177307273",
-      "coin": "SPX",
-      "side": "SHORT",
-      "pattern": "SWEEP_RECLAIM",
-      "score": 6.43,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.38611,
-      "sl": 0.38891158571428575,
-      "tp": 0.37724158571428573,
-      "rr": 3.165498110763773,
-      "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 45.10622701710178,
-      "fibConfluence": false,
-      "openedAt": 1793177307273,
-      "lastCheckedAt": 1793197372625,
-      "status": "TP",
-      "pnlR": 3.165498110763773,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.38 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
-        "order-flow supports reversal",
-        "15m RSI supports entry (45.1)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793191799999,
-      "exitMark": 0.37875,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793197399673
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "ASTER|SHORT|SWEEP_RECLAIM|1793177310405",
-      "coin": "ASTER",
-      "side": "SHORT",
-      "pattern": "SWEEP_RECLAIM",
-      "score": 5.92,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.71464,
-      "sl": 0.7188319599999999,
-      "tp": 0.70706196,
-      "rr": 1.8077557991966227,
-      "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 59.93996281425465,
-      "fibConfluence": false,
-      "openedAt": 1793177310405,
-      "lastCheckedAt": 1793197372625,
-      "status": "TP",
-      "pnlR": 1.8077557991966227,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.02 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
-        "order-flow supports reversal",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793189699999,
-      "exitMark": 0.70704,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793197402884
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "TIA|SHORT|SWEEP_RECLAIM|1793177313615",
-      "coin": "TIA",
-      "side": "SHORT",
-      "pattern": "SWEEP_RECLAIM",
-      "score": 5.89,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.53322,
-      "sl": 0.5363682714285714,
-      "tp": 0.5263982714285714,
-      "rr": 2.1668171649749635,
-      "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 47.65075939879994,
-      "fibConfluence": true,
-      "openedAt": 1793177313615,
-      "lastCheckedAt": 1793182141839,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.04 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
-        "relative volume expansion",
-        "1H Fibonacci confluence (0.532175)",
-        "15m RSI supports entry (47.7)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793180519999,
-      "exitMark": 0.53649,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793182156554
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "DOT|LONG|BREAKOUT_RETEST|1793178006740",
-      "coin": "DOT",
-      "side": "LONG",
-      "pattern": "BREAKOUT_RETEST",
-      "score": 7.33,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 1.00853,
-      "sl": 1.0009765285714287,
-      "tp": 1.0215765285714287,
-      "rr": 1.7272228663075215,
-      "suggestedLeverage": 9,
-      "btcRegime": "BULLISH",
-      "rsi15": 60.92673940138939,
-      "fibConfluence": true,
-      "openedAt": 1793178006740,
-      "lastCheckedAt": 1793182141839,
-      "status": "TP",
-      "pnlR": 1.7272228663075215,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.38 (flow/order-book/RSI/VWAP)",
-        "Breakout + retest",
-        "order-flow confirms continuation",
-        "volume supports level break",
-        "VWAP alignment",
-        "1H Fibonacci confluence (1.00603)",
-        "15m RSI supports entry (60.9)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793181779999,
-      "exitMark": 1.021,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793182159742
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "STX|SHORT|SWEEP_RECLAIM|1793178009700",
-      "coin": "STX",
-      "side": "SHORT",
-      "pattern": "SWEEP_RECLAIM",
-      "score": 7.05,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.30283,
-      "sl": 0.3045245,
-      "tp": 0.2999845,
-      "rr": 1.6792564178223792,
-      "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 57.05076609486404,
-      "fibConfluence": true,
-      "openedAt": 1793178009700,
-      "lastCheckedAt": 1793182141839,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=SHORT (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.05 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
-        "order-flow supports reversal",
-        "relative volume expansion",
-        "aligned 1H trend",
-        "1H Fibonacci confluence (0.302349)",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793181119999,
-      "exitMark": 0.30458,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793182162966
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "WLD|LONG|BREAKOUT_RETEST|1793178012880",
-      "coin": "WLD",
-      "side": "LONG",
-      "pattern": "BREAKOUT_RETEST",
-      "score": 6.67,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.43805,
-      "sl": 0.43426784285714287,
-      "tp": 0.44591784285714287,
-      "rr": 2.080252765806376,
-      "suggestedLeverage": 10,
-      "btcRegime": "BULLISH",
-      "rsi15": 58.36422167240376,
-      "fibConfluence": true,
-      "openedAt": 1793178012880,
-      "lastCheckedAt": 1793197372625,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=SHORT (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment -0.03 (flow/order-book/RSI/VWAP)",
-        "Breakout + retest",
-        "order-flow confirms continuation",
-        "volume supports level break",
-        "1H Fibonacci confluence (0.438620)",
-        "15m RSI supports entry (58.4)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793185619999,
-      "exitMark": 0.43472,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793197406128
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "ZEC|SHORT|SWEEP_RECLAIM|1793178016072",
-      "coin": "ZEC",
-      "side": "SHORT",
-      "pattern": "SWEEP_RECLAIM",
-      "score": 6.25,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 1317.2,
-      "sl": 1330.1418571428571,
-      "tp": 1294.541857142857,
-      "rr": 1.7507644078461029,
-      "suggestedLeverage": 9,
-      "btcRegime": "BULLISH",
-      "rsi15": 57.16554212190529,
-      "fibConfluence": false,
-      "openedAt": 1793178016072,
-      "lastCheckedAt": 1793197372625,
-      "status": "TP",
-      "pnlR": 1.7507644078461029,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment -0.10 (flow/order-book/RSI/VWAP)",
-        "Liquidity sweep + reclaim",
-        "order-flow supports reversal",
-        "relative volume expansion",
-        "BTC 15m trend conflicts with SHORT (-0.15)"
-      ],
-      "closedAt": 1793189579999,
-      "exitMark": 1294.7,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793197409337
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "AIXBT|LONG|BREAKOUT_RETEST|1793178019308",
-      "coin": "AIXBT",
-      "side": "LONG",
-      "pattern": "BREAKOUT_RETEST",
-      "score": 6.04,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.018603,
-      "sl": 0.0184520955,
-      "tp": 0.0188880955,
-      "rr": 1.8892445221978056,
-      "suggestedLeverage": 3,
-      "btcRegime": "BULLISH",
-      "rsi15": 61.57035912240927,
-      "fibConfluence": false,
-      "openedAt": 1793178019308,
-      "lastCheckedAt": 1793197372625,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.04 (flow/order-book/RSI/VWAP)",
-        "Breakout + retest",
-        "volume supports level break",
-        "VWAP alignment",
-        "15m RSI supports entry (61.6)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793189699999,
-      "exitMark": 0.018426,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793197412471
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "AVNT|LONG|BREAKOUT_RETEST|1793178254929",
-      "coin": "AVNT",
-      "side": "LONG",
-      "pattern": "BREAKOUT_RETEST",
-      "score": 5.96,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.1094,
-      "sl": 0.10854860000000001,
-      "tp": 0.11269860000000001,
-      "rr": 3.87432464176657,
-      "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 59.74414620941795,
-      "fibConfluence": true,
-      "openedAt": 1793178254929,
-      "lastCheckedAt": 1793182141839,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.06 (flow/order-book/RSI/VWAP)",
-        "Breakout + retest",
-        "VWAP alignment",
-        "1H Fibonacci confluence (0.109205)",
-        "15m RSI supports entry (59.7)",
-        "BTC 1H trend confirms LONG (+0.10)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793180099999,
-      "exitMark": 0.10852,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793182166179
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "GRIFFAIN|LONG|BREAKOUT_RETEST|1793178257897",
-      "coin": "GRIFFAIN",
-      "side": "LONG",
-      "pattern": "BREAKOUT_RETEST",
       "score": 5.84,
       "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.013726,
-      "sl": 0.013631564285714286,
-      "tp": 0.013917564285714286,
-      "rr": 2.02851524090462,
+      "outcomeDelivered": [],
+      "entry": 0.001492,
+      "sl": 0.0015255057142857143,
+      "tp": 0.0014365057142857144,
+      "rr": 1.6562633239532731,
       "suggestedLeverage": 3,
-      "btcRegime": "BULLISH",
-      "rsi15": 61.38640229066551,
+      "btcRegime": "BEARISH",
+      "rsi15": 47.87650514592519,
       "fibConfluence": true,
-      "openedAt": 1793178257897,
-      "lastCheckedAt": 1793197372625,
-      "status": "SL",
-      "pnlR": -1,
+      "openedAt": 1793204263813,
+      "lastCheckedAt": 1793204263813,
+      "status": "OPEN",
+      "pnlR": null,
       "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment -0.06 (flow/order-book/RSI/VWAP)",
-        "Breakout + retest",
-        "VWAP alignment",
-        "1H Fibonacci confluence (0.0137047)",
-        "15m RSI supports entry (61.4)",
-        "BTC 1H trend confirms LONG (+0.10)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793189459999,
-      "exitMark": 0.013549,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793197415677
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "IMX|LONG|BREAKOUT_RETEST|1793182382398",
-      "coin": "IMX",
-      "side": "LONG",
-      "pattern": "BREAKOUT_RETEST",
-      "score": 6.76,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 0.13995,
-      "sl": 0.13860862857142858,
-      "tp": 0.14228862857142857,
-      "rr": 1.743460850302495,
-      "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 62.93065510497879,
-      "fibConfluence": true,
-      "openedAt": 1793182382398,
-      "lastCheckedAt": 1793197372625,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=LONG (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.21 (flow/order-book/RSI/VWAP)",
-        "Breakout + retest",
-        "aligned 1H trend",
-        "VWAP alignment",
-        "1H Fibonacci confluence (0.139760)",
-        "15m RSI supports entry (62.9)",
-        "BTC 1H trend confirms LONG (+0.10)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793189699999,
-      "exitMark": 0.13841,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793197418875
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
-      "id": "LIT|LONG|BREAKOUT_RETEST|1793182385348",
-      "coin": "LIT",
-      "side": "LONG",
-      "pattern": "BREAKOUT_RETEST",
-      "score": 6.39,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 3.069677,
-      "sl": 3.0455995714285713,
-      "tp": 3.125099571428571,
-      "rr": 2.3018476106845562,
-      "suggestedLeverage": 5,
-      "btcRegime": "BULLISH",
-      "rsi15": 62.56963999944888,
-      "fibConfluence": true,
-      "openedAt": 1793182385348,
-      "lastCheckedAt": 1793197372625,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.04 (flow/order-book/RSI/VWAP)",
-        "Breakout + retest",
-        "volume supports level break",
-        "VWAP alignment",
-        "1H Fibonacci confluence (3.07465)",
-        "15m RSI supports entry (62.6)",
-        "BTC 1H trend confirms LONG (+0.10)",
-        "BTC 15m trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793185559999,
-      "exitMark": 3.0448,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793197422104
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.8-REVERSE-ENTRY-FAILURE-STRUCTURE-RR15",
-      "id": "VVV|LONG|TREND_PULLBACK|1793183186018",
-      "coin": "VVV",
-      "side": "LONG",
-      "pattern": "TREND_PULLBACK",
-      "score": 6.33,
-      "audience": "VIP",
-      "outcomeDelivered": [
-        "VIP"
-      ],
-      "entry": 24.35,
-      "sl": 24.125658571428573,
-      "tp": 24.88265857142857,
-      "rr": 2.374321028534312,
-      "suggestedLeverage": 3,
-      "btcRegime": "BULLISH",
-      "rsi15": 49.966996340230494,
-      "fibConfluence": false,
-      "openedAt": 1793183186018,
-      "lastCheckedAt": 1793197372625,
-      "status": "SL",
-      "pnlR": -1,
-      "reasons": [
-        "REVERSED ENTRY FAILURE EXPERIMENT: LONG; asset 1H trend=SHORT (countertrend) is context; BTC LONG is context; fresh SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment -0.17 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=LONG (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.21 (flow/order-book/RSI/VWAP)",
         "REVERSED ENTRY: trend continuation failed across 15m EMA20",
-        "order-flow resumes with trend",
-        "participation present",
-        "OI rising with trend",
-        "15m RSI supports entry (50.0)",
-        "BTC 1H trend confirms LONG (+0.10)"
-      ],
-      "closedAt": 1793191919999,
-      "exitMark": 24.175,
-      "paperMarginUsd": 1000,
-      "exitDetection": "1m_candle_ohlc",
-      "outcomeNotifiedAt": 1793197425360
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.8-REVERSE-ENTRY-FAILURE-STRUCTURE-RR15",
-      "id": "POL|SHORT|BREAKOUT_RETEST|1793203271353",
-      "coin": "POL",
-      "side": "SHORT",
-      "pattern": "BREAKOUT_RETEST",
-      "score": 7.03,
-      "audience": "VIP",
-      "outcomeDelivered": [],
-      "entry": 0.091553,
-      "sl": 0.09253032950000001,
-      "tp": 0.0894743295,
-      "rr": 2.126888117057721,
-      "suggestedLeverage": 5,
-      "btcRegime": "BEARISH",
-      "rsi15": 50.47429226174423,
-      "fibConfluence": true,
-      "openedAt": 1793203271353,
-      "lastCheckedAt": 1793203271353,
-      "status": "OPEN",
-      "pnlR": null,
-      "reasons": [
-        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.18 (flow/order-book/RSI/VWAP)",
-        "REVERSED ENTRY: failed breakout / price returned inside range",
-        "order-flow confirms continuation",
-        "volume supports level break",
         "VWAP alignment",
-        "1H Fibonacci confluence (0.0915316)",
-        "15m RSI supports entry (50.5)"
-      ]
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.8-REVERSE-ENTRY-FAILURE-STRUCTURE-RR15",
-      "id": "MORPHO|SHORT|BREAKOUT_RETEST|1793203274298",
-      "coin": "MORPHO",
-      "side": "SHORT",
-      "pattern": "BREAKOUT_RETEST",
-      "score": 6.74,
-      "audience": "VIP",
-      "outcomeDelivered": [],
-      "entry": 2.1886,
-      "sl": 2.1998865714285714,
-      "tp": 2.159386571428571,
-      "rr": 2.5883350631598323,
-      "suggestedLeverage": 5,
-      "btcRegime": "BEARISH",
-      "rsi15": 47.35372747867569,
-      "fibConfluence": false,
-      "openedAt": 1793203274298,
-      "lastCheckedAt": 1793203274298,
-      "status": "OPEN",
-      "pnlR": null,
-      "reasons": [
-        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment +0.14 (flow/order-book/RSI/VWAP)",
-        "REVERSED ENTRY: failed breakout / price returned inside range",
-        "order-flow confirms continuation",
-        "volume supports level break",
-        "VWAP alignment",
-        "15m RSI supports entry (47.4)"
-      ]
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.8-REVERSE-ENTRY-FAILURE-STRUCTURE-RR15",
-      "id": "APEX|SHORT|BREAKOUT_RETEST|1793203277368",
-      "coin": "APEX",
-      "side": "SHORT",
-      "pattern": "BREAKOUT_RETEST",
-      "score": 6.39,
-      "audience": "VIP",
-      "outcomeDelivered": [],
-      "entry": 0.22483,
-      "sl": 0.22599474285714286,
-      "tp": 0.22221474285714285,
-      "rr": 2.245351518422231,
-      "suggestedLeverage": 3,
-      "btcRegime": "BEARISH",
-      "rsi15": 57.448739141102564,
-      "fibConfluence": true,
-      "openedAt": 1793203277368,
-      "lastCheckedAt": 1793203277368,
-      "status": "OPEN",
-      "pnlR": null,
-      "reasons": [
-        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment -0.06 (flow/order-book/RSI/VWAP)",
-        "REVERSED ENTRY: failed breakout / price returned inside range",
-        "order-flow confirms continuation",
-        "volume supports level break",
-        "1H Fibonacci confluence (0.225410)"
-      ]
-    },
-    {
-      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.8-REVERSE-ENTRY-FAILURE-STRUCTURE-RR15",
-      "id": "CAKE|SHORT|BREAKOUT_RETEST|1793203280576",
-      "coin": "CAKE",
-      "side": "SHORT",
-      "pattern": "BREAKOUT_RETEST",
-      "score": 5.9,
-      "audience": "VIP",
-      "outcomeDelivered": [],
-      "entry": 2.0997,
-      "sl": 2.1189492857142858,
-      "tp": 2.066149285714286,
-      "rr": 1.742958922408972,
-      "suggestedLeverage": 3,
-      "btcRegime": "BEARISH",
-      "rsi15": 56.54543041694687,
-      "fibConfluence": true,
-      "openedAt": 1793203280576,
-      "lastCheckedAt": 1793203280576,
-      "status": "OPEN",
-      "pnlR": null,
-      "reasons": [
-        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=SHORT (aligned) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
-        "Same-side evidence adjustment -0.05 (flow/order-book/RSI/VWAP)",
-        "REVERSED ENTRY: failed breakout / price returned inside range",
-        "aligned 1H trend",
-        "1H Fibonacci confluence (2.10055)"
+        "1H Fibonacci confluence (0.00149562)",
+        "15m RSI supports entry (47.9)",
+        "BTC 4H regime aligns (BEARISH)",
+        "BTC 15m trend confirms SHORT (+0.10)"
       ]
     }
   ],
-  "dailyStats": {
-    "2026-10-27": {
-      "tp": 1,
-      "sl": 4,
-      "closed": 5,
-      "realizedR": -1.836475205926238
-    },
-    "2026-10-28": {
-      "tp": 12,
-      "sl": 24,
-      "closed": 36,
-      "realizedR": -0.02902139159770245
-    }
-  },
+  "dailyStats": {},
   "lastStatusAt": 0,
-  "lastDailyReportAt": 1793129516243,
+  "lastDailyReportAt": 1793204027682,
   "archivedPaperTrades": [
     {
       "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-LEVEL-PROXIMITY-EARLY-ENTRY",
@@ -3907,33 +2297,1870 @@
       ],
       "archivedAt": 1793129516243,
       "archiveReason": "V2.8.6_CLEAN_START"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "USELESS|LONG|BREAKOUT_RETEST|1793129734620",
+      "coin": "USELESS",
+      "side": "LONG",
+      "pattern": "BREAKOUT_RETEST",
+      "score": 6.88,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.156867,
+      "sl": 0.15250824285714287,
+      "tp": 0.16481824285714286,
+      "rr": 1.8241995588519695,
+      "suggestedLeverage": 3,
+      "btcRegime": "BULLISH",
+      "rsi15": 63.360206652299624,
+      "fibConfluence": false,
+      "openedAt": 1793129734620,
+      "lastCheckedAt": 1793155192172,
+      "status": "TP",
+      "pnlR": 1.8241995588519695,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.18 (flow/order-book/RSI/VWAP)",
+        "Breakout + retest",
+        "order-flow confirms continuation",
+        "volume supports level break",
+        "VWAP alignment",
+        "15m RSI supports entry (63.4)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793152619999,
+      "exitMark": 0.16528,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793155195623,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "0G|SHORT|SWEEP_RECLAIM|1793129737558",
+      "coin": "0G",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 6.25,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.20487,
+      "sl": 0.20590365714285713,
+      "tp": 0.20263365714285714,
+      "rr": 2.163524794073762,
+      "suggestedLeverage": 3,
+      "btcRegime": "BULLISH",
+      "rsi15": 69.79263413343475,
+      "fibConfluence": false,
+      "openedAt": 1793129737558,
+      "lastCheckedAt": 1793131729706,
+      "status": "TP",
+      "pnlR": 2.163524794073762,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.10 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "relative volume expansion",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793131319999,
+      "exitMark": 0.20245,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793131734112,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "KAS|LONG|SWEEP_RECLAIM|1793130879183",
+      "coin": "KAS",
+      "side": "LONG",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 6.83,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.035282,
+      "sl": 0.03500805428571429,
+      "tp": 0.03576205428571429,
+      "rr": 1.752370125468047,
+      "suggestedLeverage": 3,
+      "btcRegime": "BULLISH",
+      "rsi15": 52.98739989773563,
+      "fibConfluence": true,
+      "openedAt": 1793130879183,
+      "lastCheckedAt": 1793155192172,
+      "status": "TP",
+      "pnlR": 1.752370125468047,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.28 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "1H Fibonacci confluence (0.0352755)",
+        "15m RSI supports entry (53.0)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793151479999,
+      "exitMark": 0.035816,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793155198530,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "AERO|LONG|TREND_PULLBACK|1793130882006",
+      "coin": "AERO",
+      "side": "LONG",
+      "pattern": "TREND_PULLBACK",
+      "score": 6.64,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.69717,
+      "sl": 0.6889716857142857,
+      "tp": 0.7112816857142857,
+      "rr": 1.7212911365054255,
+      "suggestedLeverage": 3,
+      "btcRegime": "BULLISH",
+      "rsi15": 54.11181374210928,
+      "fibConfluence": false,
+      "openedAt": 1793130882006,
+      "lastCheckedAt": 1793177020282,
+      "status": "TP",
+      "pnlR": 1.7212911365054255,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=LONG (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.29 (flow/order-book/RSI/VWAP)",
+        "Trend pullback + continuation",
+        "order-flow resumes with trend",
+        "VWAP alignment",
+        "15m RSI supports entry (54.1)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793176499999,
+      "exitMark": 0.71148,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793177025023,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "BIGTIME|SHORT|TREND_PULLBACK|1793131965298",
+      "coin": "BIGTIME",
+      "side": "SHORT",
+      "pattern": "TREND_PULLBACK",
+      "score": 6.65,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.006751,
+      "sl": 0.00681885,
+      "tp": 0.00663385,
+      "rr": 1.7266028002947567,
+      "suggestedLeverage": 3,
+      "btcRegime": "BULLISH",
+      "rsi15": 45.88271231130575,
+      "fibConfluence": false,
+      "openedAt": 1793131965298,
+      "lastCheckedAt": 1793155192172,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=SHORT (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.45 (flow/order-book/RSI/VWAP)",
+        "Trend pullback + continuation",
+        "order-flow resumes with trend",
+        "participation present",
+        "VWAP alignment",
+        "15m RSI supports entry (45.9)",
+        "BTC 1H trend conflicts with SHORT (-0.15)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793151719999,
+      "exitMark": 0.006822,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793155201738,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "COMP|SHORT|TREND_PULLBACK|1793131968286",
+      "coin": "COMP",
+      "side": "SHORT",
+      "pattern": "TREND_PULLBACK",
+      "score": 6.28,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 21.375,
+      "sl": 21.547751428571427,
+      "tp": 20.943751428571428,
+      "rr": 2.49635314159075,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 47.082008062722586,
+      "fibConfluence": false,
+      "openedAt": 1793131968286,
+      "lastCheckedAt": 1793182141839,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=SHORT (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.33 (flow/order-book/RSI/VWAP)",
+        "Trend pullback + continuation",
+        "order-flow resumes with trend",
+        "VWAP alignment",
+        "15m RSI supports entry (47.1)",
+        "BTC 1H trend conflicts with SHORT (-0.15)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793180579999,
+      "exitMark": 21.575,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793182146985,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "PENDLE|SHORT|SWEEP_RECLAIM|1793131971474",
+      "coin": "PENDLE",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 6.2,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 1.9975,
+      "sl": 2.016717857142857,
+      "tp": 1.955917857142857,
+      "rr": 2.1637242148299864,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 62.935219210254736,
+      "fibConfluence": false,
+      "openedAt": 1793131971474,
+      "lastCheckedAt": 1793197372625,
+      "status": "TP",
+      "pnlR": 2.1637242148299864,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=LONG (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.25 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "relative volume expansion",
+        "OI rising with directional move",
+        "BTC 1H trend conflicts with SHORT (-0.15)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793195339999,
+      "exitMark": 1.9562,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793197377516,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "SUI|SHORT|SWEEP_RECLAIM|1793131974682",
+      "coin": "SUI",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 6.14,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.92575,
+      "sl": 0.9315906428571428,
+      "tp": 0.9127806428571428,
+      "rr": 2.220535899913196,
+      "suggestedLeverage": 8,
+      "btcRegime": "BULLISH",
+      "rsi15": 58.63494608049062,
+      "fibConfluence": false,
+      "openedAt": 1793131974682,
+      "lastCheckedAt": 1793137479557,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.06 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "relative volume expansion",
+        "BTC 1H trend conflicts with SHORT (-0.15)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793136839999,
+      "exitMark": 0.93182,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793137485549,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "TAO|SHORT|SWEEP_RECLAIM|1793131977879",
+      "coin": "TAO",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 6.14,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 253.48,
+      "sl": 255.30814285714285,
+      "tp": 250.39814285714286,
+      "rr": 1.6857857310306972,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 62.84464546102179,
+      "fibConfluence": false,
+      "openedAt": 1793131977879,
+      "lastCheckedAt": 1793137479557,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.06 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "relative volume expansion",
+        "BTC 1H trend conflicts with SHORT (-0.15)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793136899999,
+      "exitMark": 255.57,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793137488643,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "NEAR|SHORT|SWEEP_RECLAIM|1793131981100",
+      "coin": "NEAR",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 5.95,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 4.6326,
+      "sl": 4.681526142857143,
+      "tp": 4.528026142857143,
+      "rr": 2.1373820014424143,
+      "suggestedLeverage": 9,
+      "btcRegime": "BULLISH",
+      "rsi15": 64.60538907720294,
+      "fibConfluence": false,
+      "openedAt": 1793131981100,
+      "lastCheckedAt": 1793137479557,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=LONG (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.25 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "relative volume expansion",
+        "BTC 1H trend conflicts with SHORT (-0.15)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793136839999,
+      "exitMark": 4.7033,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793137491754,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "kLUNC|LONG|TREND_PULLBACK|1793137708628",
+      "coin": "kLUNC",
+      "side": "LONG",
+      "pattern": "TREND_PULLBACK",
+      "score": 7.24,
+      "audience": "VIP",
+      "outcomeDelivered": [],
+      "entry": 0.04507,
+      "sl": 0.044666395000000005,
+      "tp": 0.045827395,
+      "rr": 1.8765748689932273,
+      "suggestedLeverage": 3,
+      "btcRegime": "BULLISH",
+      "rsi15": 60.457126935545645,
+      "fibConfluence": true,
+      "openedAt": 1793137708628,
+      "lastCheckedAt": 1793203048363,
+      "status": "OPEN",
+      "pnlR": null,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=LONG (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.29 (flow/order-book/RSI/VWAP)",
+        "Trend pullback + continuation",
+        "order-flow resumes with trend",
+        "participation present",
+        "VWAP alignment",
+        "1H Fibonacci confluence (0.0450665)",
+        "15m RSI supports entry (60.5)",
+        "BTC 1H trend confirms LONG (+0.10)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "WCT|LONG|BREAKOUT_RETEST|1793137711550",
+      "coin": "WCT",
+      "side": "LONG",
+      "pattern": "BREAKOUT_RETEST",
+      "score": 7.06,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.036494,
+      "sl": 0.03585657714285714,
+      "tp": 0.037613577142857145,
+      "rr": 1.756411980385312,
+      "suggestedLeverage": 3,
+      "btcRegime": "BULLISH",
+      "rsi15": 64.50094349840398,
+      "fibConfluence": false,
+      "openedAt": 1793137711550,
+      "lastCheckedAt": 1793197372625,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.26 (flow/order-book/RSI/VWAP)",
+        "Breakout + retest",
+        "order-flow confirms continuation",
+        "volume supports level break",
+        "VWAP alignment",
+        "15m RSI supports entry (64.5)",
+        "BTC 1H trend confirms LONG (+0.10)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793197079999,
+      "exitMark": 0.035872,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793197380497,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "STRK|LONG|TREND_PULLBACK|1793137714753",
+      "coin": "STRK",
+      "side": "LONG",
+      "pattern": "TREND_PULLBACK",
+      "score": 6.88,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.04665,
+      "sl": 0.04611562857142857,
+      "tp": 0.04753562857142857,
+      "rr": 1.6573277014382748,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 52.48561465742167,
+      "fibConfluence": false,
+      "openedAt": 1793137714753,
+      "lastCheckedAt": 1793144870584,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=LONG (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.43 (flow/order-book/RSI/VWAP)",
+        "Trend pullback + continuation",
+        "order-flow resumes with trend",
+        "VWAP alignment",
+        "15m RSI supports entry (52.5)",
+        "BTC 1H trend confirms LONG (+0.10)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793143439999,
+      "exitMark": 0.04599,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793144875533,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "DYM|LONG|TREND_PULLBACK|1793137717957",
+      "coin": "DYM",
+      "side": "LONG",
+      "pattern": "TREND_PULLBACK",
+      "score": 6.88,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.01806,
+      "sl": 0.01786662857142857,
+      "tp": 0.01838662857142857,
+      "rr": 1.6891252955082587,
+      "suggestedLeverage": 3,
+      "btcRegime": "BULLISH",
+      "rsi15": 59.95928130008282,
+      "fibConfluence": false,
+      "openedAt": 1793137717957,
+      "lastCheckedAt": 1793197372625,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=LONG (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.43 (flow/order-book/RSI/VWAP)",
+        "Trend pullback + continuation",
+        "order-flow resumes with trend",
+        "VWAP alignment",
+        "15m RSI supports entry (60.0)",
+        "BTC 1H trend confirms LONG (+0.10)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793190899999,
+      "exitMark": 0.01786,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793197383674,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "RESOLV|LONG|TREND_PULLBACK|1793145097308",
+      "coin": "RESOLV",
+      "side": "LONG",
+      "pattern": "TREND_PULLBACK",
+      "score": 7.11,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.016814,
+      "sl": 0.01671307857142857,
+      "tp": 0.01698807857142857,
+      "rr": 1.724892065963627,
+      "suggestedLeverage": 3,
+      "btcRegime": "BULLISH",
+      "rsi15": 56.01059983284414,
+      "fibConfluence": true,
+      "openedAt": 1793145097308,
+      "lastCheckedAt": 1793155192172,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=LONG (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.41 (flow/order-book/RSI/VWAP)",
+        "Trend pullback + continuation",
+        "order-flow resumes with trend",
+        "VWAP alignment",
+        "1H Fibonacci confluence (0.0168246)",
+        "15m RSI supports entry (56.0)",
+        "BTC 1H trend confirms LONG (+0.10)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793147879999,
+      "exitMark": 0.016714,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793155204986,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "STRK|SHORT|BREAKOUT_RETEST|1793145100258",
+      "coin": "STRK",
+      "side": "SHORT",
+      "pattern": "BREAKOUT_RETEST",
+      "score": 6.24,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.04625,
+      "sl": 0.04694767142857143,
+      "tp": 0.04508767142857143,
+      "rr": 1.6660114257632401,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 42.386869397639465,
+      "fibConfluence": true,
+      "openedAt": 1793145100258,
+      "lastCheckedAt": 1793155192172,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.14 (flow/order-book/RSI/VWAP)",
+        "Breakout + retest",
+        "order-flow confirms continuation",
+        "VWAP alignment",
+        "1H Fibonacci confluence (0.0463145)",
+        "15m RSI supports entry (42.4)",
+        "BTC 1H trend conflicts with SHORT (-0.15)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793150519999,
+      "exitMark": 0.04705,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793155208127,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "INJ|SHORT|SWEEP_RECLAIM|1793155464543",
+      "coin": "INJ",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 7.23,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 7.98,
+      "sl": 8.07099957142857,
+      "tp": 7.751899571428572,
+      "rr": 2.5066099212398485,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 46.971463818286274,
+      "fibConfluence": true,
+      "openedAt": 1793155464543,
+      "lastCheckedAt": 1793203048363,
+      "status": "TP",
+      "pnlR": 2.5066099212398485,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.38 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "relative volume expansion",
+        "OI rising with directional move",
+        "1H Fibonacci confluence (7.99713)",
+        "15m RSI supports entry (47.0)",
+        "BTC 1H trend conflicts with SHORT (-0.15)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793202779999,
+      "exitMark": 7.751,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793203054625,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "TRB|SHORT|SWEEP_RECLAIM|1793155467450",
+      "coin": "TRB",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 6.42,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 17.462,
+      "sl": 17.575348571428574,
+      "tp": 17.259348571428575,
+      "rr": 1.7878604557369708,
+      "suggestedLeverage": 3,
+      "btcRegime": "BULLISH",
+      "rsi15": 51.413461583551545,
+      "fibConfluence": false,
+      "openedAt": 1793155467450,
+      "lastCheckedAt": 1793197372625,
+      "status": "TP",
+      "pnlR": 1.7878604557369708,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=LONG (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.07 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "relative volume expansion",
+        "15m RSI supports entry (51.4)",
+        "BTC 1H trend conflicts with SHORT (-0.15)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793189159999,
+      "exitMark": 17.252,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793197387084,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "UNI|SHORT|SWEEP_RECLAIM|1793155470658",
+      "coin": "UNI",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 6.39,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 7.1282,
+      "sl": 7.165674142857143,
+      "tp": 7.052974142857143,
+      "rr": 2.007407012073045,
+      "suggestedLeverage": 9,
+      "btcRegime": "BULLISH",
+      "rsi15": 53.644736482644014,
+      "fibConfluence": false,
+      "openedAt": 1793155470658,
+      "lastCheckedAt": 1793177020282,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=LONG (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.21 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "relative volume expansion",
+        "OI rising with directional move",
+        "15m RSI supports entry (53.6)",
+        "BTC 1H trend conflicts with SHORT (-0.15)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793162039999,
+      "exitMark": 7.1669,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793177027923,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "XPL|SHORT|SWEEP_RECLAIM|1793155473849",
+      "coin": "XPL",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 6.19,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.074447,
+      "sl": 0.07489490285714286,
+      "tp": 0.07351190285714286,
+      "rr": 2.087723103223906,
+      "suggestedLeverage": 8,
+      "btcRegime": "BULLISH",
+      "rsi15": 59.22889933693688,
+      "fibConfluence": false,
+      "openedAt": 1793155473849,
+      "lastCheckedAt": 1793177020282,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=LONG (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.01 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "relative volume expansion",
+        "BTC 1H trend conflicts with SHORT (-0.15)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793157959999,
+      "exitMark": 0.074978,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793177031166,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "BNB|SHORT|SWEEP_RECLAIM|1793155477065",
+      "coin": "BNB",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 6.17,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 744.65,
+      "sl": 749.5569750000001,
+      "tp": 736.496975,
+      "rr": 1.6615175337147197,
+      "suggestedLeverage": 8,
+      "btcRegime": "BULLISH",
+      "rsi15": 46.04638270708443,
+      "fibConfluence": true,
+      "openedAt": 1793155477065,
+      "lastCheckedAt": 1793177020282,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.02 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "1H Fibonacci confluence (745.581)",
+        "15m RSI supports entry (46.0)",
+        "BTC 1H trend conflicts with SHORT (-0.15)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793176019999,
+      "exitMark": 750.98,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793177035017,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "GMT|SHORT|SWEEP_RECLAIM|1793155480249",
+      "coin": "GMT",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 6.14,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.006946,
+      "sl": 0.006982937142857143,
+      "tp": 0.006859937142857143,
+      "rr": 2.3299814356435755,
+      "suggestedLeverage": 3,
+      "btcRegime": "BULLISH",
+      "rsi15": 57.99805318681205,
+      "fibConfluence": false,
+      "openedAt": 1793155480249,
+      "lastCheckedAt": 1793177020282,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.06 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "relative volume expansion",
+        "BTC 1H trend conflicts with SHORT (-0.15)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793176079999,
+      "exitMark": 0.006995,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793177037625,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "RENDER|SHORT|SWEEP_RECLAIM|1793155483448",
+      "coin": "RENDER",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 6.13,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 1.7027,
+      "sl": 1.7127424285714286,
+      "tp": 1.6860424285714286,
+      "rr": 1.6587194332617585,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 51.62094934895663,
+      "fibConfluence": true,
+      "openedAt": 1793155483448,
+      "lastCheckedAt": 1793177020282,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.02 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "1H Fibonacci confluence (1.69964)",
+        "15m RSI supports entry (51.6)",
+        "BTC 1H trend conflicts with SHORT (-0.15)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793158379999,
+      "exitMark": 1.7128,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793177040740,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "ZK|SHORT|SWEEP_RECLAIM|1793155486654",
+      "coin": "ZK",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 6.12,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.012113,
+      "sl": 0.012199188571428573,
+      "tp": 0.011951188571428573,
+      "rr": 1.8774116555061775,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 51.22185213187299,
+      "fibConfluence": false,
+      "openedAt": 1793155486654,
+      "lastCheckedAt": 1793177020282,
+      "status": "TP",
+      "pnlR": 1.8774116555061775,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.22 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "15m RSI supports entry (51.2)",
+        "BTC 1H trend conflicts with SHORT (-0.15)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793161559999,
+      "exitMark": 0.011951,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793177043921,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "ICP|LONG|BREAKOUT_RETEST|1793177291432",
+      "coin": "ICP",
+      "side": "LONG",
+      "pattern": "BREAKOUT_RETEST",
+      "score": 7.09,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 2.6127,
+      "sl": 2.5861305714285714,
+      "tp": 2.6641305714285712,
+      "rr": 1.935704837998571,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 59.62417286238891,
+      "fibConfluence": true,
+      "openedAt": 1793177291432,
+      "lastCheckedAt": 1793197372625,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.14 (flow/order-book/RSI/VWAP)",
+        "Breakout + retest",
+        "order-flow confirms continuation",
+        "volume supports level break",
+        "VWAP alignment",
+        "1H Fibonacci confluence (2.61060)",
+        "15m RSI supports entry (59.6)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793189699999,
+      "exitMark": 2.5823,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793197390128,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "FIL|LONG|BREAKOUT_RETEST|1793177294430",
+      "coin": "FIL",
+      "side": "LONG",
+      "pattern": "BREAKOUT_RETEST",
+      "score": 6.88,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.91522,
+      "sl": 0.9079913714285714,
+      "tp": 0.9283513714285714,
+      "rr": 1.8165785250709332,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 57.75250966529451,
+      "fibConfluence": true,
+      "openedAt": 1793177294430,
+      "lastCheckedAt": 1793197372625,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.38 (flow/order-book/RSI/VWAP)",
+        "Breakout + retest",
+        "order-flow confirms continuation",
+        "VWAP alignment",
+        "1H Fibonacci confluence (0.912878)",
+        "15m RSI supports entry (57.8)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793189159999,
+      "exitMark": 0.90761,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793197393446,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "HBAR|LONG|BREAKOUT_RETEST|1793177297603",
+      "coin": "HBAR",
+      "side": "LONG",
+      "pattern": "BREAKOUT_RETEST",
+      "score": 6.73,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.076616,
+      "sl": 0.07620442571428572,
+      "tp": 0.07736342571428571,
+      "rr": 1.816016549694205,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 57.89310740658707,
+      "fibConfluence": true,
+      "openedAt": 1793177297603,
+      "lastCheckedAt": 1793182141839,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=SHORT (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.23 (flow/order-book/RSI/VWAP)",
+        "Breakout + retest",
+        "order-flow confirms continuation",
+        "VWAP alignment",
+        "1H Fibonacci confluence (0.0766865)",
+        "15m RSI supports entry (57.9)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793180219999,
+      "exitMark": 0.0762,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793182150842,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "BIGTIME|LONG|TREND_PULLBACK|1793177300788",
+      "coin": "BIGTIME",
+      "side": "LONG",
+      "pattern": "TREND_PULLBACK",
+      "score": 6.64,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.00685,
+      "sl": 0.0067744699999999995,
+      "tp": 0.00699247,
+      "rr": 1.8862703561498502,
+      "suggestedLeverage": 3,
+      "btcRegime": "BULLISH",
+      "rsi15": 54.820007465253376,
+      "fibConfluence": false,
+      "openedAt": 1793177300788,
+      "lastCheckedAt": 1793197372625,
+      "status": "TP",
+      "pnlR": 1.8862703561498502,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=LONG (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.29 (flow/order-book/RSI/VWAP)",
+        "Trend pullback + continuation",
+        "order-flow resumes with trend",
+        "VWAP alignment",
+        "15m RSI supports entry (54.8)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793188259999,
+      "exitMark": 0.007106,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793197396527,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "ATOM|SHORT|SWEEP_RECLAIM|1793177303999",
+      "coin": "ATOM",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 6.5,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 1.6396,
+      "sl": 1.6498594,
+      "tp": 1.6224594,
+      "rr": 1.6707214846871932,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 56.526485361219464,
+      "fibConfluence": true,
+      "openedAt": 1793177303999,
+      "lastCheckedAt": 1793182141839,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.10 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "relative volume expansion",
+        "1H Fibonacci confluence (1.64188)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793181539999,
+      "exitMark": 1.6513,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793182153342,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "SPX|SHORT|SWEEP_RECLAIM|1793177307273",
+      "coin": "SPX",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 6.43,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.38611,
+      "sl": 0.38891158571428575,
+      "tp": 0.37724158571428573,
+      "rr": 3.165498110763773,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 45.10622701710178,
+      "fibConfluence": false,
+      "openedAt": 1793177307273,
+      "lastCheckedAt": 1793197372625,
+      "status": "TP",
+      "pnlR": 3.165498110763773,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.38 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "15m RSI supports entry (45.1)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793191799999,
+      "exitMark": 0.37875,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793197399673,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "ASTER|SHORT|SWEEP_RECLAIM|1793177310405",
+      "coin": "ASTER",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 5.92,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.71464,
+      "sl": 0.7188319599999999,
+      "tp": 0.70706196,
+      "rr": 1.8077557991966227,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 59.93996281425465,
+      "fibConfluence": false,
+      "openedAt": 1793177310405,
+      "lastCheckedAt": 1793197372625,
+      "status": "TP",
+      "pnlR": 1.8077557991966227,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.02 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793189699999,
+      "exitMark": 0.70704,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793197402884,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "TIA|SHORT|SWEEP_RECLAIM|1793177313615",
+      "coin": "TIA",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 5.89,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.53322,
+      "sl": 0.5363682714285714,
+      "tp": 0.5263982714285714,
+      "rr": 2.1668171649749635,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 47.65075939879994,
+      "fibConfluence": true,
+      "openedAt": 1793177313615,
+      "lastCheckedAt": 1793182141839,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.04 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "relative volume expansion",
+        "1H Fibonacci confluence (0.532175)",
+        "15m RSI supports entry (47.7)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793180519999,
+      "exitMark": 0.53649,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793182156554,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "DOT|LONG|BREAKOUT_RETEST|1793178006740",
+      "coin": "DOT",
+      "side": "LONG",
+      "pattern": "BREAKOUT_RETEST",
+      "score": 7.33,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 1.00853,
+      "sl": 1.0009765285714287,
+      "tp": 1.0215765285714287,
+      "rr": 1.7272228663075215,
+      "suggestedLeverage": 9,
+      "btcRegime": "BULLISH",
+      "rsi15": 60.92673940138939,
+      "fibConfluence": true,
+      "openedAt": 1793178006740,
+      "lastCheckedAt": 1793182141839,
+      "status": "TP",
+      "pnlR": 1.7272228663075215,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.38 (flow/order-book/RSI/VWAP)",
+        "Breakout + retest",
+        "order-flow confirms continuation",
+        "volume supports level break",
+        "VWAP alignment",
+        "1H Fibonacci confluence (1.00603)",
+        "15m RSI supports entry (60.9)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793181779999,
+      "exitMark": 1.021,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793182159742,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "STX|SHORT|SWEEP_RECLAIM|1793178009700",
+      "coin": "STX",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 7.05,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.30283,
+      "sl": 0.3045245,
+      "tp": 0.2999845,
+      "rr": 1.6792564178223792,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 57.05076609486404,
+      "fibConfluence": true,
+      "openedAt": 1793178009700,
+      "lastCheckedAt": 1793182141839,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=SHORT (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.05 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "relative volume expansion",
+        "aligned 1H trend",
+        "1H Fibonacci confluence (0.302349)",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793181119999,
+      "exitMark": 0.30458,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793182162966,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "WLD|LONG|BREAKOUT_RETEST|1793178012880",
+      "coin": "WLD",
+      "side": "LONG",
+      "pattern": "BREAKOUT_RETEST",
+      "score": 6.67,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.43805,
+      "sl": 0.43426784285714287,
+      "tp": 0.44591784285714287,
+      "rr": 2.080252765806376,
+      "suggestedLeverage": 10,
+      "btcRegime": "BULLISH",
+      "rsi15": 58.36422167240376,
+      "fibConfluence": true,
+      "openedAt": 1793178012880,
+      "lastCheckedAt": 1793197372625,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=SHORT (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.03 (flow/order-book/RSI/VWAP)",
+        "Breakout + retest",
+        "order-flow confirms continuation",
+        "volume supports level break",
+        "1H Fibonacci confluence (0.438620)",
+        "15m RSI supports entry (58.4)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793185619999,
+      "exitMark": 0.43472,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793197406128,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "ZEC|SHORT|SWEEP_RECLAIM|1793178016072",
+      "coin": "ZEC",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 6.25,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 1317.2,
+      "sl": 1330.1418571428571,
+      "tp": 1294.541857142857,
+      "rr": 1.7507644078461029,
+      "suggestedLeverage": 9,
+      "btcRegime": "BULLISH",
+      "rsi15": 57.16554212190529,
+      "fibConfluence": false,
+      "openedAt": 1793178016072,
+      "lastCheckedAt": 1793197372625,
+      "status": "TP",
+      "pnlR": 1.7507644078461029,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: SHORT; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.10 (flow/order-book/RSI/VWAP)",
+        "Liquidity sweep + reclaim",
+        "order-flow supports reversal",
+        "relative volume expansion",
+        "BTC 15m trend conflicts with SHORT (-0.15)"
+      ],
+      "closedAt": 1793189579999,
+      "exitMark": 1294.7,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793197409337,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "AIXBT|LONG|BREAKOUT_RETEST|1793178019308",
+      "coin": "AIXBT",
+      "side": "LONG",
+      "pattern": "BREAKOUT_RETEST",
+      "score": 6.04,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.018603,
+      "sl": 0.0184520955,
+      "tp": 0.0188880955,
+      "rr": 1.8892445221978056,
+      "suggestedLeverage": 3,
+      "btcRegime": "BULLISH",
+      "rsi15": 61.57035912240927,
+      "fibConfluence": false,
+      "openedAt": 1793178019308,
+      "lastCheckedAt": 1793197372625,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.04 (flow/order-book/RSI/VWAP)",
+        "Breakout + retest",
+        "volume supports level break",
+        "VWAP alignment",
+        "15m RSI supports entry (61.6)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793189699999,
+      "exitMark": 0.018426,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793197412471,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "AVNT|LONG|BREAKOUT_RETEST|1793178254929",
+      "coin": "AVNT",
+      "side": "LONG",
+      "pattern": "BREAKOUT_RETEST",
+      "score": 5.96,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.1094,
+      "sl": 0.10854860000000001,
+      "tp": 0.11269860000000001,
+      "rr": 3.87432464176657,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 59.74414620941795,
+      "fibConfluence": true,
+      "openedAt": 1793178254929,
+      "lastCheckedAt": 1793182141839,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.06 (flow/order-book/RSI/VWAP)",
+        "Breakout + retest",
+        "VWAP alignment",
+        "1H Fibonacci confluence (0.109205)",
+        "15m RSI supports entry (59.7)",
+        "BTC 1H trend confirms LONG (+0.10)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793180099999,
+      "exitMark": 0.10852,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793182166179,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "GRIFFAIN|LONG|BREAKOUT_RETEST|1793178257897",
+      "coin": "GRIFFAIN",
+      "side": "LONG",
+      "pattern": "BREAKOUT_RETEST",
+      "score": 5.84,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.013726,
+      "sl": 0.013631564285714286,
+      "tp": 0.013917564285714286,
+      "rr": 2.02851524090462,
+      "suggestedLeverage": 3,
+      "btcRegime": "BULLISH",
+      "rsi15": 61.38640229066551,
+      "fibConfluence": true,
+      "openedAt": 1793178257897,
+      "lastCheckedAt": 1793197372625,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.06 (flow/order-book/RSI/VWAP)",
+        "Breakout + retest",
+        "VWAP alignment",
+        "1H Fibonacci confluence (0.0137047)",
+        "15m RSI supports entry (61.4)",
+        "BTC 1H trend confirms LONG (+0.10)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793189459999,
+      "exitMark": 0.013549,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793197415677,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "IMX|LONG|BREAKOUT_RETEST|1793182382398",
+      "coin": "IMX",
+      "side": "LONG",
+      "pattern": "BREAKOUT_RETEST",
+      "score": 6.76,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 0.13995,
+      "sl": 0.13860862857142858,
+      "tp": 0.14228862857142857,
+      "rr": 1.743460850302495,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 62.93065510497879,
+      "fibConfluence": true,
+      "openedAt": 1793182382398,
+      "lastCheckedAt": 1793197372625,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=LONG (aligned) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.21 (flow/order-book/RSI/VWAP)",
+        "Breakout + retest",
+        "aligned 1H trend",
+        "VWAP alignment",
+        "1H Fibonacci confluence (0.139760)",
+        "15m RSI supports entry (62.9)",
+        "BTC 1H trend confirms LONG (+0.10)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793189699999,
+      "exitMark": 0.13841,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793197418875,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE",
+      "id": "LIT|LONG|BREAKOUT_RETEST|1793182385348",
+      "coin": "LIT",
+      "side": "LONG",
+      "pattern": "BREAKOUT_RETEST",
+      "score": 6.39,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 3.069677,
+      "sl": 3.0455995714285713,
+      "tp": 3.125099571428571,
+      "rr": 2.3018476106845562,
+      "suggestedLeverage": 5,
+      "btcRegime": "BULLISH",
+      "rsi15": 62.56963999944888,
+      "fibConfluence": true,
+      "openedAt": 1793182385348,
+      "lastCheckedAt": 1793197372625,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "PATTERN DIRECTION PRESERVED: LONG; asset 1H trend=NEUTRAL (countertrend) is confirmation/context, not a forced side flip; BTC LONG is context only; SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.04 (flow/order-book/RSI/VWAP)",
+        "Breakout + retest",
+        "volume supports level break",
+        "VWAP alignment",
+        "1H Fibonacci confluence (3.07465)",
+        "15m RSI supports entry (62.6)",
+        "BTC 1H trend confirms LONG (+0.10)",
+        "BTC 15m trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793185559999,
+      "exitMark": 3.0448,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793197422104,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.8-REVERSE-ENTRY-FAILURE-STRUCTURE-RR15",
+      "id": "VVV|LONG|TREND_PULLBACK|1793183186018",
+      "coin": "VVV",
+      "side": "LONG",
+      "pattern": "TREND_PULLBACK",
+      "score": 6.33,
+      "audience": "VIP",
+      "outcomeDelivered": [
+        "VIP"
+      ],
+      "entry": 24.35,
+      "sl": 24.125658571428573,
+      "tp": 24.88265857142857,
+      "rr": 2.374321028534312,
+      "suggestedLeverage": 3,
+      "btcRegime": "BULLISH",
+      "rsi15": 49.966996340230494,
+      "fibConfluence": false,
+      "openedAt": 1793183186018,
+      "lastCheckedAt": 1793197372625,
+      "status": "SL",
+      "pnlR": -1,
+      "reasons": [
+        "REVERSED ENTRY FAILURE EXPERIMENT: LONG; asset 1H trend=SHORT (countertrend) is context; BTC LONG is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.17 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY: trend continuation failed across 15m EMA20",
+        "order-flow resumes with trend",
+        "participation present",
+        "OI rising with trend",
+        "15m RSI supports entry (50.0)",
+        "BTC 1H trend confirms LONG (+0.10)"
+      ],
+      "closedAt": 1793191919999,
+      "exitMark": 24.175,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793197425360,
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.8-REVERSE-ENTRY-FAILURE-STRUCTURE-RR15",
+      "id": "POL|SHORT|BREAKOUT_RETEST|1793203271353",
+      "coin": "POL",
+      "side": "SHORT",
+      "pattern": "BREAKOUT_RETEST",
+      "score": 7.03,
+      "audience": "VIP",
+      "outcomeDelivered": [],
+      "entry": 0.091553,
+      "sl": 0.09253032950000001,
+      "tp": 0.0894743295,
+      "rr": 2.126888117057721,
+      "suggestedLeverage": 5,
+      "btcRegime": "BEARISH",
+      "rsi15": 50.47429226174423,
+      "fibConfluence": true,
+      "openedAt": 1793203271353,
+      "lastCheckedAt": 1793203271353,
+      "status": "OPEN",
+      "pnlR": null,
+      "reasons": [
+        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.18 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY: failed breakout / price returned inside range",
+        "order-flow confirms continuation",
+        "volume supports level break",
+        "VWAP alignment",
+        "1H Fibonacci confluence (0.0915316)",
+        "15m RSI supports entry (50.5)"
+      ],
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.8-REVERSE-ENTRY-FAILURE-STRUCTURE-RR15",
+      "id": "MORPHO|SHORT|BREAKOUT_RETEST|1793203274298",
+      "coin": "MORPHO",
+      "side": "SHORT",
+      "pattern": "BREAKOUT_RETEST",
+      "score": 6.74,
+      "audience": "VIP",
+      "outcomeDelivered": [],
+      "entry": 2.1886,
+      "sl": 2.1998865714285714,
+      "tp": 2.159386571428571,
+      "rr": 2.5883350631598323,
+      "suggestedLeverage": 5,
+      "btcRegime": "BEARISH",
+      "rsi15": 47.35372747867569,
+      "fibConfluence": false,
+      "openedAt": 1793203274298,
+      "lastCheckedAt": 1793203274298,
+      "status": "OPEN",
+      "pnlR": null,
+      "reasons": [
+        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.14 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY: failed breakout / price returned inside range",
+        "order-flow confirms continuation",
+        "volume supports level break",
+        "VWAP alignment",
+        "15m RSI supports entry (47.4)"
+      ],
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.8-REVERSE-ENTRY-FAILURE-STRUCTURE-RR15",
+      "id": "APEX|SHORT|BREAKOUT_RETEST|1793203277368",
+      "coin": "APEX",
+      "side": "SHORT",
+      "pattern": "BREAKOUT_RETEST",
+      "score": 6.39,
+      "audience": "VIP",
+      "outcomeDelivered": [],
+      "entry": 0.22483,
+      "sl": 0.22599474285714286,
+      "tp": 0.22221474285714285,
+      "rr": 2.245351518422231,
+      "suggestedLeverage": 3,
+      "btcRegime": "BEARISH",
+      "rsi15": 57.448739141102564,
+      "fibConfluence": true,
+      "openedAt": 1793203277368,
+      "lastCheckedAt": 1793203277368,
+      "status": "OPEN",
+      "pnlR": null,
+      "reasons": [
+        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.06 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY: failed breakout / price returned inside range",
+        "order-flow confirms continuation",
+        "volume supports level break",
+        "1H Fibonacci confluence (0.225410)"
+      ],
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.8-REVERSE-ENTRY-FAILURE-STRUCTURE-RR15",
+      "id": "CAKE|SHORT|BREAKOUT_RETEST|1793203280576",
+      "coin": "CAKE",
+      "side": "SHORT",
+      "pattern": "BREAKOUT_RETEST",
+      "score": 5.9,
+      "audience": "VIP",
+      "outcomeDelivered": [],
+      "entry": 2.0997,
+      "sl": 2.1189492857142858,
+      "tp": 2.066149285714286,
+      "rr": 1.742958922408972,
+      "suggestedLeverage": 3,
+      "btcRegime": "BEARISH",
+      "rsi15": 56.54543041694687,
+      "fibConfluence": true,
+      "openedAt": 1793203280576,
+      "lastCheckedAt": 1793203280576,
+      "status": "OPEN",
+      "pnlR": null,
+      "reasons": [
+        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=SHORT (aligned) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.05 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY: failed breakout / price returned inside range",
+        "aligned 1H trend",
+        "1H Fibonacci confluence (2.10055)"
+      ],
+      "archivedAt": 1793204027682,
+      "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
     }
   ],
   "pendingDailyReports": null,
-  "cleanStartId": "NOVARA-V2.8.6-CLEAN-START-2026-10-27",
-  "cleanStartAt": 1793129516243,
+  "cleanStartId": "NOVARA-V2.8.9-REVERSE-FAILURE-COHORT-2026-10-28",
+  "cleanStartAt": 1793204027682,
   "lastCycle": {
-    "at": 1793203280576,
+    "at": 1793204263813,
     "rejectionCounts": {
-      "stale": 2,
+      "stale": 19,
       "regime": 0,
-      "regimeSoft": 1,
-      "score": 2,
+      "regimeSoft": 2,
+      "score": 4,
       "cooldown": 0,
-      "risk": 3,
-      "location": 21,
+      "risk": 4,
+      "location": 9,
       "vwap": 0,
       "spread": 0,
-      "accepted": 4
+      "accepted": 7
     },
     "eligible": 179,
     "totalEligible": 179,
     "checked": 179,
     "failed": 0,
-    "rawCandidates": 4,
-    "signalsSelected": 4,
-    "sentSignals": 4,
+    "rawCandidates": 7,
+    "signalsSelected": 7,
+    "sentSignals": 7,
     "sendErrors": 0,
-    "openPaperTrades": 5
+    "openPaperTrades": 7
   }
 }
