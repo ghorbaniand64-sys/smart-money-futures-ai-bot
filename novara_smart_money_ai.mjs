@@ -18,8 +18,8 @@ import { fileURLToPath } from 'node:url';
  * All eligible liquid perp markets are considered; the worker does not depend on wallet lists.
  */
 
-const VERSION = 'NOVARA-SMART-MONEY-AI-V2.8.8-REVERSE-ENTRY-FAILURE-STRUCTURE-RR15';
-const CLEAN_START_ID = 'NOVARA-V2.8.6-CLEAN-START-2026-10-27';
+const VERSION = 'NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX';
+const CLEAN_START_ID = 'NOVARA-V2.8.9-REVERSE-FAILURE-COHORT-2026-10-28';
 const PAPER_MARGIN_USD = Math.max(10, Number(process.env.NOVARA_PAPER_MARGIN_USD || 1000));
 const REVERSE_SWEEP_ONLY = false; // V2.8.8 changes entry detection to failed-pattern logic; no post-hoc side flip.
 const API = (process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info').trim();
@@ -479,7 +479,7 @@ function buildRisk(candidate) {
     return { entry, sl: 0, tp: 0, riskPct: 0, rewardPct: 0, rr: 0, valid: false, reason: 'invalid entry/side/ATR' };
   }
 
-  // V2.8.6: choose among all confirmed multi-touch 1H levels instead of forcing
+  // Structure-first: choose among all confirmed multi-touch 1H levels instead of forcing
   // one nearest level to serve both risk and target. This avoids SL buffers pushing
   // a TP through entry, and avoids rejecting a valid farther structural level.
   const atr1h = n(candidate.atr1h, atrValue * 4);
@@ -1124,7 +1124,7 @@ async function main() {
     const legacyTrades = Array.isArray(state.paperTrades) ? state.paperTrades : [];
     state.archivedPaperTrades = [
       ...(Array.isArray(state.archivedPaperTrades) ? state.archivedPaperTrades : []),
-      ...legacyTrades.map(t => ({ ...t, archivedAt: now(), archiveReason: 'V2.8.6_CLEAN_START' }))
+      ...legacyTrades.map(t => ({ ...t, archivedAt: now(), archiveReason: 'V2.8.9_REVERSE_FAILURE_COHORT_RESET' }))
     ];
     state.paperTrades = [];
     state.alertHistory = {};
@@ -1145,9 +1145,9 @@ async function main() {
   state.version = VERSION;
   console.log(`\n${VERSION} — START`);
   console.log(`Mode: READ-ONLY / NO ORDERS / NO AUTO-COPY / PAPER TRACKING`);
-  console.log(`[CLEAN-START] Evaluation cohort begins ${new Date(n(state.cleanStartAt, started)).toISOString()} (UTC); only newly recorded V2.8.6 trades count.`);
+  console.log(`[CLEAN-START] Evaluation cohort begins ${new Date(n(state.cleanStartAt, started)).toISOString()} (UTC); only newly recorded ${VERSION} trades count.`);
   console.log(`Time: ${new Date().toISOString()}`);
-  console.log(`Strategy: REVERSED ENTRY FAILURE EXPERIMENT; failed sweeps, failed breakouts and failed EMA20 continuation only; no post-hoc side flip; 1H multi-touch support/resistance independently sets fresh SL/TP; LONG stop below support and target before resistance; SHORT stop above resistance and target before support; minimum structural R:R 1:1.5; PAPER TRACKING only | Signal threshold: ${MIN_SCORE}/10 | min R:R: 1:${MIN_RR.toFixed(2)} | BTC countertrend: ${BTC_COUNTERTREND_HARD_MOVE_PCT.toFixed(1)}% impulse requires score >= ${BTC_COUNTERTREND_MIN_SCORE.toFixed(1)} and ${BTC_COUNTERTREND_MIN_EVIDENCE} confirmations | structure-first SL/TP | 24h volume floor: NONE | market cap: NONE (all active listed perps)`);
+  console.log(`Strategy: REVERSED ENTRY FAILURE EXPERIMENT; failed sweeps, failed breakouts and failed EMA20 continuation only; no post-hoc side flip; corrected pattern-specific trigger gate; 1H multi-touch support/resistance independently sets fresh SL/TP; LONG stop below support and target before resistance; SHORT stop above resistance and target before support; minimum structural R:R 1:1.5; PAPER TRACKING only | Signal threshold: ${MIN_SCORE}/10 | min R:R: 1:${MIN_RR.toFixed(2)} | BTC countertrend: ${BTC_COUNTERTREND_HARD_MOVE_PCT.toFixed(1)}% impulse requires score >= ${BTC_COUNTERTREND_MIN_SCORE.toFixed(1)} and ${BTC_COUNTERTREND_MIN_EVIDENCE} confirmations | structure-first SL/TP | 24h volume floor: NONE | market cap: NONE (all active listed perps)`);
   console.log(`[API][POLICY] requestGap=${SCAN_GAP_MS}ms retries429=${MAX_429_RETRIES} backoff=${RATE_LIMIT_BASE_MS}-${RATE_LIMIT_MAX_MS}ms globalCooldown=yes`);
   console.log(`[TELEGRAM][CONFIG] token=${TOKEN ? 'configured' : 'MISSING'} vipChat=${VIP_CHAT ? 'configured' : (LEGACY_CHAT ? 'legacy-fallback' : 'MISSING')} freeChat=${FREE_CHAT ? 'configured' : 'MISSING'} legacyChat=${LEGACY_CHAT ? 'configured' : 'MISSING'}`);
   if (!TOKEN || (!VIP_CHAT && !LEGACY_CHAT && !FREE_CHAT)) {
@@ -1239,9 +1239,13 @@ async function main() {
           // Inverse sweep is only valid when price stays beyond the swept swing level.
           entryLevel = n(s.failureLevel);
           levelDistancePct = entryLevel > 0 ? Math.abs(s.entry - entryLevel) / s.entry * 100 : Infinity;
-          const touches = s.side === 'SHORT' ? n(s.supportTouches) : n(s.resistanceTouches);
+          // A failed sweep is validated against the swept 15m swing itself.
+          // Do NOT additionally require price to be beyond the 1H support/resistance:
+          // that was an accidental second breakout condition and rejected valid
+          // failure setups (35 location rejects in the prior run). The independent
+          // 1H structure and R:R checks still happen in buildRisk() below.
           const failedClose = s.side === 'SHORT' ? s.entry < entryLevel : s.entry > entryLevel;
-          locationPass = entryLevel > 0 && levelDistancePct <= Math.max(maxEntryLevelDistancePct, 0.25) && failedClose && (s.side === 'SHORT' ? s.entry < n(s.support) : s.entry > n(s.resistance));
+          locationPass = entryLevel > 0 && levelDistancePct <= Math.max(maxEntryLevelDistancePct, 0.25) && failedClose;
           locationReason = `failed sweep must remain beyond swept swing ${fmtPrice(entryLevel)}; distance=${Number.isFinite(levelDistancePct) ? levelDistancePct.toFixed(2)+'%' : 'NA'}, side=${s.side}`;
         } else if (s.pattern === 'BREAKOUT_RETEST') {
           entryLevel = n(s.breakoutLevel);
