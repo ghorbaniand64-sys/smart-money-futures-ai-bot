@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 /*
- * NOVARA SMART MONEY AI V2.8.6 STRUCTURE-FIRST REPAIR + PREMIUM GRAPHIC OUTCOME CARDS
+ * NOVARA SMART MONEY AI V2.8.8 REVERSE-ENTRY FAILURE PATTERNS + STRUCTURE-FIRST RISK
  * READ-ONLY | NO ORDERS | NO AUTO-COPY | PAPER OUTCOME TRACKING
  * Final LONG/SHORT direction follows a fresh BTC 15m + 1h direction check at candidate time; altcoin structure sets SL/TP
  *
@@ -18,10 +18,10 @@ import { fileURLToPath } from 'node:url';
  * All eligible liquid perp markets are considered; the worker does not depend on wallet lists.
  */
 
-const VERSION = 'NOVARA-SMART-MONEY-AI-V2.8.6-STRUCTURE-REVIEW-PATTERN-AWARE';
+const VERSION = 'NOVARA-SMART-MONEY-AI-V2.8.8-REVERSE-ENTRY-FAILURE-STRUCTURE-RR15';
 const CLEAN_START_ID = 'NOVARA-V2.8.6-CLEAN-START-2026-10-27';
 const PAPER_MARGIN_USD = Math.max(10, Number(process.env.NOVARA_PAPER_MARGIN_USD || 1000));
-const REVERSE_SWEEP_ONLY = false; // No direction inversion: pattern direction is preserved and SL/TP are built independently from structure.
+const REVERSE_SWEEP_ONLY = false; // V2.8.8 changes entry detection to failed-pattern logic; no post-hoc side flip.
 const API = (process.env.HYPERLIQUID_API_URL || 'https://api.hyperliquid.xyz/info').trim();
 const TOKEN = process.env.TELEGRAM_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
 const LEGACY_CHAT = process.env.TELEGRAM_CHAT_ID || '';
@@ -392,15 +392,17 @@ function detectPatterns({ coin, c15, c1h, ctx, prevCtx, mid, spread, imbalance, 
     return score;
   };
 
-  // Pattern 1: sweep a recent swing level, then reclaim it on a completed candle.
+  // Pattern 1 (REVERSED ENTRY): trade failed sweeps, not successful reclaims.
+  // Swept low that fails to reclaim -> SHORT; swept high that fails to reject -> LONG.
   const priorLow = Math.min(...c15.slice(-10, -1).map(c => c.l));
   const priorHigh = Math.max(...c15.slice(-10, -1).map(c => c.h));
-  const sweepLong = last.l < priorLow && last.c > priorLow && last.c > last.o;
-  const sweepShort = last.h > priorHigh && last.c < priorHigh && last.c < last.o;
-  if (sweepLong || sweepShort) {
-    const side = sweepLong ? 'LONG' : 'SHORT';
+  const failedLowSweepShort = last.l < priorLow && last.c < priorLow && last.c < last.o;
+  const failedHighSweepLong = last.h > priorHigh && last.c > priorHigh && last.c > last.o;
+  if (failedLowSweepShort || failedHighSweepLong) {
+    const side = failedHighSweepLong ? 'LONG' : 'SHORT';
+    const failureLevel = side === 'SHORT' ? priorLow : priorHigh;
     let score = 5.0;
-    const reasons = ['Liquidity sweep + reclaim'];
+    const reasons = ['REVERSED ENTRY: failed liquidity sweep / failed reclaim'];
     if (side === 'LONG' && bullishFlow || side === 'SHORT' && bearishFlow) { score += 0.9; reasons.push('order-flow supports reversal'); }
     if (volRatio >= 1.15) { score += 0.45; reasons.push('relative volume expansion'); }
     if (side === 'LONG' && trend === 'LONG' || side === 'SHORT' && trend === 'SHORT') { score += 0.4; reasons.push('aligned 1H trend'); }
@@ -408,19 +410,20 @@ function detectPatterns({ coin, c15, c1h, ctx, prevCtx, mid, spread, imbalance, 
     if (side === 'LONG' && fundingPct < 0.035 || side === 'SHORT' && fundingPct > -0.035) score += 0.15;
     if (spread !== null && spread > MAX_SPREAD_PCT) score -= 1.5;
     score = addContext(side, score, reasons);
-    results.push({ coin, side, pattern: 'SWEEP_RECLAIM', rawSupport, rawResistance, minLevelGap, score: clamp(score, 0, 9.5), reasons, entry: mid, atr: atr15, atr1h, support, resistance, supportSource, resistanceSource, supportTouches: selectedSupport?.touches || 0, resistanceTouches: selectedResistance?.touches || 0, supportLevels: supportCandidates.map(x => ({ price: x.price, touches: x.touches, source: x.source })), resistanceLevels: resistanceCandidates.map(x => ({ price: x.price, touches: x.touches, source: x.source })), trend, btcRegime: btcRegime || { label: 'NEUTRAL', change24hPct: 0 }, rsi15, fibConfluence: fib.confluence, volRatio, oiChange, fundingPct, flowDelta: flow.delta, imbalance, vwap: vwap15, spreadPct: spread, atrPct, dayVolume: n(ctx?.dayVolume), maxLeverage: n(ctx?.maxLeverage) });
+    results.push({ coin, side, pattern: 'SWEEP_RECLAIM', failureLevel, rawSupport, rawResistance, minLevelGap, score: clamp(score, 0, 9.5), reasons, entry: mid, atr: atr15, atr1h, support, resistance, supportSource, resistanceSource, supportTouches: selectedSupport?.touches || 0, resistanceTouches: selectedResistance?.touches || 0, supportLevels: supportCandidates.map(x => ({ price: x.price, touches: x.touches, source: x.source })), resistanceLevels: resistanceCandidates.map(x => ({ price: x.price, touches: x.touches, source: x.source })), trend, btcRegime: btcRegime || { label: 'NEUTRAL', change24hPct: 0 }, rsi15, fibConfluence: fib.confluence, volRatio, oiChange, fundingPct, flowDelta: flow.delta, imbalance, vwap: vwap15, spreadPct: spread, atrPct, dayVolume: n(ctx?.dayVolume), maxLeverage: n(ctx?.maxLeverage) });
   }
 
-  // Pattern 2: close beyond a recent structure level, then retest within tolerance.
+  // Pattern 2 (REVERSED ENTRY): failed breakout retest / return inside range.
   const breakoutHigh = Math.max(...c15.slice(-14, -2).map(c => c.h));
   const breakoutLow = Math.min(...c15.slice(-14, -2).map(c => c.l));
   const tolerance = Math.max(atr15 * 0.25, mid * 0.0015);
-  const retestLong = prev.c > breakoutHigh && last.l <= breakoutHigh + tolerance && last.c >= breakoutHigh && last.c > last.o;
-  const retestShort = prev.c < breakoutLow && last.h >= breakoutLow - tolerance && last.c <= breakoutLow && last.c < last.o;
-  if (retestLong || retestShort) {
-    const side = retestLong ? 'LONG' : 'SHORT';
+  const failedBullBreakoutShort = prev.c > breakoutHigh && last.h >= breakoutHigh - tolerance && last.c < breakoutHigh && last.c < last.o;
+  const failedBearBreakdownLong = prev.c < breakoutLow && last.l <= breakoutLow + tolerance && last.c > breakoutLow && last.c > last.o;
+  if (failedBullBreakoutShort || failedBearBreakdownLong) {
+    const side = failedBearBreakdownLong ? 'LONG' : 'SHORT';
+    const failedBreakoutLevel = side === 'SHORT' ? breakoutHigh : breakoutLow;
     let score = 5.05;
-    const reasons = ['Breakout + retest'];
+    const reasons = ['REVERSED ENTRY: failed breakout / price returned inside range'];
     if (side === 'LONG' && bullishFlow || side === 'SHORT' && bearishFlow) { score += 0.7; reasons.push('order-flow confirms continuation'); }
     if (volRatio >= 1.1) { score += 0.45; reasons.push('volume supports level break'); }
     if (side === 'LONG' && trend === 'LONG' || side === 'SHORT' && trend === 'SHORT') { score += 0.65; reasons.push('aligned 1H trend'); }
@@ -428,17 +431,18 @@ function detectPatterns({ coin, c15, c1h, ctx, prevCtx, mid, spread, imbalance, 
     if (side === 'LONG' && oiConfirmsLong || side === 'SHORT' && oiConfirmsShort) { score += 0.3; reasons.push('OI confirms participation'); }
     if (spread !== null && spread > MAX_SPREAD_PCT) score -= 1.5;
     score = addContext(side, score, reasons);
-    results.push({ coin, side, pattern: 'BREAKOUT_RETEST', breakoutLevel: retestLong ? breakoutHigh : breakoutLow, rawSupport, rawResistance, minLevelGap, score: clamp(score, 0, 9.5), reasons, entry: mid, atr: atr15, atr1h, support, resistance, supportSource, resistanceSource, supportTouches: selectedSupport?.touches || 0, resistanceTouches: selectedResistance?.touches || 0, supportLevels: supportCandidates.map(x => ({ price: x.price, touches: x.touches, source: x.source })), resistanceLevels: resistanceCandidates.map(x => ({ price: x.price, touches: x.touches, source: x.source })), trend, btcRegime: btcRegime || { label: 'NEUTRAL', change24hPct: 0 }, rsi15, fibConfluence: fib.confluence, volRatio, oiChange, fundingPct, flowDelta: flow.delta, imbalance, vwap: vwap15, spreadPct: spread, atrPct, dayVolume: n(ctx?.dayVolume), maxLeverage: n(ctx?.maxLeverage) });
+    results.push({ coin, side, pattern: 'BREAKOUT_RETEST', breakoutLevel: failedBreakoutLevel, rawSupport, rawResistance, minLevelGap, score: clamp(score, 0, 9.5), reasons, entry: mid, atr: atr15, atr1h, support, resistance, supportSource, resistanceSource, supportTouches: selectedSupport?.touches || 0, resistanceTouches: selectedResistance?.touches || 0, supportLevels: supportCandidates.map(x => ({ price: x.price, touches: x.touches, source: x.source })), resistanceLevels: resistanceCandidates.map(x => ({ price: x.price, touches: x.touches, source: x.source })), trend, btcRegime: btcRegime || { label: 'NEUTRAL', change24hPct: 0 }, rsi15, fibConfluence: fib.confluence, volRatio, oiChange, fundingPct, flowDelta: flow.delta, imbalance, vwap: vwap15, spreadPct: spread, atrPct, dayVolume: n(ctx?.dayVolume), maxLeverage: n(ctx?.maxLeverage) });
   }
 
-  // Pattern 3: 1H trend with a 15m pullback into fast mean and a directional recovery candle.
+  // Pattern 3 (REVERSED ENTRY): failed continuation through EMA20, with a completed candle crossing against the prior 15m close.
+  // A mere pullback is not reversed; a confirmed loss of the mean is required.
   const ema20_15 = ema(c15.slice(-60).map(c => c.c), 20);
-  const pullbackLong = trend === 'LONG' && last.l <= ema20_15 + atr15 * 0.25 && last.c > ema20_15 && last.c > last.o && last.c > prev.c;
-  const pullbackShort = trend === 'SHORT' && last.h >= ema20_15 - atr15 * 0.25 && last.c < ema20_15 && last.c < last.o && last.c < prev.c;
-  if (pullbackLong || pullbackShort) {
-    const side = pullbackLong ? 'LONG' : 'SHORT';
+  const failedLongContinuationShort = trend === 'LONG' && prev.c >= ema20_15 && last.c < ema20_15 && last.c < last.o && last.c < prev.c;
+  const failedShortContinuationLong = trend === 'SHORT' && prev.c <= ema20_15 && last.c > ema20_15 && last.c > last.o && last.c > prev.c;
+  if (failedLongContinuationShort || failedShortContinuationLong) {
+    const side = failedShortContinuationLong ? 'LONG' : 'SHORT';
     let score = 4.95;
-    const reasons = ['Trend pullback + continuation'];
+    const reasons = ['REVERSED ENTRY: trend continuation failed across 15m EMA20'];
     if (side === 'LONG' && bullishFlow || side === 'SHORT' && bearishFlow) { score += 0.75; reasons.push('order-flow resumes with trend'); }
     if (volRatio >= 0.9) { score += 0.25; reasons.push('participation present'); }
     if (side === 'LONG' && mid >= vwap15 || side === 'SHORT' && mid <= vwap15) { score += 0.4; reasons.push('VWAP alignment'); }
@@ -1143,7 +1147,7 @@ async function main() {
   console.log(`Mode: READ-ONLY / NO ORDERS / NO AUTO-COPY / PAPER TRACKING`);
   console.log(`[CLEAN-START] Evaluation cohort begins ${new Date(n(state.cleanStartAt, started)).toISOString()} (UTC); only newly recorded V2.8.6 trades count.`);
   console.log(`Time: ${new Date().toISOString()}`);
-  console.log(`Strategy: preserve pattern-confirmed direction; 1H trend is confirmation/context, not a forced side override; pattern-aware entry gates for sweep/reclaim, breakout/retest and trend pullback; BTC 1H/15m is contextual confirmation; 30m cross-pattern cooldown; 1H multi-touch support/resistance independently sets SL/TP; risk bounds 0.50%-5.00% with ATR-aware buffer; minimum structural R:R enforced; no reverse experiment | Signal threshold: ${MIN_SCORE}/10 | min R:R: 1:${MIN_RR.toFixed(2)} | BTC countertrend: ${BTC_COUNTERTREND_HARD_MOVE_PCT.toFixed(1)}% impulse requires score >= ${BTC_COUNTERTREND_MIN_SCORE.toFixed(1)} and ${BTC_COUNTERTREND_MIN_EVIDENCE} confirmations | structure-first SL/TP | 24h volume floor: NONE | market cap: NONE (all active listed perps)`);
+  console.log(`Strategy: REVERSED ENTRY FAILURE EXPERIMENT; failed sweeps, failed breakouts and failed EMA20 continuation only; no post-hoc side flip; 1H multi-touch support/resistance independently sets fresh SL/TP; LONG stop below support and target before resistance; SHORT stop above resistance and target before support; minimum structural R:R 1:1.5; PAPER TRACKING only | Signal threshold: ${MIN_SCORE}/10 | min R:R: 1:${MIN_RR.toFixed(2)} | BTC countertrend: ${BTC_COUNTERTREND_HARD_MOVE_PCT.toFixed(1)}% impulse requires score >= ${BTC_COUNTERTREND_MIN_SCORE.toFixed(1)} and ${BTC_COUNTERTREND_MIN_EVIDENCE} confirmations | structure-first SL/TP | 24h volume floor: NONE | market cap: NONE (all active listed perps)`);
   console.log(`[API][POLICY] requestGap=${SCAN_GAP_MS}ms retries429=${MAX_429_RETRIES} backoff=${RATE_LIMIT_BASE_MS}-${RATE_LIMIT_MAX_MS}ms globalCooldown=yes`);
   console.log(`[TELEGRAM][CONFIG] token=${TOKEN ? 'configured' : 'MISSING'} vipChat=${VIP_CHAT ? 'configured' : (LEGACY_CHAT ? 'legacy-fallback' : 'MISSING')} freeChat=${FREE_CHAT ? 'configured' : 'MISSING'} legacyChat=${LEGACY_CHAT ? 'configured' : 'MISSING'}`);
   if (!TOKEN || (!VIP_CHAT && !LEGACY_CHAT && !FREE_CHAT)) {
@@ -1215,8 +1219,8 @@ async function main() {
           const sideAdjustment = finalSideEvidenceAdjustment(candidate, patternSide);
           candidate.score = clamp(candidate.score + sideAdjustment, 0, 9.5);
           const trendRelation = candidate.trend === patternSide ? 'aligned' : 'countertrend';
-          candidate.reasons = [`PATTERN DIRECTION PRESERVED: ${patternSide}; asset 1H trend=${candidate.trend} (${trendRelation}) is confirmation/context, not a forced side flip; BTC ${liveBtc.trend || 'UNAVAILABLE'} is context only; SL/TP recalculated from 1H structure`, `Same-side evidence adjustment ${sideAdjustment >= 0 ? '+' : ''}${sideAdjustment.toFixed(2)} (flow/order-book/RSI/VWAP)`, ...candidate.reasons];
-          console.log(`[DIRECTION][PATTERN-PRESERVED] ${candidate.coin} ${candidate.pattern}: side=${patternSide}; 1H=${candidate.trend}; BTC=${liveBtc.trend}; evidenceAdjustment=${sideAdjustment.toFixed(2)}; score=${candidate.score.toFixed(2)}; entry=${fmtPrice(candidate.entry)} support=${fmtPrice(candidate.support)} resistance=${fmtPrice(candidate.resistance)}`);
+          candidate.reasons = [`REVERSED ENTRY FAILURE EXPERIMENT: ${patternSide}; asset 1H trend=${candidate.trend} (${trendRelation}) is context; BTC ${liveBtc.trend || 'UNAVAILABLE'} is context; fresh SL/TP recalculated from 1H structure`, `Same-side evidence adjustment ${sideAdjustment >= 0 ? '+' : ''}${sideAdjustment.toFixed(2)} (flow/order-book/RSI/VWAP)`, ...candidate.reasons];
+          console.log(`[DIRECTION][REVERSE-FAILURE-ENTRY] ${candidate.coin} ${candidate.pattern}: side=${patternSide}; 1H=${candidate.trend}; BTC=${liveBtc.trend}; evidenceAdjustment=${sideAdjustment.toFixed(2)}; score=${candidate.score.toFixed(2)}; entry=${fmtPrice(candidate.entry)} support=${fmtPrice(candidate.support)} resistance=${fmtPrice(candidate.resistance)}`);
         }
       }
       for (const s of found) {
@@ -1232,24 +1236,26 @@ async function main() {
         const maxEntryLevelDistancePct = Math.min(1.25, Math.max(0.35, n(s.atr1h) / Math.max(n(s.entry), 1) * 100 * 0.70));
         let entryLevel = 0, levelDistancePct = Infinity, locationPass = false, locationReason = '';
         if (s.pattern === 'SWEEP_RECLAIM') {
-          entryLevel = s.side === 'SHORT' ? n(s.resistance) : n(s.support);
+          // Inverse sweep is only valid when price stays beyond the swept swing level.
+          entryLevel = n(s.failureLevel);
           levelDistancePct = entryLevel > 0 ? Math.abs(s.entry - entryLevel) / s.entry * 100 : Infinity;
-          const touches = s.side === 'SHORT' ? n(s.resistanceTouches) : n(s.supportTouches);
-          locationPass = entryLevel > 0 && touches >= 2 && levelDistancePct <= maxEntryLevelDistancePct && s.entryReactionConfirmed;
-          locationReason = `sweep needs ${s.side === 'SHORT' ? 'repeated 1H resistance' : 'repeated 1H support'} + candle reclaim/rejection; distance=${Number.isFinite(levelDistancePct) ? levelDistancePct.toFixed(2)+'%' : 'NA'}, touches=${touches}, reaction=${!!s.entryReactionConfirmed}`;
+          const touches = s.side === 'SHORT' ? n(s.supportTouches) : n(s.resistanceTouches);
+          const failedClose = s.side === 'SHORT' ? s.entry < entryLevel : s.entry > entryLevel;
+          locationPass = entryLevel > 0 && levelDistancePct <= Math.max(maxEntryLevelDistancePct, 0.25) && failedClose && (s.side === 'SHORT' ? s.entry < n(s.support) : s.entry > n(s.resistance));
+          locationReason = `failed sweep must remain beyond swept swing ${fmtPrice(entryLevel)}; distance=${Number.isFinite(levelDistancePct) ? levelDistancePct.toFixed(2)+'%' : 'NA'}, side=${s.side}`;
         } else if (s.pattern === 'BREAKOUT_RETEST') {
           entryLevel = n(s.breakoutLevel);
           levelDistancePct = entryLevel > 0 ? Math.abs(s.entry - entryLevel) / s.entry * 100 : Infinity;
           const retestTolerancePct = Math.max(n(s.atr) * 0.60 / Math.max(n(s.entry), 1) * 100, 0.20);
           locationPass = entryLevel > 0 && levelDistancePct <= Math.max(maxEntryLevelDistancePct, retestTolerancePct) &&
-            (s.side === 'LONG' ? s.entry >= entryLevel - n(s.atr) * 0.25 : s.entry <= entryLevel + n(s.atr) * 0.25);
-          locationReason = `breakout retest needs price near broken level ${fmtPrice(entryLevel)}; distance=${Number.isFinite(levelDistancePct) ? levelDistancePct.toFixed(2)+'%' : 'NA'}`;
+            (s.side === 'SHORT' ? s.entry < entryLevel : s.entry > entryLevel);
+          locationReason = `failed breakout must return across level ${fmtPrice(entryLevel)}; distance=${Number.isFinite(levelDistancePct) ? levelDistancePct.toFixed(2)+'%' : 'NA'}`;
         } else if (s.pattern === 'TREND_PULLBACK') {
           entryLevel = n(s.pullbackMean);
           levelDistancePct = entryLevel > 0 ? Math.abs(s.entry - entryLevel) / s.entry * 100 : Infinity;
-          locationPass = entryLevel > 0 && s.trend === s.side && levelDistancePct <= Math.max(0.90, n(s.atrPct) * 1.8) &&
-            (s.side === 'LONG' ? s.entry >= entryLevel : s.entry <= entryLevel);
-          locationReason = `trend pullback needs 1H trend aligned and entry near/on recovery side of EMA20; distance=${Number.isFinite(levelDistancePct) ? levelDistancePct.toFixed(2)+'%' : 'NA'}, trend=${s.trend}`;
+          locationPass = entryLevel > 0 && s.trend !== s.side && levelDistancePct <= Math.max(0.90, n(s.atrPct) * 1.8) &&
+            (s.side === 'LONG' ? s.entry > entryLevel : s.entry < entryLevel);
+          locationReason = `failed continuation requires price near EMA20 on reversal side; distance=${Number.isFinite(levelDistancePct) ? levelDistancePct.toFixed(2)+'%' : 'NA'}, 1H trend=${s.trend}`;
         }
         if (!locationPass) {
           console.log(`[FILTER][ENTRY-LOCATION] ${s.coin} ${s.side} ${s.pattern} rejected: ${locationReason || 'no valid pattern-specific trigger level'}; entry=${fmtPrice(s.entry)} level=${fmtPrice(entryLevel)} max=${maxEntryLevelDistancePct.toFixed(2)}%`);
