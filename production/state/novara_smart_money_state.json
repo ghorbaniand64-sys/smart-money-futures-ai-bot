@@ -1,1081 +1,1081 @@
 {
   "schema": 1,
   "version": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
-  "lastRunAt": 1793281580961,
+  "lastRunAt": 1793301719412,
   "previousMarketContext": {
     "BTC": {
-      "markPx": 80046,
-      "openInterest": 43446.36536,
+      "markPx": 80750.8,
+      "openInterest": 42299.39856,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
     "HYPE": {
-      "markPx": 90.9526,
-      "openInterest": 23181928.83999998,
-      "funding": 0.0000351532,
-      "at": 1793281580961
+      "markPx": 94.06,
+      "openInterest": 22357913.4,
+      "funding": 0.0000125,
+      "at": 1793301719412
     },
     "ETH": {
-      "markPx": 2319.4,
-      "openInterest": 1121407.9343999994,
-      "funding": 0.0000125,
-      "at": 1793281580961
+      "markPx": 2325.8,
+      "openInterest": 1088971.1038000004,
+      "funding": 0.0000078604,
+      "at": 1793301719412
     },
     "ZEC": {
-      "markPx": 1275.6,
-      "openInterest": 503262.3800000004,
+      "markPx": 1318.4,
+      "openInterest": 518547.0200000004,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
     "SOL": {
-      "markPx": 100.43,
-      "openInterest": 5642974.420000001,
+      "markPx": 100.19,
+      "openInterest": 5643083.520000002,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
     "NEAR": {
-      "markPx": 4.4448,
-      "openInterest": 58441514.00000003,
+      "markPx": 4.3943,
+      "openInterest": 57653824.2,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
     "PUMP": {
-      "markPx": 0.004403,
-      "openInterest": 27504714648,
-      "funding": 0.0000125,
-      "at": 1793281580961
+      "markPx": 0.004412,
+      "openInterest": 26930239786,
+      "funding": 0.0000105694,
+      "at": 1793301719412
     },
     "kPEPE": {
-      "markPx": 0.004871,
-      "openInterest": 10360253108,
+      "markPx": 0.005293,
+      "openInterest": 9960789672,
       "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "XRP": {
-      "markPx": 1.29,
-      "openInterest": 174296384,
-      "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
     "ENA": {
-      "markPx": 0.2051,
-      "openInterest": 482285168,
+      "markPx": 0.207978,
+      "openInterest": 485363434,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
+    },
+    "XRP": {
+      "markPx": 1.2808,
+      "openInterest": 176168680,
+      "funding": 0.0000125,
+      "at": 1793301719412
     },
     "LIT": {
-      "markPx": 3.1291,
-      "openInterest": 38497460,
+      "markPx": 3.1321,
+      "openInterest": 39905202,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
     "XMR": {
-      "markPx": 599.71,
-      "openInterest": 206730.052,
-      "funding": 0.0000197272,
-      "at": 1793281580961
+      "markPx": 600.24,
+      "openInterest": 212173.5720000001,
+      "funding": 0.0000801483,
+      "at": 1793301719412
     },
     "WLD": {
-      "markPx": 0.42083,
-      "openInterest": 140077646.6,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "ZRO": {
-      "markPx": 1.7195,
-      "openInterest": 39060929.2,
-      "funding": 0.0000125,
-      "at": 1793281580961
+      "markPx": 0.41635,
+      "openInterest": 141792989.60000002,
+      "funding": -0.000010523,
+      "at": 1793301719412
     },
     "UNI": {
-      "markPx": 7.1696,
-      "openInterest": 11200987.600000001,
-      "funding": 0.0000125,
-      "at": 1793281580961
+      "markPx": 7.1495,
+      "openInterest": 10760110.399999999,
+      "funding": 0.0000093808,
+      "at": 1793301719412
     },
-    "XPL": {
-      "markPx": 0.076627,
-      "openInterest": 809287622,
+    "ZRO": {
+      "markPx": 1.6836,
+      "openInterest": 38997278.00000001,
       "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "SUI": {
-      "markPx": 0.92819,
-      "openInterest": 34402734.400000006,
-      "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
     "VVV": {
-      "markPx": 24.119,
-      "openInterest": 3046170.780000001,
+      "markPx": 24.785,
+      "openInterest": 3039549.8199999994,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
+    },
+    "SUI": {
+      "markPx": 0.92755,
+      "openInterest": 34112663,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "XPL": {
+      "markPx": 0.076213,
+      "openInterest": 810584044,
+      "funding": 0.0000125,
+      "at": 1793301719412
     },
     "AAVE": {
-      "markPx": 132.37,
-      "openInterest": 399998.94,
-      "funding": 0.0000125,
-      "at": 1793281580961
+      "markPx": 133.06,
+      "openInterest": 404389.6800000001,
+      "funding": 0.0000123483,
+      "at": 1793301719412
     },
     "BNB": {
-      "markPx": 743.76,
-      "openInterest": 61885.868,
+      "markPx": 743.47,
+      "openInterest": 61966.98,
       "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "INIT": {
-      "markPx": 0.21142,
-      "openInterest": 17652546,
-      "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
     "PONS": {
-      "markPx": 0.274215,
-      "openInterest": 80401664,
+      "markPx": 0.26125,
+      "openInterest": 81902682,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
     "LINK": {
-      "markPx": 11.604,
-      "openInterest": 4828937.6000000015,
-      "funding": 0.0000125,
-      "at": 1793281580961
+      "markPx": 11.6285,
+      "openInterest": 4846278.200000001,
+      "funding": 0.0000080983,
+      "at": 1793301719412
     },
     "DOGE": {
-      "markPx": 0.078993,
-      "openInterest": 1021931332,
+      "markPx": 0.079011,
+      "openInterest": 1008889688,
       "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "ONDO": {
-      "markPx": 0.41445,
-      "openInterest": 53665750,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "CASHCAT": {
-      "markPx": 0.10232,
-      "openInterest": 219277162,
-      "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
     "TAO": {
-      "markPx": 251.86,
-      "openInterest": 159142.078,
+      "markPx": 251.71,
+      "openInterest": 162520.9540000001,
       "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "CRV": {
-      "markPx": 0.32865,
-      "openInterest": 63719409.400000006,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "CHIP": {
-      "markPx": 0.049213,
-      "openInterest": 247223416,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "LTC": {
-      "markPx": 57.884,
-      "openInterest": 394306.04,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "STRK": {
-      "markPx": 0.047,
-      "openInterest": 730075171.4,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "ADA": {
-      "markPx": 0.2012,
-      "openInterest": 151088486,
-      "funding": 0.0000100805,
-      "at": 1793281580961
-    },
-    "ARB": {
-      "markPx": 0.16949,
-      "openInterest": 85448964.4,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "FARTCOIN": {
-      "markPx": 0.12951,
-      "openInterest": 182704826.20000002,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "BCH": {
-      "markPx": 278.68,
-      "openInterest": 27803.848,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "BLUR": {
-      "markPx": 0.008041,
-      "openInterest": 125426084,
-      "funding": -0.0012107798,
-      "at": 1793281580961
-    },
-    "AVAX": {
-      "markPx": 8.7961,
-      "openInterest": 2028686.22,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "INJ": {
-      "markPx": 7.9751,
-      "openInterest": 711696.7999999998,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "PAXG": {
-      "markPx": 4033.7,
-      "openInterest": 6393.506,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "ASTER": {
-      "markPx": 0.7085,
-      "openInterest": 34380296,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "AERO": {
-      "markPx": 0.68653,
-      "openInterest": 38770404,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "JUP": {
-      "markPx": 0.27239,
-      "openInterest": 28514154,
-      "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
     "PURR": {
-      "markPx": 0.11619,
-      "openInterest": 115552300,
-      "funding": 0.0003312167,
-      "at": 1793281580961
+      "markPx": 0.128073,
+      "openInterest": 114117588,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "ONDO": {
+      "markPx": 0.41449,
+      "openInterest": 53666032,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "INIT": {
+      "markPx": 0.22147,
+      "openInterest": 17215158,
+      "funding": -0.0000364687,
+      "at": 1793301719412
+    },
+    "CASHCAT": {
+      "markPx": 0.102603,
+      "openInterest": 219682992,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "ARB": {
+      "markPx": 0.16787,
+      "openInterest": 88916212.19999999,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "CRV": {
+      "markPx": 0.32166,
+      "openInterest": 63654051.6,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "FARTCOIN": {
+      "markPx": 0.12843,
+      "openInterest": 184469572.99999997,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "PAXG": {
+      "markPx": 4015.1,
+      "openInterest": 6237.308,
+      "funding": 0.0000084481,
+      "at": 1793301719412
+    },
+    "ADA": {
+      "markPx": 0.20152,
+      "openInterest": 147555756,
+      "funding": 0.0000071819,
+      "at": 1793301719412
+    },
+    "ASTER": {
+      "markPx": 0.711915,
+      "openInterest": 34905542,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "STRK": {
+      "markPx": 0.04572,
+      "openInterest": 729203123.0000001,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "INJ": {
+      "markPx": 7.9715,
+      "openInterest": 718905.2,
+      "funding": 0.0000125,
+      "at": 1793301719412
     },
     "PYTH": {
-      "markPx": 0.074594,
-      "openInterest": 50058818,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "TIA": {
-      "markPx": 0.54167,
-      "openInterest": 15702575.999999998,
-      "funding": 0.0000077547,
-      "at": 1793281580961
-    },
-    "GRASS": {
-      "markPx": 0.65304,
-      "openInterest": 50045292.6,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "SKR": {
-      "markPx": 0.014241,
-      "openInterest": 22951106,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "USELESS": {
-      "markPx": 0.15425,
-      "openInterest": 48902956,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "MET": {
-      "markPx": 0.29683,
-      "openInterest": 10996440,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "PENGU": {
-      "markPx": 0.007729,
-      "openInterest": 816410100,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "DOT": {
-      "markPx": 0.99337,
-      "openInterest": 5913190.8,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "MON": {
-      "markPx": 0.020644,
-      "openInterest": 1545148298,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "DASH": {
-      "markPx": 50.482,
-      "openInterest": 66240.04,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "CC": {
-      "markPx": 0.10302,
-      "openInterest": 59566548,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "XLM": {
-      "markPx": 0.17089,
-      "openInterest": 65003218,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "APT": {
-      "markPx": 0.6802,
-      "openInterest": 5493255.56,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "SPX": {
-      "markPx": 0.39521,
-      "openInterest": 13382185.6,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "TRX": {
-      "markPx": 0.33188,
-      "openInterest": 34320732,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "TRUMP": {
-      "markPx": 1.6904,
-      "openInterest": 4932785,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "FIL": {
-      "markPx": 0.91173,
-      "openInterest": 9152880.4,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "NIL": {
-      "markPx": 0.073021,
-      "openInterest": 36842242,
-      "funding": -0.0000429906,
-      "at": 1793281580961
-    },
-    "PENDLE": {
-      "markPx": 1.9334,
-      "openInterest": 4882416,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "ATOM": {
-      "markPx": 1.6148,
-      "openInterest": 2133773.06,
-      "funding": 0.0000083781,
-      "at": 1793281580961
-    },
-    "ETHFI": {
-      "markPx": 0.66569,
-      "openInterest": 14753074,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "MORPHO": {
-      "markPx": 2.1901,
-      "openInterest": 3041136,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "GRAM": {
-      "markPx": 1.2168,
-      "openInterest": 18736448,
-      "funding": -2.474e-7,
-      "at": 1793281580961
-    },
-    "HBAR": {
-      "markPx": 0.074318,
-      "openInterest": 158946904,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "ZK": {
-      "markPx": 0.011682,
-      "openInterest": 394248200,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "kBONK": {
-      "markPx": 0.003069,
-      "openInterest": 2602187192,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "SEI": {
-      "markPx": 0.052037,
-      "openInterest": 49686966,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "MEGA": {
-      "markPx": 0.047948,
-      "openInterest": 158103280,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "RENDER": {
-      "markPx": 1.6634,
-      "openInterest": 1527040.4,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "SYRUP": {
-      "markPx": 0.15772,
-      "openInterest": 28218796,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "FET": {
-      "markPx": 0.18125,
-      "openInterest": 44610718,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "OP": {
-      "markPx": 0.11106,
-      "openInterest": 35933474.2,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "REZ": {
-      "markPx": 0.004203,
-      "openInterest": 344353384,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "WLFI": {
-      "markPx": 0.051185,
-      "openInterest": 218655094,
-      "funding": -0.0000019852,
-      "at": 1793281580961
-    },
-    "ICP": {
-      "markPx": 2.5858,
-      "openInterest": 1320302.8,
-      "funding": -0.0000051166,
-      "at": 1793281580961
-    },
-    "EIGEN": {
-      "markPx": 0.199,
-      "openInterest": 13005823.4,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "STX": {
-      "markPx": 0.29249,
-      "openInterest": 5788277.4,
-      "funding": -0.0000141877,
-      "at": 1793281580961
-    },
-    "JTO": {
-      "markPx": 0.41105,
-      "openInterest": 6963938,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "LDO": {
-      "markPx": 0.36983,
-      "openInterest": 23430344.599999998,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "STBL": {
-      "markPx": 0.026741,
-      "openInterest": 68212518,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "WIF": {
-      "markPx": 0.18141,
-      "openInterest": 26278990,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "VIRTUAL": {
-      "markPx": 0.61397,
-      "openInterest": 9169130.799999997,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "POL": {
-      "markPx": 0.091801,
-      "openInterest": 65074164,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "ALGO": {
-      "markPx": 0.10025,
-      "openInterest": 30130594,
-      "funding": -0.0000054736,
-      "at": 1793281580961
-    },
-    "2Z": {
-      "markPx": 0.027869,
-      "openInterest": 34570938,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "AR": {
-      "markPx": 3.4729,
-      "openInterest": 358993.64,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "kSHIB": {
-      "markPx": 0.004926,
-      "openInterest": 574306258,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "AVNT": {
-      "markPx": 0.097731,
-      "openInterest": 14645206,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "MINA": {
-      "markPx": 0.06255,
-      "openInterest": 15165390,
-      "funding": -0.0000239766,
-      "at": 1793281580961
-    },
-    "W": {
-      "markPx": 0.01243,
-      "openInterest": 250454107.4,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "SKY": {
-      "markPx": 0.065125,
-      "openInterest": 52493588,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "IO": {
-      "markPx": 0.1484,
-      "openInterest": 4626727.4,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "BERA": {
-      "markPx": 0.14865,
-      "openInterest": 7069523,
-      "funding": -0.0000073699,
-      "at": 1793281580961
-    },
-    "XTEN": {
-      "markPx": 0.27638,
-      "openInterest": 2489298,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "MNT": {
-      "markPx": 0.49719,
-      "openInterest": 9676463.4,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "ETC": {
-      "markPx": 7.4815,
-      "openInterest": 383463.8799999999,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "ALT": {
-      "markPx": 0.006513,
-      "openInterest": 141885418,
-      "funding": -0.0000081278,
-      "at": 1793281580961
-    },
-    "MERL": {
-      "markPx": 0.028773,
-      "openInterest": 20647106,
-      "funding": -0.0000271132,
-      "at": 1793281580961
-    },
-    "BABY": {
-      "markPx": 0.013552,
-      "openInterest": 16849078,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "KAS": {
-      "markPx": 0.036102,
-      "openInterest": 48121176,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "MELANIA": {
-      "markPx": 0.08499,
-      "openInterest": 13708576.6,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "0G": {
-      "markPx": 0.18185,
-      "openInterest": 9022450,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "GMX": {
-      "markPx": 8.4557,
-      "openInterest": 100308.08,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "BRETT": {
-      "markPx": 0.004627,
-      "openInterest": 40720478,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "SAND": {
-      "markPx": 0.047722,
-      "openInterest": 21562136,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "ANIME": {
-      "markPx": 0.002847,
-      "openInterest": 157576864,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "FOGO": {
-      "markPx": 0.002991,
-      "openInterest": 86209682,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "CAKE": {
-      "markPx": 2.05397,
-      "openInterest": 797733.4,
-      "funding": -0.0000067668,
-      "at": 1793281580961
-    },
-    "SOPH": {
-      "markPx": 0.001465,
-      "openInterest": 203141864,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "SNX": {
-      "markPx": 0.1995,
-      "openInterest": 2303405.1999999997,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "CFX": {
-      "markPx": 0.047866,
-      "openInterest": 64980614,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "CELO": {
-      "markPx": 0.080836,
-      "openInterest": 7269006,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "ZORA": {
-      "markPx": 0.006481,
-      "openInterest": 107232254,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "AZTEC": {
-      "markPx": 0.016588,
-      "openInterest": 91219344,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "ZEN": {
-      "markPx": 5.7668,
-      "openInterest": 138718.04,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "GALA": {
-      "markPx": 0.001763,
-      "openInterest": 272663226,
-      "funding": 0.0000101955,
-      "at": 1793281580961
-    },
-    "POPCAT": {
-      "markPx": 0.042158,
-      "openInterest": 36756318,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "S": {
-      "markPx": 0.043817,
-      "openInterest": 16169056,
-      "funding": -0.0000093118,
-      "at": 1793281580961
-    },
-    "SUPER": {
-      "markPx": 0.17753,
-      "openInterest": 8132124,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "KAITO": {
-      "markPx": 0.25473,
-      "openInterest": 5667466,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "APE": {
-      "markPx": 0.12239,
-      "openInterest": 7866728.4,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "TRB": {
-      "markPx": 16.79,
-      "openInterest": 30944.26,
-      "funding": 8.517e-7,
-      "at": 1793281580961
+      "markPx": 0.068185,
+      "openInterest": 36974224,
+      "funding": 0.0000114808,
+      "at": 1793301719412
     },
     "BSV": {
-      "markPx": 17.794,
-      "openInterest": 48733.9,
-      "funding": 0.0000147891,
-      "at": 1793281580961
-    },
-    "DYDX": {
-      "markPx": 0.11176,
-      "openInterest": 13302685.2,
+      "markPx": 17.722,
+      "openInterest": 48016.38,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
-    "RUNE": {
-      "markPx": 0.60819,
-      "openInterest": 3079776.1999999997,
-      "funding": 0.0000125,
-      "at": 1793281580961
+    "AVAX": {
+      "markPx": 8.8015,
+      "openInterest": 1989462.96,
+      "funding": 0.0000044588,
+      "at": 1793301719412
     },
-    "YGG": {
-      "markPx": 0.024328,
-      "openInterest": 8228546,
+    "BCH": {
+      "markPx": 287.26,
+      "openInterest": 28401.026,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
+    },
+    "AERO": {
+      "markPx": 0.67407,
+      "openInterest": 39064488,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "BLUR": {
+      "markPx": 0.008057,
+      "openInterest": 118046140,
+      "funding": -0.0005478229,
+      "at": 1793301719412
+    },
+    "LTC": {
+      "markPx": 57.616,
+      "openInterest": 393875.36,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "POL": {
+      "markPx": 0.092205,
+      "openInterest": 73548232,
+      "funding": -0.0000356229,
+      "at": 1793301719412
+    },
+    "CHIP": {
+      "markPx": 0.048471,
+      "openInterest": 241940972,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "GRASS": {
+      "markPx": 0.64378,
+      "openInterest": 50142699.8,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "JUP": {
+      "markPx": 0.27154,
+      "openInterest": 29302830,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "TIA": {
+      "markPx": 0.53515,
+      "openInterest": 15795535.4,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "USELESS": {
+      "markPx": 0.15371,
+      "openInterest": 49730190,
+      "funding": 0.0000200955,
+      "at": 1793301719412
+    },
+    "DOT": {
+      "markPx": 0.97849,
+      "openInterest": 5771448.2,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "SKR": {
+      "markPx": 0.014251,
+      "openInterest": 22733156,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "MET": {
+      "markPx": 0.29412,
+      "openInterest": 10863530,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "PENGU": {
+      "markPx": 0.007698,
+      "openInterest": 818463172,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "APT": {
+      "markPx": 0.6671,
+      "openInterest": 5400204.72,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "DASH": {
+      "markPx": 50.808,
+      "openInterest": 63379.62,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "SPX": {
+      "markPx": 0.38495,
+      "openInterest": 13312999.399999999,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "MON": {
+      "markPx": 0.020292,
+      "openInterest": 1537565586,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "TRX": {
+      "markPx": 0.33138,
+      "openInterest": 35141918,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "XLM": {
+      "markPx": 0.168985,
+      "openInterest": 65166434,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "CC": {
+      "markPx": 0.1004,
+      "openInterest": 58247072,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "TRUMP": {
+      "markPx": 1.655,
+      "openInterest": 4806147.6,
+      "funding": -0.0000485547,
+      "at": 1793301719412
+    },
+    "MORPHO": {
+      "markPx": 2.2367,
+      "openInterest": 2976336.2,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "PENDLE": {
+      "markPx": 1.935,
+      "openInterest": 4857748,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "NIL": {
+      "markPx": 0.073933,
+      "openInterest": 38474966,
+      "funding": -0.0000905394,
+      "at": 1793301719412
+    },
+    "ETHFI": {
+      "markPx": 0.65436,
+      "openInterest": 14628042,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "GRAM": {
+      "markPx": 1.2086,
+      "openInterest": 18752990,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "FIL": {
+      "markPx": 0.888,
+      "openInterest": 9177965.399999999,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "HBAR": {
+      "markPx": 0.072854,
+      "openInterest": 160422672,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "ATOM": {
+      "markPx": 1.5813,
+      "openInterest": 2256481.7799999993,
+      "funding": -0.0000121414,
+      "at": 1793301719412
+    },
+    "WLFI": {
+      "markPx": 0.051702,
+      "openInterest": 216509808,
+      "funding": 0.0000067495,
+      "at": 1793301719412
+    },
+    "EIGEN": {
+      "markPx": 0.1998,
+      "openInterest": 13783845.98,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "kBONK": {
+      "markPx": 0.003111,
+      "openInterest": 2607627448,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "SYRUP": {
+      "markPx": 0.16,
+      "openInterest": 28950232,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "SEI": {
+      "markPx": 0.051513,
+      "openInterest": 47812130,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "RENDER": {
+      "markPx": 1.65371,
+      "openInterest": 1506049.6,
+      "funding": 0.0000087587,
+      "at": 1793301719412
+    },
+    "ZK": {
+      "markPx": 0.011483,
+      "openInterest": 388725156,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "OP": {
+      "markPx": 0.10962,
+      "openInterest": 35302338.599999994,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "MEGA": {
+      "markPx": 0.046693,
+      "openInterest": 160689800,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "FET": {
+      "markPx": 0.17729,
+      "openInterest": 44152092,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "SKY": {
+      "markPx": 0.066538,
+      "openInterest": 52033848,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "WIF": {
+      "markPx": 0.179147,
+      "openInterest": 26157198,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "ICP": {
+      "markPx": 2.54425,
+      "openInterest": 1328527.5999999999,
+      "funding": -0.0000249285,
+      "at": 1793301719412
+    },
+    "REZ": {
+      "markPx": 0.00425,
+      "openInterest": 335440972,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "JTO": {
+      "markPx": 0.408812,
+      "openInterest": 6926418,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "STX": {
+      "markPx": 0.29241,
+      "openInterest": 5668462.8,
+      "funding": 0.000002686,
+      "at": 1793301719412
+    },
+    "LDO": {
+      "markPx": 0.36227,
+      "openInterest": 23386339.999999996,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "ALGO": {
+      "markPx": 0.09901,
+      "openInterest": 30665402,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "STBL": {
+      "markPx": 0.026888,
+      "openInterest": 68727756,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "VIRTUAL": {
+      "markPx": 0.60673,
+      "openInterest": 9136779,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "MERL": {
+      "markPx": 0.028602,
+      "openInterest": 20314738,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "XTEN": {
+      "markPx": 0.29467,
+      "openInterest": 3161340,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "AVNT": {
+      "markPx": 0.1016,
+      "openInterest": 14905948,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "2Z": {
+      "markPx": 0.02754,
+      "openInterest": 34189542,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "ZEN": {
+      "markPx": 5.933,
+      "openInterest": 142160.78,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "AR": {
+      "markPx": 3.4458,
+      "openInterest": 357481.06,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "kSHIB": {
+      "markPx": 0.004921,
+      "openInterest": 572002768,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "MINA": {
+      "markPx": 0.062036,
+      "openInterest": 15117626,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "IO": {
+      "markPx": 0.14703,
+      "openInterest": 4562445.6,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "W": {
+      "markPx": 0.01214,
+      "openInterest": 248043825.00000003,
+      "funding": -0.0000300838,
+      "at": 1793301719412
+    },
+    "ETC": {
+      "markPx": 7.4537,
+      "openInterest": 402466.02,
+      "funding": 0.0000115838,
+      "at": 1793301719412
     },
     "HEMI": {
-      "markPx": 0.004685,
-      "openInterest": 103517578,
+      "markPx": 0.004658,
+      "openInterest": 145356812,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
-    "ENS": {
-      "markPx": 5.2795,
-      "openInterest": 376131.64,
+    "ALT": {
+      "markPx": 0.006317,
+      "openInterest": 135043008,
+      "funding": -0.0000346165,
+      "at": 1793301719412
+    },
+    "0G": {
+      "markPx": 0.18033,
+      "openInterest": 8969920,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
-    "PEOPLE": {
-      "markPx": 0.007608,
-      "openInterest": 22585136,
-      "funding": 0.0000069354,
-      "at": 1793281580961
-    },
-    "GRIFFAIN": {
-      "markPx": 0.013798,
-      "openInterest": 99517790,
+    "KAS": {
+      "markPx": 0.035979,
+      "openInterest": 49319816,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
-    "ACE": {
-      "markPx": 0.1442,
-      "openInterest": 1284398.5599999998,
+    "AZTEC": {
+      "markPx": 0.017033,
+      "openInterest": 91477658,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
-    "COMP": {
-      "markPx": 21.552,
-      "openInterest": 54071.98,
+    "MNT": {
+      "markPx": 0.49916,
+      "openInterest": 9669776,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
-    "DYM": {
-      "markPx": 0.01734,
-      "openInterest": 15145851.6,
+    "BABY": {
+      "markPx": 0.013363,
+      "openInterest": 18083806,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
-    "GOAT": {
-      "markPx": 0.013958,
-      "openInterest": 41107232,
+    "MELANIA": {
+      "markPx": 0.08545,
+      "openInterest": 13538852.4,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
-    "USUAL": {
-      "markPx": 0.01052,
-      "openInterest": 66559426.4,
+    "BRETT": {
+      "markPx": 0.004626,
+      "openInterest": 40587042,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
-    "POLYX": {
-      "markPx": 0.03299,
-      "openInterest": 2980704,
-      "funding": -0.0000814586,
-      "at": 1793281580961
-    },
-    "kFLOKI": {
-      "markPx": 0.023517,
-      "openInterest": 16482732,
+    "CAKE": {
+      "markPx": 2.0464,
+      "openInterest": 797415.4,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
-    "IMX": {
-      "markPx": 0.13731,
-      "openInterest": 27563726.599999998,
+    "ZORA": {
+      "markPx": 0.006493,
+      "openInterest": 105237114,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
-    "HYPER": {
-      "markPx": 0.061592,
-      "openInterest": 797258,
+    "SAND": {
+      "markPx": 0.047853,
+      "openInterest": 20966732,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
-    "MOVE": {
-      "markPx": 0.006563,
-      "openInterest": 33040940,
+    "RUNE": {
+      "markPx": 0.61274,
+      "openInterest": 3232513.8000000003,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
-    "IOTA": {
-      "markPx": 0.040445,
-      "openInterest": 29233410,
+    "CELO": {
+      "markPx": 0.077351,
+      "openInterest": 7341146,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
-    "APEX": {
-      "markPx": 0.21819,
-      "openInterest": 7156222,
+    "GMX": {
+      "markPx": 8.3658,
+      "openInterest": 101047.6,
       "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "PNUT": {
-      "markPx": 0.04143,
-      "openInterest": 24262528.8,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "PROVE": {
-      "markPx": 0.19723,
-      "openInterest": 1182342,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "AXS": {
-      "markPx": 0.9325,
-      "openInterest": 431277.4,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "RSR": {
-      "markPx": 0.001592,
-      "openInterest": 231988372,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "LINEA": {
-      "markPx": 0.002508,
-      "openInterest": 927572938,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "kNEIRO": {
-      "markPx": 0.06778,
-      "openInterest": 1887670,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "NXPC": {
-      "markPx": 0.17349,
-      "openInterest": 956946,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "SUSHI": {
-      "markPx": 0.20406,
-      "openInterest": 1424149.8,
-      "funding": -0.0000154455,
-      "at": 1793281580961
-    },
-    "BIO": {
-      "markPx": 0.022439,
-      "openInterest": 37072652,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "GMT": {
-      "markPx": 0.006964,
-      "openInterest": 13325854,
-      "funding": -0.0000863708,
-      "at": 1793281580961
-    },
-    "AIXBT": {
-      "markPx": 0.018093,
-      "openInterest": 7990536,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "RESOLV": {
-      "markPx": 0.016158,
-      "openInterest": 68825160,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "ME": {
-      "markPx": 0.0605,
-      "openInterest": 3544315.5999999996,
-      "funding": -0.0000457308,
-      "at": 1793281580961
-    },
-    "MANTA": {
-      "markPx": 0.06324,
-      "openInterest": 5374209,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "ORDI": {
-      "markPx": 3.6325,
-      "openInterest": 95058.78,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "ZETA": {
-      "markPx": 0.03982,
-      "openInterest": 18899404.6,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "BIGTIME": {
-      "markPx": 0.006893,
-      "openInterest": 16111770,
-      "funding": -0.0000178953,
-      "at": 1793281580961
-    },
-    "NEO": {
-      "markPx": 2.1121,
-      "openInterest": 190566.04,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "MOODENG": {
-      "markPx": 0.037224,
-      "openInterest": 8274916,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "STABLE": {
-      "markPx": 0.027428,
-      "openInterest": 31857464,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "XAI": {
-      "markPx": 0.00763,
-      "openInterest": 35654167.4,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "BANANA": {
-      "markPx": 3.3904,
-      "openInterest": 35088,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "TURBO": {
-      "markPx": 0.000817,
-      "openInterest": 268334500,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "LAYER": {
-      "markPx": 0.063261,
-      "openInterest": 6005678,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "kLUNC": {
-      "markPx": 0.0451,
-      "openInterest": 5858188,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "GAS": {
-      "markPx": 1.1965,
-      "openInterest": 66901.6,
-      "funding": -0.0000862091,
-      "at": 1793281580961
-    },
-    "BOME": {
-      "markPx": 0.000637,
-      "openInterest": 686478044,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "SAGA": {
-      "markPx": 0.01835,
-      "openInterest": 64712097.6,
-      "funding": 0.0000125,
-      "at": 1793281580961
-    },
-    "WCT": {
-      "markPx": 0.035761,
-      "openInterest": 2915646,
-      "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
     "UMA": {
-      "markPx": 0.34673,
-      "openInterest": 384887.6,
-      "funding": 0.0000125,
-      "at": 1793281580961
+      "markPx": 0.34635,
+      "openInterest": 876684.8,
+      "funding": 0.0000114121,
+      "at": 1793301719412
     },
-    "NOT": {
-      "markPx": 0.000381,
-      "openInterest": 630780602,
+    "SUPER": {
+      "markPx": 0.17684,
+      "openInterest": 8116198,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
+    },
+    "SNX": {
+      "markPx": 0.19855,
+      "openInterest": 2361324.1999999997,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "POPCAT": {
+      "markPx": 0.041775,
+      "openInterest": 36635552,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "TRB": {
+      "markPx": 16.806,
+      "openInterest": 31027.3,
+      "funding": 0.000010802,
+      "at": 1793301719412
+    },
+    "DYDX": {
+      "markPx": 0.11292,
+      "openInterest": 13390536.200000001,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "KAITO": {
+      "markPx": 0.25385,
+      "openInterest": 5625360,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "GRIFFAIN": {
+      "markPx": 0.013744,
+      "openInterest": 99107938,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "ANIME": {
+      "markPx": 0.002844,
+      "openInterest": 151126110,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "FOGO": {
+      "markPx": 0.003031,
+      "openInterest": 86138596,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "CFX": {
+      "markPx": 0.048006,
+      "openInterest": 64950974,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "BERA": {
+      "markPx": 0.14747,
+      "openInterest": 7043145,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "S": {
+      "markPx": 0.043969,
+      "openInterest": 15849318,
+      "funding": -0.000022997,
+      "at": 1793301719412
+    },
+    "APE": {
+      "markPx": 0.12186,
+      "openInterest": 7854010.2,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "GALA": {
+      "markPx": 0.001747,
+      "openInterest": 268057050,
+      "funding": -0.0000074308,
+      "at": 1793301719412
+    },
+    "SOPH": {
+      "markPx": 0.001484,
+      "openInterest": 202464460,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "PNUT": {
+      "markPx": 0.04183,
+      "openInterest": 24441328.200000003,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "kFLOKI": {
+      "markPx": 0.023841,
+      "openInterest": 16656008,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "COMP": {
+      "markPx": 21.755,
+      "openInterest": 53042.76,
+      "funding": -0.0000255306,
+      "at": 1793301719412
+    },
+    "PEOPLE": {
+      "markPx": 0.007626,
+      "openInterest": 21843176,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "ACE": {
+      "markPx": 0.1422,
+      "openInterest": 1240151.46,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "ENS": {
+      "markPx": 5.2353,
+      "openInterest": 376166.14,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "GOAT": {
+      "markPx": 0.013803,
+      "openInterest": 40669166,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "DYM": {
+      "markPx": 0.01725,
+      "openInterest": 14680258.6,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "IMX": {
+      "markPx": 0.1375,
+      "openInterest": 27594528.799999997,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "HYPER": {
+      "markPx": 0.061312,
+      "openInterest": 791330,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "kNEIRO": {
+      "markPx": 0.06781,
+      "openInterest": 1501640.4,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "IOTA": {
+      "markPx": 0.04007,
+      "openInterest": 29216838,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "YGG": {
+      "markPx": 0.024255,
+      "openInterest": 8237614,
+      "funding": 8.993e-7,
+      "at": 1793301719412
+    },
+    "MOVE": {
+      "markPx": 0.006533,
+      "openInterest": 32801304,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "APEX": {
+      "markPx": 0.21682,
+      "openInterest": 7153744,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "PROVE": {
+      "markPx": 0.19722,
+      "openInterest": 1199240,
+      "funding": 0.0000030272,
+      "at": 1793301719412
+    },
+    "BIO": {
+      "markPx": 0.022768,
+      "openInterest": 36930602,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "USUAL": {
+      "markPx": 0.01054,
+      "openInterest": 66356193.800000004,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "LINEA": {
+      "markPx": 0.002492,
+      "openInterest": 931562730,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "POLYX": {
+      "markPx": 0.033387,
+      "openInterest": 2901138,
+      "funding": -0.0001590706,
+      "at": 1793301719412
+    },
+    "AXS": {
+      "markPx": 0.92858,
+      "openInterest": 437378.8,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "NXPC": {
+      "markPx": 0.1747,
+      "openInterest": 931460,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "BOME": {
+      "markPx": 0.000649,
+      "openInterest": 676653846,
+      "funding": -0.0000462522,
+      "at": 1793301719412
+    },
+    "MANTA": {
+      "markPx": 0.06244,
+      "openInterest": 5383492.6,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "GMT": {
+      "markPx": 0.006933,
+      "openInterest": 13298714,
+      "funding": 0.0000052231,
+      "at": 1793301719412
+    },
+    "AIXBT": {
+      "markPx": 0.018039,
+      "openInterest": 8063954,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "ME": {
+      "markPx": 0.06071,
+      "openInterest": 3529606.6,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "ZETA": {
+      "markPx": 0.03983,
+      "openInterest": 18617272.799999997,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "SUSHI": {
+      "markPx": 0.20379,
+      "openInterest": 1391934.6,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "STABLE": {
+      "markPx": 0.02723,
+      "openInterest": 31882266,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "ORDI": {
+      "markPx": 3.6262,
+      "openInterest": 95174.06,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "RSR": {
+      "markPx": 0.001565,
+      "openInterest": 234502844,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "NEO": {
+      "markPx": 2.1024,
+      "openInterest": 189527.68,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "XAI": {
+      "markPx": 0.00759,
+      "openInterest": 35604858.8,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "BIGTIME": {
+      "markPx": 0.0069,
+      "openInterest": 16300232,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "WCT": {
+      "markPx": 0.035783,
+      "openInterest": 2862708,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "BANANA": {
+      "markPx": 3.39085,
+      "openInterest": 34417,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "MOODENG": {
+      "markPx": 0.037516,
+      "openInterest": 8257316,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "TURBO": {
+      "markPx": 0.000815,
+      "openInterest": 266483362,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "GAS": {
+      "markPx": 1.2009,
+      "openInterest": 65810.2,
+      "funding": -0.0000186352,
+      "at": 1793301719412
+    },
+    "LAYER": {
+      "markPx": 0.062966,
+      "openInterest": 5991736,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "RESOLV": {
+      "markPx": 0.016061,
+      "openInterest": 68822218,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "SAGA": {
+      "markPx": 0.0182,
+      "openInterest": 64615813,
+      "funding": 0.0000125,
+      "at": 1793301719412
+    },
+    "kLUNC": {
+      "markPx": 0.044991,
+      "openInterest": 5862674,
+      "funding": 0.0000125,
+      "at": 1793301719412
     },
     "HMSTR": {
       "markPx": 0.000141,
-      "openInterest": 8910220800,
+      "openInterest": 8916171712,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
+    },
+    "NOT": {
+      "markPx": 0.000381,
+      "openInterest": 629113370,
+      "funding": 0.0000125,
+      "at": 1793301719412
     },
     "MEME": {
       "markPx": 0.000471,
-      "openInterest": 740880474,
+      "openInterest": 742980356,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     },
     "TNSR": {
-      "markPx": 0.02999,
-      "openInterest": 4939525.6,
+      "markPx": 0.03,
+      "openInterest": 4949273.2,
       "funding": 0.0000125,
-      "at": 1793281580961
+      "at": 1793301719412
     }
   },
   "alertHistory": {
@@ -1101,8 +1101,8 @@
     "JUP|SHORT|GLOBAL": 1793235080909,
     "DASH|SHORT|SWEEP_RECLAIM": 1793235084111,
     "DASH|SHORT|GLOBAL": 1793235084111,
-    "APE|SHORT|SWEEP_RECLAIM": 1793235087329,
-    "APE|SHORT|GLOBAL": 1793235087329,
+    "APE|SHORT|SWEEP_RECLAIM": 1793301700190,
+    "APE|SHORT|GLOBAL": 1793301700190,
     "XLM|SHORT|SWEEP_RECLAIM": 1793235090557,
     "XLM|SHORT|GLOBAL": 1793235090557,
     "TRB|SHORT|SWEEP_RECLAIM": 1793235093746,
@@ -1122,7 +1122,21 @@
     "BNB|LONG|SWEEP_RECLAIM": 1793281577713,
     "BNB|LONG|GLOBAL": 1793281577713,
     "YGG|SHORT|BREAKOUT_RETEST": 1793281580961,
-    "YGG|SHORT|GLOBAL": 1793281580961
+    "YGG|SHORT|GLOBAL": 1793281580961,
+    "ONDO|SHORT|SWEEP_RECLAIM": 1793301697304,
+    "ONDO|SHORT|GLOBAL": 1793301697304,
+    "BIGTIME|SHORT|SWEEP_RECLAIM": 1793301703398,
+    "BIGTIME|SHORT|GLOBAL": 1793301703398,
+    "ZEC|SHORT|TREND_PULLBACK": 1793301706598,
+    "ZEC|SHORT|GLOBAL": 1793301706598,
+    "LIT|SHORT|TREND_PULLBACK": 1793301709803,
+    "LIT|SHORT|GLOBAL": 1793301709803,
+    "ZRO|SHORT|SWEEP_RECLAIM": 1793301713022,
+    "ZRO|SHORT|GLOBAL": 1793301713022,
+    "FARTCOIN|SHORT|SWEEP_RECLAIM": 1793301716227,
+    "FARTCOIN|SHORT|GLOBAL": 1793301716227,
+    "POL|SHORT|TREND_PULLBACK": 1793301719412,
+    "POL|SHORT|GLOBAL": 1793301719412
   },
   "dailyFreeCount": {},
   "paperTrades": [
@@ -1707,7 +1721,9 @@
       "pattern": "SWEEP_RECLAIM",
       "score": 6.78,
       "audience": "VIP",
-      "outcomeDelivered": [],
+      "outcomeDelivered": [
+        "VIP"
+      ],
       "entry": 0.08426,
       "sl": 0.08554745714285714,
       "tp": 0.08205745714285714,
@@ -1717,9 +1733,9 @@
       "rsi15": 32.55218467970971,
       "fibConfluence": false,
       "openedAt": 1793255857730,
-      "lastCheckedAt": 1793281354316,
-      "status": "OPEN",
-      "pnlR": null,
+      "lastCheckedAt": 1793301440338,
+      "status": "SL",
+      "pnlR": -1,
       "reasons": [
         "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=NEUTRAL (countertrend) is context; BTC LONG is context; fresh SL/TP recalculated from 1H structure",
         "Same-side evidence adjustment +0.28 (flow/order-book/RSI/VWAP)",
@@ -1728,7 +1744,12 @@
         "15m RSI supports entry (32.6)",
         "BTC 4H regime aligns (BEARISH)",
         "BTC 15m trend confirms SHORT (+0.10)"
-      ]
+      ],
+      "closedAt": 1793284439999,
+      "exitMark": 0.08581,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793301446868
     },
     {
       "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
@@ -1738,7 +1759,9 @@
       "pattern": "SWEEP_RECLAIM",
       "score": 6.78,
       "audience": "VIP",
-      "outcomeDelivered": [],
+      "outcomeDelivered": [
+        "VIP"
+      ],
       "entry": 0.21142,
       "sl": 0.22067065714285714,
       "tp": 0.17504065714285713,
@@ -1748,9 +1771,9 @@
       "rsi15": 39.52297649914995,
       "fibConfluence": false,
       "openedAt": 1793281565203,
-      "lastCheckedAt": 1793281565203,
-      "status": "OPEN",
-      "pnlR": null,
+      "lastCheckedAt": 1793301440338,
+      "status": "SL",
+      "pnlR": -1,
       "reasons": [
         "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=LONG (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
         "Same-side evidence adjustment +0.03 (flow/order-book/RSI/VWAP)",
@@ -1760,7 +1783,12 @@
         "15m RSI supports entry (39.5)",
         "BTC 4H regime aligns (BEARISH)",
         "BTC 1H trend confirms SHORT (+0.10)"
-      ]
+      ],
+      "closedAt": 1793286359999,
+      "exitMark": 0.22192,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793301449773
     },
     {
       "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
@@ -1770,7 +1798,9 @@
       "pattern": "BREAKOUT_RETEST",
       "score": 6.74,
       "audience": "VIP",
-      "outcomeDelivered": [],
+      "outcomeDelivered": [
+        "VIP"
+      ],
       "entry": 0.0605,
       "sl": 0.060804357142857146,
       "tp": 0.05988435714285714,
@@ -1780,9 +1810,9 @@
       "rsi15": 64.65663086442574,
       "fibConfluence": true,
       "openedAt": 1793281568108,
-      "lastCheckedAt": 1793281568108,
-      "status": "OPEN",
-      "pnlR": null,
+      "lastCheckedAt": 1793301440338,
+      "status": "SL",
+      "pnlR": -1,
       "reasons": [
         "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
         "Same-side evidence adjustment +0.14 (flow/order-book/RSI/VWAP)",
@@ -1792,7 +1822,12 @@
         "1H Fibonacci confluence (0.0606075)",
         "BTC 4H regime aligns (BEARISH)",
         "BTC 1H trend confirms SHORT (+0.10)"
-      ]
+      ],
+      "closedAt": 1793284379999,
+      "exitMark": 0.06081,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793301453003
     },
     {
       "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
@@ -1802,7 +1837,9 @@
       "pattern": "BREAKOUT_RETEST",
       "score": 6.34,
       "audience": "VIP",
-      "outcomeDelivered": [],
+      "outcomeDelivered": [
+        "VIP"
+      ],
       "entry": 0.0451,
       "sl": 0.04554549857142857,
       "tp": 0.04427349857142857,
@@ -1812,9 +1849,9 @@
       "rsi15": 60.4311304368042,
       "fibConfluence": true,
       "openedAt": 1793281571338,
-      "lastCheckedAt": 1793281571338,
-      "status": "OPEN",
-      "pnlR": null,
+      "lastCheckedAt": 1793301440338,
+      "status": "SL",
+      "pnlR": -1,
       "reasons": [
         "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
         "Same-side evidence adjustment +0.04 (flow/order-book/RSI/VWAP)",
@@ -1823,7 +1860,12 @@
         "1H Fibonacci confluence (0.0451915)",
         "BTC 4H regime aligns (BEARISH)",
         "BTC 1H trend confirms SHORT (+0.10)"
-      ]
+      ],
+      "closedAt": 1793286719999,
+      "exitMark": 0.045546,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793301456187
     },
     {
       "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
@@ -1833,7 +1875,9 @@
       "pattern": "SWEEP_RECLAIM",
       "score": 6.13,
       "audience": "VIP",
-      "outcomeDelivered": [],
+      "outcomeDelivered": [
+        "VIP"
+      ],
       "entry": 0.32865,
       "sl": 0.3236619,
       "tp": 0.3376819,
@@ -1843,9 +1887,9 @@
       "rsi15": 56.63318490864808,
       "fibConfluence": false,
       "openedAt": 1793281574513,
-      "lastCheckedAt": 1793281574513,
-      "status": "OPEN",
-      "pnlR": null,
+      "lastCheckedAt": 1793301440338,
+      "status": "TP",
+      "pnlR": 1.8106894408692669,
       "reasons": [
         "REVERSED ENTRY FAILURE EXPERIMENT: LONG; asset 1H trend=SHORT (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
         "Same-side evidence adjustment +0.23 (flow/order-book/RSI/VWAP)",
@@ -1854,7 +1898,12 @@
         "15m RSI supports entry (56.6)",
         "BTC 4H regime opposes LONG (BEARISH; 1.43%/24h, score penalty -0.15)",
         "BTC 1H trend conflicts with LONG (-0.15)"
-      ]
+      ],
+      "closedAt": 1793290199999,
+      "exitMark": 0.33732,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793301459381
     },
     {
       "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
@@ -1864,7 +1913,9 @@
       "pattern": "SWEEP_RECLAIM",
       "score": 6.12,
       "audience": "VIP",
-      "outcomeDelivered": [],
+      "outcomeDelivered": [
+        "VIP"
+      ],
       "entry": 743.76,
       "sl": 739.2974857142857,
       "tp": 751.7774857142857,
@@ -1874,9 +1925,9 @@
       "rsi15": 49.304930281143434,
       "fibConfluence": false,
       "openedAt": 1793281577713,
-      "lastCheckedAt": 1793281577713,
-      "status": "OPEN",
-      "pnlR": null,
+      "lastCheckedAt": 1793301440338,
+      "status": "TP",
+      "pnlR": 1.796629702666018,
       "reasons": [
         "REVERSED ENTRY FAILURE EXPERIMENT: LONG; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
         "Same-side evidence adjustment +0.22 (flow/order-book/RSI/VWAP)",
@@ -1885,7 +1936,12 @@
         "15m RSI supports entry (49.3)",
         "BTC 4H regime opposes LONG (BEARISH; 1.43%/24h, score penalty -0.15)",
         "BTC 1H trend conflicts with LONG (-0.15)"
-      ]
+      ],
+      "closedAt": 1793286599999,
+      "exitMark": 751.75,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793301462629
     },
     {
       "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
@@ -1895,7 +1951,9 @@
       "pattern": "BREAKOUT_RETEST",
       "score": 5.9,
       "audience": "VIP",
-      "outcomeDelivered": [],
+      "outcomeDelivered": [
+        "VIP"
+      ],
       "entry": 0.024328,
       "sl": 0.024469518571428574,
       "tp": 0.024027518571428572,
@@ -1905,9 +1963,9 @@
       "rsi15": 60.09168659937641,
       "fibConfluence": false,
       "openedAt": 1793281580961,
-      "lastCheckedAt": 1793281580961,
-      "status": "OPEN",
-      "pnlR": null,
+      "lastCheckedAt": 1793301440338,
+      "status": "SL",
+      "pnlR": -1,
       "reasons": [
         "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
         "Same-side evidence adjustment -0.20 (flow/order-book/RSI/VWAP)",
@@ -1916,6 +1974,259 @@
         "OI confirms participation",
         "BTC 4H regime aligns (BEARISH)",
         "BTC 1H trend confirms SHORT (+0.10)"
+      ],
+      "closedAt": 1793284439999,
+      "exitMark": 0.024489,
+      "paperMarginUsd": 1000,
+      "exitDetection": "1m_candle_ohlc",
+      "outcomeNotifiedAt": 1793301465870
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
+      "id": "ONDO|SHORT|SWEEP_RECLAIM|1793301697304",
+      "coin": "ONDO",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 7.28,
+      "audience": "VIP",
+      "outcomeDelivered": [],
+      "entry": 0.41449,
+      "sl": 0.4176442,
+      "tp": 0.40567420000000004,
+      "rr": 2.794940079893474,
+      "suggestedLeverage": 10,
+      "btcRegime": "BEARISH",
+      "rsi15": 40.26960037320566,
+      "fibConfluence": true,
+      "openedAt": 1793301697304,
+      "lastCheckedAt": 1793301697304,
+      "status": "OPEN",
+      "pnlR": null,
+      "reasons": [
+        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.38 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY: failed liquidity sweep / failed reclaim",
+        "order-flow supports reversal",
+        "relative volume expansion",
+        "1H Fibonacci confluence (0.415045)",
+        "15m RSI supports entry (40.3)"
+      ]
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
+      "id": "APE|SHORT|SWEEP_RECLAIM|1793301700190",
+      "coin": "APE",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 7.16,
+      "audience": "VIP",
+      "outcomeDelivered": [],
+      "entry": 0.12186,
+      "sl": 0.12283538571428572,
+      "tp": 0.11943538571428572,
+      "rr": 2.485800489183735,
+      "suggestedLeverage": 5,
+      "btcRegime": "BEARISH",
+      "rsi15": 38.703997029545654,
+      "fibConfluence": true,
+      "openedAt": 1793301700190,
+      "lastCheckedAt": 1793301700190,
+      "status": "OPEN",
+      "pnlR": null,
+      "reasons": [
+        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.26 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY: failed liquidity sweep / failed reclaim",
+        "order-flow supports reversal",
+        "relative volume expansion",
+        "1H Fibonacci confluence (0.122178)",
+        "15m RSI supports entry (38.7)"
+      ]
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
+      "id": "BIGTIME|SHORT|SWEEP_RECLAIM|1793301703398",
+      "coin": "BIGTIME",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 7.08,
+      "audience": "VIP",
+      "outcomeDelivered": [],
+      "entry": 0.0069,
+      "sl": 0.006998181428571428,
+      "tp": 0.0066721814285714285,
+      "rr": 2.320383546495557,
+      "suggestedLeverage": 3,
+      "btcRegime": "BEARISH",
+      "rsi15": 39.8303673124088,
+      "fibConfluence": true,
+      "openedAt": 1793301703398,
+      "lastCheckedAt": 1793301703398,
+      "status": "OPEN",
+      "pnlR": null,
+      "reasons": [
+        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.38 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY: failed liquidity sweep / failed reclaim",
+        "order-flow supports reversal",
+        "OI rising with directional move",
+        "1H Fibonacci confluence (0.00690450)",
+        "15m RSI supports entry (39.8)"
+      ]
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
+      "id": "ZEC|SHORT|TREND_PULLBACK|1793301706598",
+      "coin": "ZEC",
+      "side": "SHORT",
+      "pattern": "TREND_PULLBACK",
+      "score": 7.03,
+      "audience": "VIP",
+      "outcomeDelivered": [],
+      "entry": 1318.4,
+      "sl": 1332.1508571428571,
+      "tp": 1269.8508571428572,
+      "rr": 3.5306266622340674,
+      "suggestedLeverage": 10,
+      "btcRegime": "BEARISH",
+      "rsi15": 51.12452601259583,
+      "fibConfluence": true,
+      "openedAt": 1793301706598,
+      "lastCheckedAt": 1793301706598,
+      "status": "OPEN",
+      "pnlR": null,
+      "reasons": [
+        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=LONG (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.23 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY: trend continuation failed across 15m EMA20",
+        "order-flow resumes with trend",
+        "VWAP alignment",
+        "OI rising with trend",
+        "1H Fibonacci confluence (1315.10)",
+        "15m RSI supports entry (51.1)"
+      ]
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
+      "id": "LIT|SHORT|TREND_PULLBACK|1793301709803",
+      "coin": "LIT",
+      "side": "SHORT",
+      "pattern": "TREND_PULLBACK",
+      "score": 6.83,
+      "audience": "VIP",
+      "outcomeDelivered": [],
+      "entry": 3.1321,
+      "sl": 3.2027102857142857,
+      "tp": 3.0010102857142855,
+      "rr": 1.8565243428719387,
+      "suggestedLeverage": 5,
+      "btcRegime": "BEARISH",
+      "rsi15": 46.7622871186036,
+      "fibConfluence": true,
+      "openedAt": 1793301709803,
+      "lastCheckedAt": 1793301709803,
+      "status": "OPEN",
+      "pnlR": null,
+      "reasons": [
+        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=LONG (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.03 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY: trend continuation failed across 15m EMA20",
+        "order-flow resumes with trend",
+        "VWAP alignment",
+        "OI rising with trend",
+        "1H Fibonacci confluence (3.12451)",
+        "15m RSI supports entry (46.8)"
+      ]
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
+      "id": "ZRO|SHORT|SWEEP_RECLAIM|1793301713022",
+      "coin": "ZRO",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 6.83,
+      "audience": "VIP",
+      "outcomeDelivered": [],
+      "entry": 1.6836,
+      "sl": 1.7104038571428573,
+      "tp": 1.6214038571428573,
+      "rr": 2.3204176371204404,
+      "suggestedLeverage": 5,
+      "btcRegime": "BEARISH",
+      "rsi15": 41.598789598089255,
+      "fibConfluence": true,
+      "openedAt": 1793301713022,
+      "lastCheckedAt": 1793301713022,
+      "status": "OPEN",
+      "pnlR": null,
+      "reasons": [
+        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.38 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY: failed liquidity sweep / failed reclaim",
+        "order-flow supports reversal",
+        "1H Fibonacci confluence (1.67937)",
+        "15m RSI supports entry (41.6)"
+      ]
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
+      "id": "FARTCOIN|SHORT|SWEEP_RECLAIM|1793301716227",
+      "coin": "FARTCOIN",
+      "side": "SHORT",
+      "pattern": "SWEEP_RECLAIM",
+      "score": 6.59,
+      "audience": "VIP",
+      "outcomeDelivered": [],
+      "entry": 0.12843,
+      "sl": 0.13052405714285714,
+      "tp": 0.12453405714285713,
+      "rr": 1.8604759046007655,
+      "suggestedLeverage": 8,
+      "btcRegime": "BEARISH",
+      "rsi15": 37.28439458115311,
+      "fibConfluence": false,
+      "openedAt": 1793301716227,
+      "lastCheckedAt": 1793301716227,
+      "status": "OPEN",
+      "pnlR": null,
+      "reasons": [
+        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=NEUTRAL (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment +0.14 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY: failed liquidity sweep / failed reclaim",
+        "order-flow supports reversal",
+        "OI rising with directional move",
+        "15m RSI supports entry (37.3)"
+      ]
+    },
+    {
+      "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.9-REVERSE-FAILURE-LOCATION-COHORT-FIX",
+      "id": "POL|SHORT|TREND_PULLBACK|1793301719412",
+      "coin": "POL",
+      "side": "SHORT",
+      "pattern": "TREND_PULLBACK",
+      "score": 6.23,
+      "audience": "VIP",
+      "outcomeDelivered": [],
+      "entry": 0.092205,
+      "sl": 0.09284004000000001,
+      "tp": 0.09114304000000001,
+      "rr": 1.672272612748737,
+      "suggestedLeverage": 5,
+      "btcRegime": "BEARISH",
+      "rsi15": 49.26027569964105,
+      "fibConfluence": true,
+      "openedAt": 1793301719412,
+      "lastCheckedAt": 1793301719412,
+      "status": "OPEN",
+      "pnlR": null,
+      "reasons": [
+        "REVERSED ENTRY FAILURE EXPERIMENT: SHORT; asset 1H trend=LONG (countertrend) is context; BTC SHORT is context; fresh SL/TP recalculated from 1H structure",
+        "Same-side evidence adjustment -0.17 (flow/order-book/RSI/VWAP)",
+        "REVERSED ENTRY: trend continuation failed across 15m EMA20",
+        "order-flow resumes with trend",
+        "OI rising with trend",
+        "1H Fibonacci confluence (0.0920950)",
+        "15m RSI supports entry (49.3)"
       ]
     }
   ],
@@ -1927,14 +2238,14 @@
       "realizedR": -6
     },
     "2026-10-29": {
-      "tp": 9,
-      "sl": 0,
-      "closed": 9,
-      "realizedR": 17.460374975397507
+      "tp": 11,
+      "sl": 5,
+      "closed": 16,
+      "realizedR": 16.067694118932792
     }
   },
   "lastStatusAt": 0,
-  "lastDailyReportAt": 1793204027682,
+  "lastDailyReportAt": 1793301719412,
   "archivedPaperTrades": [
     {
       "strategyVersion": "NOVARA-SMART-MONEY-AI-V2.8.6-LEVEL-PROXIMITY-EARLY-ENTRY",
@@ -4745,31 +5056,30 @@
       "archiveReason": "V2.8.9_REVERSE_FAILURE_COHORT_RESET"
     }
   ],
-  "pendingDailyReports": null,
   "cleanStartId": "NOVARA-V2.8.9-REVERSE-FAILURE-COHORT-2026-10-28",
   "cleanStartAt": 1793204027682,
   "lastCycle": {
-    "at": 1793281580961,
+    "at": 1793301719412,
     "rejectionCounts": {
-      "stale": 27,
+      "stale": 2,
       "regime": 0,
-      "regimeSoft": 1,
-      "score": 2,
+      "regimeSoft": 0,
+      "score": 6,
       "cooldown": 0,
-      "risk": 3,
-      "location": 14,
-      "vwap": 0,
-      "spread": 0,
-      "accepted": 6
+      "risk": 12,
+      "location": 8,
+      "vwap": 2,
+      "spread": 1,
+      "accepted": 9
     },
     "eligible": 179,
     "totalEligible": 179,
     "checked": 179,
     "failed": 0,
-    "rawCandidates": 6,
-    "signalsSelected": 6,
-    "sentSignals": 6,
+    "rawCandidates": 9,
+    "signalsSelected": 8,
+    "sentSignals": 8,
     "sendErrors": 0,
-    "openPaperTrades": 7
+    "openPaperTrades": 8
   }
 }
